@@ -1,0 +1,13 @@
+# Node
+node_modules/
+.env*
+
+# .NET
+bin/
+obj/
+
+# Logs
+*.log
+
+# Database
+*.db
