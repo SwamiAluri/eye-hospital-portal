@@ -16,13 +16,16 @@ public class PatientJourneyService
 {
     private readonly IpManagementDbContext      _db;
     private readonly IPreOpNotificationClient   _notifications;
+    private readonly ICcmsAdmissionClient       _ccms;
 
     public PatientJourneyService(
         IpManagementDbContext db,
-        IPreOpNotificationClient notifications)
+        IPreOpNotificationClient notifications,
+        ICcmsAdmissionClient ccms)
     {
         _db            = db;
         _notifications = notifications;
+        _ccms          = ccms;
     }
 
     // ── List ───────────────────────────────────────────────────────────────────
@@ -123,6 +126,17 @@ public class PatientJourneyService
     public async Task<PatientJourneyDetailDto> AdmitAsync(Guid id, Guid tenantId, Guid userId, AdmitPatientRequest req)
     {
         var j = await RequireJourneyAsync(id, tenantId);
+
+        // CCMS admission gate: check pre-auth status before admitting
+        if (!req.OverrideStateCheck && !req.BypassFinancialClearance)
+        {
+            var ccmsResult = await _ccms.ValidateAdmissionAsync(id, j.CounselingSessionId, tenantId);
+            if (!ccmsResult.Allowed)
+            {
+                throw new InvalidOperationException(
+                    ccmsResult.BlockReason ?? "Admission blocked: insurance pre-authorization is required before admission.");
+            }
+        }
 
         if (!req.OverrideStateCheck)
             StateTransitionValidator.ValidateClinical(j.ClinicalState, ClinicalState.Admitted);
@@ -252,12 +266,18 @@ public class PatientJourneyService
             if (j.OtFinalizeScheduleId.HasValue)
                 _ = _notifications.MarkOtSurgeryDoneAsync(
                         j.OtFinalizeScheduleId.Value, tenantId, userId.ToString());
+
+            // CCMS: fire-and-forget surgery-completed event
+            await _ccms.NotifySurgeryCompletedAsync(id, j.CounselingSessionId, tenantId, userId);
         }
         else if (req.NewState == ClinicalState.Discharged)
         {
             j.DischargedAt = DateTime.UtcNow;
             j.IsDischarged = true;
             j.IsLocked     = true;
+
+            // CCMS: fire-and-forget patient-discharged event
+            await _ccms.NotifyPatientDischargedAsync(id, j.CounselingSessionId, tenantId, userId);
         }
 
         await _db.SaveChangesAsync();

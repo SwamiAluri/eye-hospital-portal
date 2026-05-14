@@ -1,0 +1,22 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "Jwt__Issuer": "EyeHospitalAuth",
+    "Jwt__Audience": "EyeHospitalAPI",
+    "Jwt__Key": "your-secret-key-min-32-characters-change-this",
+    "AuthService__BaseUrl": "http://localhost:5073",
+    "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
+    "IpService__BaseUrl": "http://localhost:5074",
+    "IpService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026"
+  },
+  "Host": {
+    "LocalHttpPort": 7075,
+    "CORS": "http://localhost:3000,http://localhost:3001,http://localhost:3002",
+    "CORSCredentials": true
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=hospitalportal-db-server.postgres.database.azure.com;Port=5432;Database=hospitalportal;Username=postgres;Password=NewPass@2026!;SSL Mode=Require;Trust Server Certificate=true;Timeout=30;Command Timeout=30;Pooling=true;Minimum Pool Size=1;Maximum Pool Size=20;Keepalive=30;"
+  }
+}

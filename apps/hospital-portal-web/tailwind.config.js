@@ -8,31 +8,45 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Emerald green theme - primary brand color
+        // Navy blue — sidebar and structural UI
+        navy: {
+          50:  '#f0f4ff',
+          100: '#e0e9ff',
+          200: '#c0d0f5',
+          300: '#94aee8',
+          400: '#6488d4',
+          500: '#3b63bb',
+          600: '#2a4fa3',
+          700: '#1e3d8a',
+          800: '#162d6e',
+          900: '#0f1e3c',
+          950: '#080e1e',
+        },
+        // Emerald green — accent, actions, success
         primary: {
-          50: '#ecfdf5',   // Lightest emerald (backgrounds, hover states)
-          100: '#d1fae5',  // Light emerald (subtle backgrounds)
-          200: '#a7f3d0',  // Lighter emerald
-          300: '#6ee7b7',  // Medium light emerald
-          400: '#34d399',  // Medium emerald
-          500: '#10b981',  // Main emerald (buttons, links, primary actions)
-          600: '#059669',  // Dark emerald (button hover, active states)
-          700: '#047857',  // Darker emerald (pressed states)
-          800: '#065f46',  // Darkest emerald (text, headings)
-          900: '#064e3b',  // Ultra dark emerald
+          50:  '#ecfdf5',
+          100: '#d1fae5',
+          200: '#a7f3d0',
+          300: '#6ee7b7',
+          400: '#34d399',
+          500: '#10b981',
+          600: '#059669',
+          700: '#047857',
+          800: '#065f46',
+          900: '#064e3b',
         },
         // Status colors for alerts, badges, notifications
         status: {
-          critical: '#ef4444',  // Red (errors, delete, critical alerts)
-          warning: '#f59e0b',   // Amber (warnings, pending actions)
-          info: '#3b82f6',      // Blue (information, neutral)
-          success: '#10b981',   // Green/Emerald (success, completed)
+          critical: '#ef4444',
+          warning: '#f59e0b',
+          info:     '#3b82f6',
+          success:  '#10b981',
         },
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-        heading: ['var(--font-plus-jakarta-sans)', 'Inter', 'sans-serif'],
-        mono: ['var(--font-ibm-plex-mono)', 'Courier New', 'monospace'],
+        sans:    ['var(--font-inter)', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        heading: ['var(--font-inter)', 'Inter', 'system-ui', 'sans-serif'],
+        mono:    ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       fontSize: {
         'xs': ['0.75rem', { lineHeight: '1rem' }],

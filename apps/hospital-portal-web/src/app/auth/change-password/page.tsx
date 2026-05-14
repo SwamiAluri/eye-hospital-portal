@@ -73,72 +73,66 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-orange-100 px-4 py-8">
-      <div className="bg-white rounded-lg shadow-2xl p-4 sm:p-8 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-amber-600">Change Password</h1>
-          <p className="text-gray-600 mt-2">
-            {mustChangePassword 
-              ? 'You must change your password before accessing the system' 
+    <div className="w-full">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-8 py-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Change Password</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {mustChangePassword
+              ? 'You must change your password before accessing the system'
               : 'Update your password'}
           </p>
-          {user && <p className="text-sm text-gray-500 mt-2">User: {user.email}</p>}
+          {user && <p className="text-xs text-gray-400 mt-1">{user.email}</p>}
         </div>
 
-        <form onSubmit={handleChangePassword} className="space-y-6">
+        <form onSubmit={handleChangePassword} className="space-y-5">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
               {success}
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Current Password
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Current Password</label>
             <input
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              New Password
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">New Password</label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
               required
             />
-            <p className="text-xs text-gray-500 mt-2">
-              Must be 12+ characters with uppercase, lowercase, numbers, and special characters
+            <p className="text-xs text-gray-400 mt-1.5">
+              12+ characters with uppercase, lowercase, numbers, and special characters
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Confirm Password
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm Password</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
               required
             />
           </div>
@@ -146,9 +140,12 @@ export default function ChangePasswordPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-amber-600 text-white py-2 rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{backgroundColor:'#10b981'}}
+            onMouseEnter={e => { if(!isLoading) e.currentTarget.style.backgroundColor='#059669'; }}
+            onMouseLeave={e => { if(!isLoading) e.currentTarget.style.backgroundColor='#10b981'; }}
           >
-            {isLoading ? 'Changing Password...' : 'Change Password'}
+            {isLoading ? 'Changing Password…' : 'Change Password'}
           </button>
         </form>
       </div>

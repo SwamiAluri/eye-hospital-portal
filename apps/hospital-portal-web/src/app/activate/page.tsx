@@ -420,11 +420,11 @@ function ActivatePageContent() {
   // Show loading state while validating token
   if (validatingToken) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Validating Activation Link</h2>
-          <p className="text-gray-600">Please wait...</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-4 border-t-transparent mx-auto mb-4" style={{borderColor:'#10b981',borderTopColor:'transparent'}}></div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Validating Activation Link</h2>
+          <p className="text-sm text-gray-500">Please wait...</p>
         </div>
       </div>
     );
@@ -433,19 +433,19 @@ function ActivatePageContent() {
   // Show error if token validation failed
   if (!tokenValidated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
           <div className="text-center mb-6">
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
-              <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-xl mb-4" style={{backgroundColor:'rgba(239,68,68,0.1)'}}>
+              <svg className="h-6 w-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Activation Link Invalid</h2>
-            <p className="text-red-600 mb-6">{error}</p>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-left">
-              <h3 className="font-semibold text-yellow-800 mb-2">What to do next:</h3>
-              <ul className="text-sm text-yellow-700 space-y-1 list-disc list-inside">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Activation Link Invalid</h2>
+            <p className="text-sm text-red-500 mb-5">{error}</p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-left">
+              <h3 className="text-sm font-semibold text-amber-800 mb-2">What to do next:</h3>
+              <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
                 <li>Request a new activation email from your administrator</li>
                 <li>Make sure you're using the latest email</li>
                 <li>Activation links expire after 48 hours</li>
@@ -453,7 +453,8 @@ function ActivatePageContent() {
             </div>
             <button
               onClick={() => router.push('/login')}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-colors"
+              style={{backgroundColor:'#10b981'}}
             >
               Return to Login
             </button>
@@ -464,39 +465,39 @@ function ActivatePageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-2xl w-full bg-white rounded-lg shadow-xl p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Account Activation</h1>
-          <p className="text-gray-600 mt-2">HIPAA-Compliant Hospital Portal Setup</p>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="max-w-2xl w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Account Activation</h1>
+          <p className="text-sm text-gray-500 mt-1">HIPAA-Compliant Hospital Portal Setup</p>
         </div>
 
         {/* Progress Steps - Dynamic based on role */}
         <div className="flex justify-between mb-8 text-xs">
-          <div className={`flex flex-col items-center ${step === 'verify-code' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <Mail className={`w-6 h-6 ${step !== 'verify-code' && 'opacity-50'}`} />
+          <div className={`flex flex-col items-center ${step === 'verify-code' ? '' : 'text-gray-400'}`} style={step === 'verify-code' ? {color:'#10b981'} : {}}>
+            <Mail className={`w-5 h-5 ${step !== 'verify-code' && 'opacity-40'}`} />
             <span className="mt-1">Verify</span>
           </div>
-          <div className={`flex flex-col items-center ${step === 'set-password' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <Lock className={`w-6 h-6 ${!['set-password', 'professional-info', 'accept-terms', 'setup-mfa', 'complete'].includes(step) && 'opacity-50'}`} />
+          <div className={`flex flex-col items-center ${step === 'set-password' ? '' : 'text-gray-400'}`} style={step === 'set-password' ? {color:'#10b981'} : {}}>
+            <Lock className={`w-5 h-5 ${!['set-password', 'professional-info', 'accept-terms', 'setup-mfa', 'complete'].includes(step) && 'opacity-40'}`} />
             <span className="mt-1">Password</span>
           </div>
           {requiresProfessionalInfo && (
-            <div className={`flex flex-col items-center ${step === 'professional-info' ? 'text-blue-600' : 'text-gray-400'}`}>
-              <Briefcase className={`w-6 h-6 ${!['professional-info', 'accept-terms', 'setup-mfa', 'complete'].includes(step) && 'opacity-50'}`} />
+            <div className={`flex flex-col items-center ${step === 'professional-info' ? '' : 'text-gray-400'}`} style={step === 'professional-info' ? {color:'#10b981'} : {}}>
+              <Briefcase className={`w-5 h-5 ${!['professional-info', 'accept-terms', 'setup-mfa', 'complete'].includes(step) && 'opacity-40'}`} />
               <span className="mt-1">Credentials</span>
             </div>
           )}
-          <div className={`flex flex-col items-center ${step === 'accept-terms' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <CheckCircle className={`w-6 h-6 ${!['accept-terms', 'setup-mfa', 'complete'].includes(step) && 'opacity-50'}`} />
+          <div className={`flex flex-col items-center ${step === 'accept-terms' ? '' : 'text-gray-400'}`} style={step === 'accept-terms' ? {color:'#10b981'} : {}}>
+            <CheckCircle className={`w-5 h-5 ${!['accept-terms', 'setup-mfa', 'complete'].includes(step) && 'opacity-40'}`} />
             <span className="mt-1">Terms</span>
           </div>
-          <div className={`flex flex-col items-center ${step === 'setup-mfa' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <Shield className={`w-6 h-6 ${!['setup-mfa', 'complete'].includes(step) && 'opacity-50'}`} />
+          <div className={`flex flex-col items-center ${step === 'setup-mfa' ? '' : 'text-gray-400'}`} style={step === 'setup-mfa' ? {color:'#10b981'} : {}}>
+            <Shield className={`w-5 h-5 ${!['setup-mfa', 'complete'].includes(step) && 'opacity-40'}`} />
             <span className="mt-1">MFA</span>
           </div>
-          <div className={`flex flex-col items-center ${step === 'complete' ? 'text-green-600' : 'text-gray-400'}`}>
-            <CheckCircle className={`w-6 h-6 ${step !== 'complete' && 'opacity-50'}`} />
+          <div className={`flex flex-col items-center ${step === 'complete' ? 'text-emerald-500' : 'text-gray-400'}`}>
+            <CheckCircle className={`w-5 h-5 ${step !== 'complete' && 'opacity-40'}`} />
             <span className="mt-1">Done</span>
           </div>
         </div>
@@ -535,9 +536,10 @@ function ActivatePageContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            style={{backgroundColor:'#10b981'}}
             >
-              {loading ? 'Verifying...' : 'Verify Code'}
+              {loading ? 'Verifying…' : 'Verify Code'}
             </button>
             <button
               type="button"
@@ -586,9 +588,10 @@ function ActivatePageContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            style={{backgroundColor:'#10b981'}}
             >
-              {loading ? 'Setting Password...' : 'Continue'}
+              {loading ? 'Setting Password…' : 'Continue'}
             </button>
           </form>
         )}
@@ -597,7 +600,7 @@ function ActivatePageContent() {
         {step === 'professional-info' && (
           <form onSubmit={handleProfessionalInfo} className="space-y-4">
             <div className="text-center mb-4">
-              <Briefcase className="w-16 h-16 text-blue-600 mx-auto mb-2" />
+              <Briefcase className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
               <h3 className="text-lg font-semibold">Professional Credentials</h3>
               <p className="text-sm text-gray-600">Required for medical staff to verify professional credentials</p>
             </div>
@@ -663,8 +666,8 @@ function ActivatePageContent() {
               </p>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-              <p className="text-xs text-blue-800">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <p className="text-xs text-gray-600">
                 <strong>HIPAA Compliance:</strong> Professional credentials are required for healthcare providers to access protected health information (PHI).
               </p>
             </div>
@@ -672,9 +675,10 @@ function ActivatePageContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            style={{backgroundColor:'#10b981'}}
             >
-              {loading ? 'Saving...' : 'Continue'}
+              {loading ? 'Saving…' : 'Continue'}
             </button>
           </form>
         )}
@@ -683,7 +687,7 @@ function ActivatePageContent() {
         {step === 'accept-terms' && (
           <form onSubmit={handleAcceptTerms} className="space-y-4">
             <div className="text-center mb-4">
-              <CheckCircle className="w-16 h-16 text-blue-600 mx-auto mb-2" />
+              <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
               <h3 className="text-lg font-semibold">Legal & Compliance</h3>
               <p className="text-sm text-gray-600">Required for accessing patient health information</p>
             </div>
@@ -699,7 +703,7 @@ function ActivatePageContent() {
                   required
                 />
                 <label htmlFor="acceptTerms" className="ml-3 block text-sm text-gray-700">
-                  I accept the <a href="/terms" target="_blank" className="text-blue-600 hover:underline">Terms of Service</a>
+                  I accept the <a href="/terms" target="_blank" className="text-emerald-600 hover:underline">Terms of Service</a>
                 </label>
               </div>
 
@@ -713,7 +717,7 @@ function ActivatePageContent() {
                   required
                 />
                 <label htmlFor="acceptPrivacy" className="ml-3 block text-sm text-gray-700">
-                  I accept the <a href="/privacy" target="_blank" className="text-blue-600 hover:underline">Privacy Policy</a>
+                  I accept the <a href="/privacy" target="_blank" className="text-emerald-600 hover:underline">Privacy Policy</a>
                 </label>
               </div>
 
@@ -747,9 +751,10 @@ function ActivatePageContent() {
             <button
               type="submit"
               disabled={loading || !acceptedTerms || !acceptedPrivacy || !acceptedHipaa}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{backgroundColor:'#10b981'}}
             >
-              {loading ? 'Processing...' : 'Accept & Continue to MFA Setup'}
+              {loading ? 'Processing…' : 'Accept & Continue to MFA Setup'}
             </button>
           </form>
         )}
@@ -817,9 +822,10 @@ function ActivatePageContent() {
             <button
               type="submit"
               disabled={loading || (mfaMethod === 'totp' && qrCode && !totpCode)}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            style={{backgroundColor:'#10b981'}}
             >
-              {loading ? 'Setting up...' : qrCode ? 'Verify & Complete Activation' : 'Setup MFA'}
+              {loading ? 'Setting up…' : qrCode ? 'Verify & Complete Activation' : 'Setup MFA'}
             </button>
           </form>
         )}
@@ -834,7 +840,8 @@ function ActivatePageContent() {
             </p>
             <button
               onClick={handleLogin}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 transition-colors font-semibold"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-colors"
+              style={{backgroundColor:'#10b981'}}
             >
               Go to Login
             </button>
@@ -847,7 +854,11 @@ function ActivatePageContent() {
 
 export default function ActivatePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-t-transparent" style={{borderColor:'#10b981',borderTopColor:'transparent'}} />
+      </div>
+    }>
       <ActivatePageContent />
     </Suspense>
   );

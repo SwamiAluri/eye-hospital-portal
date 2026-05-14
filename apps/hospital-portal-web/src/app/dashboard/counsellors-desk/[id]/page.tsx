@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Calendar, Clock, ChevronDown, ChevronUp, User, Search, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
@@ -46,9 +46,586 @@ interface NotesPanel {
   doctor: boolean;
 }
 
+// ── Coverage & Pre-Auth Panel ────────────────────────────────────────────────
+
+function CoveragePreauthPanel({
+  sessionId,
+  paymentType,
+  insuranceCompany,
+  initialSubTab,
+  refreshKey,
+  patientId,
+}: {
+  sessionId: string;
+  paymentType: string;
+  insuranceCompany: string;
+  initialSubTab?: 'eligibility' | 'preauth' | 'estimate' | 'status';
+  refreshKey?: number;
+  patientId?: string;
+}) {
+  const [activeSubTab, setActiveSubTab] = useState<'eligibility' | 'preauth' | 'estimate' | 'status'>(initialSubTab ?? 'eligibility');
+  const [coverageCase, setCoverageCase] = useState<Record<string, unknown> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verifyNotes, setVerifyNotes] = useState('');
+
+  const loadCase = () => {
+    if (!sessionId) return;
+    setIsLoading(true);
+    setError(null);
+    import('@/lib/api/ccms/ccms-coverage-cases.api')
+      .then(({ getCasesBySessionIds }) => getCasesBySessionIds([sessionId]))
+      .then((list) => {
+        setCoverageCase((list?.[0] as Record<string, unknown>) ?? null);
+        setIsLoading(false);
+      })
+      .catch(e => { setError(String(e)); setIsLoading(false); });
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadCase(); }, [sessionId, refreshKey]);
+
+  const handleCreateCase = async () => {
+    if (!patientId) return;
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      const { createCoverageCase } = await import('@/lib/api/ccms/ccms-coverage-cases.api');
+      await createCoverageCase({
+        counselingSessionId: sessionId,
+        patientId,
+        payerType: paymentType,
+        paymentType,
+      });
+      loadCase();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setCreateError(msg ?? 'Failed to create coverage case — is CCMS running?');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleEligibility = async (status: 'verified' | 'failed') => {
+    if (!coverageCase) return;
+    setIsVerifying(true);
+    setVerifyError(null);
+    try {
+      const { recordEligibility } = await import('@/lib/api/ccms/ccms-coverage-cases.api');
+      const updated = await recordEligibility(String(coverageCase.id), {
+        eligibilityStatus: status,
+        notes: verifyNotes || undefined,
+      });
+      setCoverageCase(updated as unknown as Record<string, unknown>);
+      setVerifyNotes('');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string; message?: string } }; message?: string };
+      setVerifyError(err?.response?.data?.error ?? err?.response?.data?.message ?? err?.message ?? 'Failed');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const subTabs = [
+    { key: 'eligibility' as const, label: 'Eligibility & Policy' },
+    { key: 'preauth' as const,     label: 'Pre-Authorization' },
+    { key: 'estimate' as const,    label: 'Coverage Estimate' },
+    { key: 'status' as const,      label: 'Authorization Status' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-tab navigation */}
+      <div className="flex gap-1 border-b border-gray-200 pb-0">
+        {subTabs.map(tab => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveSubTab(tab.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+              activeSubTab === tab.key
+                ? 'bg-indigo-100 text-indigo-700 border border-b-0 border-indigo-200'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center justify-center py-12 text-gray-400 text-sm">Loading coverage details…</div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+          Could not connect to CCMS service. {error}
+        </div>
+      )}
+
+      {!isLoading && !error && !coverageCase && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          <p className="font-semibold mb-1">No coverage case found for this session.</p>
+          <p className="text-xs text-amber-600 mb-3">
+            Save the session with an insurance/TPA payment type to auto-create a case, or create one manually below.
+          </p>
+          {createError && (
+            <p className="text-xs text-red-600 mb-2">{createError}</p>
+          )}
+          <button
+            type="button"
+            onClick={handleCreateCase}
+            disabled={isCreating || !patientId}
+            className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {isCreating ? 'Creating…' : 'Create Coverage Case'}
+          </button>
+        </div>
+      )}
+
+      {!isLoading && !error && coverageCase && (
+        <>
+          {/* Case header */}
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex items-center gap-4 text-sm">
+            <div>
+              <p className="text-xs text-indigo-500 font-medium uppercase tracking-wide">Case Number</p>
+              <p className="font-bold text-indigo-900">{String(coverageCase.caseNumber ?? '—')}</p>
+            </div>
+            <div>
+              <p className="text-xs text-indigo-500 font-medium uppercase tracking-wide">State</p>
+              <p className="font-semibold text-indigo-900">{String(coverageCase.currentState ?? '—')}</p>
+            </div>
+            <div>
+              <p className="text-xs text-indigo-500 font-medium uppercase tracking-wide">Payer</p>
+              <p className="font-semibold text-indigo-900">{paymentType || insuranceCompany || '—'}</p>
+            </div>
+            {coverageCase.approvedAmount && Number(coverageCase.approvedAmount) > 0 && (
+              <div>
+                <p className="text-xs text-green-600 font-medium uppercase tracking-wide">Approved Amount</p>
+                <p className="font-bold text-green-700">₹{Number(coverageCase.approvedAmount).toLocaleString('en-IN')}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Sub-tab content */}
+          {activeSubTab === 'eligibility' && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 text-sm">
+              <p className="font-semibold text-gray-800">Eligibility & Policy Details</p>
+
+              {/* Info grid */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div><span className="text-gray-400">Payment Type:</span> <span className="font-medium ml-1">{paymentType}</span></div>
+                <div><span className="text-gray-400">Insurance/TPA:</span> <span className="font-medium ml-1">{insuranceCompany || '—'}</span></div>
+                <div><span className="text-gray-400">Policy No:</span> <span className="font-mono ml-1">{String((coverageCase as Record<string, unknown>).policyNumber ?? '—')}</span></div>
+                <div><span className="text-gray-400">Membership ID:</span> <span className="font-mono ml-1">{String((coverageCase as Record<string, unknown>).membershipNumber ?? '—')}</span></div>
+                <div><span className="text-gray-400">Case ID:</span> <span className="font-mono text-xs ml-1">{String(coverageCase.id ?? '—')}</span></div>
+                <div><span className="text-gray-400">Financial Year:</span> <span className="font-medium ml-1">2025-26</span></div>
+              </div>
+
+              {/* ── STEP 1: DRAFT — initiate check ── */}
+              {String(coverageCase.currentState) === 'DRAFT' && (
+                <div className="border border-indigo-100 rounded-lg p-3 space-y-3 bg-indigo-50">
+                  <p className="text-xs font-semibold text-indigo-800">Step 1 of 2 — Initiate Eligibility Check</p>
+                  <p className="text-xs text-indigo-600">Contact the TPA/insurer to verify the patient's coverage. Once confirmed, record the outcome here.</p>
+                  <textarea
+                    className="w-full text-xs border border-indigo-200 rounded-md px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                    rows={2}
+                    placeholder="Notes (optional)"
+                    value={verifyNotes}
+                    onChange={e => setVerifyNotes(e.target.value)}
+                  />
+                  {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
+                  <button
+                    type="button"
+                    disabled={isVerifying}
+                    onClick={() => handleEligibility('verified')}
+                    className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isVerifying ? 'Submitting…' : 'Send for Eligibility Check →'}
+                  </button>
+                </div>
+              )}
+
+              {/* ── STEP 2: ELIGIBILITY_PENDING — record TPA response ── */}
+              {String(coverageCase.currentState) === 'ELIGIBILITY_PENDING' && (
+                <div className="border border-amber-200 rounded-lg p-3 space-y-3 bg-amber-50">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-200 text-amber-800">⏳ Awaiting TPA Response</span>
+                    <span className="text-xs text-amber-700">Step 2 of 2 — Record the TPA's eligibility decision</span>
+                  </div>
+                  <textarea
+                    className="w-full text-xs border border-amber-200 rounded-md px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                    rows={2}
+                    placeholder="Notes (optional — e.g. TPA ref number, conditions)"
+                    value={verifyNotes}
+                    onChange={e => setVerifyNotes(e.target.value)}
+                  />
+                  {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={isVerifying}
+                      onClick={() => handleEligibility('verified')}
+                      className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isVerifying ? 'Saving…' : '✓ TPA Confirmed Eligible'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isVerifying}
+                      onClick={() => handleEligibility('failed')}
+                      className="px-3 py-1.5 text-xs font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isVerifying ? 'Saving…' : '✕ TPA Declined / Ineligible'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Verified ── */}
+              {String(coverageCase.currentState) === 'ELIGIBILITY_VERIFIED' && (
+                <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                  <span className="text-lg">✓</span>
+                  <div>
+                    <p className="text-xs font-bold text-green-700">Eligibility Verified</p>
+                    <p className="text-xs text-green-600 mt-0.5">Patient is eligible. Proceed to the <button type="button" className="underline font-semibold" onClick={() => setActiveSubTab('preauth')}>Pre-Authorization tab</button> to generate pre-auth.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Rejected ── */}
+              {String(coverageCase.currentState) === 'REJECTED' && (
+                <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                  <span className="text-lg">✕</span>
+                  <div>
+                    <p className="text-xs font-bold text-red-700">Eligibility Failed / Case Rejected</p>
+                    <p className="text-xs text-red-600 mt-0.5">This case has been closed. Create a new coverage case if the patient wishes to re-apply.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Any other active state (past eligibility) ── */}
+              {!['DRAFT','ELIGIBILITY_PENDING','ELIGIBILITY_VERIFIED','REJECTED'].includes(String(coverageCase.currentState)) && (
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">✓ Eligibility Verified</span>
+                  <span className="text-xs text-gray-500">Case is now in <span className="font-semibold">{String(coverageCase.currentState)}</span> stage.</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSubTab === 'preauth' && (
+            <PreAuthTab
+              coverageCase={coverageCase}
+              onStateChange={updated => setCoverageCase(updated as unknown as Record<string, unknown>)}
+            />
+          )}
+
+          {activeSubTab === 'estimate' && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
+              <p className="font-semibold text-gray-800 mb-2">Coverage Estimate</p>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div><span className="text-gray-400">Approved Amount:</span>
+                  <span className="font-bold text-green-700 ml-1">
+                    ₹{Number(coverageCase.approvedAmount ?? 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div><span className="text-gray-400">Room Class Approved:</span>
+                  <span className="font-medium ml-1">{String(coverageCase.roomClassApproved ?? '—')}</span>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-gray-400">Detailed billing allocation is computed when the final bill is generated.</p>
+            </div>
+          )}
+
+          {activeSubTab === 'status' && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 text-sm">
+              <p className="font-semibold text-gray-800">Authorization Status</p>
+
+              {/* State + approval summary */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-gray-400">Current State:</span>
+                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
+                    String(coverageCase.currentState).includes('APPROVED') ? 'bg-green-100 text-green-700' :
+                    String(coverageCase.currentState).includes('REJECT') ? 'bg-red-100 text-red-700' :
+                    String(coverageCase.currentState).includes('WAITING') ? 'bg-amber-100 text-amber-700' :
+                    String(coverageCase.currentState).includes('CLARIF') ? 'bg-orange-100 text-orange-700' :
+                    String(coverageCase.currentState).includes('EXPIRED') ? 'bg-gray-200 text-gray-600' :
+                    'bg-indigo-100 text-indigo-700'
+                  }`}>
+                    {String(coverageCase.currentState ?? '—')}
+                  </span>
+                </div>
+                <div><span className="text-gray-400">Pre-Auth No:</span> <span className="font-mono ml-1">{String((coverageCase as Record<string,unknown>).preAuthNumber ?? '—')}</span></div>
+                <div><span className="text-gray-400">Approved Amount:</span>
+                  <span className={`font-bold ml-1 ${
+                    Number((coverageCase as Record<string,unknown>).approvedAmount ?? 0) > 0 ? 'text-green-700' : 'text-gray-500'
+                  }`}>
+                    {Number((coverageCase as Record<string,unknown>).approvedAmount ?? 0) > 0
+                      ? `₹${Number((coverageCase as Record<string,unknown>).approvedAmount).toLocaleString('en-IN')}`
+                      : '—'}
+                  </span>
+                </div>
+                <div><span className="text-gray-400">Room Class:</span> <span className="font-medium ml-1">{String((coverageCase as Record<string,unknown>).roomClassApproved ?? '—')}</span></div>
+                <div><span className="text-gray-400">Valid Until:</span>
+                  <span className="font-medium ml-1">
+                    {(coverageCase as Record<string,unknown>).preAuthExpiry
+                      ? new Date(String((coverageCase as Record<string,unknown>).preAuthExpiry)).toLocaleDateString('en-IN')
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+
+              {/* State-specific guidance */}
+              {String(coverageCase.currentState) === 'WAITING_APPROVAL' && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                  Pre-auth sent to TPA. Awaiting their decision. Record the TPA response in the CCMS Pre-Auth Queue once received.
+                </p>
+              )}
+              {String(coverageCase.currentState) === 'CLARIFICATION_REQUIRED' && (
+                <p className="text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-md px-3 py-2">
+                  TPA has requested clarification. Provide the required documents/information and resubmit via the CCMS module.
+                </p>
+              )}
+              {(String(coverageCase.currentState) === 'APPROVED' || String(coverageCase.currentState) === 'PARTIAL_APPROVAL') && (
+                <p className="text-xs text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                  Pre-authorization approved. Patient can be admitted. Admission will be validated against the approved amount.
+                </p>
+              )}
+              {String(coverageCase.currentState) === 'REJECTED' && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                  Pre-authorization rejected by TPA. Patient must self-pay or a new pre-auth must be initiated.
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Pre-Authorization inline component ──────────────────────────────────────
+// States that can generate a new pre-auth
+const PRE_AUTH_ELIGIBLE_STATES = ['ELIGIBILITY_VERIFIED', 'POLICY_CAPTURED', 'AUTHORIZATION_REQUIRED'];
+// States where pre-auth exists but hasn't been sent yet
+const PRE_AUTH_GENERATED_STATES = ['PREAUTH_GENERATED'];
+// States where pre-auth is sent / waiting
+const PRE_AUTH_SENT_STATES = ['PREAUTH_SENT', 'WAITING_APPROVAL', 'CLARIFICATION_REQUIRED', 'RESUBMITTED'];
+// Terminal approval states
+const PRE_AUTH_TERMINAL_STATES = ['APPROVED', 'PARTIAL_APPROVAL', 'REJECTED', 'EXPIRED', 'CANCELLED', 'ABORTED', 'CLOSED'];
+
+function PreAuthTab({
+  coverageCase,
+  onStateChange,
+}: {
+  coverageCase: Record<string, unknown>;
+  onStateChange: (updated: Record<string, unknown>) => void;
+}) {
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [tpaRef, setTpaRef] = useState('');
+  const [requestedAmount, setRequestedAmount] = useState('');
+
+  const state = String(coverageCase.currentState ?? '');
+  const preAuthNumber = String(coverageCase.preAuthNumber ?? '');
+  const approvedAmount = Number(coverageCase.approvedAmount ?? 0);
+
+  const handleGenerate = async () => {
+    setIsGenerating(true);
+    setGenError(null);
+    try {
+      const { getCcmsApi } = await import('@/lib/api/ccms/ccms-base');
+      const { data } = await getCcmsApi().post(`/ccms/coverage-cases/${String(coverageCase.id)}/authorization`, {
+        requestedAmount: requestedAmount ? parseFloat(requestedAmount) : 0,
+        roomClassRequested: null,
+        diagnosisJson: null,
+        proceduresJson: null,
+      });
+      // Re-fetch case to get updated state
+      const { data: updated } = await getCcmsApi().get(`/ccms/coverage-cases/${String(coverageCase.id)}`);
+      onStateChange(updated);
+      void data; // suppress unused var
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } }; message?: string };
+      setGenError(err?.response?.data?.error ?? err?.message ?? 'Failed to generate pre-auth');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const { getCcmsApi } = await import('@/lib/api/ccms/ccms-base');
+      // Get the latest authorization for this case
+      const { data: auths } = await getCcmsApi().get(`/ccms/coverage-cases/${String(coverageCase.id)}/authorization`);
+      const latest = Array.isArray(auths) ? auths[0] : null;
+      if (!latest?.id) throw new Error('No pre-authorization found for this case.');
+
+      await getCcmsApi().post(`/ccms/authorizations/${String(latest.id)}/submit`, {
+        tpaReferenceNumber: tpaRef || null,
+      });
+      const { data: updated } = await getCcmsApi().get(`/ccms/coverage-cases/${String(coverageCase.id)}`);
+      onStateChange(updated);
+      setTpaRef('');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } }; message?: string };
+      setSubmitError(err?.response?.data?.error ?? err?.message ?? 'Failed to submit pre-auth');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 text-sm">
+      <p className="font-semibold text-gray-800">Pre-Authorization</p>
+
+      {/* ── Cannot start until eligibility verified ── */}
+      {!PRE_AUTH_ELIGIBLE_STATES.includes(state) &&
+       !PRE_AUTH_GENERATED_STATES.includes(state) &&
+       !PRE_AUTH_SENT_STATES.includes(state) &&
+       !PRE_AUTH_TERMINAL_STATES.includes(state) && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-xs text-gray-500">
+          Pre-authorization can only be generated after eligibility is verified.<br />
+          Current state: <span className="font-semibold text-gray-700">{state || '—'}</span>
+        </div>
+      )}
+
+      {/* ── Step 1: Generate pre-auth ── */}
+      {PRE_AUTH_ELIGIBLE_STATES.includes(state) && (
+        <div className="border border-indigo-100 rounded-lg p-3 space-y-3 bg-indigo-50">
+          <p className="text-xs font-semibold text-indigo-800">Step 1 of 2 — Generate Pre-Authorization Document</p>
+          <p className="text-xs text-indigo-600">This will generate a pre-auth request document for submission to the TPA/insurer.</p>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Requested Amount (₹)</label>
+            <input
+              type="number"
+              className="w-full text-xs border border-indigo-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+              placeholder="e.g. 85000"
+              value={requestedAmount}
+              onChange={e => setRequestedAmount(e.target.value)}
+            />
+          </div>
+          {genError && <p className="text-xs text-red-600">{genError}</p>}
+          <button
+            type="button"
+            disabled={isGenerating}
+            onClick={handleGenerate}
+            className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {isGenerating ? 'Generating…' : 'Generate Pre-Auth Document →'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Step 2: Send to TPA ── */}
+      {PRE_AUTH_GENERATED_STATES.includes(state) && (
+        <div className="border border-amber-200 rounded-lg p-3 space-y-3 bg-amber-50">
+          <p className="text-xs font-semibold text-amber-800">Step 2 of 2 — Send Pre-Auth to TPA</p>
+          <p className="text-xs text-amber-700">Pre-auth document is ready. Submit it to the TPA/insurer (via portal, email, or in person).</p>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">TPA Reference Number (optional)</label>
+            <input
+              type="text"
+              className="w-full text-xs border border-amber-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+              placeholder="TPA portal ref / submission ID"
+              value={tpaRef}
+              onChange={e => setTpaRef(e.target.value)}
+            />
+          </div>
+          {submitError && <p className="text-xs text-red-600">{submitError}</p>}
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={handleSubmit}
+            className="px-3 py-1.5 text-xs font-semibold bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+          >
+            {isSubmitting ? 'Submitting…' : '✉ Mark as Sent to TPA'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Sent / Waiting ── */}
+      {PRE_AUTH_SENT_STATES.includes(state) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <span className="text-lg">⏳</span>
+            <div>
+              <p className="text-xs font-bold text-amber-700">Pre-Auth Submitted — Awaiting TPA Decision</p>
+              <p className="text-xs text-amber-600 mt-0.5">State: <span className="font-semibold">{state}</span></p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div><span className="text-gray-400">Pre-Auth No:</span> <span className="font-mono ml-1">{preAuthNumber || '—'}</span></div>
+            <div><span className="text-gray-400">Approved Amount:</span> <span className="font-medium ml-1">{approvedAmount > 0 ? `₹${approvedAmount.toLocaleString('en-IN')}` : 'Pending'}</span></div>
+          </div>
+          <p className="text-xs text-gray-400">Once the TPA responds, record their decision in the CCMS → Approvals queue. The status here will update automatically.</p>
+        </div>
+      )}
+
+      {/* ── Approved ── */}
+      {(state === 'APPROVED' || state === 'PARTIAL_APPROVAL') && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+          <span className="text-lg">✓</span>
+          <div>
+            <p className="text-xs font-bold text-green-700">{state === 'APPROVED' ? 'Pre-Auth Approved' : 'Partial Approval Received'}</p>
+            <div className="text-xs text-green-600 mt-1 space-y-0.5">
+              {preAuthNumber && <p>Pre-Auth No: <span className="font-mono font-semibold">{preAuthNumber}</span></p>}
+              {approvedAmount > 0 && <p>Approved Amount: <span className="font-semibold">₹{approvedAmount.toLocaleString('en-IN')}</span></p>}
+              {(coverageCase as Record<string,unknown>).preAuthExpiry && (
+                <p>Valid Until: <span className="font-semibold">{new Date(String((coverageCase as Record<string,unknown>).preAuthExpiry)).toLocaleDateString('en-IN')}</span></p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rejected / Expired ── */}
+      {(state === 'REJECTED' || state === 'EXPIRED') && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          <span className="text-lg">✗</span>
+          <div>
+            <p className="text-xs font-bold text-red-700">{state === 'EXPIRED' ? 'Pre-Authorization Expired' : 'Pre-Authorization Rejected'}</p>
+            <p className="text-xs text-red-600 mt-0.5">A new coverage case must be created to initiate a fresh pre-auth request.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Status badge config (outside component, plain object to avoid SWC TSX ambiguity) ──
+const STATUS_BADGE_MAP = {
+  Pending:           { label: 'Pending',            cls: 'bg-yellow-400 text-yellow-900' },
+  Processed:         { label: 'Processing',          cls: 'bg-sky-300 text-sky-900' },
+  Done:              { label: 'Done',                cls: 'bg-green-400 text-green-900' },
+  AddOnSurgery:      { label: 'Add-On Surgery',      cls: 'bg-purple-400 text-purple-900' },
+  RepeatCounselling: { label: 'Repeat Counselling',  cls: 'bg-orange-400 text-orange-900' },
+  SurgeryDone:       { label: 'Surgery Done',         cls: 'bg-teal-400 text-teal-900' },
+} as const;
+
+function formatTime(t: string): string {
+  if (!t) return '';
+  const [h, m] = t.split(':');
+  const hour = parseInt(h, 10);
+  return `${hour > 12 ? hour - 12 : hour}:${m} ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+// ── Main Page ────────────────────────────────────────────────────────────────
+
 export default function CounsellingSessionPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const sessionId = params.id as string;
   const { showConfirmation, ConfirmationComponent } = useConfirmation();
 
@@ -57,7 +634,11 @@ export default function CounsellingSessionPage() {
 
   const [session, setSession] = useState<CounsellingSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeMainTab, setActiveMainTab] = useState<'counselling' | 'insurance'>('counselling');
+
+  // Deep-link support: ?tab=coverage&subtab=preauth (e.g. from waiting-list "Start Pre-Auth" button)
+  const tabParam = searchParams.get('tab') as 'counselling' | 'coverage' | null;
+  const subtabParam = searchParams.get('subtab') as 'eligibility' | 'preauth' | 'estimate' | 'status' | null;
+  const [activeMainTab, setActiveMainTab] = useState<'counselling' | 'coverage'>(tabParam ?? 'counselling');
 
   // Form state (mirrors CounsellingSession fields)
   const [selectedSurgeryId, setSelectedSurgeryId] = useState<string | null>(null);
@@ -121,6 +702,7 @@ export default function CounsellingSessionPage() {
   const [openNotes, setOpenNotes] = useState<NotesPanel>({ counsellor: false, patient: false, doctor: false });
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [coverageRefreshKey, setCoverageRefreshKey] = useState(0);
   const [isDirty, setIsDirty] = useState(false);
 
   // GAP 1 & 2: status visibility + lock
@@ -694,9 +1276,35 @@ export default function CounsellingSessionPage() {
           ? 'RepeatCounselling'
           : 'Done';
       setQueueStatus(nextStatus);
+
+      // ── Auto-create CCMS coverage case for insurance/TPA payment types ─────────
+      // Only fires when: payment type requires coverage AND pre-auth is not explicitly waived.
+      // Non-blocking: failure silently skipped so the counselling save always succeeds.
+      const COVERAGE_PAYMENT_TYPES = ['Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme'];
+      if (COVERAGE_PAYMENT_TYPES.includes(paymentType as string) && !notRequiredPreAuth) {
+        try {
+          const { createCoverageCase } = await import('@/lib/api/ccms/ccms-coverage-cases.api');
+          await createCoverageCase({
+            counselingSessionId: sessionId,
+            patientId:  session.patientId,
+            payerType:  paymentType as string,
+            paymentType: paymentType as string,
+            estimatedAmount: (typeof packageRate === 'number' && packageRate > 0)
+              ? packageRate
+              : (computedGrandTotal > 0 ? computedGrandTotal : undefined),
+          });
+        } catch {
+          // Case may already exist (409) or CCMS may be offline — either way, non-fatal
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────────
+
       toast.success('Session saved successfully');
-      // Navigate back to the waiting list after a short delay so the toast is visible
-      setTimeout(() => router.back(), 800);
+      // For insurance/TPA payments, switch to Coverage tab and refresh the panel
+      if (COVERAGE_PAYMENT_TYPES.includes(paymentType as string) && !notRequiredPreAuth) {
+        setCoverageRefreshKey(k => k + 1);
+        setActiveMainTab('coverage');
+      }
     } catch (err: unknown) {
       // Surface the actual backend error message so the user knows what went wrong
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -824,22 +1432,8 @@ export default function CounsellingSessionPage() {
   const isReadOnly = isRepeatState || isSurgeryDoneState;
 
   // GAP 1: status badge config
-  const STATUS_BADGE = ({
-    Pending:           { label: 'Pending',            cls: 'bg-yellow-400 text-yellow-900' },
-    Processed:         { label: 'Processing',          cls: 'bg-sky-300 text-sky-900' },
-    Done:              { label: 'Done',                cls: 'bg-green-400 text-green-900' },
-    AddOnSurgery:      { label: 'Add-On Surgery',      cls: 'bg-purple-400 text-purple-900' },
-    RepeatCounselling: { label: 'Repeat Counselling',  cls: 'bg-orange-400 text-orange-900' },
-    SurgeryDone:       { label: 'Surgery Done',         cls: 'bg-teal-400 text-teal-900' },
-  } as Record<WaitingListStatus, { label: string; cls: string }>)[queueStatus]
-    ?? { label: queueStatus, cls: 'bg-gray-300 text-gray-900' };
-
-  const formatTime = (t: string) => {
-    if (!t) return '';
-    const [h, m] = t.split(':');
-    const hour = parseInt(h);
-    return `${hour > 12 ? hour - 12 : hour}:${m} ${hour >= 12 ? 'PM' : 'AM'}`;
-  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const STATUS_BADGE = (STATUS_BADGE_MAP as any)[queueStatus] || { label: queueStatus, cls: 'bg-gray-300 text-gray-900' };
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
@@ -897,7 +1491,46 @@ export default function CounsellingSessionPage() {
 
       {/* Main Tabs */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 min-h-0">
-          <div className="flex-1 min-h-0 p-5 flex flex-col overflow-hidden">
+        {/* Tab Navigation */}
+        <div className="flex border-b border-gray-200 px-4 pt-3 gap-1 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('counselling')}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              activeMainTab === 'counselling'
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            Counselling
+          </button>
+          {(['Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme'] as string[]).includes(paymentType as string) && (
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('coverage')}
+              className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors flex items-center gap-1.5 ${
+                activeMainTab === 'coverage'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              Coverage &amp; Pre-Auth
+              {activeMainTab !== 'coverage' && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" title="Pre-auth required" />
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* Coverage & Pre-Auth Tab Panel */}
+        {activeMainTab === 'coverage' && (
+          <div className="flex-1 min-h-0 p-5 overflow-auto">
+            <CoveragePreauthPanel sessionId={sessionId} paymentType={paymentType as string} insuranceCompany={insuranceCompany} initialSubTab={subtabParam ?? undefined} refreshKey={coverageRefreshKey} patientId={session?.patientId} />
+          </div>
+        )}
+
+        {/* Counselling Tab Panel */}
+        <div className={activeMainTab !== 'counselling' ? 'hidden' : 'flex-1 min-h-0 p-5 flex flex-col overflow-hidden'}>
             {/* Surgery Done read-only banner — replaces Done banner when surgery is completed */}
             {isSurgeryDoneState && (
               <div className="mb-4 flex items-center gap-3 px-4 py-2.5 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">

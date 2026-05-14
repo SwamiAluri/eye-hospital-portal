@@ -5,7 +5,7 @@ const Alert = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement> & { variant?: 'default' | 'destructive' }
 >(({ className, variant = 'default', ...props }, ref) => {
   const variantStyles = {
-    default: 'bg-blue-50 text-blue-900 border-blue-200',
+    default: 'bg-emerald-50 text-emerald-900 border-emerald-200',
     destructive: 'bg-red-50 text-red-900 border-red-200'
   }
   

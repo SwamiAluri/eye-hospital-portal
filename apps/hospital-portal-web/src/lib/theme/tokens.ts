@@ -4,33 +4,32 @@
 export const tokens = {
   // Color Palette
   colors: {
-    // Primary - Medical Blue
-    primary: {
-      50: '#eff6ff',
-      100: '#dbeafe',
-      200: '#bfdbfe',
-      300: '#93c5fd',
-      400: '#60a5fa',
-      500: '#3b82f6',
-      600: '#2563eb',
-      700: '#1d4ed8',
-      800: '#1e40af',
-      900: '#1e3a8a',
-      950: '#172554'
+    // Navy — sidebar, structural UI
+    navy: {
+      50:  '#f0f4ff',
+      100: '#e0e9ff',
+      200: '#c0d0f5',
+      300: '#94aee8',
+      400: '#6488d4',
+      500: '#3b63bb',
+      600: '#2a4fa3',
+      700: '#1e3d8a',
+      800: '#162d6e',
+      900: '#0f1e3c',
+      950: '#080e1e',
     },
-    // Secondary - Teal (Healthcare accent)
-    secondary: {
-      50: '#f0fdfa',
-      100: '#ccfbf1',
-      200: '#99f6e4',
-      300: '#5eead4',
-      400: '#2dd4bf',
-      500: '#14b8a6',
-      600: '#0d9488',
-      700: '#0f766e',
-      800: '#115e59',
-      900: '#134e4a',
-      950: '#042f2e'
+    // Primary — emerald green, actions, accent
+    primary: {
+      50:  '#ecfdf5',
+      100: '#d1fae5',
+      200: '#a7f3d0',
+      300: '#6ee7b7',
+      400: '#34d399',
+      500: '#10b981',
+      600: '#059669',
+      700: '#047857',
+      800: '#065f46',
+      900: '#064e3b',
     },
     // Neutral - Gray scale
     neutral: {
@@ -101,7 +100,7 @@ export const tokens = {
   typography: {
     fontFamily: {
       sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-      mono: ['JetBrains Mono', 'Menlo', 'Monaco', 'monospace']
+      mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace']
     },
     fontSize: {
       xs: '0.75rem',      // 12px

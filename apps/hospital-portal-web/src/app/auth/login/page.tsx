@@ -38,7 +38,7 @@ export default function LoginPage() {
   useEffect(() => {
     // Clear localStorage to ensure fresh login
     if (typeof window !== 'undefined') {
-      console.log('🧹 Login page: Clearing old auth state');
+      console.log('ðŸ§¹ Login page: Clearing old auth state');
       localStorage.clear();
       // Also clear the auth store
       useAuthStore.getState().logout();
@@ -272,35 +272,47 @@ export default function LoginPage() {
   };
 
   return (
-    <main id="main-content" className="min-h-screen flex flex-col items-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4 py-8">
-      <div className="my-auto w-full max-w-md flex flex-col gap-4">
-      <div className="bg-white rounded-lg shadow-2xl p-4 sm:p-8 w-full">
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold text-indigo-600">Eye Hospital</h1>
-          <p className="text-gray-600 mt-2">Hospital Management System</p>
+    <main id="main-content" className="w-full">
+      {/* Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          {/* Mobile-only logo */}
+          <div className="flex lg:hidden items-center gap-2 mb-6">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#0f1e3c' }}>
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <span className="font-semibold text-gray-900">Hospital Portal</span>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Sign in</h1>
+          <p className="text-sm text-gray-500 mt-1">Enter your credentials to access the portal</p>
         </div>
 
         {!mfaRequired ? (
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleLogin} className="space-y-5">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
                 {error}
               </div>
             )}
 
+            {/* Tenant */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tenant
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Hospital / Tenant
               </label>
               {isLoadingTenants ? (
-                <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
-                  Loading tenants...
+                <div className="w-full px-3 py-2.5 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm">
+                  Loading tenantsâ€¦
                 </div>
               ) : tenants.length > 0 ? (
                 <select
                   value={tenantId}
                   onChange={(e) => setTenantId(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
+                  style={{ '--tw-ring-color': '#10b981' } as React.CSSProperties}
                   required
                 >
                   <option value="">Select your hospital</option>
@@ -316,14 +328,15 @@ export default function LoginPage() {
                   value={tenantId}
                   onChange={(e) => setTenantId(e.target.value)}
                   placeholder="Enter your hospital tenant ID"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent"
                   required
                 />
               )}
             </div>
 
+            {/* Email */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Email Address
               </label>
               <input
@@ -331,61 +344,72 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
                 required
               />
             </div>
 
+            {/* Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                required
-              />
-              <div className="mt-2 text-right">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-gray-700">
+                  Password
+                </label>
                 <Link
                   href="/auth/forgot-password"
-                  className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                  className="text-xs font-medium transition-colors"
+                  style={{ color: '#10b981' }}
                 >
                   Forgot password?
                 </Link>
               </div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
+                required
+              />
             </div>
 
+            {/* Submit */}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#10b981' }}
+              onMouseEnter={e => { if (!isLoading) e.currentTarget.style.backgroundColor = '#059669'; }}
+              onMouseLeave={e => { if (!isLoading) e.currentTarget.style.backgroundColor = '#10b981'; }}
             >
-              {isLoading ? 'Logging in...' : 'Login'}
+              {isLoading ? 'Signing inâ€¦' : 'Sign in'}
             </button>
 
+            {/* Dev helper */}
             <button
               type="button"
               onClick={handleCreateAdmin}
               disabled={isLoading}
-              className="w-full mt-2 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="w-full py-2.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isLoading ? 'Creating...' : 'Create Admin User (Dev Only)'}
+              {isLoading ? 'Creatingâ€¦' : 'Create Admin User (Dev Only)'}
             </button>
           </form>
         ) : (
-          <form onSubmit={handleVerifyMfa} className="space-y-6">
+          /* MFA form */
+          <form onSubmit={handleVerifyMfa} className="space-y-5">
             <div className="text-center mb-6">
-              <div className="bg-indigo-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                {useBackupCode ? <Key className="w-8 h-8 text-indigo-600" /> : <Smartphone className="w-8 h-8 text-indigo-600" />}
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: 'rgba(16,185,129,0.1)' }}>
+                {useBackupCode
+                  ? <Key className="w-7 h-7" style={{ color: '#10b981' }} />
+                  : <Smartphone className="w-7 h-7" style={{ color: '#10b981' }} />
+                }
               </div>
-              <h2 className="text-xl font-semibold text-gray-900">
+              <h2 className="text-lg font-semibold text-gray-900">
                 {useBackupCode ? 'Enter Backup Code' : 'Two-Factor Authentication'}
               </h2>
-              <p className="text-gray-600 mt-2">
-                {useBackupCode 
+              <p className="text-sm text-gray-500 mt-1">
+                {useBackupCode
                   ? 'Enter one of your backup codes'
                   : mfaMethod === 'authenticator'
                     ? 'Enter the code from your authenticator app'
@@ -395,13 +419,13 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
                 {error}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 {useBackupCode ? 'Backup Code' : 'Authentication Code'}
               </label>
               <input
@@ -412,67 +436,57 @@ export default function LoginPage() {
                 maxLength={useBackupCode ? 8 : 6}
                 required
                 autoFocus
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-center text-2xl tracking-widest"
+                className="w-full px-3 py-3 border border-gray-200 rounded-lg text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:border-transparent"
               />
             </div>
 
             <button
               type="submit"
               disabled={isLoading || mfaCode.length < (useBackupCode ? 8 : 6)}
-              className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: '#10b981' }}
+              onMouseEnter={e => { if (!isLoading) e.currentTarget.style.backgroundColor = '#059669'; }}
+              onMouseLeave={e => { if (!isLoading) e.currentTarget.style.backgroundColor = '#10b981'; }}
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Verifying...
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Verifyingâ€¦
                 </>
               ) : (
-                'Verify & Login'
+                'Verify &amp; Sign in'
               )}
             </button>
 
             <div className="text-center space-y-2">
               {!useBackupCode && (
-                <button
-                  type="button"
-                  onClick={() => setUseBackupCode(true)}
-                  className="text-sm text-indigo-600 hover:text-indigo-700"
-                >
+                <button type="button" onClick={() => setUseBackupCode(true)} className="text-sm transition-colors" style={{ color: '#10b981' }}>
                   Use a backup code instead
                 </button>
               )}
               {useBackupCode && (
-                <button
-                  type="button"
-                  onClick={() => setUseBackupCode(false)}
-                  className="text-sm text-indigo-600 hover:text-indigo-700"
-                >
+                <button type="button" onClick={() => setUseBackupCode(false)} className="text-sm transition-colors" style={{ color: '#10b981' }}>
                   Use authenticator code
                 </button>
               )}
               <div>
-                <button
-                  type="button"
-                  onClick={handleBackToLogin}
-                  className="text-sm text-gray-600 hover:text-gray-700"
-                >
+                <button type="button" onClick={handleBackToLogin} className="text-sm text-gray-500 hover:text-gray-700">
                   Back to login
                 </button>
               </div>
             </div>
           </form>
         )}
-
       </div>
 
+      {/* Demo credentials */}
       {!mfaRequired && (
-        <div className="w-full px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-700">
-            <strong>Demo Credentials:</strong> admin@test.com · Admin123! · India Eye Hospital Network
+        <div className="mt-4 w-full px-4 py-3 bg-blue-50 border border-blue-100 rounded-xl">
+          <p className="text-xs text-blue-600">
+            <strong>Demo:</strong> admin@test.com Â· Admin123! Â· India Eye Hospital Network
           </p>
         </div>
       )}
-      </div>
     </main>
   );
 }

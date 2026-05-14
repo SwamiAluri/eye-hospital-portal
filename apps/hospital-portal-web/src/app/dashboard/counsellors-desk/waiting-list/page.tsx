@@ -25,6 +25,7 @@ const STATUS_TABS = [
   { key: 'RepeatCounselling', label: 'Repeat Counselling', color: 'bg-orange-500',  activeClass: 'bg-orange-500  border-orange-500  text-white' },
   { key: 'SurgeryDone',       label: 'Surgery Done',       color: 'bg-teal-500',    activeClass: 'bg-teal-600    border-teal-600    text-white' },
   { key: 'OtReturned',        label: 'OT Returned',        color: 'bg-rose-500',    activeClass: 'bg-rose-600    border-rose-600    text-white' },
+  { key: 'PreAuthQueue',      label: 'Pre-Auth Queue',     color: 'bg-indigo-500',  activeClass: 'bg-indigo-600  border-indigo-600  text-white' },
 ];
 
 const STATUS_BORDER: Record<string, string> = {
@@ -236,7 +237,11 @@ export default function CounsellorWaitingListPage() {
 
   const filtered = useMemo(() => {
     let list = patients;
-    if (activeTab !== 'All') list = list.filter(p => p.status === activeTab);
+    if (activeTab === 'PreAuthQueue') {
+      list = list.filter(p => (['Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme'] as string[]).includes(p.paymentType as string));
+    } else if (activeTab !== 'All') {
+      list = list.filter(p => p.status === activeTab);
+    }
     if (quickSearch) {
       const q = quickSearch.toLowerCase();
       list = list.filter(p =>
@@ -601,6 +606,7 @@ export default function CounsellorWaitingListPage() {
                   <span className="flex items-center gap-1"><Clock className="h-3 w-3" />Time</span>
                 </th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-gray-600 uppercase tracking-widest">Remarks</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-indigo-600 uppercase tracking-widest">Pre-Auth</th>
                 <th className="px-3 py-2.5 pr-4 w-8" />
               </tr>
             </thead>
@@ -717,8 +723,29 @@ export default function CounsellorWaitingListPage() {
                           : <span className="text-gray-200 text-xs">—</span>
                         }
                       </td>
+                      <td className="px-3 py-3">
+                        {(['Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme'] as string[]).includes(patient.paymentType as string) ? (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                            {patient.paymentType}
+                          </span>
+                        ) : (
+                          <span className="text-gray-200 text-xs">—</span>
+                        )}
+                      </td>
                       <td className="px-3 py-3 pr-4">
                         <div className="flex items-center justify-end gap-2">
+                          {(['Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme'] as string[]).includes(patient.paymentType as string) && (
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                router.push(`/dashboard/counsellors-desk/${patient.id}?tab=coverage&subtab=preauth`);
+                              }}
+                              title="Start / View Pre-Authorization"
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 transition-colors whitespace-nowrap"
+                            >
+                              Pre-Auth
+                            </button>
+                          )}
                           <button
                             onClick={e => { e.stopPropagation(); setDemographicsPatient(patient); }}
                             title="View patient demographics"

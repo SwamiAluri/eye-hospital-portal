@@ -34,7 +34,7 @@ export function SearchFilter({
             placeholder={placeholder}
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-4 py-2 pl-10 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            className="w-full rounded-lg border border-gray-200 px-4 py-2 pl-10 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
           />
           <svg
             className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
@@ -58,7 +58,7 @@ export function SearchFilter({
           <select
             value={filter.value}
             onChange={(e) => filter.onChange(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            className="w-full rounded-lg border border-gray-200 px-4 py-2 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
           >
             <option value="">{filter.label}</option>
             {filter.options.map((option) => (

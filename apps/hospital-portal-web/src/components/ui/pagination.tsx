@@ -77,7 +77,7 @@ export function Pagination({
           <select
             value={itemsPerPage}
             onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
-            className="h-9 rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="h-9 rounded-lg border border-gray-200 bg-white px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
@@ -129,7 +129,7 @@ export function Pagination({
                 className={cn(
                   'h-9 min-w-[36px] rounded-lg px-3 text-sm font-medium transition-colors',
                   currentPage === page
-                    ? 'bg-primary-500 text-white'
+                    ? 'bg-emerald-500 text-white'
                     : 'text-gray-700 hover:bg-gray-100'
                 )}
                 aria-label={`Page ${page}`}

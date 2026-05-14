@@ -11,7 +11,7 @@ export const EditButton: React.FC<ActionButtonProps> = ({ onClick, disabled, chi
   <button
     onClick={onClick}
     disabled={disabled}
-    className="text-blue-600 hover:text-blue-800 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    className="text-emerald-600 hover:text-emerald-800 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
   >
     {children || 'Edit'}
   </button>

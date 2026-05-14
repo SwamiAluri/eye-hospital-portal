@@ -61,14 +61,14 @@ function VerifyEmailPageContent() {
 
   if (verifying) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8 text-center">
-          <Mail className="w-16 h-16 text-blue-600 mx-auto mb-4 animate-pulse" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Verifying Your Email</h1>
-          <p className="text-gray-600">Please wait while we verify your email address...</p>
-          <div className="mt-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4" style={{backgroundColor:'rgba(16,185,129,0.1)'}}>
+            <Mail className="w-6 h-6" style={{color:'#10b981'}} />
           </div>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Verifying Your Email</h1>
+          <p className="text-sm text-gray-500 mb-4">Please wait while we verify your email address...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-t-transparent mx-auto" style={{borderColor:'#10b981',borderTopColor:'transparent'}}></div>
         </div>
       </div>
     );
@@ -76,21 +76,21 @@ function VerifyEmailPageContent() {
 
   if (verified) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
-          <div className="text-center mb-6">
-            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
-              <CheckCircle className="h-10 w-10 text-green-600" />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <div className="mb-6">
+            <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-4" style={{backgroundColor:'rgba(16,185,129,0.1)'}}>
+              <CheckCircle className="h-8 w-8 text-emerald-500" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Email Verified!</h1>
-            <p className="text-gray-600 mb-4">
-              Your email address <strong>{email}</strong> has been successfully verified.
+            <p className="text-sm text-gray-500">
+              Your email address <strong className="text-gray-700">{email}</strong> has been successfully verified.
             </p>
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <h3 className="font-semibold text-blue-800 mb-2">Next Steps:</h3>
-            <ol className="text-sm text-blue-700 space-y-2 list-decimal list-inside">
+          <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Next Steps:</h3>
+            <ol className="text-xs text-gray-500 space-y-1.5 list-decimal list-inside">
               <li>Check your email for the activation link</li>
               <li>Click "Activate Now" to complete account setup</li>
               <li>Enter your activation code</li>
@@ -100,7 +100,8 @@ function VerifyEmailPageContent() {
 
           <button
             onClick={() => router.push('/login')}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
+            className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-colors"
+            style={{backgroundColor:'#10b981'}}
           >
             Go to Login
           </button>
@@ -110,19 +111,19 @@ function VerifyEmailPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
-        <div className="text-center mb-6">
-          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
-            <XCircle className="h-10 w-10 text-red-600" />
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+        <div className="mb-6">
+          <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-4" style={{backgroundColor:'rgba(239,68,68,0.1)'}}>
+            <XCircle className="h-8 w-8 text-red-500" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Verification Failed</h1>
-          <p className="text-red-600 mb-6">{error}</p>
+          <p className="text-sm text-red-500 mb-5">{error}</p>
         </div>
 
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <h3 className="font-semibold text-yellow-800 mb-2">What to do:</h3>
-          <ul className="text-sm text-yellow-700 space-y-1 list-disc list-inside">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
+          <h3 className="text-sm font-semibold text-amber-800 mb-2">What to do:</h3>
+          <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
             <li>Request a new verification email</li>
             <li>Make sure you're using the latest email</li>
             <li>Verification links expire after 24 hours</li>
@@ -132,7 +133,8 @@ function VerifyEmailPageContent() {
 
         <button
           onClick={() => router.push('/login')}
-          className="w-full bg-gray-600 text-white py-3 px-4 rounded-md hover:bg-gray-700 transition-colors font-medium"
+          className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-colors"
+          style={{backgroundColor:'#10b981'}}
         >
           Return to Login
         </button>
@@ -143,7 +145,11 @@ function VerifyEmailPageContent() {
 
 export default function VerifyEmailPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-t-transparent" style={{borderColor:'#10b981',borderTopColor:'transparent'}} />
+      </div>
+    }>
       <VerifyEmailPageContent />
     </Suspense>
   );

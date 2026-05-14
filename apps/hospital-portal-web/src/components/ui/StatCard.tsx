@@ -14,12 +14,12 @@ interface StatCardProps {
 }
 
 const colorClasses = {
-  blue: 'bg-blue-50 border-blue-200 text-blue-600',
-  green: 'bg-green-50 border-green-200 text-green-600',
-  yellow: 'bg-yellow-50 border-yellow-200 text-yellow-600',
-  red: 'bg-red-50 border-red-200 text-red-600',
-  purple: 'bg-purple-50 border-purple-200 text-purple-600',
-  gray: 'bg-gray-50 border-gray-200 text-gray-600',
+  blue: { bg: 'rgba(16,185,129,0.08)', icon: '#10b981' },
+  green: { bg: 'rgba(16,185,129,0.08)', icon: '#10b981' },
+  yellow: { bg: 'rgba(245,158,11,0.08)', icon: '#f59e0b' },
+  red: { bg: 'rgba(239,68,68,0.08)', icon: '#ef4444' },
+  purple: { bg: 'rgba(139,92,246,0.08)', icon: '#8b5cf6' },
+  gray: { bg: 'rgba(107,114,128,0.08)', icon: '#6b7280' },
 };
 
 export function StatCard({
@@ -31,33 +31,35 @@ export function StatCard({
   color = 'blue',
   onClick,
 }: StatCardProps) {
-  const colorClass = colorClasses[color];
+  const c = colorClasses[color];
 
   return (
     <div
-      className={`rounded-lg border-2 p-6 transition-all hover:shadow-md ${
-        onClick ? 'cursor-pointer' : ''
-      } ${colorClass}`}
+      className={`bg-white rounded-xl border border-gray-100 shadow-sm p-5 transition-shadow ${
+        onClick ? 'cursor-pointer hover:shadow-md' : ''
+      }`}
       onClick={onClick}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <div className="mt-2 flex items-baseline">
-            <p className="text-3xl font-semibold text-gray-900">{value}</p>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{title}</p>
+          <div className="mt-2 flex items-baseline gap-2">
+            <p className="text-2xl font-bold text-gray-900">{value}</p>
             {trend && (
-              <span
-                className={`ml-2 text-sm font-medium ${
-                  trend.isPositive ? 'text-green-600' : 'text-red-600'
-                }`}
-              >
-                {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%
+              <span className={`text-xs font-semibold ${
+                trend.isPositive ? 'text-emerald-600' : 'text-red-500'
+              }`}>
+                {trend.isPositive ? '▲' : '▼'} {Math.abs(trend.value)}%
               </span>
             )}
           </div>
-          {subtitle && <p className="mt-1 text-xs text-gray-500">{subtitle}</p>}
+          {subtitle && <p className="mt-1 text-xs text-gray-400">{subtitle}</p>}
         </div>
-        {icon && <div className="text-4xl opacity-50">{icon}</div>}
+        {icon && (
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl" style={{backgroundColor: c.bg, color: c.icon}}>
+            {icon}
+          </div>
+        )}
       </div>
     </div>
   );

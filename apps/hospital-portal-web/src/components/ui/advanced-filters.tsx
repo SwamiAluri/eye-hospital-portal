@@ -68,11 +68,11 @@ export function AdvancedFilters({ filterGroups, selectedFilters, onFiltersChange
         size="md"
         leftIcon={<Filter className="h-4 w-4" />}
         onClick={() => setIsOpen(!isOpen)}
-        className={cn(activeFilterCount > 0 && 'border-primary-500 text-primary-600')}
+        className={cn(activeFilterCount > 0 && 'border-emerald-500 text-emerald-600')}
       >
         Filters
         {activeFilterCount > 0 && (
-          <span className="ml-2 inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary-500 text-white text-xs font-medium">
+          <span className="ml-2 inline-flex items-center justify-center h-5 w-5 rounded-full bg-emerald-500 text-white text-xs font-medium">
             {activeFilterCount}
           </span>
         )}
@@ -92,7 +92,7 @@ export function AdvancedFilters({ filterGroups, selectedFilters, onFiltersChange
                 {activeFilterCount > 0 && (
                   <button
                     onClick={clearFilters}
-                    className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                    className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
                   >
                     Clear all
                   </button>
@@ -111,7 +111,7 @@ export function AdvancedFilters({ filterGroups, selectedFilters, onFiltersChange
                         <label className="text-sm font-medium text-gray-900">
                           {group.label}
                           {hasSelection && (
-                            <span className="ml-2 text-xs text-primary-600">
+                            <span className="ml-2 text-xs text-emerald-600">
                               ({selectedFilters[group.id].length})
                             </span>
                           )}
@@ -138,7 +138,7 @@ export function AdvancedFilters({ filterGroups, selectedFilters, onFiltersChange
                                 type="checkbox"
                                 checked={isSelected}
                                 onChange={() => toggleFilter(group.id, option.value, group.multiple !== false)}
-                                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                className="h-4 w-4 rounded border-gray-200 accent-emerald-500"
                               />
                               <span className="flex-1 text-sm text-gray-700">
                                 {option.label}
@@ -203,13 +203,13 @@ export function ActiveFilters({ filterGroups, selectedFilters, onRemoveFilter, o
           return (
             <span
               key={`${groupId}-${value}`}
-              className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-primary-100 text-primary-800 text-sm"
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-sm"
             >
               <span className="font-medium">{group.label}:</span>
               <span>{option.label}</span>
               <button
                 onClick={() => onRemoveFilter(groupId, value)}
-                className="ml-1 hover:bg-primary-200 rounded-full p-0.5 transition-colors"
+                className="ml-1 hover:bg-emerald-100 rounded-full p-0.5 transition-colors"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -219,7 +219,7 @@ export function ActiveFilters({ filterGroups, selectedFilters, onRemoveFilter, o
       })}
       <button
         onClick={onClearAll}
-        className="text-sm text-primary-600 hover:text-primary-700 font-medium hover:underline"
+        className="text-sm text-emerald-600 hover:text-emerald-700 font-medium hover:underline"
       >
         Clear all
       </button>

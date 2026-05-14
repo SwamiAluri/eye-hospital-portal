@@ -18,7 +18,7 @@ const Breadcrumb = ({ items, className }: BreadcrumbProps) => {
     <nav aria-label="Breadcrumb" className={cn('flex items-center space-x-2 text-sm', className)}>
       <Link
         href="/dashboard"
-        className="text-gray-500 hover:text-primary-600 transition-colors duration-150"
+        className="text-gray-500 hover:text-emerald-600 transition-colors duration-150"
         aria-label="Home"
       >
         <Home className="h-4 w-4" />
@@ -34,7 +34,7 @@ const Breadcrumb = ({ items, className }: BreadcrumbProps) => {
             {item.href && !isLast ? (
               <Link
                 href={item.href}
-                className="text-gray-600 hover:text-primary-600 transition-colors duration-150"
+                className="text-gray-600 hover:text-emerald-600 transition-colors duration-150"
               >
                 {item.label}
               </Link>
@@ -42,7 +42,7 @@ const Breadcrumb = ({ items, className }: BreadcrumbProps) => {
               <span
                 className={cn(
                   'font-medium',
-                  isLast ? 'text-primary-800' : 'text-gray-600'
+                  isLast ? 'text-emerald-700' : 'text-gray-600'
                 )}
                 aria-current={isLast ? 'page' : undefined}
               >

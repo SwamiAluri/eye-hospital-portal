@@ -24,7 +24,10 @@ export function EmptyState({
       {action && (
         <button
           onClick={action.onClick}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors"
+          style={{backgroundColor:'#10b981'}}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor='#059669'}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor='#10b981'}
         >
           {action.label}
         </button>

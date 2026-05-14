@@ -13,7 +13,7 @@ export const UserCountBadge: React.FC<UserCountBadgeProps> = ({ count, onClick }
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors cursor-pointer border border-blue-200"
+      className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer border border-emerald-200"
     >
       {count} user{count !== 1 ? 's' : ''}
       {onClick && <span className="ml-1">▸</span>}

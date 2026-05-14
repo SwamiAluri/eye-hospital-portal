@@ -9,7 +9,8 @@
     "AzureBlobStorage__ConnectionString": "<AZURE_BLOB_CONNECTION_STRING>",
     "AzureBlobStorage__ContainerName": "preop-documents",
     "AuthService__BaseUrl": "http://localhost:5073",
-    "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026"
+    "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
+    "CcmsService__BaseUrl": "http://localhost:7075/api"
   },
   "Host": {
     "LocalHttpPort": 5074,

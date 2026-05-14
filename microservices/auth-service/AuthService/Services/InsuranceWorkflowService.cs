@@ -16,12 +16,14 @@ namespace AuthService.Services
         private readonly AppDbContext _context;
         private readonly ILogger<InsuranceWorkflowService> _logger;
         private readonly IBranchCacheService _branchCache;
+        private readonly IWorkflowOrchestrationService _workflowOrchestration;
 
-        public InsuranceWorkflowService(AppDbContext context, ILogger<InsuranceWorkflowService> logger, IBranchCacheService branchCache)
+        public InsuranceWorkflowService(AppDbContext context, ILogger<InsuranceWorkflowService> logger, IBranchCacheService branchCache, IWorkflowOrchestrationService workflowOrchestration)
         {
             _context = context;
             _logger = logger;
             _branchCache = branchCache;
+            _workflowOrchestration = workflowOrchestration;
         }
 
         // Pre-Authorization Management
@@ -181,6 +183,23 @@ namespace AuthService.Services
 
             await _context.SaveChangesAsync();
             _logger.LogInformation("Submitted pre-auth {PreAuthId} to TPA", preAuthId);
+
+            // Wire counselling workflow → InsuranceProcessing state
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _workflowOrchestration.UpdateWorkflowStageAsync(
+                        preAuth.SessionId,
+                        new UpdateWorkflowStageRequest { TargetState = "InsuranceProcessing", TriggeredBy = "System", TransitionNotes = "Pre-auth submitted to TPA" },
+                        submittedByUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to advance workflow to InsuranceProcessing for session {SessionId}", preAuth.SessionId);
+                }
+            });
+
             return ToPreAuthDto(preAuth);
         }
 
@@ -225,6 +244,27 @@ namespace AuthService.Services
 
             await _context.SaveChangesAsync();
             _logger.LogInformation("Processed TPA response for pre-auth {PreAuthId}: {Action}", preAuthId, request.ActionType);
+
+            // Wire counselling workflow state for Approve / PartiallyApprove
+            if (request.ActionType is "Approve" or "PartiallyApprove")
+            {
+                var targetState = request.ActionType == "Approve" ? "InsuranceApproved" : "InsurancePartiallyApproved";
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _workflowOrchestration.UpdateWorkflowStageAsync(
+                            preAuth.SessionId,
+                            new UpdateWorkflowStageRequest { TargetState = targetState, TriggeredBy = "System", TransitionNotes = $"TPA response: {request.ActionType}" },
+                            processedByUserId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to advance workflow to {State} for session {SessionId}", targetState, preAuth.SessionId);
+                    }
+                });
+            }
+
             return ToPreAuthDto(preAuth);
         }
 

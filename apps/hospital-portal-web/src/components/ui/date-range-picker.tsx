@@ -46,8 +46,8 @@ export function DateRangePicker({ value, onChange, placeholder = 'Select date ra
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           'flex items-center gap-2 h-10 px-3 py-2 rounded-lg border bg-white text-sm',
-          'focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all',
-          hasValue ? 'border-primary-500 text-gray-900' : 'border-gray-300 text-gray-600'
+          'focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-all',
+          hasValue ? 'border-emerald-500 text-gray-900' : 'border-gray-200 text-gray-600'
         )}
       >
         <Calendar className="h-4 w-4 text-gray-400" />
@@ -87,7 +87,7 @@ export function DateRangePicker({ value, onChange, placeholder = 'Select date ra
                   type="date"
                   value={tempRange.from ? tempRange.from.toISOString().split('T')[0] : ''}
                   onChange={(e) => setTempRange({ ...tempRange, from: e.target.value ? new Date(e.target.value) : null })}
-                  className="w-full h-9 px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full h-9 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 />
               </div>
 
@@ -99,7 +99,7 @@ export function DateRangePicker({ value, onChange, placeholder = 'Select date ra
                   type="date"
                   value={tempRange.to ? tempRange.to.toISOString().split('T')[0] : ''}
                   onChange={(e) => setTempRange({ ...tempRange, to: e.target.value ? new Date(e.target.value) : null })}
-                  className="w-full h-9 px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full h-9 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 />
               </div>
 

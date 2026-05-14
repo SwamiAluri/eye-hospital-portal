@@ -50,7 +50,14 @@ var host = new HostBuilder()
             if (!string.IsNullOrWhiteSpace(internalKey))
                 client.DefaultRequestHeaders.Add("X-Internal-Key", internalKey);
         });
-        services.AddScoped<IPreOpNotificationClient, PreOpNotificationClient>();    })
+        services.AddScoped<IPreOpNotificationClient, PreOpNotificationClient>();
+
+        var ccmsBaseUrl = context.Configuration["CcmsService:BaseUrl"] ?? "http://localhost:7075/api";
+        services.AddHttpClient<CcmsAdmissionClient>(client =>
+        {
+            client.BaseAddress = new Uri(ccmsBaseUrl.TrimEnd('/') + "/");
+        });
+        services.AddScoped<ICcmsAdmissionClient, CcmsAdmissionClient>();    })
     .Build();
 
 host.Run();

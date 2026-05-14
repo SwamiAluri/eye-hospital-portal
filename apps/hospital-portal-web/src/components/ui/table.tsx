@@ -73,8 +73,8 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      'border-b border-gray-200 transition-colors hover:bg-primary-50',
-      'data-[state=selected]:bg-primary-100',
+      'border-b border-gray-100 transition-colors hover:bg-gray-50',
+      'data-[state=selected]:bg-emerald-50',
       zebra && 'even:bg-gray-50',
       className
     )}
@@ -94,7 +94,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      'h-12 px-4 text-left align-middle font-semibold text-primary-800 [&:has([role=checkbox])]:pr-0',
+      'h-12 px-4 text-left align-middle font-semibold text-gray-600 [&:has([role=checkbox])]:pr-0',
       sortable && 'cursor-pointer select-none hover:bg-gray-100',
       className
     )}
@@ -106,9 +106,9 @@ const TableHead = React.forwardRef<
       <div className="flex items-center gap-2">
         {children}
         {sortDirection === 'asc' ? (
-          <ArrowUp className="h-4 w-4 text-primary-600" />
+          <ArrowUp className="h-4 w-4 text-emerald-600" />
         ) : sortDirection === 'desc' ? (
-          <ArrowDown className="h-4 w-4 text-primary-600" />
+          <ArrowDown className="h-4 w-4 text-emerald-600" />
         ) : (
           <ArrowUpDown className="h-4 w-4 text-gray-400" />
         )}

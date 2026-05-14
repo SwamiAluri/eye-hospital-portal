@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -20,19 +20,10 @@ import {
   Phone,
   Mail,
   Clock,
-  MapPin,
   Shield,
   HelpCircle,
+  Building2,
 } from 'lucide-react';
-
-interface PatientInfo {
-  id: string;
-  name: string;
-  mrn: string;
-  email: string;
-  phone: string;
-  avatar?: string;
-}
 
 const navigation = [
   { name: 'Dashboard', href: '/patient/dashboard', icon: Home },
@@ -44,135 +35,190 @@ const navigation = [
   { name: 'My Profile', href: '/patient/profile', icon: User },
 ];
 
-export default function PatientLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+interface PatientInfo {
+  id: string;
+  name: string;
+  mrn: string;
+  email: string;
+  phone: string;
+}
+
+const patient: PatientInfo = {
+  id: 'PAT-001',
+  name: 'Rajesh Kumar',
+  mrn: 'MRN-2024-001',
+  email: 'rajesh.kumar@email.com',
+  phone: '+91 98765 43210',
+};
+
+export default function PatientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [notifications, setNotifications] = useState(3);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // Check if we're on auth pages
-  const isAuthPage = pathname === '/patient/login' || pathname === '/patient/register' || pathname === '/patient/forgot-password';
+  const isAuthPage =
+    pathname === '/patient/login' ||
+    pathname === '/patient/register' ||
+    pathname === '/patient/forgot-password';
 
-  // Mock patient info - in real app, get from auth context
-  const patient: PatientInfo = {
-    id: 'PAT-001',
-    name: 'Rajesh Kumar',
-    mrn: 'MRN-2024-001',
-    email: 'rajesh.kumar@email.com',
-    phone: '+91 98765 43210',
-  };
-
-  // Don't show layout for auth pages
-  if (isAuthPage) {
-    return <>{children}</>;
-  }
+  if (isAuthPage) return <>{children}</>;
 
   const handleLogout = () => {
-    // Clear auth tokens and redirect
     router.push('/patient/login');
   };
 
+  const NavItems = ({ onItemClick }: { onItemClick?: () => void }) => (
+    <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+      {navigation.map((item) => {
+        const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+        return (
+          <Link
+            key={item.name}
+            href={item.href}
+            onClick={onItemClick}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+              isActive
+                ? 'bg-emerald-500/15 text-emerald-400 border-l-2 border-emerald-400 pl-[10px] font-medium'
+                : 'text-white/60 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <item.icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-emerald-400' : 'text-white/40'}`} />
+            {item.name}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+
+  const SidebarContent = ({ onItemClick }: { onItemClick?: () => void }) => (
+    <div className="flex flex-col h-full w-60" style={{ backgroundColor: '#0f1e3c' }}>
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10 flex-shrink-0">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#10b981' }}>
+          <Building2 className="h-5 w-5 text-white" />
+        </div>
+        <div>
+          <p className="text-white font-semibold text-sm leading-tight">Hospital Portal</p>
+          <p className="text-xs leading-tight" style={{ color: '#6ee7b7' }}>Patient Portal</p>
+        </div>
+      </div>
+
+      <NavItems onItemClick={onItemClick} />
+
+      <div className="mx-3 mb-2 p-3 rounded-lg border border-white/10" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        <h4 className="text-xs font-semibold text-white mb-1.5">Need Help?</h4>
+        <div className="space-y-1.5">
+          <a href="tel:+911234567890" className="flex items-center gap-2 text-xs transition-colors" style={{ color: '#6ee7b7' }}>
+            <Phone className="h-3 w-3 flex-shrink-0" />
+            +91 1234 567 890
+          </a>
+          <a href="mailto:support@hospital.com" className="flex items-center gap-2 text-xs transition-colors" style={{ color: '#6ee7b7' }}>
+            <Mail className="h-3 w-3 flex-shrink-0" />
+            support@hospital.com
+          </a>
+        </div>
+      </div>
+
+      <div className="mx-3 mb-3 p-3 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        <h4 className="flex items-center gap-1.5 text-xs font-semibold text-white mb-1.5">
+          <Clock className="h-3 w-3" />
+          Hospital Hours
+        </h4>
+        <div className="text-xs space-y-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          <p>Mon - Sat: 8:00 AM - 8:00 PM</p>
+          <p>Sunday: 9:00 AM - 2:00 PM</p>
+          <p className="text-red-400 font-medium">Emergency: 24/7</p>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top Header Bar */}
-      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo and Mobile Menu */}
-            <div className="flex items-center">
+    <div className="flex h-screen bg-gray-100 p-3 gap-3 overflow-hidden">
+      <div className="hidden lg:flex flex-shrink-0 rounded-2xl overflow-hidden shadow-md">
+        <SidebarContent />
+      </div>
+
+      {isMobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setIsMobileOpen(false)} />
+          <div className="absolute inset-y-0 left-0 flex">
+            <div className="rounded-r-2xl overflow-hidden shadow-xl">
+              <SidebarContent onItemClick={() => setIsMobileOpen(false)} />
+            </div>
+            <button
+              className="ml-2 mt-3 h-9 w-9 rounded-xl bg-white/10 flex items-center justify-center text-white"
+              onClick={() => setIsMobileOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 gap-3">
+        <div className="rounded-2xl overflow-hidden shadow-md flex-shrink-0" style={{ backgroundColor: '#0f1e3c' }}>
+          <div className="flex items-center justify-between h-14 px-4">
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                className="lg:hidden p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                onClick={() => setIsMobileOpen(true)}
               >
-                {isSidebarOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+                <Menu className="h-5 w-5" />
               </button>
-              <Link href="/patient/dashboard" className="flex items-center gap-2 ml-2 lg:ml-0">
-                <div className="h-10 w-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <Heart className="h-6 w-6 text-white" />
-                </div>
-                <div className="hidden sm:block">
-                  <span className="text-xl font-bold text-gray-900">Hospital Portal</span>
-                  <span className="text-xs text-gray-500 block">Patient Portal</span>
-                </div>
-              </Link>
+              <div className="flex items-center gap-2">
+                <Heart className="h-5 w-5 hidden lg:block" style={{ color: '#10b981' }} />
+                <span className="text-white font-semibold text-sm">Patient Portal</span>
+              </div>
             </div>
 
-            {/* Right side - Notifications & Profile */}
-            <div className="flex items-center gap-4">
-              {/* Emergency Contact */}
-              <a href="tel:+911234567890" className="hidden md:flex items-center gap-2 text-red-600 hover:text-red-700">
-                <Phone className="h-4 w-4" />
-                <span className="text-sm font-medium">Emergency: 1234-567-890</span>
+            <div className="flex items-center gap-3">
+              <a
+                href="tel:+911234567890"
+                className="hidden md:flex items-center gap-1.5 text-red-400 hover:text-red-300 text-xs font-medium transition-colors"
+              >
+                <Phone className="h-3.5 w-3.5" />
+                Emergency: 1234-567-890
               </a>
 
-              {/* Notifications */}
-              <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full">
-                <Bell className="h-6 w-6" />
-                {notifications > 0 && (
-                  <span className="absolute top-0 right-0 h-5 w-5 bg-red-500 text-white text-xs flex items-center justify-center rounded-full">
-                    {notifications}
-                  </span>
-                )}
+              <button className="relative p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+                <Bell className="h-5 w-5" />
+                <span className="absolute top-0.5 right-0.5 h-4 w-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full">3</span>
               </button>
 
-              {/* Profile Dropdown */}
               <div className="relative">
                 <button
-                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                  className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100"
+                  onClick={() => setIsProfileOpen(!isProfileOpen)}
+                  className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/10 transition-colors"
                 >
-                  <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <User className="h-5 w-5 text-blue-600" />
+                  <div className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold text-white" style={{ backgroundColor: '#10b981' }}>
+                    {patient.name.split(' ').map(function(n) { return n[0]; }).join('')}
                   </div>
                   <div className="hidden sm:block text-left">
-                    <p className="text-sm font-medium text-gray-900">{patient.name}</p>
-                    <p className="text-xs text-gray-500">{patient.mrn}</p>
+                    <p className="text-white text-xs font-medium leading-tight">{patient.name}</p>
+                    <p className="text-xs leading-tight" style={{ color: 'rgba(255,255,255,0.45)' }}>{patient.mrn}</p>
                   </div>
-                  <ChevronDown className="h-4 w-4 text-gray-400 hidden sm:block" />
+                  <ChevronDown className="h-3.5 w-3.5 hidden sm:block" style={{ color: 'rgba(255,255,255,0.45)' }} />
                 </button>
 
-                {isProfileMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                {isProfileOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50">
                     <div className="px-4 py-3 border-b border-gray-100">
-                      <p className="text-sm font-medium text-gray-900">{patient.name}</p>
+                      <p className="text-sm font-semibold text-gray-900">{patient.name}</p>
                       <p className="text-xs text-gray-500">{patient.email}</p>
                     </div>
-                    <Link
-                      href="/patient/profile"
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                    >
-                      <User className="h-4 w-4" />
-                      My Profile
+                    <Link href="/patient/profile" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setIsProfileOpen(false)}>
+                      <User className="h-4 w-4 text-gray-400" /> My Profile
                     </Link>
-                    <Link
-                      href="/patient/settings"
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                    >
-                      <Shield className="h-4 w-4" />
-                      Privacy Settings
+                    <Link href="/patient/settings" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setIsProfileOpen(false)}>
+                      <Shield className="h-4 w-4 text-gray-400" /> Privacy Settings
                     </Link>
-                    <Link
-                      href="/patient/help"
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                    >
-                      <HelpCircle className="h-4 w-4" />
-                      Help & Support
+                    <Link href="/patient/help" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setIsProfileOpen(false)}>
+                      <HelpCircle className="h-4 w-4 text-gray-400" /> Help and Support
                     </Link>
                     <div className="border-t border-gray-100 mt-1">
-                      <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full"
-                      >
-                        <LogOut className="h-4 w-4" />
-                        Sign Out
+                      <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full">
+                        <LogOut className="h-4 w-4" /> Sign Out
                       </button>
                     </div>
                   </div>
@@ -181,128 +227,16 @@ export default function PatientLayout({
             </div>
           </div>
         </div>
-      </header>
 
-      <div className="flex">
-        {/* Sidebar - Desktop */}
-        <aside className="hidden lg:flex lg:flex-shrink-0">
-          <div className="w-64 bg-white border-r border-gray-200 min-h-[calc(100vh-4rem)]">
-            <nav className="p-4 space-y-1">
-              {navigation.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                      isActive
-                        ? 'bg-blue-50 text-blue-700 font-medium'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                    }`}
-                  >
-                    <item.icon className={`h-5 w-5 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                    {item.name}
-                  </Link>
-                );
-              })}
-            </nav>
-
-            {/* Quick Info Card */}
-            <div className="mx-4 mt-6 p-4 bg-blue-50 rounded-lg">
-              <h4 className="text-sm font-semibold text-blue-900 mb-2">Need Help?</h4>
-              <p className="text-xs text-blue-700 mb-3">
-                Contact our support team for any queries
-              </p>
-              <div className="space-y-2">
-                <a href="tel:+911234567890" className="flex items-center gap-2 text-xs text-blue-700 hover:text-blue-800">
-                  <Phone className="h-3 w-3" />
-                  +91 1234 567 890
-                </a>
-                <a href="mailto:support@hospital.com" className="flex items-center gap-2 text-xs text-blue-700 hover:text-blue-800">
-                  <Mail className="h-3 w-3" />
-                  support@hospital.com
-                </a>
-              </div>
-            </div>
-
-            {/* Hospital Hours */}
-            <div className="mx-4 mt-4 p-4 bg-gray-50 rounded-lg">
-              <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Hospital Hours
-              </h4>
-              <div className="text-xs text-gray-600 space-y-1">
-                <p>Mon - Sat: 8:00 AM - 8:00 PM</p>
-                <p>Sunday: 9:00 AM - 2:00 PM</p>
-                <p className="text-red-600 font-medium">Emergency: 24/7</p>
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        {/* Mobile Sidebar */}
-        {isSidebarOpen && (
-          <div className="lg:hidden fixed inset-0 z-40">
-            <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setIsSidebarOpen(false)} />
-            <div className="fixed inset-y-0 left-0 w-64 bg-white shadow-xl">
-              <div className="p-4 border-b border-gray-200">
-                <div className="flex items-center gap-2">
-                  <div className="h-10 w-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                    <Heart className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <span className="text-lg font-bold text-gray-900">Hospital Portal</span>
-                    <span className="text-xs text-gray-500 block">Patient Portal</span>
-                  </div>
-                </div>
-              </div>
-              <nav className="p-4 space-y-1">
-                {navigation.map((item) => {
-                  const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-                  return (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      onClick={() => setIsSidebarOpen(false)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                        isActive
-                          ? 'bg-blue-50 text-blue-700 font-medium'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                    >
-                      <item.icon className={`h-5 w-5 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
-          </div>
-        )}
-
-        {/* Main Content */}
-        <main className="flex-1 min-h-[calc(100vh-4rem)]">
-          {children}
+        <main
+          id="main-content"
+          className="flex-1 min-h-0 overflow-auto rounded-2xl bg-white shadow-sm"
+          role="main"
+          aria-label="Patient portal main content"
+        >
+          <div className="p-4">{children}</div>
         </main>
       </div>
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-4 text-sm text-gray-500">
-              <Link href="/patient/privacy" className="hover:text-gray-700">Privacy Policy</Link>
-              <span>•</span>
-              <Link href="/patient/terms" className="hover:text-gray-700">Terms of Service</Link>
-              <span>•</span>
-              <Link href="/patient/help" className="hover:text-gray-700">Help Center</Link>
-            </div>
-            <p className="text-sm text-gray-500">
-              © 2026 Hospital Portal. All rights reserved.
-            </p>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

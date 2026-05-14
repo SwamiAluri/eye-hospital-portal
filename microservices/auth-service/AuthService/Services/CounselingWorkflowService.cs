@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using AuthService.Context;
 using AuthService.Models.Counselor;
@@ -16,15 +19,21 @@ namespace AuthService.Services
         private readonly AppDbContext _context;
         private readonly ILogger<CounselingWorkflowService> _logger;
         private readonly Interfaces.IBlobStorageService _blobStorageService;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly string _ccmsBaseUrl;
 
         public CounselingWorkflowService(
             AppDbContext context, 
             ILogger<CounselingWorkflowService> logger,
-            Interfaces.IBlobStorageService blobStorageService)
+            Interfaces.IBlobStorageService blobStorageService,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration)
         {
             _context = context;
             _logger = logger;
             _blobStorageService = blobStorageService;
+            _httpClientFactory = httpClientFactory;
+            _ccmsBaseUrl = configuration["CcmsService:BaseUrl"] ?? "http://localhost:7075/api";
         }
 
         // ============================================================================
@@ -964,6 +973,47 @@ namespace AuthService.Services
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation("Completed counseling session {SessionId}", sessionId);
+
+                // Fire-and-forget: notify CCMS if insurance/govt payment type
+                var insuranceTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    { "Insurance", "TPA", "CoPay", "CGHS", "SGHS", "GovernmentScheme" };
+                if (insuranceTypes.Contains(session.PatientType ?? ""))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var payload = new
+                            {
+                                tenantId = tenantId,
+                                sessionId = sessionId,
+                                journeyId = (Guid?)null,
+                                patientId = session.PatientId,
+                                patientName = (string?)null,
+                                paymentType = session.PatientType,
+                                notRequiredPreAuth = false,
+                                branchId = session.BranchId,
+                                doctorId = session.ReferredByDoctorId,
+                                insuranceProviderId = (Guid?)null,
+                                tpaProviderId = (Guid?)null,
+                                governmentSchemeId = (Guid?)null,
+                                packageId = session.SelectedPackageId,
+                                legacyPreauthId = (Guid?)null,
+                                sessionPreauthId = (Guid?)null,
+                                actorUserId = currentUserId,
+                            };
+                            var json = JsonSerializer.Serialize(payload);
+                            var client = _httpClientFactory.CreateClient();
+                            await client.PostAsync(
+                                $"{_ccmsBaseUrl}/ccms/integration/counselling-completed",
+                                new StringContent(json, Encoding.UTF8, "application/json"));
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "CCMS counselling-completed callback failed for session {SessionId}", sessionId);
+                        }
+                    });
+                }
 
                 var completedSession = await GetSessionByIdAsync(tenantId, sessionId);
 

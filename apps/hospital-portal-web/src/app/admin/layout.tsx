@@ -53,7 +53,7 @@ export default function AdminLayout({
       {/* Mobile/tablet drawer */}
       <Sidebar isMobileOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} drawerOnly />
 
-      <div className="flex h-screen bg-gray-100 p-3 gap-3">
+      <div className="flex h-screen bg-gray-100 p-3 gap-3 overflow-hidden">
         {/* Sidebar card — desktop only */}
         <div className="hidden lg:flex flex-shrink-0 rounded-2xl overflow-hidden shadow-md">
           <Sidebar />
@@ -70,7 +70,7 @@ export default function AdminLayout({
             role="main"
             aria-label="Main content"
           >
-            {children}
+            <div className="p-4">{children}</div>
           </main>
         </div>
       </div>

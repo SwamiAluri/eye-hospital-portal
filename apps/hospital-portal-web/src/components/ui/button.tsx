@@ -11,12 +11,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary: 'bg-primary-500 text-white hover:bg-primary-600 active:bg-primary-700 shadow-sm hover:shadow-md',
-        secondary: 'bg-white text-primary-800 border border-primary-300 hover:bg-primary-50 active:bg-primary-100',
-        ghost: 'bg-transparent text-primary-700 hover:bg-primary-50 active:bg-primary-100',
+        secondary: 'bg-white text-gray-800 border border-gray-200 hover:bg-gray-50 active:bg-gray-100',
+        ghost: 'bg-transparent text-gray-700 hover:bg-gray-50 active:bg-gray-100',
         danger: 'bg-status-critical text-white hover:bg-red-600 active:bg-red-700 shadow-sm hover:shadow-md',
         success: 'bg-status-success text-white hover:bg-green-600 active:bg-green-700 shadow-sm',
         outline: 'bg-transparent border border-gray-300 text-gray-700 hover:bg-gray-50 active:bg-gray-100',
-        link: 'bg-transparent underline-offset-4 hover:underline text-primary-700 hover:text-primary-800',
+        link: 'bg-transparent underline-offset-4 hover:underline text-emerald-600 hover:text-emerald-700',
         // Legacy variants for backward compatibility
         default: 'bg-primary-500 text-white hover:bg-primary-600',
         destructive: 'bg-status-critical text-white hover:bg-red-600',

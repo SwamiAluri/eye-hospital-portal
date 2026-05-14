@@ -3,7 +3,14 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "AzureWebJobs.AutoReorderTimer.Disabled": "true"
+    "AzureWebJobs.AutoReorderTimer.Disabled": "true",
+    "AzureWebJobs.BillTransferSlaEvaluator.Disabled": "true",
+    "AzureWebJobs.SettlementOverdueSweeper.Disabled": "true",
+    "AzureWebJobs.InvoiceDocumentPurgeSweeper.Disabled": "true"
+  },
+  "BlobStorage": {
+    "ConnectionString": "UseDevelopmentStorage=true",
+    "ContainerName": "payment-receipts"
   },
   "Host": {
     "LocalHttpPort": 7072,
@@ -15,5 +22,13 @@
   },
   "NotificationService": {
     "BaseUrl": "http://localhost:7073"
+  },
+  "OpenAI": {
+    "ApiKey": "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",
+    "Model": "gpt-4.1-mini",
+    "VisionModel": "gpt-4.1-mini"
+  },
+  "InvoiceExtraction": {
+    "Enabled": "true"
   }
 }
