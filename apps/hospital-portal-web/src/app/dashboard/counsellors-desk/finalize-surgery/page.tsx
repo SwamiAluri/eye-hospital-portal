@@ -1,9 +1,15 @@
 ﻿'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ClipboardList, LockKeyhole, AlertCircle, X, Printer } from 'lucide-react';
+import { ClipboardList, LockKeyhole, AlertCircle, X, Printer, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi, mapOtRecord } from '@/lib/api/counsellors-desk.api';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import {
+  useFinalizeListQuery,
+  useInvalidateCounsellorsDesk,
+  type FinalizeListFilters,
+} from '@/hooks/use-counsellors-desk-queries';
 import { StatusBadge } from '@/components/counsellors-desk/StatusBadge';
 import { FinalizeOtModal } from '@/components/counsellors-desk/FinalizeOtModal';
 import type {
@@ -91,7 +97,7 @@ function PrepareOtListModal({ finalisedRecords, prepareDate, onClose, onSubmit }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
@@ -213,11 +219,15 @@ function SkeletonRow({ cols }: { cols: number }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function FinalizeSurgeryPage() {
-  const [records, setRecords] = useState<FinalizeSurgeryRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { invalidateFinalizeList, patchFinalizeRecord } = useInvalidateCounsellorsDesk();
   const [activeTab, setActiveTab] = useState('All');
-  const [filters, setFilters] = useState({ date: '', uhid: '', name: '' });
-  const [appliedFilters, setAppliedFilters] = useState({ date: '', uhid: '', name: '' });
+  const [filters, setFilters] = useState<FinalizeListFilters>({ date: '', uhid: '', name: '' });
+  const debouncedFilters = useDebouncedValue(filters, 300);
+
+  const finalizeQuery = useFinalizeListQuery(debouncedFilters);
+  const records = finalizeQuery.data ?? [];
+  const isLoading = finalizeQuery.isLoading && records.length === 0;
+  const isRefreshing = finalizeQuery.isFetching && records.length > 0;
 
   // Finalize OT detail modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -233,29 +243,17 @@ export default function FinalizeSurgeryPage() {
   const [otLoading, setOtLoading] = useState(false);
   const preparedListRef = useRef<HTMLDivElement>(null);
 
-  const fetchRecords = async (f = appliedFilters) => {
-    setIsLoading(true);
-    try {
-      const data = await counsellorsDeskApi.getFinalizeList({
-        date: f.date || undefined,
-        uhid: f.uhid || undefined,
-        name: f.name || undefined,
-      });
-      setRecords(data);
-    } catch {
-      toast.error('Failed to load finalize list');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (finalizeQuery.isError) toast.error('Failed to load finalize list');
+  }, [finalizeQuery.isError]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchRecords(); }, []);
-
-  const handleSearch = () => {
-    setAppliedFilters(filters);
-    fetchRecords(filters);
-  };
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void finalizeQuery.refetch();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [finalizeQuery]);
 
   const filtered = useMemo(() => {
     if (activeTab === 'All') return records;
@@ -341,7 +339,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
 
   const handleAction = async (action: ActionKey, rec: FinalizeSurgeryRecord) => {
     const patch = (p: Partial<FinalizeSurgeryRecord>) =>
-      setRecords(rs => rs.map(r => r.id === rec.id ? { ...r, ...p } : r));
+      patchFinalizeRecord(debouncedFilters, rec.id, p);
 
     try {
       if (action === 'confirm') {
@@ -377,7 +375,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
     });
     toast.success('OT list locked and prepared');
     setPrepareModalOpen(false);
-    await fetchRecords();
+    invalidateFinalizeList();
   };
 
   const handleLoadOtList = async () => {
@@ -401,7 +399,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
         onClose={() => setModalOpen(false)}
         scheduleId={selectedId}
         onStatusChange={(updated) => {
-          setRecords((rs) => rs.map((r) => r.id === updated.id ? { ...r, ...mapOtRecord(updated) } : r));
+          patchFinalizeRecord(debouncedFilters, updated.id, mapOtRecord(updated));
           setModalOpen(false);
         }}
       />
@@ -428,7 +426,6 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             <label className="block text-xs font-medium text-gray-600 mb-1">UHID</label>
             <input type="text" placeholder="Search UHID…" value={filters.uhid}
               onChange={e => setFilters(f => ({ ...f, uhid: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -436,20 +433,17 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             <label className="block text-xs font-medium text-gray-600 mb-1">Patient Name</label>
             <input type="text" placeholder="Search name…" value={filters.name}
               onChange={e => setFilters(f => ({ ...f, name: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <button onClick={handleSearch}
-            className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            <Search className="h-4 w-4" />Search
-          </button>
+          {isRefreshing && (
+            <RefreshCw className="h-4 w-4 text-blue-500 animate-spin mb-2" aria-label="Refreshing" />
+          )}
           <div className="ml-auto">
             <button
               disabled={(tabCounts['Finalised'] ?? 0) === 0}
               title={(tabCounts['Finalised'] ?? 0) === 0 ? 'No Finalised records — finalise some records first' : 'Prepare OT List'}
-              onClick={() => { setPrepareDate(appliedFilters.date); setPrepareModalOpen(true); }}
+              onClick={() => { setPrepareDate(filters.date); setPrepareModalOpen(true); }}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
             >
               <ClipboardList className="h-4 w-4" />
@@ -533,7 +527,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {isLoading
+              {isLoading && records.length === 0
                 ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={17} />)
                 : filtered.length === 0 ? (
                   <tr>
@@ -622,7 +616,10 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
 
         {!isLoading && filtered.length > 0 && (
           <div className="px-4 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-500 flex items-center gap-2">
+              {isRefreshing && (
+                <RefreshCw className="h-3 w-3 animate-spin text-blue-500" aria-hidden />
+              )}
               Showing <span className="font-medium">{filtered.length}</span> of{' '}
               <span className="font-medium">{records.length}</span> records
             </p>

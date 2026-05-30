@@ -10,7 +10,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- OpenAPI / Swagger contract generation -->
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.OpenApi" Version="1.5.1" />
+
     <!-- Azure Functions -->
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.28.0" />
+    <PackageReference Include="Microsoft.AspNetCore.WebUtilities" Version="8.0.15" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="1.21.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="1.17.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.1.0" />
@@ -36,7 +41,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
 
-    <!-- JSON serialisation -->
-    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    <!-- JSON serialisation (pinned to >=10.0.1 to satisfy Azure.Core transitive dep) -->
+    <PackageReference Include="System.Text.Json" Version="10.0.1" />
   </ItemGroup>
 </Project>

@@ -399,4 +399,11 @@ This is an automated message. Please do not reply to this email.";
 
         return await SendEmailAsync(toEmail, $"{eventLabel}: Return {returnNumber}", htmlBody, plainText);
     }
+
+    public Task<(bool Success, string? MessageId, string? Error)> SendGenericEmailAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string? plainTextBody = null)
+        => SendEmailAsync(toEmail, subject, htmlBody, plainTextBody);
 }

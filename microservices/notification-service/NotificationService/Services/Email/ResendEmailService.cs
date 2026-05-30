@@ -273,6 +273,36 @@ public class ResendEmailService : IEmailService
         _logger.LogWarning("SendPurchaseReturnEventAsync called on ResendEmailService (legacy) — not implemented.");
         return Task.FromResult<(bool, string?, string?)>((false, null, "Not implemented in legacy email provider."));
     }
+
+    public async Task<(bool Success, string? MessageId, string? Error)> SendGenericEmailAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string? plainTextBody = null)
+    {
+        try
+        {
+            var fromEmail = _configuration["Resend:FromEmail"] ?? "noreply@yourhospital.com";
+            var payload = new
+            {
+                from = fromEmail,
+                to = new[] { toEmail },
+                subject,
+                html = htmlBody,
+                text = plainTextBody ?? htmlBody,
+            };
+            var response = await _httpClient.PostAsJsonAsync("emails", payload);
+            if (!response.IsSuccessStatusCode)
+                return (false, null, await response.Content.ReadAsStringAsync());
+            var result = await response.Content.ReadFromJsonAsync<ResendEmailResponse>();
+            return (true, result?.Id, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SendGenericEmailAsync failed for {To}", toEmail);
+            return (false, null, ex.Message);
+        }
+    }
 }
 
 // Response model for Resend API

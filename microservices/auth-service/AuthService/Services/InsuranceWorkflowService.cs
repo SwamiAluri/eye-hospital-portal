@@ -530,5 +530,185 @@ namespace AuthService.Services
             FollowUpRequired = communication.FollowUpRequired,
             FollowUpDate = communication.FollowUpDate
         };
+
+        // ── CCMS Support ─────────────────────────────────────────────────────────
+
+        public async Task<List<SessionSummaryDto>> GetSessionSummariesBatchAsync(
+            List<Guid> sessionIds, Guid tenantId)
+        {
+            // Pull sessions from counselling_sessions table (through the shared AppDbContext)
+            var sessions = await _context.CounselingSession
+                .Where(s => sessionIds.Contains(s.Id) && s.TenantId == tenantId && s.DeletedAt == null)
+                .Select(s => new
+                {
+                    s.Id,
+                    s.CounselorId,
+                    PatientType = s.PatientType,
+                    Procedure   = s.RecommendedSurgery,
+                    s.CreatedAt,
+                })
+                .ToListAsync();
+
+            return sessions.Select(s => new SessionSummaryDto(
+                SessionId:     s.Id,
+                PatientName:   null,  // resolved client-side or joined separately
+                PatientMobile: null,
+                ProcedureName: s.Procedure,
+                CounsellorName: null,
+                PaymentType:   s.PatientType,
+                CounselledAt:  s.CreatedAt
+            )).ToList();
+        }
+
+        public async Task<UnderwritingProfileDto?> GetUnderwritingProfileAsync(
+            Guid patientId, Guid tenantId)
+        {
+            var patient = await _context.Patients
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == patientId && p.TenantId == tenantId && p.DeletedAt == null);
+
+            if (patient is null) return null;
+
+            var conditions = new List<UnderwritingConditionDto>();
+
+            if (!string.IsNullOrWhiteSpace(patient.ChronicConditions))
+            {
+                try
+                {
+                    // ChronicConditions is stored as a JSON array of strings or a comma-separated string
+                    List<string>? parsed = null;
+                    try { parsed = System.Text.Json.JsonSerializer.Deserialize<List<string>>(patient.ChronicConditions); }
+                    catch { parsed = patient.ChronicConditions.Split(',').Select(s => s.Trim()).ToList(); }
+
+                    if (parsed != null)
+                        conditions.AddRange(parsed
+                            .Where(c => !string.IsNullOrWhiteSpace(c))
+                            .Distinct()
+                            .Select(c => new UnderwritingConditionDto(
+                                ConditionName: c, Icd10Code: null,
+                                Severity: "moderate", IsPreExisting: true, Notes: null)));
+                }
+                catch { /* ignore malformed */ }
+            }
+
+            return new UnderwritingProfileDto(
+                PatientId:   patientId,
+                Conditions:  conditions,
+                Notes:       patient.FamilyMedicalHistory,
+                LastUpdated: patient.UpdatedAt
+            );
+        }
+
+        // ── Chronic conditions CRUD ───────────────────────────────────────────────
+
+        public async Task<ChronicConditionsDto> GetChronicConditionsAsync(
+            Guid patientId, Guid tenantId)
+        {
+            var patient = await _context.Patients.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == patientId && p.TenantId == tenantId && p.DeletedAt == null);
+
+            if (patient is null)
+                return new ChronicConditionsDto(patientId, new List<UnderwritingConditionDto>(), null, null);
+
+            var conditions = ParseChronicConditions(patient.ChronicConditions);
+            return new ChronicConditionsDto(
+                PatientId:   patientId,
+                Conditions:  conditions,
+                Notes:       patient.FamilyMedicalHistory,
+                LastUpdated: patient.UpdatedAt);
+        }
+
+        public async Task UpsertChronicConditionsAsync(
+            Guid patientId, Guid tenantId, UpsertChronicConditionsRequest request)
+        {
+            var patient = await _context.Patients
+                .FirstOrDefaultAsync(p => p.Id == patientId && p.TenantId == tenantId && p.DeletedAt == null);
+
+            if (patient is null) return;
+
+            // Serialize conditions list back to JSON array of condition names
+            var names = request.Conditions
+                .Where(c => !string.IsNullOrWhiteSpace(c.ConditionName))
+                .Select(c => c.ConditionName.Trim())
+                .Distinct()
+                .ToList();
+
+            patient.ChronicConditions     = System.Text.Json.JsonSerializer.Serialize(names);
+            if (request.Notes is not null)
+                patient.FamilyMedicalHistory = request.Notes;
+            patient.UpdatedAt             = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+        }
+
+        // ── patient_insurance sync from CCMS ─────────────────────────────────────
+
+        public async Task SyncPatientInsuranceFromCcmsAsync(
+            Guid patientId, PatientInsuranceSyncRequest request)
+        {
+            // Upsert the primary policy row in patient_insurance (best-effort, CCMS is SoR)
+            var existing = await _context.PatientInsurances
+                .Where(pi => pi.PatientId == patientId && pi.PolicyType == "primary" && pi.DeletedAt == null)
+                .OrderByDescending(pi => pi.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (existing is not null)
+            {
+                existing.PolicyNumber      = request.PolicyNumber;
+                existing.ProviderName      = request.ProviderName;
+                existing.SubscriberName    = request.InsuredName;
+                existing.SubscriberRelation = request.Relationship ?? existing.SubscriberRelation;
+                existing.ContactPhone      = request.ContactPhone;
+                existing.StartDate         = DateTime.TryParse(request.StartDate, out var sd) ? sd : existing.StartDate;
+                existing.EndDate           = DateTime.TryParse(request.EndDate,   out var ed) ? ed : existing.EndDate;
+                existing.UpdatedAt         = DateTime.UtcNow;
+                existing.Status            = "active";
+            }
+            else
+            {
+                _context.PatientInsurances.Add(new AuthService.Models.Domain.PatientInsurance
+                {
+                    Id              = Guid.NewGuid(),
+                    TenantId        = patientId,   // set when caller supplies tenantId (best-effort)
+                    PatientId       = patientId,
+                    PolicyNumber    = request.PolicyNumber,
+                    ProviderName    = request.ProviderName,
+                    SubscriberName  = request.InsuredName,
+                    SubscriberRelation = request.Relationship ?? "self",
+                    ContactPhone    = request.ContactPhone,
+                    PolicyType      = "primary",
+                    StartDate       = DateTime.TryParse(request.StartDate, out var sd2) ? sd2 : null,
+                    EndDate         = DateTime.TryParse(request.EndDate,   out var ed2) ? ed2 : null,
+                    Status          = "active",
+                    PreAuthRequired = true,
+                    CreatedAt       = DateTime.UtcNow,
+                    UpdatedAt       = DateTime.UtcNow,
+                });
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        // ── Private helpers ──────────────────────────────────────────────────────
+
+        private static List<UnderwritingConditionDto> ParseChronicConditions(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return new List<UnderwritingConditionDto>();
+            try
+            {
+                List<string>? names = null;
+                try { names = System.Text.Json.JsonSerializer.Deserialize<List<string>>(raw); }
+                catch { names = raw.Split(',').Select(s => s.Trim()).ToList(); }
+
+                return (names ?? new List<string>())
+                    .Where(c => !string.IsNullOrWhiteSpace(c))
+                    .Distinct()
+                    .Select(c => new UnderwritingConditionDto(
+                        ConditionName: c, Icd10Code: null,
+                        Severity: "moderate", IsPreExisting: true, Notes: null))
+                    .ToList();
+            }
+            catch { return new List<UnderwritingConditionDto>(); }
+        }
     }
 }

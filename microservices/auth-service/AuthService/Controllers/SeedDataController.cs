@@ -318,7 +318,7 @@ namespace AuthService.Controllers
                     nextSteps = new[]
                     {
                         "Refresh your browser",
-                        "Go to: http://localhost:3000/dashboard/counselor/workspace",
+                        "Go to: http://localhost:3000/dashboard/counsellors-desk/waiting-list",
                         "You should see 3 patients in the Waiting queue",
                         "Test real-time SignalR updates by adding more patients"
                     }

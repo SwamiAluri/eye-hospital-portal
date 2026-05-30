@@ -40,6 +40,8 @@ var host = new HostBuilder()
         services.AddScoped<ITotpService, TotpService>();
         services.AddScoped<IBackupCodeService, BackupCodeService>();
         services.AddScoped<IQrCodeService, QrCodeService>();
+
+        services.AddHttpClient();
     })
     .Build();
 

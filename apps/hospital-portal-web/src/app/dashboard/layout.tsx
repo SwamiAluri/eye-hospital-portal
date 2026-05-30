@@ -2,10 +2,11 @@
 
 import { useAuthStore } from '@/lib/auth-store';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import TopNav from '@/components/TopNav';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { DashboardLoadingSkeleton } from '@/components/DashboardLoadingSkeleton';
 import { Toaster } from 'react-hot-toast';
 
 export default function DashboardLayout({
@@ -14,18 +15,21 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { token, user } = useAuthStore();
+  const token = useAuthStore(s => s.token);
   const pathname = usePathname();
   const [isClient, setIsClient] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const openSidebar = useCallback(() => setSidebarOpen(true), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   // Immersive routes hide TopNav and remove wrapper padding for full-bleed dashboards
   const immersiveRoutes = ['/dashboard/optometrist', '/dashboard/optometrist/exam'];
   const isImmersive = immersiveRoutes.some(r => pathname === r);
 
   // No-pad routes: keep TopNav but render children directly (no padding wrapper, no outer scroll)
-  const noPadRoutes = ['/dashboard/counselor/sessions', '/dashboard/counselor'];
+  const noPadRoutes = ['/dashboard/counselor/analytics'];
   const isNoPad = noPadRoutes.some(r => pathname.startsWith(r));
   
   useEffect(() => {
@@ -40,7 +44,7 @@ export default function DashboardLayout({
   }, [isClient, token, router]);
 
   if (!isClient || !token) {
-    return null; // loading.tsx skeleton is shown by Next.js Suspense
+    return <DashboardLoadingSkeleton />;
   }
 
   // If in iframe, render only children without dashboard layout
@@ -82,8 +86,10 @@ export default function DashboardLayout({
         }}
       />
       
-      {/* Mobile/tablet drawer — fixed position, rendered outside the layout flow */}
-      <Sidebar isMobileOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} drawerOnly />
+      {/* Mobile/tablet drawer — mount only while open to avoid duplicate nav state/effects */}
+      {sidebarOpen && (
+        <Sidebar isMobileOpen onClose={closeSidebar} drawerOnly />
+      )}
 
       <div className="flex h-screen bg-gray-100 p-3 gap-3 overflow-hidden">
         {/* Nav Sidebar card — desktop only (hidden below lg / 1024px) */}
@@ -95,10 +101,16 @@ export default function DashboardLayout({
         <div className="flex-1 flex flex-col min-w-0 min-h-0 gap-3">
           {!isImmersive && (
             <div className="rounded-2xl overflow-hidden shadow-md flex-shrink-0">
-              <TopNav onMenuClick={() => setSidebarOpen(true)} />
+              <TopNav onMenuClick={openSidebar} />
             </div>
           )}
-          <main id="main-content" className={`flex-1 min-h-0 rounded-2xl bg-white shadow-sm ${isNoPad ? 'overflow-hidden' : 'overflow-auto'}`} role="main" aria-label="Main content">
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className={`flex-1 min-h-0 rounded-2xl bg-white shadow-sm outline-none ${isNoPad ? 'overflow-hidden' : 'overflow-auto'}`}
+            role="main"
+            aria-label="Main content"
+          >
             {isNoPad
               ? children
               : <div className={isImmersive ? '' : 'p-4'}>{children}</div>

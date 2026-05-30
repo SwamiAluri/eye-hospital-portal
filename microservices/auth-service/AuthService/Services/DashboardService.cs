@@ -11,6 +11,7 @@ public interface IDashboardService
     Task<List<RecentActivity>> GetRecentActivitiesAsync(Guid tenantId, int limit = 10);
     Task<List<Alert>> GetAlertsAsync(Guid tenantId);
     Task<bool> DismissAlertAsync(Guid alertId, Guid tenantId);
+    Task<List<ActivitySeriesPoint>> GetActivitySeriesAsync(Guid tenantId, int hours = 24);
 }
 
 public class DashboardService : IDashboardService
@@ -81,6 +82,7 @@ public class DashboardService : IDashboardService
         {
             TotalTenants = 1, // Current tenant
             TenantGrowth = 0,
+            TotalUsers = activeUsers,
             ActiveUsers = activeUsers,
             UserGrowth = userGrowth,
             TotalDepartments = totalDepartments,
@@ -202,8 +204,38 @@ public class DashboardService : IDashboardService
 
     public async Task<bool> DismissAlertAsync(Guid alertId, Guid tenantId)
     {
-        // In a real implementation, this would update an alerts table
-        // For now, we'll just return true
-        return await Task.FromResult(true);
+        var alert = await _context.SystemAlerts
+            .FirstOrDefaultAsync(a => a.Id == alertId);
+
+        if (alert == null) return false;
+
+        alert.IsDismissed = true;
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<List<ActivitySeriesPoint>> GetActivitySeriesAsync(Guid tenantId, int hours = 24)
+    {
+        var now = DateTime.UtcNow;
+        var since = now.AddHours(-hours);
+        var logs = await _context.AuditLogs
+            .Where(a => a.TenantId == tenantId && a.Timestamp >= since)
+            .Select(a => a.Timestamp)
+            .ToListAsync();
+
+        var points = new List<ActivitySeriesPoint>();
+        for (var i = hours - 1; i >= 0; i--)
+        {
+            var bucketStart = now.AddHours(-i - 1);
+            var bucketEnd = now.AddHours(-i);
+            var count = logs.Count(t => t >= bucketStart && t < bucketEnd);
+            points.Add(new ActivitySeriesPoint
+            {
+                Hour = bucketEnd.ToString("HH:00"),
+                Count = count
+            });
+        }
+
+        return points;
     }
 }

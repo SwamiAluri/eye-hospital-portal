@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { generateCSSVariables } from './tokens';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -40,7 +40,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (!mounted) return;
 
     const resolved = theme === 'system' ? getSystemTheme() : theme;
-    setResolvedTheme(resolved);
+    setResolvedTheme(prev => (prev === resolved ? prev : resolved));
 
     // Apply theme to document
     const root = document.documentElement;
@@ -80,9 +80,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setTheme(resolvedTheme === 'light' ? 'dark' : 'light');
   }, [resolvedTheme, setTheme]);
 
-  // No need to hide content during mounting - SSR handles this gracefully
+  const contextValue = useMemo(
+    () => ({ theme, resolvedTheme, setTheme, toggleTheme }),
+    [theme, resolvedTheme, setTheme, toggleTheme],
+  );
+
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, toggleTheme }}>
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );

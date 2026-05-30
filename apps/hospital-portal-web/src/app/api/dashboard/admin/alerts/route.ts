@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+import { adminDashboardUrl } from '@/lib/admin/admin-dashboard-bff';
 
 export async function GET() {
   try {
@@ -17,7 +17,7 @@ export async function GET() {
     }
 
     // Fetch from real backend API
-    const response = await fetch(`${API_URL}/dashboard/admin/alerts`, {
+    const response = await fetch(adminDashboardUrl('/alerts'), {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,

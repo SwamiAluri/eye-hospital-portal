@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/lib/auth-store';
+import { useCallback, useMemo } from 'react';
 
 interface PermissionCacheEntry {
   permissions: string[];
@@ -173,86 +174,107 @@ const permissionCache = new PermissionCache();
  * Enhanced auth store with caching
  */
 export function useCachedAuthStore() {
-  const store = useAuthStore();
+  const user = useAuthStore(s => s.user);
+  const token = useAuthStore(s => s.token);
+  const refreshToken = useAuthStore(s => s.refreshToken);
+  const tenantId = useAuthStore(s => s.tenantId);
+  const roles = useAuthStore(s => s.roles);
+  const permissions = useAuthStore(s => s.permissions);
+  const isLoading = useAuthStore(s => s.isLoading);
+  const mustChangePassword = useAuthStore(s => s.mustChangePassword);
+  const storeHasPermission = useAuthStore(s => s.hasPermission);
+  const storeHasRole = useAuthStore(s => s.hasRole);
+  const setAuth = useAuthStore(s => s.setAuth);
+  const logout = useAuthStore(s => s.logout);
+  const clearMustChangePassword = useAuthStore(s => s.clearMustChangePassword);
 
-  return {
-    ...store,
+  const userId = user?.id;
 
-    // Cached permission checks
-    hasPermission: (permissionCode: string): boolean => {
-      const user = store.user;
-      if (!user) return false;
+  const hasPermission = useCallback((permissionCode: string): boolean => {
+    if (!userId) return false;
+    const cached = permissionCache.hasPermission(userId, permissionCode);
+    if (cached !== null) return cached;
+    return storeHasPermission(permissionCode);
+  }, [userId, storeHasPermission]);
 
-      // Try cache first
-      const cached = permissionCache.hasPermission(user.id, permissionCode);
-      if (cached !== null) return cached;
+  const hasRole = useCallback((roleName: string): boolean => {
+    if (!userId) return false;
+    const cached = permissionCache.hasRole(userId, roleName);
+    if (cached !== null) return cached;
+    return storeHasRole(roleName);
+  }, [userId, storeHasRole]);
 
-      // Fall back to store
-      return store.hasPermission(permissionCode);
-    },
+  const getPermissions = useCallback((): string[] => {
+    if (!userId) return [];
+    const cached = permissionCache.getPermissions(userId);
+    if (cached !== null) return cached;
+    return permissions;
+  }, [userId, permissions]);
 
-    hasRole: (roleName: string): boolean => {
-      const user = store.user;
-      if (!user) return false;
+  const getRoles = useCallback((): string[] => {
+    if (!userId) return [];
+    const cached = permissionCache.getRoles(userId);
+    if (cached !== null) return cached;
+    return roles;
+  }, [userId, roles]);
 
-      // Try cache first
-      const cached = permissionCache.hasRole(user.id, roleName);
-      if (cached !== null) return cached;
-
-      // Fall back to store
-      return store.hasRole(roleName);
-    },
-
-    getPermissions: (): string[] => {
-      const user = store.user;
-      if (!user) return [];
-
-      // Try cache first
-      const cached = permissionCache.getPermissions(user.id);
-      if (cached !== null) return cached;
-
-      // Fall back to store
-      return store.permissions || [];
-    },
-
-    getRoles: (): string[] => {
-      const user = store.user;
-      if (!user) return [];
-
-      // Try cache first
-      const cached = permissionCache.getRoles(user.id);
-      if (cached !== null) return cached;
-
-      // Fall back to store
-      return store.roles || [];
-    },
-
-    // Enhanced setAuth with caching
-    setAuth: (
-      token: string,
-      refreshToken: string | null,
-      user: any,
-      roles: string[],
-      permissions: string[],
-      tenantId: string | null,
-      mustChangePassword: boolean
+  const cachedSetAuth = useCallback(
+    (
+      authToken: string,
+      authRefreshToken: string | null,
+      authUser: Parameters<typeof setAuth>[2],
+      authRoles: string[],
+      authPermissions: string[],
+      authTenantId: string | null,
+      authMustChangePassword: boolean,
     ) => {
-      // Update store
-      store.setAuth(token, refreshToken, user, roles, permissions, tenantId, mustChangePassword);
-
-      // Cache permissions
-      permissionCache.set(user.id, permissions, roles);
+      setAuth(authToken, authRefreshToken, authUser, authRoles, authPermissions, authTenantId, authMustChangePassword);
+      permissionCache.set(authUser.id, authPermissions, authRoles);
     },
+    [setAuth],
+  );
 
-    // Enhanced logout with cache clearing
-    logout: () => {
-      const user = store.user;
-      if (user) {
-        permissionCache.invalidate(user.id);
-      }
-      store.logout();
-    }
-  };
+  const cachedLogout = useCallback(async () => {
+    if (userId) permissionCache.invalidate(userId);
+    await logout();
+  }, [userId, logout]);
+
+  return useMemo(
+    () => ({
+      user,
+      token,
+      refreshToken,
+      tenantId,
+      roles,
+      permissions,
+      isLoading,
+      mustChangePassword,
+      hasPermission,
+      hasRole,
+      getPermissions,
+      getRoles,
+      setAuth: cachedSetAuth,
+      logout: cachedLogout,
+      clearMustChangePassword,
+    }),
+    [
+      user,
+      token,
+      refreshToken,
+      tenantId,
+      roles,
+      permissions,
+      isLoading,
+      mustChangePassword,
+      hasPermission,
+      hasRole,
+      getPermissions,
+      getRoles,
+      cachedSetAuth,
+      cachedLogout,
+      clearMustChangePassword,
+    ],
+  );
 }
 
 /**

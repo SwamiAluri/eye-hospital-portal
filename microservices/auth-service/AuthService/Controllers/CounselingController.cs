@@ -585,209 +585,6 @@ namespace AuthService.Controllers
         }
 
         // ============================================================================
-        // COUNSELOR QUEUE
-        // ============================================================================
-
-        [HttpGet("queue")]
-        [RequirePermission("counselor_queue.read")]
-        public async Task<IActionResult> GetQueue([FromQuery] Guid? branchId = null, [FromQuery] string? status = null)
-        {
-            try
-            {
-                var tenantId = GetTenantId();
-                var response = await _counselingService.GetQueueAsync(tenantId, branchId, status);
-                return Ok(response);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving counselor queue");
-                return StatusCode(500, new { message = "Error retrieving queue", error = ex.Message });
-            }
-        }
-
-        [HttpGet("queue/{id}")]
-        [RequirePermission("counselor_queue.read")]
-        public async Task<IActionResult> GetQueueItemById(Guid id)
-        {
-            try
-            {
-                var tenantId = GetTenantId();
-                var item = await _counselingService.GetQueueItemByIdAsync(tenantId, id);
-                
-                if (item == null)
-                    return NotFound(new { message = "Queue item not found" });
-                
-                return Ok(item);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving queue item {QueueItemId}", id);
-                return StatusCode(500, new { message = "Error retrieving queue item", error = ex.Message });
-            }
-        }
-
-        [HttpGet("queue/by-session/{sessionId}")]
-        [RequirePermission("counselor_queue.read")]
-        public async Task<IActionResult> GetQueueItemBySessionId(Guid sessionId)
-        {
-            try
-            {
-                var tenantId = GetTenantId();
-                var item = await _counselingService.GetQueueItemBySessionIdAsync(tenantId, sessionId);
-                
-                if (item == null)
-                    return NotFound(new { message = "Queue item not found" });
-                
-                return Ok(item);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving queue item by session {SessionId}", sessionId);
-                return StatusCode(500, new { message = "Error retrieving queue item", error = ex.Message });
-            }
-        }
-
-        [HttpPost("queue")]
-        [RequirePermission("counselor_queue.create")]
-        public async Task<IActionResult> AddToQueue([FromBody] AddToQueueRequest request)
-        {
-            try
-            {
-                var tenantId = GetTenantId();
-                request.TenantId = tenantId;
-                
-                var item = await _counselingService.AddToQueueAsync(request);
-                
-                // Broadcast queue update via SignalR
-                await _queueHub.Clients.Group($"queue_{tenantId}")
-                    .SendAsync("QueueUpdated", item, "added");
-                
-                return Ok(item);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error adding session to queue");
-                return StatusCode(500, new { message = "Error adding to queue", error = ex.Message });
-            }
-        }
-
-        [HttpPatch("queue/{id}/status")]
-        [RequirePermission("counselor_queue.update")]
-        public async Task<IActionResult> UpdateQueueItemStatus(Guid id, [FromBody] UpdateQueueItemRequest request)
-        {
-            try
-            {
-                var tenantId = GetTenantId();
-                var currentUserId = GetCurrentUserId();
-                
-                var item = await _counselingService.UpdateQueueItemStatusAsync(tenantId, id, request.Status, currentUserId);
-                
-                // Broadcast queue update via SignalR
-                await _queueHub.Clients.Group($"queue_{tenantId}")
-                    .SendAsync("QueueUpdated", item, "updated");
-                
-                return Ok(item);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating queue item status {QueueItemId}", id);
-                return StatusCode(500, new { message = "Error updating queue item", error = ex.Message });
-            }
-        }
-
-        [HttpPost("queue/call-next")]
-        [RequirePermission("counselor_queue.call")]
-        public async Task<IActionResult> CallNextPatient([FromBody] CallNextPatientRequest request)
-        {
-            try
-            {
-                var currentUserId = GetCurrentUserId();
-                
-                var result = await _counselingService.CallNextPatientAsync(request, currentUserId);
-                return result.Success ? Ok(result) : BadRequest(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error calling next patient");
-                return StatusCode(500, new { message = "Error calling next patient", error = ex.Message });
-            }
-        }
-
-        [HttpPost("queue/{id}/start")]
-        [RequirePermission("counselor_queue.update")]
-        public async Task<IActionResult> StartSessionFromQueue(Guid id)
-        {
-            try
-            {
-                var tenantId = GetTenantId();
-                var currentUserId = GetCurrentUserId();
-                
-                var success = await _counselingService.StartSessionFromQueueAsync(tenantId, id, currentUserId);
-                
-                if (success)
-                {
-                    // Get updated queue item
-                    var item = await _counselingService.GetQueueItemByIdAsync(tenantId, id);
-                    
-                    // Broadcast queue update via SignalR
-                    await _queueHub.Clients.Group($"queue_{tenantId}")
-                        .SendAsync("QueueUpdated", item, "session_started");
-                }
-                
-                return success ? Ok(new { message = "Session started successfully" }) : NotFound(new { message = "Queue item not found" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error starting session from queue {QueueItemId}", id);
-                return StatusCode(500, new { message = "Error starting session", error = ex.Message });
-           }
-        }
-
-        [HttpPost("queue/{id}/complete")]
-        [RequirePermission("counselor_queue.update")]
-        public async Task<IActionResult> CompleteQueueItem(Guid id)
-        {
-            try
-            {
-                var tenantId = GetTenantId();
-                var currentUserId = GetCurrentUserId();
-                
-                var success = await _counselingService.CompleteQueueItemAsync(tenantId, id, currentUserId);                
-                if (success)
-                {
-                    // Broadcast queue removal via SignalR
-                    await _queueHub.Clients.Group($"queue_{tenantId}")
-                        .SendAsync("QueueUpdated", new { id }, "completed");
-                }
-                                return success ? Ok(new { message = "Queue item completed successfully" }) : NotFound(new { message = "Queue item not found" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error completing queue item {QueueItemId}", id);
-                return StatusCode(500, new { message = "Error completing queue item", error = ex.Message });
-            }
-        }
-
-        [HttpDelete("queue/{id}")]
-        [RequirePermission("counselor_queue.delete")]
-        public async Task<IActionResult> RemoveFromQueue(Guid id, [FromQuery] string reason)
-        {
-            try
-            {
-                var tenantId = GetTenantId();
-                var currentUserId = GetCurrentUserId();
-                
-                var success = await _counselingService.RemoveFromQueueAsync(tenantId, id, reason, currentUserId);
-                return success ? Ok(new { message = "Removed from queue successfully" }) : NotFound(new { message = "Queue item not found" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error removing from queue {QueueItemId}", id);
-                return StatusCode(500, new { message = "Error removing from queue", error = ex.Message });
-            }
-        }
-
-        // ============================================================================
         // SESSION NOTES
         // ============================================================================
 
@@ -2070,12 +1867,20 @@ namespace AuthService.Controllers
             [FromQuery] DateTime? date,
             [FromQuery] string? uhid,
             [FromQuery] string? name,
-            [FromQuery] string? status)
+            [FromQuery] string? status,
+            [FromQuery] Guid? sessionId)
         {
             try
             {
                 var tenantId = GetTenantId();
-                var filters  = new OtScheduleFilters { Date = date, Uhid = uhid, Name = name, Status = status };
+                var filters  = new OtScheduleFilters
+                {
+                    Date = date,
+                    Uhid = uhid,
+                    Name = name,
+                    Status = status,
+                    CounsellingSessionId = sessionId,
+                };
                 var results  = await _otFinalizeService.GetFinalizeListAsync(filters, tenantId);
                 return Ok(results);
             }

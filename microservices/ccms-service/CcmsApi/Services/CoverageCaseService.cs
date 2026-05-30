@@ -1,5 +1,6 @@
 using CcmsApi.Data;
 using CcmsApi.Models.Domain;
+using CcmsApi.Models.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -15,18 +16,46 @@ public class CoverageCaseService
     private readonly CcmsDbContext _db;
     private readonly IWorkflowEngine _workflow;
     private readonly FinancialYearService _fyService;
+    private readonly AuthServiceClient _authClient;
     private readonly ILogger<CoverageCaseService> _log;
 
     public CoverageCaseService(
         CcmsDbContext db,
         IWorkflowEngine workflow,
         FinancialYearService fyService,
+        AuthServiceClient authClient,
         ILogger<CoverageCaseService> log)
     {
         _db       = db;
         _workflow = workflow;
         _fyService = fyService;
+        _authClient = authClient;
         _log      = log;
+    }
+
+    private void NotifyAuthSessionFireAndForget(CcmsCoverageCase coverageCase, string eventType)
+    {
+        if (!coverageCase.SessionId.HasValue || coverageCase.SessionId.Value == Guid.Empty)
+            return;
+
+        var tenantId = coverageCase.TenantId;
+        var sessionId = coverageCase.SessionId.Value;
+        var caseId = coverageCase.Id;
+        var caseNumber = coverageCase.CaseNumber;
+        var state = coverageCase.CurrentState;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _authClient.NotifyCcmsSessionAsync(
+                    tenantId, sessionId, caseId, caseNumber, eventType, state);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Auth notify failed for case {CaseId} event {Event}", caseId, eventType);
+            }
+        });
     }
 
     // ── Create Coverage Case ─────────────────────────────────────────────────
@@ -34,6 +63,23 @@ public class CoverageCaseService
     public async Task<CcmsCoverageCase> CreateAsync(
         Guid tenantId, Guid actorUserId, CreateCoverageCaseRequest req, CancellationToken ct = default)
     {
+        // ── Idempotency guard ────────────────────────────────────────────────────
+        // If a case already exists for this session (counsellor clicked the tab before or
+        // after saving), return it instead of creating a duplicate.  This makes the
+        // endpoint safe to call multiple times with the same sessionId.
+        var sessionId = req.SessionId ?? req.CounselingSessionId;
+        if (sessionId.HasValue && sessionId.Value != Guid.Empty)
+        {
+            var existing = await GetBySessionIdAsync(sessionId.Value, ct);
+            if (existing is not null)
+            {
+                _log.LogInformation(
+                    "Coverage case {Num} already exists for session {Session} — returning existing",
+                    existing.CaseNumber, sessionId.Value);
+                return existing;
+            }
+        }
+
         // Resolve financial year
         var fyId = req.FinancialYearId
             ?? await _fyService.GetCurrentFinancialYearIdAsync(tenantId, actorUserId, ct);
@@ -44,13 +90,16 @@ public class CoverageCaseService
         // Generate case number atomically via DB function
         var caseNumber = await GenerateCaseNumberAsync(tenantId, fyId, fy.YearCode, ct);
 
-        // Start workflow instance
+        // Pre-generate the case ID so the workflow instance references it from the start,
+        // avoiding the fragile post-creation entityId fix-up.
+        var caseId = Guid.NewGuid();
+
         var instance = await _workflow.StartAsync(
-            tenantId, Guid.NewGuid(), "coverage_case", actorUserId, ct);
+            tenantId, caseId, "coverage_case", actorUserId, ct);
 
         var coverageCase = new CcmsCoverageCase
         {
-            Id                  = Guid.NewGuid(),
+            Id                  = caseId,
             TenantId            = tenantId,
             CaseNumber          = caseNumber,
             PatientId           = req.PatientId,
@@ -61,6 +110,7 @@ public class CoverageCaseService
             BranchId            = req.BranchId,
             DoctorId            = req.DoctorId,
             PayerType           = req.PayerType,
+            PaymentType         = req.PaymentType,
             InsuranceProviderId = req.InsuranceProviderId,
             TpaProviderId       = req.TpaProviderId,
             GovernmentSchemeId  = req.GovernmentSchemeId,
@@ -76,23 +126,97 @@ public class CoverageCaseService
             SessionPreauthId    = req.SessionPreauthId
         };
 
-        // Update workflow instance entity ID now that we have the case ID
-        instance.EntityId = coverageCase.Id;
-        _db.WorkflowInstances.Update(instance);
-
         _db.CoverageCases.Add(coverageCase);
         await _db.SaveChangesAsync(ct);
 
         _log.LogInformation("Coverage case {Num} created for patient {Patient}",
             caseNumber, req.PatientId);
+
+        NotifyAuthSessionFireAndForget(coverageCase, "CCMS_CASE_CREATED");
         return coverageCase;
     }
 
     // ── Query ────────────────────────────────────────────────────────────────
 
-    public async Task<CcmsCoverageCase?> GetByIdAsync(Guid id, CancellationToken ct = default)
-        => await _db.CoverageCases.AsNoTracking()
+    public async Task<CoverageCaseDetailDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        var coverageCase = await _db.CoverageCases.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == id && c.DeletedAt == null, ct);
+        if (coverageCase is null) return null;
+
+        if (string.IsNullOrWhiteSpace(coverageCase.PatientName))
+            coverageCase.PatientName = TryPatientNameFromDraft(coverageCase.CounsellorDraftJson);
+
+        return ToDetailDto(coverageCase);
+    }
+
+    // ── DTO mappers ──────────────────────────────────────────────────────────
+
+    internal static CoverageCaseSummaryDto ToSummaryDto(CcmsCoverageCase c) => new(
+        c.Id, c.CaseNumber, c.PatientId, c.PatientName,
+        c.SessionId, c.CurrentState, c.PayerType, c.PaymentType,
+        c.InsuranceProviderId, c.TpaProviderId, c.PreAuthNumber,
+        c.ApprovedAmount, c.IsDraft, c.CreatedAt, c.UpdatedAt,
+        InsurerName:            c.InsurerName,
+        EstimatedAmount:        TryParseDraftEstimate(c.CounsellorDraftJson),
+        PatientPayableAmount:   c.ApprovedAmount > 0
+                                    ? c.ApprovedAmount   // copay deducted server-side when full DTO available
+                                    : (decimal?)null);
+
+    internal static CoverageCaseDetailDto ToDetailDto(CcmsCoverageCase c) => new(
+        c.Id, c.CaseNumber, c.PatientId, c.PatientName,
+        c.SessionId, c.JourneyId, c.FinancialYearId, c.BranchId, c.DoctorId,
+        c.CurrentState, c.PayerType, c.PaymentType,
+        c.InsuranceProviderId, c.TpaProviderId, c.GovernmentSchemeId, c.CoveragePackageId,
+        c.WorkflowInstanceId, c.ApprovedAmount, c.RoomClassApproved, c.PreAuthNumber,
+        c.PreAuthExpiry, c.IsDraft, c.DraftSavedAt, c.CreatedAt, c.UpdatedAt,
+        CounsellorDraftJson:    c.CounsellorDraftJson,
+        InsurerName:            c.InsurerName,
+        ProcessStatus:          c.ProcessStatus,
+        ServiceTaxApplicable:   c.ServiceTaxApplicable,
+        ServiceTaxPercent:      c.ServiceTaxPercent,
+        ServiceTaxAmount:       c.ServiceTaxAmount,
+        EntityStatus:           c.Status);
+
+    private static string? TryPatientNameFromDraft(string? draftJson)
+    {
+        if (string.IsNullOrWhiteSpace(draftJson)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(draftJson);
+            if (doc.RootElement.TryGetProperty("insuredName", out var ins) && ins.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var name = ins.GetString();
+                if (!string.IsNullOrWhiteSpace(name)) return name.Trim();
+            }
+            if (doc.RootElement.TryGetProperty("InsuredName", out var ins2) && ins2.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var name = ins2.GetString();
+                if (!string.IsNullOrWhiteSpace(name)) return name.Trim();
+            }
+        }
+        catch { /* ignore malformed draft */ }
+        return null;
+    }
+
+    internal static decimal? TryParseDraftEstimate(string? draftJson)
+    {
+        if (string.IsNullOrWhiteSpace(draftJson)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(draftJson);
+            foreach (var key in new[] { "estimatedAmount", "EstimatedAmount", "sessionPackageRate", "SessionPackageRate" })
+            {
+                if (doc.RootElement.TryGetProperty(key, out var val))
+                {
+                    if (val.ValueKind == System.Text.Json.JsonValueKind.Number && val.TryGetDecimal(out var amount) && amount > 0)
+                        return amount;
+                }
+            }
+        }
+        catch { /* ignore malformed draft */ }
+        return null;
+    }
 
     public async Task<CcmsCoverageCase?> GetBySessionIdAsync(Guid sessionId, CancellationToken ct = default)
         => await _db.CoverageCases.AsNoTracking()
@@ -108,14 +232,15 @@ public class CoverageCaseService
         => await _db.CoverageCases.AsNoTracking()
             .FirstOrDefaultAsync(c => c.JourneyId == journeyId && c.DeletedAt == null, ct);
 
-    public async Task<PagedResult<CcmsCoverageCase>> ListAsync(
+    public async Task<PagedResult<CoverageCaseSummaryDto>> ListAsync(
         Guid tenantId,
         string? state = null,
         string? payerType = null,
         Guid? insuranceProviderId = null,
         int page = 1,
         int pageSize = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? search = null)
     {
         var q = _db.CoverageCases.AsNoTracking()
             .Where(c => c.TenantId == tenantId && c.DeletedAt == null);
@@ -127,6 +252,17 @@ public class CoverageCaseService
         if (insuranceProviderId.HasValue)
             q = q.Where(c => c.InsuranceProviderId == insuranceProviderId.Value);
 
+        // Server-side search: case number, patient name, insurer name, payer type
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            q = q.Where(c =>
+                c.CaseNumber.ToLower().Contains(term) ||
+                (c.PatientName != null && c.PatientName.ToLower().Contains(term)) ||
+                (c.InsurerName != null && c.InsurerName.ToLower().Contains(term)) ||
+                c.PayerType.ToLower().Contains(term));
+        }
+
         var total = await q.CountAsync(ct);
         var items = await q
             .OrderByDescending(c => c.CreatedAt)
@@ -134,7 +270,8 @@ public class CoverageCaseService
             .Take(pageSize)
             .ToListAsync(ct);
 
-        return new PagedResult<CcmsCoverageCase>(items, total, page, pageSize);
+        return new PagedResult<CoverageCaseSummaryDto>(
+            items.Select(ToSummaryDto).ToList(), total, page, pageSize);
     }
 
     // ── Update state ─────────────────────────────────────────────────────────
@@ -157,6 +294,177 @@ public class CoverageCaseService
         coverageCase.RowVersion     += 1;
 
         await _db.SaveChangesAsync(ct);
+
+        NotifyAuthSessionFireAndForget(coverageCase, "CCMS_STATE_CHANGED");
+    }
+
+    // ── Patch draft (counsellor saves progress) ──────────────────────────────
+
+    public async Task<CcmsCoverageCase> PatchDraftAsync(
+        Guid id, Guid actorUserId, PatchCoverageCaseRequest req, CancellationToken ct = default)
+    {
+        var coverageCase = await _db.CoverageCases
+            .FirstOrDefaultAsync(c => c.Id == id && c.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Coverage case {id} not found.");
+
+        // Persist counsellor-captured fields as camelCase JSON so the frontend
+        // parseCounsellorDraft() can restore them without a case-mapping step.
+        var draftPayload = new
+        {
+            insurerName             = req.InsurerName,
+            policyNumber            = req.PolicyNumber,
+            membershipNumber        = req.MembershipNumber,
+            insuredName             = req.InsuredName,
+            relationshipToInsured   = req.RelationshipToInsured,
+            sumInsured              = req.SumInsured,
+            coPay                   = req.CoPay,
+            policyExpiry            = req.PolicyExpiry,
+            urgencyLevel            = req.UrgencyLevel,
+            coverageNotes           = req.CoverageNotes,
+            clinicalNotes           = req.ClinicalNotes,
+            tpaContactPerson        = req.TpaContactPerson,
+            tpaContactEmail         = req.TpaContactEmail,
+            tpaContactPhone         = req.TpaContactPhone,
+            surgeryDate             = req.SurgeryDate,
+            diagnosisCode           = req.DiagnosisCode,
+            procedureCode           = req.ProcedureCode,
+            estimatedAmount         = req.EstimatedAmount,
+            estimatedSurgery        = req.EstimatedSurgery,
+            estimatedRoom           = req.EstimatedRoom,
+            estimatedMedicines      = req.EstimatedMedicines,
+            estimatedLab            = req.EstimatedLab,
+            estimatedOther          = req.EstimatedOther,
+            paymentType             = req.PaymentType,
+            roomClassEntitlement    = req.RoomClassEntitlement,
+            networkHospitalConfirmed = req.NetworkHospitalConfirmed,
+        };
+        coverageCase.CounsellorDraftJson = System.Text.Json.JsonSerializer.Serialize(draftPayload,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            });
+        coverageCase.IsDraft      = req.IsDraft ?? true;
+        coverageCase.DraftSavedAt = DateTime.UtcNow;
+
+        // Also write to native DB columns where they exist, so CCMS team sees the data immediately
+        if (!string.IsNullOrWhiteSpace(req.FinancialYearId) &&
+            Guid.TryParse(req.FinancialYearId, out var fyGuid))
+            coverageCase.FinancialYearId = fyGuid;
+
+        if (!string.IsNullOrWhiteSpace(req.InsuranceProviderId) &&
+            Guid.TryParse(req.InsuranceProviderId, out var provGuid))
+            coverageCase.InsuranceProviderId = provGuid;
+
+        // Persist payment type when counsellor updates it
+        if (!string.IsNullOrWhiteSpace(req.PaymentType))
+            coverageCase.PaymentType = req.PaymentType;
+
+        if (!string.IsNullOrWhiteSpace(req.InsuredName))
+            coverageCase.PatientName = req.InsuredName.Trim();
+
+        // Keep the denormalized InsurerName column in sync so CCMS list search works
+        if (!string.IsNullOrWhiteSpace(req.InsurerName))
+            coverageCase.InsurerName = req.InsurerName.Trim();
+
+        // NOTE: EstimatedAmount from the counsellor draft is intentionally NOT written to
+        // ApprovedAmount. ApprovedAmount is only set by RecordTpaResponse once TPA actually
+        // approves the case. Storing the estimate there causes the CCMS UI to show
+        // "Approved ₹X" while the case is still in ELIGIBILITY_PENDING state.
+
+        coverageCase.UpdatedAt       = DateTime.UtcNow;
+        coverageCase.UpdatedByUserId = actorUserId;
+        coverageCase.RowVersion     += 1;
+
+        // ── Auto-upsert a primary visit policy from the counsellor's draft ──────────
+        // If the counsellor provided a policy number, create or update the primary
+        // VisitInsurancePolicy so the CCMS team can see structured policy data and the
+        // submit-to-claims guard (which requires a primary policy) is satisfied.
+        if (!string.IsNullOrWhiteSpace(req.PolicyNumber))
+        {
+            var existingPolicy = await _db.VisitInsurancePolicies
+                .FirstOrDefaultAsync(p => p.CoverageCase_Id == coverageCase.Id
+                                       && p.IsPrimary
+                                       && p.DeletedAt == null, ct);
+
+            if (existingPolicy is null)
+            {
+                _db.VisitInsurancePolicies.Add(new CcmsApi.Models.Domain.CcmsVisitInsurancePolicy
+                {
+                    Id                   = Guid.NewGuid(),
+                    TenantId             = coverageCase.TenantId,
+                    SessionId            = coverageCase.SessionId,
+                    CoverageCase_Id      = coverageCase.Id,
+                    PolicyNumber         = req.PolicyNumber.Trim(),
+                    MembershipNumber     = req.MembershipNumber?.Trim(),
+                    InsuredName          = req.InsuredName?.Trim(),
+                    RelationshipToInsured = req.RelationshipToInsured?.ToLower(),
+                    AccommodationClass   = req.RoomClassEntitlement?.ToLower(),
+                    IsPrimary            = true,
+                    SortOrder            = 1,
+                    CreatedByUserId      = actorUserId,
+                    UpdatedByUserId      = actorUserId,
+                });
+            }
+            else
+            {
+                existingPolicy.PolicyNumber         = req.PolicyNumber.Trim();
+                existingPolicy.MembershipNumber     = req.MembershipNumber?.Trim() ?? existingPolicy.MembershipNumber;
+                existingPolicy.InsuredName          = req.InsuredName?.Trim()      ?? existingPolicy.InsuredName;
+                existingPolicy.RelationshipToInsured = req.RelationshipToInsured?.ToLower() ?? existingPolicy.RelationshipToInsured;
+                existingPolicy.AccommodationClass   = req.RoomClassEntitlement?.ToLower()  ?? existingPolicy.AccommodationClass;
+                existingPolicy.UpdatedAt            = DateTime.UtcNow;
+                existingPolicy.UpdatedByUserId      = actorUserId;
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _log.LogInformation("Draft saved for coverage case {Id} by user {UserId}", id, actorUserId);
+
+        NotifyAuthSessionFireAndForget(coverageCase, "CCMS_DRAFT_SAVED");
+        return coverageCase;
+    }
+
+    // ── Remind CCMS team (lightweight note, no state change) ─────────────────
+
+    public async Task AddRemindNoteAsync(
+        Guid id, Guid actorUserId, string? notes, CancellationToken ct = default)
+    {
+        var coverageCase = await _db.CoverageCases
+            .FirstOrDefaultAsync(c => c.Id == id && c.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Coverage case {id} not found.");
+
+        if (!coverageCase.WorkflowInstanceId.HasValue)
+            throw new InvalidOperationException("Coverage case has no associated workflow instance.");
+
+        var instance = await _db.WorkflowInstances
+            .FirstOrDefaultAsync(w => w.Id == coverageCase.WorkflowInstanceId.Value, ct)
+            ?? throw new InvalidOperationException("Workflow instance not found.");
+
+        // Insert a history note with a "REMIND" trigger event — does not change state
+        var historyEntry = new CcmsWorkflowHistory
+        {
+            WorkflowInstanceId = instance.Id,
+            FromStateId        = instance.CurrentStateId,
+            ToStateId          = instance.CurrentStateId, // same state — no transition
+            TriggerEvent       = "COUNSELLOR_REMIND",
+            ActorUserId        = actorUserId,
+            Notes              = notes ?? "Counsellor sent a reminder to the CCMS team.",
+            TransitionedAt     = DateTime.UtcNow,
+            MetaJson           = System.Text.Json.JsonSerializer.Serialize(new {
+                type       = "remind",
+                caseNumber = coverageCase.CaseNumber,
+                state      = coverageCase.CurrentState,
+            }),
+        };
+        _db.WorkflowHistories.Add(historyEntry);
+
+        coverageCase.UpdatedAt       = DateTime.UtcNow;
+        coverageCase.UpdatedByUserId = actorUserId;
+        await _db.SaveChangesAsync(ct);
+
+        _log.LogInformation(
+            "Remind note added for coverage case {Id} (state={State}) by user {UserId}",
+            id, coverageCase.CurrentState, actorUserId);
     }
 
     // ── Admission validation (9-case matrix) ─────────────────────────────────
@@ -272,6 +580,39 @@ public record CreateCoverageCaseRequest(
     Guid?   CoveragePackageId,
     Guid?   LegacyPreauthId,
     Guid?   SessionPreauthId
+);
+
+/// <summary>Payload for PATCH /ccms/coverage-cases/{id} — all fields optional.</summary>
+public record PatchCoverageCaseRequest(
+    string?  InsurerName,
+    string?  InsuranceProviderId,   // free-text name OR uuid string — stored in draft JSON
+    string?  PolicyNumber,
+    string?  MembershipNumber,
+    string?  InsuredName,
+    string?  RelationshipToInsured,
+    decimal? SumInsured,
+    decimal? CoPay,
+    string?  RoomClassEntitlement,
+    bool?    NetworkHospitalConfirmed,
+    string?  PolicyExpiry,
+    string?  FinancialYearId,
+    string?  CoverageNotes,
+    string?  SurgeryDate,
+    string?  DiagnosisCode,
+    string?  ProcedureCode,
+    string?  UrgencyLevel,
+    decimal? EstimatedSurgery,
+    decimal? EstimatedRoom,
+    decimal? EstimatedMedicines,
+    decimal? EstimatedLab,
+    decimal? EstimatedOther,
+    decimal? EstimatedAmount,
+    string?  TpaContactPerson,
+    string?  TpaContactEmail,
+    string?  TpaContactPhone,
+    string?  ClinicalNotes,
+    string?  PaymentType,
+    bool?    IsDraft
 );
 
 public record PagedResult<T>(

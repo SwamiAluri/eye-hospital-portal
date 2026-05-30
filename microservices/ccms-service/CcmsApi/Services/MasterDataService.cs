@@ -40,13 +40,41 @@ public class MasterDataService
     }
 
     public async Task<CcmsInsuranceProvider> UpdateInsuranceProviderAsync(
-        CcmsInsuranceProvider provider, CancellationToken ct = default)
+        CcmsInsuranceProvider patch, CancellationToken ct = default)
     {
-        provider.UpdatedAt  = DateTime.UtcNow;
-        provider.RowVersion += 1;
-        _db.InsuranceProviders.Update(provider);
+        var existing = await _db.InsuranceProviders
+            .FirstOrDefaultAsync(p => p.Id == patch.Id && p.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Insurance provider {patch.Id} not found.");
+
+        existing.ProviderName              = patch.ProviderName;
+        existing.ProviderCode              = patch.ProviderCode;
+        existing.LicenseNumber             = patch.LicenseNumber;
+        existing.ContactEmail              = patch.ContactEmail;
+        existing.ContactPhone              = patch.ContactPhone;
+        existing.PortalUrl                 = patch.PortalUrl;
+        existing.ApiEndpoint               = patch.ApiEndpoint;
+        existing.ClaimSubmissionMode       = patch.ClaimSubmissionMode;
+        existing.PreAuthRequired           = patch.PreAuthRequired;
+        existing.AddressJson               = patch.AddressJson;
+        // Migration 123 fields
+        existing.PayerCategory             = patch.PayerCategory;
+        existing.DebtorSubtype             = patch.DebtorSubtype;
+        existing.CreditLimit               = patch.CreditLimit;
+        existing.ExportCode                = patch.ExportCode;
+        existing.HospitalIdentifier        = patch.HospitalIdentifier;
+        existing.ServiceTaxApplicable      = patch.ServiceTaxApplicable;
+        existing.DefaultServiceTaxPercent  = patch.DefaultServiceTaxPercent;
+        existing.TdsMandatory              = patch.TdsMandatory;
+        existing.ValidFrom                 = patch.ValidFrom;
+        existing.ValidTo                   = patch.ValidTo;
+        existing.FormatCode                = patch.FormatCode;
+        // Audit
+        existing.UpdatedAt                 = DateTime.UtcNow;
+        existing.UpdatedByUserId           = patch.UpdatedByUserId;
+        existing.RowVersion               += 1;
+
         await _db.SaveChangesAsync(ct);
-        return provider;
+        return existing;
     }
 
     public async Task SoftDeleteInsuranceProviderAsync(

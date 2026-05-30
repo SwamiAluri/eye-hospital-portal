@@ -118,22 +118,6 @@ export const PATIENT_SUMMARY_WIDGET: WidgetMetadata = {
   minHeight: 200,
 };
 
-export const QUEUE_STATUS_WIDGET: WidgetMetadata = {
-  id: 'queue-status',
-  title: 'Queue Status',
-  description: 'Current token, wait time, queue position, call next action',
-  icon: Clock,
-  category: 'queue',
-  defaultSize: 'medium',
-  allowedSizes: ['small', 'medium'],
-  requiredStages: ['queue'],
-  isPinnable: true,
-  isCloseable: false,
-  isResizable: true,
-  minWidth: 280,
-  minHeight: 150,
-};
-
 export const ACTIVE_SESSION_WIDGET: WidgetMetadata = {
   id: 'active-session',
   title: 'Active Session',
@@ -704,11 +688,6 @@ export function registerAllWidgets(): void {
   WidgetRegistry.register({
     metadata: PATIENT_SUMMARY_WIDGET,
     component: require('@/components/widgets/PatientSummaryWidget').default,
-  });
-
-  WidgetRegistry.register({
-    metadata: QUEUE_STATUS_WIDGET,
-    component: require('@/components/widgets/QueueStatusWidget').default,
   });
 
   WidgetRegistry.register({

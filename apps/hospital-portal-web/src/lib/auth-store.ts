@@ -137,7 +137,7 @@ function isTokenExpired(token: string): boolean {
 }
 
 // Hydrate auth state from localStorage (call on client startup)
-export function hydrateAuthFromStorage() {
+export async function hydrateAuthFromStorage() {
   if (typeof window === 'undefined') return;
 
   try {
@@ -148,25 +148,36 @@ export function hydrateAuthFromStorage() {
     const permissionsJson = localStorage.getItem('permissions');
     const tenantId = localStorage.getItem('tenant_id');
 
-    if (token && userJson) {
-      // Check if token is expired before restoring
-      if (isTokenExpired(token)) {
-        console.warn('❌ Token expired - clearing localStorage and requiring login');
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        localStorage.removeItem('roles');
-        localStorage.removeItem('permissions');
-        localStorage.removeItem('tenant_id');
-        return;
-      }
-      
-      const user = JSON.parse(userJson);
-      const roles = rolesJson ? JSON.parse(rolesJson) : [];
-      const permissions = permissionsJson ? JSON.parse(permissionsJson) : [];
+    if (!token || !userJson) return;
 
-      useAuthStore.getState().setAuth(token, refreshToken || '', user, roles, permissions, tenantId || '', false);
+    // If access token expired but refresh token exists, try silent refresh first
+    if (isTokenExpired(token)) {
+      if (refreshToken) {
+        const user = JSON.parse(userJson);
+        const roles = rolesJson ? JSON.parse(rolesJson) : [];
+        const permissions = permissionsJson ? JSON.parse(permissionsJson) : [];
+        useAuthStore.getState().setAuth(token, refreshToken, user, roles, permissions, tenantId || '', false);
+
+        const { refreshAccessToken } = await import('./token-refresh');
+        const ok = await refreshAccessToken();
+        if (ok) return;
+      }
+
+      console.warn('❌ Token expired — clearing localStorage and requiring login');
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('roles');
+      localStorage.removeItem('permissions');
+      localStorage.removeItem('tenant_id');
+      return;
     }
+
+    const user = JSON.parse(userJson);
+    const roles = rolesJson ? JSON.parse(rolesJson) : [];
+    const permissions = permissionsJson ? JSON.parse(permissionsJson) : [];
+
+    useAuthStore.getState().setAuth(token, refreshToken || '', user, roles, permissions, tenantId || '', false);
   } catch (e) {
     console.warn('Failed to hydrate auth from storage', e);
   }

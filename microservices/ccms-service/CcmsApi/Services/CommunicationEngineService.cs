@@ -30,6 +30,8 @@ public class CommunicationEngineService
             Subject             = req.Subject,
             BodySummary         = req.Body,
             SentAt              = DateTime.UtcNow,
+            DeliveryStatus      = req.DeliveryStatus ?? "sent",
+            ExternalMessageId   = req.ExternalMessageId,
             CreatedAt           = DateTime.UtcNow,
             UpdatedAt           = DateTime.UtcNow,
             CreatedByUserId     = actorUserId,
@@ -67,5 +69,7 @@ public record LogCommunicationRequest(
     string? RecipientRef,
     string? Subject,
     string? Body,
-    string? TemplateCode
+    string? TemplateCode,
+    string? DeliveryStatus = null,
+    string? ExternalMessageId = null
 );

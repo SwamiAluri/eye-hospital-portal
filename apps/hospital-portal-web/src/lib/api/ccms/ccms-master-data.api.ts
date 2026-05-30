@@ -1,6 +1,8 @@
 // CCMS – Master Data API client (payers, TPA, govt schemes, packages)
 import { getCcmsApi } from './ccms-base';
 
+export type PayerCategory = 'insurance' | 'other_debtor';
+
 export interface InsurancePayer {
   id: string;
   name: string;
@@ -8,7 +10,20 @@ export interface InsurancePayer {
   tpaId?: string;
   contactEmail?: string;
   contactPhone?: string;
+  portalUrl?: string;
   status: string;
+  // Migration 123 fields
+  payerCategory?: PayerCategory;
+  debtorSubtype?: string;
+  creditLimit?: number;
+  exportCode?: string;
+  hospitalIdentifier?: string;
+  serviceTaxApplicable?: boolean;
+  defaultServiceTaxPercent?: number;
+  tdsMandatory?: boolean;
+  validFrom?: string;
+  validTo?: string;
+  formatCode?: string;
 }
 
 export interface TpaOrganization {
@@ -17,6 +32,9 @@ export interface TpaOrganization {
   shortCode?: string;
   contactEmail?: string;
   contactPhone?: string;
+  claimsEmail?: string;
+  tatDaysPreauth?: number;
+  tatDaysClaim?: number;
   status: string;
 }
 
@@ -45,7 +63,21 @@ export interface CreatePayerRequest {
   tpaId?: string;
   contactEmail?: string;
   contactPhone?: string;
+  portalUrl?: string;
+  payerCategory?: PayerCategory;
+  debtorSubtype?: string;
+  creditLimit?: number;
+  exportCode?: string;
+  hospitalIdentifier?: string;
+  serviceTaxApplicable?: boolean;
+  defaultServiceTaxPercent?: number;
+  tdsMandatory?: boolean;
+  validFrom?: string;
+  validTo?: string;
+  formatCode?: string;
 }
+
+export type UpdatePayerRequest = Partial<CreatePayerRequest>;
 
 export async function listInsurancePayers(): Promise<InsurancePayer[]> {
   const { data } = await getCcmsApi().get('/ccms/master/insurance-providers');
@@ -63,6 +95,15 @@ export async function listInsurancePayers(): Promise<InsurancePayer[]> {
 export async function createInsurancePayer(req: CreatePayerRequest): Promise<InsurancePayer> {
   const { data } = await getCcmsApi().post('/ccms/master/insurance-providers', req);
   return data;
+}
+
+export async function updateInsurancePayer(id: string, req: UpdatePayerRequest): Promise<InsurancePayer> {
+  const { data } = await getCcmsApi().put(`/ccms/master/insurance-providers/${id}`, req);
+  return data;
+}
+
+export async function deleteInsurancePayer(id: string): Promise<void> {
+  await getCcmsApi().delete(`/ccms/master/insurance-providers/${id}`);
 }
 
 export async function listTpaOrganizations(): Promise<TpaOrganization[]> {

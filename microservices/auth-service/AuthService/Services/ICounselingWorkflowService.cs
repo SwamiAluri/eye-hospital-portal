@@ -22,6 +22,17 @@ namespace AuthService.Services
         Task<SessionOperationResult> MarkAddOnSurgeryAsync(Guid tenantId, Guid sessionId, Guid currentUserId);
         Task<bool> DeleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId);
 
+        /// <summary>
+        /// Merges CCMS case linkage fields into the session's PackageAddonsJson (internal callback).
+        /// </summary>
+        Task<bool> ApplyCcmsCallbackAsync(
+            Guid sessionId,
+            Guid? tenantId,
+            Guid coverageCaseId,
+            string caseNumber,
+            string eventType,
+            string? currentState = null);
+
         // ============================================================================
         // COUNSELOR QUEUE
         // ============================================================================

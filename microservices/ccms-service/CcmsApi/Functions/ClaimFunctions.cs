@@ -59,6 +59,19 @@ public class ClaimFunctions
         return await req.OkJsonAsync(result);
     }
 
+    // POST /api/ccms/claims/{id}/acknowledge
+    [Function("AcknowledgeClaim")]
+    public async Task<HttpResponseData> Acknowledge(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/claims/{id:guid}/acknowledge")] HttpRequestData req, Guid id)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        var body = await JsonSerializer.DeserializeAsync<AcknowledgeClaimRequest>(req.Body);
+        var result = await _svc.AcknowledgeClaimAsync(id, claims!.UserId, body?.TpaAckReference);
+        return await req.OkJsonAsync(result);
+    }
+
     // GET /api/ccms/claims/queue
     [Function("GetClaimQueue")]
     public async Task<HttpResponseData> GetQueue(
@@ -73,3 +86,4 @@ public class ClaimFunctions
 }
 
 public record SubmitClaimRequest(string? TpaClaimNumber);
+public record AcknowledgeClaimRequest(string? TpaAckReference);

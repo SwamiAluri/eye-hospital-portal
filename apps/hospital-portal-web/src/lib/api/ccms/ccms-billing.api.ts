@@ -1,58 +1,110 @@
 // CCMS – Billing Integration API client
 import { getCcmsApi } from './ccms-base';
 
-export interface BillAllocationLine {
-  lineItemId: string;
-  description: string;
-  totalAmount: number;
-  coveredAmount: number;
-  nonPayableAmount: number;
-  patientPayable: number;
-  reason?: string;
+// ── Entities (mirror backend CcmsBillingSummary / CcmsCoverageAllocation) ─────
+
+export interface BillingSummary {
+  id: string;
+  coverageCase_Id: string;
+  billId?: string;
+  billDate?: string;
+  totalBillAmount: number;
+  insuranceShareAmount: number;
+  patientShareAmount: number;
+  copayAmount: number;
+  deductibleAmount: number;
+  disallowedAmount: number;
+  billItemsJson?: string;
 }
 
-export interface BillAllocation {
+export interface CoverageAllocation {
   id: string;
-  caseId: string;
-  billId?: string;
-  totalBillAmount: number;
+  billingSummaryId: string;
+  lineItemType: string;
+  lineItemCode?: string;
+  lineItemDescription: string;
+  billedAmount: number;
   coveredAmount: number;
-  nonPayableTotal: number;
-  patientPayableTotal: number;
-  lines: BillAllocationLine[];
-  allocatedAt: string;
-  allocatedBy?: string;
+  disallowedAmount: number;
+  disallowedReason?: string;
+  patientPayable: number;
+}
+
+/** Full response including allocations (from /billing/full). */
+export interface BillingWithAllocations {
+  summary: BillingSummary;
+  allocations: CoverageAllocation[];
+}
+
+// ── Request types ─────────────────────────────────────────────────────────────
+
+export interface BillLineItemRequest {
+  type: string;
+  code?: string;
+  description: string;
+  billedAmount: number;
+  isExcluded: boolean;
+  disallowedReason?: string;
 }
 
 export interface AllocateBillRequest {
   billId?: string;
+  billDate?: string;
   totalBillAmount: number;
-  lines: Omit<BillAllocationLine, 'lineItemId'>[];
+  copayPercent?: number;
+  deductibleAmount?: number;
+  lineItems?: BillLineItemRequest[];
   notes?: string;
 }
 
-export interface NonPayableItem {
-  id: string;
-  description: string;
-  amount: number;
-  reason: string;
-}
+// ── API functions ─────────────────────────────────────────────────────────────
 
-export async function allocateBill(caseId: string, req: AllocateBillRequest): Promise<BillAllocation> {
-  const { data } = await getCcmsApi().post(`/ccms/billing/cases/${caseId}/allocate`, req);
+/** Submit / update bill allocation. */
+export async function allocateBill(caseId: string, req: AllocateBillRequest): Promise<BillingSummary> {
+  const { data } = await getCcmsApi().post(
+    `/ccms/coverage-cases/${caseId}/billing/allocate`, req
+  );
   return data;
 }
 
-export async function getAllocation(caseId: string): Promise<BillAllocation | null> {
+/** Fetch allocation summary (without line items). */
+export async function getAllocation(caseId: string): Promise<BillingSummary | null> {
   try {
-    const { data } = await getCcmsApi().get(`/ccms/billing/cases/${caseId}/allocation`);
-    return data;
+    const { data } = await getCcmsApi().get(`/ccms/coverage-cases/${caseId}/billing`);
+    return data ?? null;
   } catch {
     return null;
   }
 }
 
-export async function getNonPayables(caseId: string): Promise<NonPayableItem[]> {
-  const { data } = await getCcmsApi().get(`/ccms/billing/cases/${caseId}/non-payables`);
-  return Array.isArray(data) ? data : [];
+/** Fetch full allocation with all line items (preferred). */
+export async function getBillingFull(caseId: string): Promise<BillingWithAllocations | null> {
+  try {
+    const { data } = await getCcmsApi().get(`/ccms/coverage-cases/${caseId}/billing/full`);
+    return data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export interface ImportedBillDraft {
+  billId?: string;
+  billDate?: string;
+  totalBillAmount: number;
+  lineItems: { type: string; description: string; billedAmount: number; isExcluded: boolean }[];
+  sourceJourneyId?: string;
+  sourceSessionId?: string;
+  rowCount: number;
+}
+
+/** Import bill lines from IP billing transactions. Returns a draft for the AllocateBillModal. */
+export async function importBillLines(
+  caseId: string,
+  opts?: { billId?: string; journeyId?: string; sessionId?: string },
+): Promise<ImportedBillDraft> {
+  const { data } = await getCcmsApi().post(
+    `/ccms/coverage-cases/${caseId}/billing/import-from-bill`,
+    opts ?? {},
+  );
+  return data;
 }

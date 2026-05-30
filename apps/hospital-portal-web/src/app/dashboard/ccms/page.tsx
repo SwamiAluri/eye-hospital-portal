@@ -9,23 +9,66 @@ import {
   type PendingPreAuthItem,
 } from '@/lib/api/ccms/ccms-dashboard.api';
 import { PreAuthStatusBadge } from '@/components/ccms/PreAuthStatusBadge';
-import { FileCheck, Clock, AlertCircle, TrendingUp, RefreshCw } from 'lucide-react';
+import {
+  FileCheck, Clock, AlertCircle, TrendingUp, RefreshCw,
+  ShieldCheck, Landmark, BarChart3, Building2, ListChecks,
+  Scale, ArrowUpRight, Folder, ChevronRight,
+} from 'lucide-react';
 
-function KpiCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color: string }) {
+function inr(n: number) {
+  if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(1)}L`;
+  if (n >= 1000)     return `₹${(n / 1000).toFixed(0)}K`;
+  return `₹${n.toLocaleString('en-IN')}`;
+}
+
+function KpiTile({
+  label, value, sub, icon: Icon, iconBg, valueClass = 'text-gray-900', accent,
+}: {
+  label: string; value: string | number; sub?: string;
+  icon: React.ElementType; iconBg: string; valueClass?: string; accent: string;
+}) {
   return (
-    <div className={`rounded-xl p-4 ${color}`}>
-      <p className="text-xs font-medium opacity-75 mb-1">{label}</p>
-      <p className="text-2xl font-bold">{value}</p>
-      {sub && <p className="text-xs opacity-60 mt-0.5">{sub}</p>}
+    <div className={`bg-white border border-gray-200 rounded-2xl p-4 flex items-start gap-3 hover:shadow-md transition-all border-l-4 ${accent}`}>
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-widest leading-none mb-1">{label}</p>
+        <p className={`text-2xl font-bold leading-none ${valueClass}`}>{value}</p>
+        {sub && <p className="text-[10px] text-gray-400 mt-1">{sub}</p>}
+      </div>
     </div>
   );
 }
+
+function FinanceTile({ label, value, icon: Icon, gradient }: {
+  label: string; value: string; icon: React.ElementType; gradient: string;
+}) {
+  return (
+    <div className={`rounded-2xl p-4 text-white ${gradient}`}>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-widest opacity-80">{label}</p>
+        <Icon className="w-4 h-4 opacity-60" />
+      </div>
+      <p className="text-2xl font-bold">{value}</p>
+    </div>
+  );
+}
+
+const QUICK_LINKS = [
+  { href: '/dashboard/ccms/cases',               label: 'All Cases',       desc: 'Browse & search cases', icon: Folder },
+  { href: '/dashboard/ccms/authorization',        label: 'Auth Queue',      desc: 'Pre-auth management',   icon: ShieldCheck },
+  { href: '/dashboard/ccms/claims',               label: 'Claims',          desc: 'Submit & track claims', icon: ListChecks },
+  { href: '/dashboard/ccms/settlement',           label: 'Settlements',     desc: 'Payments & reconcile',  icon: Scale },
+  { href: '/dashboard/ccms/master-data/payers',   label: 'Payers / TPA',   desc: 'Manage insurers',       icon: Building2 },
+  { href: '/dashboard/ccms/analytics/operational',label: 'Analytics',       desc: 'Performance reports',   icon: BarChart3 },
+];
 
 export default function CcmsDashboardPage() {
   const [summary, setSummary] = useState<OperationalSummary | null>(null);
   const [pending, setPending] = useState<PendingPreAuthItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -39,22 +82,34 @@ export default function CcmsDashboardPage() {
   useEffect(load, []);
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col h-full bg-gray-50/60">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
         <div>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[11px] text-gray-400 font-medium">CCMS</span>
+            <span className="text-gray-300">/</span>
+            <span className="text-[11px] text-gray-600 font-semibold">Dashboard</span>
+          </div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <FileCheck className="w-5 h-5 text-indigo-600" />
-            Coverage & Claims Management
+            Coverage &amp; Claims
           </h1>
-          <p className="text-xs text-gray-500 mt-0.5">Operational overview</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Operational overview · {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+          </p>
         </div>
-        <button onClick={load} disabled={loading} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 disabled:opacity-50">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-indigo-600 border border-gray-200 rounded-xl px-3 py-2 hover:border-indigo-300 hover:bg-indigo-50 transition-all disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-6 space-y-5">
         {error && (
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -63,89 +118,161 @@ export default function CcmsDashboardPage() {
         )}
 
         {/* KPI Cards */}
-        {loading ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="rounded-xl p-4 bg-gray-100 animate-pulse h-24" />
-            ))}
-          </div>
-        ) : summary && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KpiCard label="Active Cases"       value={summary.totalActiveCases}     color="bg-indigo-50 text-indigo-800" />
-            <KpiCard label="Pending Pre-Auths"  value={summary.pendingPreAuths}      color="bg-yellow-50 text-yellow-800" sub={`Avg ${(summary.avgPreAuthTurnaroundHours ?? 0).toFixed(0)}h TAT`} />
-            <KpiCard label="Pending Claims"     value={summary.pendingClaims}        color="bg-orange-50 text-orange-800" />
-            <KpiCard label="Pending Settlements"value={summary.pendingSettlements}   color="bg-red-50 text-red-800" />
-          </div>
-        )}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-2xl p-4 bg-white border border-gray-200 animate-pulse h-24" />
+            ))
+          ) : summary ? (
+            <>
+              <KpiTile
+                label="Active Cases" value={summary.totalActiveCases}
+                icon={Folder} iconBg="bg-indigo-100 text-indigo-600"
+                valueClass="text-indigo-700" accent="border-indigo-400"
+              />
+              <KpiTile
+                label="Pending Pre-Auth" value={summary.pendingPreAuths}
+                sub={`Avg ${(summary.avgPreAuthTurnaroundHours ?? 0).toFixed(0)}h TAT`}
+                icon={Clock} iconBg="bg-amber-100 text-amber-600"
+                valueClass="text-amber-700" accent="border-amber-400"
+              />
+              <KpiTile
+                label="Pending Claims" value={summary.pendingClaims}
+                icon={ListChecks} iconBg="bg-blue-100 text-blue-600"
+                valueClass="text-blue-700" accent="border-blue-400"
+              />
+              <KpiTile
+                label="Pending Settlements" value={summary.pendingSettlements}
+                icon={Scale} iconBg="bg-emerald-100 text-emerald-600"
+                valueClass="text-emerald-700" accent="border-emerald-400"
+              />
+            </>
+          ) : null}
+        </div>
 
-        {/* Financial Summary */}
+        {/* Financial Strip */}
         {!loading && summary && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <KpiCard label="Approved MTD"   value={`₹${((summary.totalApprovedAmountMtd ?? 0) / 1000).toFixed(0)}K`} color="bg-green-50 text-green-800" />
-            <KpiCard label="Settled MTD"    value={`₹${((summary.totalSettledAmountMtd ?? 0) / 1000).toFixed(0)}K`}  color="bg-teal-50 text-teal-800" />
-            <KpiCard label="Rejection Rate" value={`${(summary.rejectionRatePct ?? 0).toFixed(1)}%`}                  color={(summary.rejectionRatePct ?? 0) > 15 ? 'bg-red-50 text-red-800' : 'bg-gray-100 text-gray-800'} />
+            <FinanceTile
+              label="Approved MTD"
+              value={inr(summary.totalApprovedAmountMtd ?? 0)}
+              icon={TrendingUp}
+              gradient="bg-gradient-to-br from-green-500 to-emerald-600"
+            />
+            <FinanceTile
+              label="Settled MTD"
+              value={inr(summary.totalSettledAmountMtd ?? 0)}
+              icon={Landmark}
+              gradient="bg-gradient-to-br from-teal-500 to-cyan-600"
+            />
+            <FinanceTile
+              label="Rejection Rate"
+              value={`${(summary.rejectionRatePct ?? 0).toFixed(1)}%`}
+              icon={AlertCircle}
+              gradient={(summary.rejectionRatePct ?? 0) > 15
+                ? 'bg-gradient-to-br from-red-500 to-rose-600'
+                : 'bg-gradient-to-br from-gray-500 to-gray-600'}
+            />
           </div>
         )}
 
-        {/* Quick links */}
+        {/* Quick Links */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {[
-            { href: '/dashboard/ccms/cases',         label: 'All Cases',          icon: FileCheck },
-            { href: '/dashboard/ccms/authorization', label: 'Auth Queue',         icon: Clock },
-            { href: '/dashboard/ccms/claims',        label: 'Claims',             icon: TrendingUp },
-            { href: '/dashboard/ccms/settlement',    label: 'Settlements',        icon: FileCheck },
-            { href: '/dashboard/ccms/master-data/payers', label: 'Payers / TPA', icon: FileCheck },
-            { href: '/dashboard/ccms/analytics/operational', label: 'Analytics', icon: TrendingUp },
-          ].map(({ href, label, icon: Icon }) => (
+          {QUICK_LINKS.map(({ href, label, desc, icon: Icon }) => (
             <Link
               key={href}
               href={href}
-              className="flex items-center gap-2 rounded-xl p-4 bg-white border border-gray-200 hover:border-indigo-300 hover:shadow-sm transition-all text-sm font-medium text-gray-700"
+              className="group flex items-center gap-3 rounded-2xl p-4 bg-white border border-gray-200 hover:border-indigo-300 hover:shadow-md transition-all"
             >
-              <Icon className="w-4 h-4 text-indigo-500" />
-              {label}
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-100 transition-colors">
+                <Icon className="w-4.5 h-4.5 text-indigo-600 w-[18px] h-[18px]" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-800 group-hover:text-indigo-700 transition-colors">{label}</p>
+                <p className="text-[10px] text-gray-400 truncate">{desc}</p>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
             </Link>
           ))}
         </div>
 
-        {/* Pending Pre-Auths table */}
-        <div className="bg-white rounded-xl border border-gray-200">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <h2 className="text-sm font-bold text-gray-800">Urgent Pre-Auth Queue</h2>
-            <Link href="/dashboard/ccms/authorization" className="text-xs text-indigo-600 hover:underline">View all</Link>
+        {/* Pre-Auth Queue Table */}
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-indigo-500" />
+              <h2 className="text-sm font-bold text-gray-800">Urgent Pre-Auth Queue</h2>
+            </div>
+            <Link
+              href="/dashboard/ccms/authorization"
+              className="flex items-center gap-0.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+            >
+              View all <ArrowUpRight className="w-3 h-3" />
+            </Link>
           </div>
+
           {loading ? (
-            <div className="p-4 animate-pulse space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded" />)}
+            <div className="p-5 animate-pulse space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-9 bg-gray-100 rounded-lg" />
+              ))}
             </div>
           ) : pending.length === 0 ? (
-            <p className="p-6 text-sm text-center text-gray-400">No urgent pre-auths pending.</p>
+            <div className="flex flex-col items-center py-10 text-center">
+              <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center mb-2">
+                <ShieldCheck className="w-5 h-5 text-green-500" />
+              </div>
+              <p className="text-sm font-semibold text-gray-700">All clear!</p>
+              <p className="text-xs text-gray-400 mt-0.5">No urgent pre-auths pending.</p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full">
                 <thead>
-                  <tr className="text-xs text-gray-500 border-b border-gray-100">
-                    <th className="px-4 py-2 text-left font-medium">Case #</th>
-                    <th className="px-4 py-2 text-left font-medium">Payer</th>
-                    <th className="px-4 py-2 text-right font-medium">Amount</th>
-                    <th className="px-4 py-2 text-left font-medium">State</th>
-                    <th className="px-4 py-2 text-right font-medium">Age</th>
+                  <tr className="border-b border-gray-100">
+                    <th className="px-5 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Case #</th>
+                    <th className="px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Patient / Payer</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] font-bold text-gray-400 uppercase tracking-widest">Requested</th>
+                    <th className="px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] font-bold text-gray-400 uppercase tracking-widest">Age</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {pending.slice(0, 10).map(p => (
-                    <tr key={p.caseId} className="hover:bg-gray-50">
-                      <td className="px-4 py-2">
-                        <Link href={`/dashboard/ccms/cases/${p.caseId}`} className="text-indigo-600 hover:underline font-medium text-xs">
-                          {p.caseId.slice(0, 8)}…
-                        </Link>
-                      </td>
-                      <td className="px-4 py-2 text-xs text-gray-600">{p.payerName}</td>
-                      <td className="px-4 py-2 text-xs text-right font-medium">₹{p.requestedAmount.toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-2"><PreAuthStatusBadge state={p.currentState} /></td>
-                      <td className="px-4 py-2 text-xs text-right text-gray-500">{p.ageInHours}h</td>
-                    </tr>
-                  ))}
+                <tbody>
+                  {pending.slice(0, 10).map((p) => {
+                    const ageHours = p.ageInHours;
+                    const ageClass = ageHours >= 72 ? 'text-red-600 font-bold' : ageHours >= 24 ? 'text-amber-600 font-semibold' : 'text-gray-500';
+                    const isUrgent = p.urgencyLevel === 'high' || ageHours >= 48;
+                    return (
+                      <tr
+                        key={p.caseId}
+                        className={`border-b border-gray-50 hover:bg-indigo-50/30 transition-colors ${isUrgent ? 'border-l-2 border-l-red-400 bg-red-50/20' : ''}`}
+                      >
+                        <td className="px-5 py-2.5">
+                          <Link
+                            href={`/dashboard/ccms/cases/${p.caseId}`}
+                            className="text-indigo-600 hover:text-indigo-800 font-mono text-xs font-semibold"
+                          >
+                            {p.caseNumber ?? p.caseId.slice(0, 8) + '…'}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-2.5 max-w-[160px]">
+                          {p.patientName && (
+                            <div className="text-xs font-semibold text-gray-800 truncate">{p.patientName}</div>
+                          )}
+                          <div className="text-[11px] text-gray-500 truncate">{p.payerName}</div>
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-right font-semibold text-gray-800">
+                          {p.requestedAmount > 0 ? `₹${p.requestedAmount.toLocaleString('en-IN')}` : <span className="text-gray-400">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <PreAuthStatusBadge state={p.currentState} size="xs" />
+                        </td>
+                        <td className={`px-4 py-2.5 text-xs text-right ${ageClass}`}>
+                          {ageHours >= 24 ? `${Math.floor(ageHours / 24)}d` : `${ageHours}h`}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

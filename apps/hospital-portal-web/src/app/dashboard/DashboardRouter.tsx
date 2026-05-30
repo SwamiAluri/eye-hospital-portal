@@ -4,41 +4,55 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/auth-store';
 
-// Role to dashboard mapping (HIPAA-compliant role segregation)
 const ROLE_DASHBOARD_MAP: Record<string, string> = {
-  // Admin & IT
-  'Admin': '/dashboard/admin/overview',
+  Admin: '/dashboard/admin/overview',
   'IT Administrator': '/dashboard/admin/overview',
-  
-  // Clinical Staff
-  'Doctor': '/dashboard/clinical',
-  'Consultant': '/dashboard/clinical',
+  'Medical Records Officer': '/dashboard/admin/overview',
+  'Super Admin': '/dashboard/admin/overview',
+  'Platform Admin': '/dashboard/admin/overview',
+  'Admin Manager': '/dashboard/admin/overview',
+  'Compliance Officer': '/dashboard/admin/overview',
+  'System Auditor': '/dashboard/admin/overview',
+  'Support Engineer': '/dashboard/admin/overview',
+  Doctor: '/dashboard/clinical',
+  Consultant: '/dashboard/clinical',
   'Junior Doctor': '/dashboard/clinical',
-  'Nurse': '/dashboard/clinical',
+  Nurse: '/dashboard/clinical',
   'Nurse Manager': '/dashboard/clinical',
-  
-  // Front Desk
-  'Receptionist': '/dashboard/frontdesk',
-  'Counsellor': '/dashboard/frontdesk',
-  
-  // Pharmacy
-  'Pharmacist': '/dashboard/pharmacy',
+  Receptionist: '/dashboard/frontdesk',
+  Counsellor: '/dashboard/frontdesk',
+  Pharmacist: '/dashboard/pharmacy',
   'Pharmacy Manager': '/dashboard/pharmacy',
-  
-  // Laboratory
   'Lab Technician': '/dashboard/lab',
   'Lab Manager': '/dashboard/lab',
-  
-  // Billing
   'Billing Clerk': '/dashboard/billing',
-  
-  // Medical Records (admin access)
-  'Medical Records Officer': '/dashboard/admin/overview',
-  
-  // Support Staff
   'Housekeeping Supervisor': '/dashboard/support',
   'Maintenance Technician': '/dashboard/support',
 };
+
+const ADMIN_ROLE_PATTERNS = [
+  /^admin$/i,
+  /admin\s*manager/i,
+  /super\s*admin/i,
+  /platform\s*admin/i,
+  /it\s*admin/i,
+  /compliance\s*officer/i,
+  /system\s*auditor/i,
+  /medical\s*records/i,
+];
+
+function resolveDashboard(roles: string[]): string {
+  for (const role of roles) {
+    const exact = ROLE_DASHBOARD_MAP[role];
+    if (exact) return exact;
+  }
+  for (const role of roles) {
+    if (ADMIN_ROLE_PATTERNS.some((p) => p.test(role))) {
+      return '/dashboard/admin/overview';
+    }
+  }
+  return '/dashboard/frontdesk';
+}
 
 export function DashboardRouter() {
   const router = useRouter();
@@ -46,15 +60,7 @@ export function DashboardRouter() {
 
   useEffect(() => {
     if (roles && roles.length > 0) {
-      // Get primary role (first assigned role)
-      const primaryRole = roles[0];
-      const targetDashboard = ROLE_DASHBOARD_MAP[primaryRole];
-      
-      if (targetDashboard) {
-        router.replace(targetDashboard);
-      } else {
-        router.replace('/dashboard/frontdesk');
-      }
+      router.replace(resolveDashboard(roles));
     } else {
       router.replace('/dashboard/frontdesk');
     }

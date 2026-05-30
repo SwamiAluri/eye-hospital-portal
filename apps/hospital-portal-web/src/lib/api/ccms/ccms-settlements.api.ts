@@ -3,32 +3,45 @@ import { getCcmsApi } from './ccms-base';
 
 export interface Settlement {
   id: string;
-  caseId: string;
+  coverageCase_Id: string;
+  claimPacketId?: string;
   settlementNumber: string;
-  status: string;
+  settlementType: 'full' | 'partial';
   settledAmount: number;
-  deductionAmount: number;
-  netReceivedAmount: number;
-  settledAt?: string;
-  reconciledAt?: string;
+  claimAmount: number;
+  outstandingAmount: number;
   paymentMode?: string;
-  utrNumber?: string;
+  paymentReference?: string;
+  paymentDate?: string;
+  bankReference?: string;
+  settledAt?: string;
+  reconciliationStatus: string;
+  reconciliationNotes?: string;
   createdAt: string;
 }
 
 export interface RecordSettlementRequest {
-  caseId: string;
+  claimPacketId?: string;
   settledAmount: number;
-  deductionAmount?: number;
-  paymentMode?: 'NEFT' | 'RTGS' | 'Cheque' | 'IMPS';
-  utrNumber?: string;
-  paymentDate?: string;
-  notes?: string;
+  claimAmount: number;
+  paymentMode?: 'NEFT' | 'RTGS' | 'Cheque' | 'IMPS' | 'Cash';
+  paymentReference?: string;
+  paymentDate?: string;     // ISO date string YYYY-MM-DD
+  bankReference?: string;
+  remarks?: string;
+  lineItems?: SettlementLineItemRequest[];
+}
+
+export interface SettlementLineItemRequest {
+  lineType: string;
+  description: string;
+  claimedAmount: number;
+  settledAmount: number;
+  disallowedReason?: string;
 }
 
 export interface ReconcileRequest {
   reconcileNotes?: string;
-  discrepancyAmount?: number;
 }
 
 export interface AgingBucket {
@@ -37,25 +50,38 @@ export interface AgingBucket {
   totalAmount: number;
 }
 
-export async function recordSettlement(req: RecordSettlementRequest): Promise<Settlement> {
-  const { data } = await getCcmsApi().post('/ccms/settlements', req);
+/** POST /ccms/coverage-cases/{caseId}/settlements */
+export async function recordSettlement(
+  caseId: string,
+  req: RecordSettlementRequest,
+): Promise<Settlement> {
+  const { data } = await getCcmsApi().post(
+    `/ccms/coverage-cases/${caseId}/settlements`,
+    req,
+  );
   return data;
 }
 
-export async function getSettlementByCaseId(caseId: string): Promise<Settlement[]> {
-  const { data } = await getCcmsApi().get(`/ccms/settlements/cases/${caseId}`);
+export async function getSettlementsByCaseId(caseId: string): Promise<Settlement[]> {
+  const { data } = await getCcmsApi().get(`/ccms/coverage-cases/${caseId}/settlements`);
   return Array.isArray(data) ? data : [];
 }
 
-export async function getSettlementById(id: string): Promise<Settlement> {
-  const { data } = await getCcmsApi().get(`/ccms/settlements/${id}`);
-  return data;
+/** POST /ccms/coverage-cases/{caseId}/reconcile */
+export async function reconcileCase(
+  caseId: string,
+  req?: ReconcileRequest,
+): Promise<void> {
+  await getCcmsApi().post(`/ccms/coverage-cases/${caseId}/reconcile`, req ?? {});
 }
 
-export async function reconcileSettlement(id: string, req?: ReconcileRequest): Promise<Settlement> {
-  const { data } = await getCcmsApi().post(`/ccms/settlements/${id}/reconcile`, req ?? {});
-  return data;
+/** POST /ccms/coverage-cases/{caseId}/close */
+export async function closeCase(caseId: string): Promise<void> {
+  await getCcmsApi().post(`/ccms/coverage-cases/${caseId}/close`);
 }
+
+/** @deprecated Use getSettlementsByCaseId */
+export const getSettlementByCaseId = getSettlementsByCaseId;
 
 export async function getAgingReport(): Promise<AgingBucket[]> {
   const { data } = await getCcmsApi().get('/ccms/settlements/aging');

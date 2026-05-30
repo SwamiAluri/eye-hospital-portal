@@ -1,14 +1,77 @@
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using CcmsApi.Data;
 using CcmsApi.Models.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace CcmsApi.Services;
 
 public class DocumentEngineService
 {
     private readonly CcmsDbContext _db;
+    private readonly IConfiguration _config;
+    private readonly ILogger<DocumentEngineService> _log;
 
-    public DocumentEngineService(CcmsDbContext db) => _db = db;
+    private const string ContainerName = "ccms-documents";
+
+    public DocumentEngineService(
+        CcmsDbContext db,
+        IConfiguration config,
+        ILogger<DocumentEngineService> log)
+    {
+        _db     = db;
+        _config = config;
+        _log    = log;
+    }
+
+    // ── Upload (real file → Blob Storage) ─────────────────────────────────────
+
+    public async Task<CcmsDocument> UploadFileAsync(
+        Guid coverageCaseId,
+        Guid actorUserId,
+        Stream fileStream,
+        string fileName,
+        string mimeType,
+        string documentType,
+        string stage = "preauth",
+        CancellationToken ct = default)
+    {
+        var coverageCase = await _db.CoverageCases
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == coverageCaseId && c.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Coverage case {coverageCaseId} not found.");
+
+        // Upload to Azure Blob Storage (Azurite locally)
+        var blobUrl = await UploadToBlobAsync(coverageCaseId, fileName, mimeType, fileStream, ct);
+
+        var doc = new CcmsDocument
+        {
+            Id               = Guid.NewGuid(),
+            TenantId         = coverageCase.TenantId,
+            CoverageCase_Id  = coverageCaseId,
+            DocumentCategory = stage,
+            DocumentType     = documentType,
+            DocumentName     = fileName,
+            BlobUrl          = blobUrl,
+            FileSizeBytes    = fileStream.CanSeek ? fileStream.Length : 0,
+            MimeType         = mimeType,
+            UploadedAt       = DateTime.UtcNow,
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow,
+            CreatedByUserId  = actorUserId,
+            UpdatedByUserId  = actorUserId,
+            Status           = "active"
+        };
+
+        _db.Documents.Add(doc);
+        await _db.SaveChangesAsync(ct);
+        _log.LogInformation("Document {Name} uploaded for case {CaseId}", fileName, coverageCaseId);
+        return doc;
+    }
+
+    // ── Upload (metadata only, file already in Blob Storage) ──────────────────
 
     public async Task<CcmsDocument> UploadAsync(
         Guid coverageCaseId, Guid actorUserId,
@@ -21,27 +84,29 @@ public class DocumentEngineService
 
         var doc = new CcmsDocument
         {
-            Id                  = Guid.NewGuid(),
-            TenantId            = coverageCase.TenantId,
-            CoverageCase_Id     = coverageCaseId,
-            DocumentCategory    = req.Stage,
-            DocumentType        = req.DocumentType,
-            DocumentName        = req.DocumentName,
-            BlobUrl             = req.BlobUrl,
-            FileSizeBytes       = req.FileSizeBytes ?? 0,
-            MimeType            = req.MimeType,
-            UploadedAt          = DateTime.UtcNow,
-            CreatedAt           = DateTime.UtcNow,
-            UpdatedAt           = DateTime.UtcNow,
-            CreatedByUserId     = actorUserId,
-            UpdatedByUserId     = actorUserId,
-            Status              = "active"
+            Id               = Guid.NewGuid(),
+            TenantId         = coverageCase.TenantId,
+            CoverageCase_Id  = coverageCaseId,
+            DocumentCategory = req.Stage,
+            DocumentType     = req.DocumentType,
+            DocumentName     = req.DocumentName,
+            BlobUrl          = req.BlobUrl,
+            FileSizeBytes    = req.FileSizeBytes ?? 0,
+            MimeType         = req.MimeType,
+            UploadedAt       = DateTime.UtcNow,
+            CreatedAt        = DateTime.UtcNow,
+            UpdatedAt        = DateTime.UtcNow,
+            CreatedByUserId  = actorUserId,
+            UpdatedByUserId  = actorUserId,
+            Status           = "active"
         };
 
         _db.Documents.Add(doc);
         await _db.SaveChangesAsync(ct);
         return doc;
     }
+
+    // ── List ──────────────────────────────────────────────────────────────────
 
     public async Task<List<CcmsDocument>> GetByCaseAsync(
         Guid coverageCaseId, string? stage = null, CancellationToken ct = default)
@@ -53,15 +118,45 @@ public class DocumentEngineService
         return await q.OrderByDescending(d => d.CreatedAt).ToListAsync(ct);
     }
 
+    // ── Delete (soft) ─────────────────────────────────────────────────────────
+
     public async Task DeleteAsync(Guid docId, Guid actorUserId, CancellationToken ct = default)
     {
         var doc = await _db.Documents.FirstOrDefaultAsync(d => d.Id == docId && d.DeletedAt == null, ct)
             ?? throw new KeyNotFoundException($"Document {docId} not found.");
-        doc.DeletedAt      = DateTime.UtcNow;
-        doc.UpdatedAt      = DateTime.UtcNow;
+        doc.DeletedAt       = DateTime.UtcNow;
+        doc.UpdatedAt       = DateTime.UtcNow;
         doc.UpdatedByUserId = actorUserId;
         await _db.SaveChangesAsync(ct);
     }
+
+    // ── Private: Azure Blob Storage upload ────────────────────────────────────
+
+    private async Task<string> UploadToBlobAsync(
+        Guid caseId, string fileName, string mimeType,
+        Stream content, CancellationToken ct)
+    {
+        var connStr = _config["AzureWebJobsStorage"]
+            ?? _config["Values:AzureWebJobsStorage"]
+            ?? "UseDevelopmentStorage=true";
+
+        var serviceClient   = new BlobServiceClient(connStr);
+        var containerClient = serviceClient.GetBlobContainerClient(ContainerName);
+        await containerClient.CreateIfNotExistsAsync(PublicAccessType.None, cancellationToken: ct);
+
+        // Unique blob name: cases/<caseId>/<timestamp>_<filename>
+        var blobName   = $"cases/{caseId}/{DateTime.UtcNow:yyyyMMddHHmmss}_{SanitizeName(fileName)}";
+        var blobClient = containerClient.GetBlobClient(blobName);
+
+        if (content.CanSeek) content.Seek(0, SeekOrigin.Begin);
+
+        await blobClient.UploadAsync(content, new BlobHttpHeaders { ContentType = mimeType }, cancellationToken: ct);
+
+        return blobClient.Uri.ToString();
+    }
+
+    private static string SanitizeName(string name)
+        => string.Join("_", name.Split(System.IO.Path.GetInvalidFileNameChars()));
 }
 
 public record UploadDocumentRequest(

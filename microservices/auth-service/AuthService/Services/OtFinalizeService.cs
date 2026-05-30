@@ -184,6 +184,9 @@ namespace AuthService.Services
             if (!string.IsNullOrWhiteSpace(filters.Status))
                 query = query.Where(s => s.Status == filters.Status);
 
+            if (filters.CounsellingSessionId.HasValue)
+                query = query.Where(s => s.CounsellingSessionId == filters.CounsellingSessionId.Value);
+
             var results = await query
                 .OrderBy(s => s.StartTime)
                 .ToListAsync();

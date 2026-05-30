@@ -11,25 +11,6 @@ import {
   type CreateSessionNoteRequest,
   type UpdateSessionNoteRequest,
 } from '@/lib/api/counseling-sessions.api';
-import {
-  getCounselingQueue,
-  getCounselingQueueStats,
-  getCounselingQueueItem,
-  addToQueue,
-  callNextPatient,
-  startSessionFromQueue,
-  completeQueueSession,
-  removeFromQueue,
-  markAsNoShow,
-  updateQueuePriority,
-  type CounselingQueueItem,
-  type CounselingQueueStats,
-  type QueueFilters,
-  type AddToQueueRequest,
-  type CallNextPatientRequest,
-  type StartSessionFromQueueRequest,
-  type CompleteQueueSessionRequest,
-} from '@/lib/api/counseling-queue.api';
 
 // ============================================================================
 // Query Keys
@@ -127,17 +108,11 @@ export function useUpdateCounselingSession() {
     mutationFn: ({ id, data }: { id: string; data: UpdateCounselingSessionRequest }) =>
       counselingSessionsApi.update(id, data),
     onSuccess: (_, variables) => {
-      console.log('✅ Mutation onSuccess called');
       queryClient.invalidateQueries({ queryKey: counselingSessionKeys.lists() });
       queryClient.invalidateQueries({ queryKey: counselingSessionKeys.detail(variables.id) });
     },
     onError: (error: any) => {
-      console.error('❌ Mutation onError called:', error);
-      console.error('Error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
+      console.error('Failed to update counseling session:', error);
     },
   });
 }
@@ -219,7 +194,6 @@ export function useUploadSessionAudio() {
       fileName: string 
     }) => counselingSessionsApi.uploadAudio(sessionId, audioBlob, fileName),
     onSuccess: (_, variables) => {
-      // Invalidate session details to refresh documents list
       queryClient.invalidateQueries({ queryKey: counselingSessionKeys.detail(variables.sessionId) });
     },
   });
@@ -312,7 +286,6 @@ export function useTodaySessions() {
 export function useCounselingSessionStats() {
   const { data: sessionsResponse, isLoading, error } = useTodaySessions();
   
-  // Backend returns lowercase 'sessions' property
   const sessions = sessionsResponse?.sessions || sessionsResponse?.data || [];
   
   const stats = {
@@ -331,195 +304,4 @@ export function useCounselingSessionStats() {
   };
   
   return { stats, isLoading, error };
-}
-
-// ============================================================================
-// Queue Management Hooks
-// ============================================================================
-
-// Queue Query Keys
-export const counselingQueueKeys = {
-  all: ['counseling-queue'] as const,
-  lists: () => [...counselingQueueKeys.all, 'list'] as const,
-  list: (branchId: string, filters?: any) => [...counselingQueueKeys.lists(), branchId, filters] as const,
-  stats: (branchId: string, date?: string) => [...counselingQueueKeys.all, 'stats', branchId, date] as const,
-  detail: (id: string) => [...counselingQueueKeys.all, 'detail', id] as const,
-};
-
-/**
- * Get counseling queue for a branch
- * Auto-refreshes every 10 seconds for real-time updates
- */
-export function useCounselingQueue(
-  branchId: string,
-  filters?: QueueFilters,
-  options?: Omit<UseQueryOptions<CounselingQueueItem[]>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: counselingQueueKeys.list(branchId, filters),
-    queryFn: () => getCounselingQueue(branchId, filters),
-    enabled: true, // Always enabled - backend handles empty branchId by returning all items
-    staleTime: 10 * 1000, // 10 seconds
-    refetchInterval: 10 * 1000, // Auto-refresh every 10 seconds
-    gcTime: 30 * 1000, // 30 seconds (garbage collection time)
-    ...options,
-  });
-}
-
-/**
- * Get queue statistics
- */
-export function useCounselingQueueStats(
-  branchId: string,
-  date?: string,
-  options?: Omit<UseQueryOptions<CounselingQueueStats>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: counselingQueueKeys.stats(branchId, date),
-    queryFn: () => getCounselingQueueStats(branchId, date),
-    enabled: true, // Always enabled - backend handles empty branchId
-    staleTime: 30 * 1000, // 30 seconds
-    refetchInterval: 30 * 1000, // Auto-refresh every 30 seconds
-    ...options,
-  });
-}
-
-/**
- * Get specific queue item
- */
-export function useCounselingQueueItem(
-  queueItemId: string,
-  options?: Omit<UseQueryOptions<CounselingQueueItem | null>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: counselingQueueKeys.detail(queueItemId),
-    queryFn: () => getCounselingQueueItem(queueItemId),
-    enabled: !!queueItemId,
-    staleTime: 5 * 1000, // 5 seconds
-    ...options,
-  });
-}
-
-/**
- * Add patient to queue
- */
-export function useAddToQueue() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (request: AddToQueueRequest) => addToQueue(request),
-    onSuccess: (_, variables) => {
-      // Invalidate queue lists for the branch
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.stats(variables.branchId) });
-    },
-  });
-}
-
-/**
- * Call next patient in queue
- */
-export function useCallNextPatient() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (request: CallNextPatientRequest) => callNextPatient(request),
-    onSuccess: (_, variables) => {
-      // Invalidate queue lists for the branch
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.stats(variables.branchId) });
-    },
-  });
-}
-
-/**
- * Start session from queue
- */
-export function useStartQueueSession() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ queueItemId, request }: { queueItemId: string; request?: StartSessionFromQueueRequest }) =>
-      startSessionFromQueue(queueItemId, request),
-    onSuccess: (_, variables) => {
-      // Invalidate queue lists and queue item detail
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.detail(variables.queueItemId) });
-      // Also invalidate session lists as a new session is created
-      queryClient.invalidateQueries({ queryKey: counselingSessionKeys.lists() });
-    },
-  });
-}
-
-/**
- * Complete queue session
- */
-export function useCompleteQueueSession() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ queueItemId, request }: { queueItemId: string; request?: CompleteQueueSessionRequest }) =>
-      completeQueueSession(queueItemId, request),
-    onSuccess: (_, variables) => {
-      // Invalidate queue lists and queue item detail
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.detail(variables.queueItemId) });
-      queryClient.invalidateQueries({ queryKey: counselingSessionKeys.lists() });
-    },
-  });
-}
-
-/**
- * Remove patient from queue
- */
-export function useRemoveFromQueue() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ queueItemId, reason }: { queueItemId: string; reason?: string }) =>
-      removeFromQueue(queueItemId, reason),
-    onSuccess: () => {
-      // Invalidate all queue lists
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.lists() });
-    },
-  });
-}
-
-/**
- * Mark patient as no-show
- */
-export function useMarkAsNoShow() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (queueItemId: string) => markAsNoShow(queueItemId),
-    onSuccess: () => {
-      // Invalidate all queue lists
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.lists() });
-    },
-  });
-}
-
-/**
- * Update queue priority
- */
-export function useUpdateQueuePriority() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ 
-      queueItemId, 
-      priorityScore, 
-      urgencyLevel 
-    }: { 
-      queueItemId: string; 
-      priorityScore: number; 
-      urgencyLevel: 'Low' | 'Medium' | 'High' | 'Critical' 
-    }) => updateQueuePriority(queueItemId, priorityScore, urgencyLevel),
-    onSuccess: (_, variables) => {
-      // Invalidate queue lists and specific item
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: counselingQueueKeys.detail(variables.queueItemId) });
-    },
-  });
 }

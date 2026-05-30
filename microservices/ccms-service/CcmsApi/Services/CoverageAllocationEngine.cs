@@ -8,16 +8,22 @@ namespace CcmsApi.Services;
 /// <summary>
 /// Computes insurance vs patient share from the final bill.
 /// Splits bill based on approved coverage, copay%, deductible, and exclusions.
+/// After saving, fires FINALIZE_BILL → PREPARE_CLAIM workflow transitions.
 /// </summary>
 public class CoverageAllocationEngine
 {
     private readonly CcmsDbContext _db;
+    private readonly IWorkflowEngine _workflow;
     private readonly ILogger<CoverageAllocationEngine> _log;
 
-    public CoverageAllocationEngine(CcmsDbContext db, ILogger<CoverageAllocationEngine> log)
+    public CoverageAllocationEngine(
+        CcmsDbContext db,
+        IWorkflowEngine workflow,
+        ILogger<CoverageAllocationEngine> log)
     {
-        _db  = db;
-        _log = log;
+        _db       = db;
+        _workflow = workflow;
+        _log      = log;
     }
 
     public async Task<CcmsBillingSummary> AllocateAsync(
@@ -35,19 +41,25 @@ public class CoverageAllocationEngine
             .OrderByDescending(a => a.CreatedAt)
             .FirstOrDefaultAsync(ct);
 
+        var approvedLimit = auth?.ApprovedAmount ?? coverageCase.ApprovedAmount;
+        if (approvedLimit <= 0)
+            throw new InvalidOperationException(
+                "Cannot allocate bill: record TPA approval with an approved amount first.");
+
         var totalBill       = req.TotalBillAmount;
-        var approvedLimit   = auth?.ApprovedAmount ?? 0;
         var copayPct        = req.CopayPercent ?? 0;
         var deductible      = req.DeductibleAmount ?? 0;
 
-        // Compute allocation
-        var coveredByInsurance = Math.Min(totalBill, approvedLimit);
+        // Identify disallowed line items first (excluded items never covered)
+        var excludedTotal = req.LineItems?.Where(li => li.IsExcluded).Sum(li => li.BilledAmount) ?? 0;
+        var payableTotal  = totalBill - excludedTotal;  // eligible for insurance coverage
+
+        // Compute allocation on the payable (non-excluded) portion
+        var coveredByInsurance = Math.Min(payableTotal, approvedLimit);
         var copay              = Math.Round(coveredByInsurance * copayPct / 100m, 2);
-        var effectiveCovered   = coveredByInsurance - copay - deductible;
-        effectiveCovered       = Math.Max(effectiveCovered, 0);
-        var patientShare       = totalBill - effectiveCovered;
-        patientShare           = Math.Max(patientShare, 0);
-        var disallowed         = totalBill - effectiveCovered - patientShare;
+        var effectiveCovered   = Math.Max(coveredByInsurance - copay - deductible, 0);
+        var patientShare       = Math.Max(payableTotal - effectiveCovered, 0) + excludedTotal;
+        var disallowed         = excludedTotal;  // excluded = disallowed
 
         var summary = new CcmsBillingSummary
         {
@@ -74,17 +86,29 @@ public class CoverageAllocationEngine
         // Create line-item allocations
         if (req.LineItems is not null)
         {
+            // Proportional coverage ratio (avoid division by zero)
+            var coverageRatio = payableTotal > 0 ? effectiveCovered / payableTotal : 0;
+
             foreach (var li in req.LineItems)
             {
-                var liCovered    = Math.Min(li.BilledAmount, effectiveCovered > 0 ? li.BilledAmount : 0);
-                var liPatient    = li.BilledAmount - liCovered;
-                var liDisallowed = 0m;
+                decimal liCovered;
+                decimal liDisallowed;
+                decimal liPatient;
+                string? disallowReason;
 
                 if (li.IsExcluded)
                 {
                     liCovered    = 0;
+                    liDisallowed = li.BilledAmount;
                     liPatient    = li.BilledAmount;
-                    liDisallowed = 0;
+                    disallowReason = li.DisallowedReason ?? "Excluded from coverage";
+                }
+                else
+                {
+                    liCovered      = Math.Round(li.BilledAmount * coverageRatio, 2);
+                    liDisallowed   = 0;
+                    liPatient      = li.BilledAmount - liCovered;
+                    disallowReason = null;
                 }
 
                 _db.CoverageAllocations.Add(new CcmsCoverageAllocation
@@ -98,7 +122,7 @@ public class CoverageAllocationEngine
                     BilledAmount         = li.BilledAmount,
                     CoveredAmount        = liCovered,
                     DisallowedAmount     = liDisallowed,
-                    DisallowedReason     = li.IsExcluded ? "Excluded from coverage" : null,
+                    DisallowedReason     = disallowReason,
                     PatientPayable       = liPatient,
                     CreatedAt            = DateTime.UtcNow,
                     UpdatedAt            = DateTime.UtcNow,
@@ -117,6 +141,25 @@ public class CoverageAllocationEngine
         await _db.SaveChangesAsync(ct);
         _log.LogInformation("Bill allocated for case {CaseId}: Ins={Ins}, Pat={Pat}",
             coverageCaseId, effectiveCovered, patientShare);
+
+        // Advance workflow: FINALIZE_BILL → PREPARE_CLAIM (non-blocking; may already be past these states)
+        if (coverageCase.WorkflowInstanceId.HasValue)
+        {
+            foreach (var trigger in new[] { "FINALIZE_BILL", "PREPARE_CLAIM" })
+            {
+                try
+                {
+                    await _workflow.FireAsync(
+                        coverageCase.WorkflowInstanceId.Value, trigger, actorUserId,
+                        "Auto-fired after bill allocation", ct);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "{Trigger} fire failed for case {CaseId} (may be benign)", trigger, coverageCaseId);
+                }
+            }
+        }
+
         return summary;
     }
 
@@ -132,7 +175,23 @@ public class CoverageAllocationEngine
         => await _db.CoverageAllocations.AsNoTracking()
             .Where(a => a.BillingSummaryId == summaryId && a.DeletedAt == null)
             .ToListAsync(ct);
+
+    /// Loads the latest billing summary for a case together with all its line allocations.
+    public async Task<BillingSummaryWithAllocations?> GetWithAllocationsAsync(
+        Guid coverageCaseId, CancellationToken ct = default)
+    {
+        var summary = await GetByCaseIdAsync(coverageCaseId, ct);
+        if (summary is null) return null;
+
+        var allocations = await GetAllocationsBySummaryAsync(summary.Id, ct);
+        return new BillingSummaryWithAllocations(summary, allocations);
+    }
 }
+
+public record BillingSummaryWithAllocations(
+    CcmsBillingSummary Summary,
+    List<CcmsCoverageAllocation> Allocations
+);
 
 public record AllocateBillRequest(
     Guid?    BillId,
@@ -148,5 +207,6 @@ public record BillLineItemRequest(
     string? Code,
     string  Description,
     decimal BilledAmount,
-    bool    IsExcluded
+    bool    IsExcluded,
+    string? DisallowedReason = null
 );

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import type { AddPatientFormData } from '@/types/counsellors-desk';
-import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
+import { useSurgeonsQuery } from '@/hooks/use-counsellors-desk-queries';
 
 interface AddPatientModalProps {
   isOpen: boolean;
@@ -27,18 +27,14 @@ export function AddPatientModal({ isOpen, onClose, onAdd }: AddPatientModalProps
   const [form, setForm] = useState<AddPatientFormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [surgeons, setSurgeons] = useState<{ id: string; name: string }[]>([]);
-  const [loadingSurgeons, setLoadingSurgeons] = useState(false);
+  const surgeonsQuery = useSurgeonsQuery(isOpen);
+  const surgeons = surgeonsQuery.data ?? [];
+  const loadingSurgeons = surgeonsQuery.isLoading && surgeons.length === 0;
 
   useEffect(() => {
     if (isOpen) {
       setForm(EMPTY_FORM);
       setErrors({});
-      setLoadingSurgeons(true);
-      counsellorsDeskApi.getSurgeons()
-        .then(setSurgeons)
-        .catch(console.error)
-        .finally(() => setLoadingSurgeons(false));
     }
   }, [isOpen]);
 
@@ -79,7 +75,7 @@ export function AddPatientModal({ isOpen, onClose, onAdd }: AddPatientModalProps
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/40" />
 
       {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">

@@ -9,7 +9,9 @@
     "AuthService__BaseUrl": "http://localhost:5073",
     "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
     "IpService__BaseUrl": "http://localhost:5074",
-    "IpService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026"
+    "IpService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
+    "NotificationService__BaseUrl": "http://localhost:7073",
+    "NotificationService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026"
   },
   "Host": {
     "LocalHttpPort": 7075,

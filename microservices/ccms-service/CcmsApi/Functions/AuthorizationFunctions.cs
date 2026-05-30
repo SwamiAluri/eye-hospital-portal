@@ -10,14 +10,20 @@ namespace CcmsApi.Functions;
 public class AuthorizationFunctions
 {
     private readonly PreAuthorizationService _svc;
+    private readonly ClarificationService _clarSvc;
     private readonly JwtService _jwt;
     private readonly ILogger<AuthorizationFunctions> _log;
 
-    public AuthorizationFunctions(PreAuthorizationService svc, JwtService jwt, ILogger<AuthorizationFunctions> log)
+    public AuthorizationFunctions(
+        PreAuthorizationService svc,
+        ClarificationService clarSvc,
+        JwtService jwt,
+        ILogger<AuthorizationFunctions> log)
     {
-        _svc = svc;
-        _jwt = jwt;
-        _log = log;
+        _svc     = svc;
+        _clarSvc = clarSvc;
+        _jwt     = jwt;
+        _log     = log;
     }
 
     // POST /api/ccms/coverage-cases/{id}/authorization
@@ -28,25 +34,31 @@ public class AuthorizationFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
-        var body = await JsonSerializer.DeserializeAsync<GeneratePreAuthRequest>(req.Body);
+        var body = await JsonSerializer.DeserializeAsync<GeneratePreAuthRequest>(
+            req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
         try
         {
             var result = await _svc.GeneratePreAuthAsync(id, claims!.UserId, body);
-            var resp = req.CreateResponse(HttpStatusCode.Created);
-            await resp.WriteAsJsonAsync(result);
-            return resp;
+            return await req.CreatedJsonAsync(result);
         }
         catch (KeyNotFoundException)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
+        catch (InvalidOperationException ex)
+        {
+            return await req.BadRequestAsync(ex.Message);
+        }
         catch (Exception ex)
         {
             _log.LogError(ex, "Error generating pre-auth for case {Id}", id);
             var resp = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await resp.WriteAsJsonAsync(new { error = ex.Message });
+            resp.Headers.Add("Content-Type", "application/json");
+            await resp.WriteStringAsync(
+                JsonSerializer.Serialize(new { error = ex.Message },
+                    new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
             return resp;
         }
     }
@@ -71,10 +83,18 @@ public class AuthorizationFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
-        var body = await JsonSerializer.DeserializeAsync<SubmitPreAuthRequest>(req.Body);
+        var body = await JsonSerializer.DeserializeAsync<SubmitPreAuthRequest>(
+            req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);
 
-        var result = await _svc.MarkSentAsync(id, claims!.UserId, body?.TpaReferenceNumber);
-        return await req.OkJsonAsync(result);
+        try
+        {
+            var result = await _svc.MarkSentAsync(id, claims!.UserId, body?.TpaReferenceNumber);
+            return await req.OkJsonAsync(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return await req.NotFoundAsync(ex.Message);
+        }
     }
 
     // POST /api/ccms/authorizations/{id}/tpa-response
@@ -85,7 +105,8 @@ public class AuthorizationFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
-        var body = await JsonSerializer.DeserializeAsync<RecordTpaResponseRequest>(req.Body);
+        var body = await JsonSerializer.DeserializeAsync<RecordTpaResponseRequest>(
+            req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
         try
@@ -103,6 +124,10 @@ public class AuthorizationFunctions
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
+        catch (InvalidOperationException ex)
+        {
+            return await req.BadRequestAsync(ex.Message);
+        }
     }
 
     // GET /api/ccms/authorizations/queue
@@ -116,6 +141,36 @@ public class AuthorizationFunctions
         var queue = await _svc.GetQueueAsync();
         return await req.OkJsonAsync(queue);
     }
+
+    // PATCH /api/ccms/authorizations/{id}/process-status
+    [Function("UpdateAuthProcessStatus")]
+    public async Task<HttpResponseData> UpdateProcessStatus(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "patch",
+            Route = "ccms/authorizations/{id:guid}/process-status")] HttpRequestData req, Guid id)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        var body = await JsonSerializer.DeserializeAsync<UpdateProcessStatusRequest>(req.Body,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (body is null || string.IsNullOrWhiteSpace(body.ProcessStatus))
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+
+        try
+        {
+            var result = await _svc.UpdateProcessStatusAsync(id, claims!.UserId, body.ProcessStatus);
+            return await req.OkJsonAsync(result);
+        }
+        catch (KeyNotFoundException)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+    }
 }
 
 public record SubmitPreAuthRequest(string? TpaReferenceNumber);
+public record UpdateProcessStatusRequest(string ProcessStatus);
+
+// ── Clarification endpoints appended to AuthorizationFunctions ───────────────
+// (Declared as partial methods below to keep file length manageable; the
+//  ClarificationFunctions partial is in ClarificationFunctions.cs)

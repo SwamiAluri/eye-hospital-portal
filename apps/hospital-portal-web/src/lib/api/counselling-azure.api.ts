@@ -11,6 +11,7 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
+import { attachAuthRequestInterceptor, attachAuthResponseInterceptor } from '../auth-interceptors';
 import { useAuthStore } from '../auth-store';
 
 const COUNSELLING_API_URL =
@@ -22,14 +23,8 @@ let _client: AxiosInstance | null = null;
 function getClient(): AxiosInstance {
   if (_client) return _client;
   _client = axios.create({ baseURL: COUNSELLING_API_URL });
-
-  // Mirror main api.ts: attach tenant ID + Bearer token to every request
-  _client.interceptors.request.use((config) => {
-    const { tenantId, token } = useAuthStore.getState();
-    if (tenantId) (config.headers as Record<string, string>)['X-Tenant-ID'] = tenantId;
-    if (token) (config.headers as Record<string, string>).Authorization = `Bearer ${token}`;
-    return config;
-  });
+  attachAuthRequestInterceptor(_client);
+  attachAuthResponseInterceptor(_client);
 
   return _client;
 }

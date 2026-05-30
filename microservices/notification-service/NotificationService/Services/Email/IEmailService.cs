@@ -31,4 +31,10 @@ public interface IEmailService
         string? creditNoteNumber = null,
         decimal? creditNoteAmount = null,
         string? cancellationReason = null);
+
+    Task<(bool Success, string? MessageId, string? Error)> SendGenericEmailAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        string? plainTextBody = null);
 }

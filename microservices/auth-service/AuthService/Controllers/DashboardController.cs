@@ -142,6 +142,26 @@ public class DashboardController : ControllerBase
         }
     }
 
+    [HttpGet("activity-series")]
+    [RequirePermission("dashboard.view")]
+    public async Task<IActionResult> GetActivitySeries([FromQuery] int hours = 24)
+    {
+        try
+        {
+            var tenantId = GetTenantId();
+            var series = await _dashboardService.GetActivitySeriesAsync(tenantId, Math.Clamp(hours, 1, 168));
+            return Ok(series);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "An error occurred while fetching activity series", error = ex.Message });
+        }
+    }
+
     [HttpGet("stats")]
     [RequirePermission("dashboard.view")]
     public async Task<IActionResult> GetStats()

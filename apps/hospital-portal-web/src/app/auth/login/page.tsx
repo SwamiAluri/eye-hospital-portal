@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, initializeApi, getApi } from '@/lib/api';
@@ -33,73 +33,76 @@ export default function LoginPage() {
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [temporaryToken, setTemporaryToken] = useState('');
   const [mfaUserId, setMfaUserId] = useState('');
+  const [mounted, setMounted] = useState(false);
+  const tenantsFetched = useRef(false);
 
-  // Clear any old auth state on mount
   useEffect(() => {
-    // Clear localStorage to ensure fresh login
-    if (typeof window !== 'undefined') {
-      console.log('ðŸ§¹ Login page: Clearing old auth state');
-      localStorage.clear();
-      // Also clear the auth store
-      useAuthStore.getState().logout();
-    }
+    setMounted(true);
   }, []);
 
-  // Fetch tenants on component mount
+  // Clear any old auth state on mount; show session-expired message if redirected
   useEffect(() => {
+    if (!mounted) return;
+    const expiredMsg = sessionStorage.getItem('auth_expired_message');
+    if (expiredMsg) {
+      setError(expiredMsg);
+      sessionStorage.removeItem('auth_expired_message');
+    }
+    localStorage.clear();
+    useAuthStore.getState().logout();
+  }, [mounted]);
+
+  // Fetch tenants once on mount
+  useEffect(() => {
+    if (!mounted || tenantsFetched.current) return;
+    tenantsFetched.current = true;
+
     const fetchTenants = async () => {
       try {
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5073/api';
-        console.log('Fetching tenants from:', API_BASE_URL);
-        
-        // Try database first, fallback to mock data
+
         let response;
         try {
           response = await axios.get(`${API_BASE_URL}/tenants/debug/codes/db`, {
-            timeout: 3000
+            timeout: 3000,
           });
-          console.log('Database tenants response:', response.data);
-        } catch (dbError) {
-          console.log('Database tenants not available, using mock data');
+        } catch {
           response = await axios.get(`${API_BASE_URL}/tenants/debug/codes`, {
-            timeout: 3000
+            timeout: 3000,
           });
-          console.log('Mock tenants response:', response.data);
         }
-        
-        // Check multiple possible response formats
-        let tenantsList = [];
+
+        let tenantsList: Tenant[] = [];
         if (response.data && Array.isArray(response.data.tenants)) {
           tenantsList = response.data.tenants;
         } else if (response.data && Array.isArray(response.data)) {
           tenantsList = response.data;
         }
-        
-        console.log('Parsed tenants list:', tenantsList);
-        
+
         if (tenantsList.length > 0) {
           setTenants(tenantsList);
           setTenantId(tenantsList[0].id);
-          console.log('Set tenants successfully:', tenantsList.length);
         } else {
           throw new Error('No tenants found in response');
         }
       } catch (err) {
         console.error('Error fetching tenants:', err);
-        // Fallback to India Eye Hospital Network (the actual tenant in database)
         const fallbackTenants = [
-          { id: '155fe198-6ae5-4a01-9254-ead5b427247e', name: 'India Eye Hospital Network', tenantCode: 'INDIA_EYE_NET' }
+          {
+            id: '155fe198-6ae5-4a01-9254-ead5b427247e',
+            name: 'India Eye Hospital Network',
+            tenantCode: 'INDIA_EYE_NET',
+          },
         ];
         setTenants(fallbackTenants);
         setTenantId(fallbackTenants[0].id);
-        console.log('Using fallback tenant (India Eye Hospital Network)');
       } finally {
         setIsLoadingTenants(false);
       }
     };
 
     fetchTenants();
-  }, []);
+  }, [mounted]);
 
   const handleCreateAdmin = async () => {
     setError('');
@@ -141,21 +144,15 @@ export default function LoginPage() {
       // Initialize API with tenant ID
       initializeApi();
 
-      console.log('Attempting login with:', { email, password, tenantId });
       const response = await authApi.login(email, password, tenantId);
-      console.log('Login response:', response);
       const { data } = response;
-      console.log('Login data:', data);
 
       if (!data.success) {
-        console.log('Login failed - no success flag');
         setError(data.message || 'Login failed');
         return;
       }
 
-      // Check if MFA is required
       if (data.requiresMfa) {
-        console.log('MFA required for this user, userId:', data.userId);
         setMfaRequired(true);
         setMfaUserId(data.userId || '');
         setMfaMethod(data.mfaMethod || 'authenticator');
@@ -164,8 +161,6 @@ export default function LoginPage() {
         return;
       }
 
-      console.log('Login successful, calling setAuth...');
-      // Store auth state
       setAuth(
         data.accessToken,
         data.refreshToken,
@@ -176,13 +171,9 @@ export default function LoginPage() {
         data.mustChangePassword
       );
 
-      console.log('Auth state set, checking mustChangePassword:', data.mustChangePassword);
-      // Redirect based on must change password flag
       if (data.mustChangePassword) {
-        console.log('Redirecting to change password');
         router.push('/auth/change-password');
       } else {
-        console.log('Redirecting to dashboard');
         router.push('/dashboard');
       }
     } catch (err: any) {
@@ -216,7 +207,6 @@ export default function LoginPage() {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5073/api';
 
-      console.log('Verifying MFA with userId:', mfaUserId, 'code:', mfaCode);
       const response = await fetch(`${apiUrl}/auth/mfa/verify`, {
         method: 'POST',
         headers: {
@@ -271,6 +261,21 @@ export default function LoginPage() {
     setPassword('');
   };
 
+  if (!mounted) {
+    return (
+      <main id="main-content" className="w-full">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-8 py-8 animate-pulse">
+          <div className="h-8 bg-gray-100 rounded w-1/3 mb-6" />
+          <div className="space-y-4">
+            <div className="h-10 bg-gray-100 rounded" />
+            <div className="h-10 bg-gray-100 rounded" />
+            <div className="h-10 bg-gray-100 rounded" />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main id="main-content" className="w-full">
       {/* Card */}
@@ -305,7 +310,7 @@ export default function LoginPage() {
               </label>
               {isLoadingTenants ? (
                 <div className="w-full px-3 py-2.5 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm">
-                  Loading tenantsâ€¦
+                  Loading tenants…
                 </div>
               ) : tenants.length > 0 ? (
                 <select
@@ -324,6 +329,7 @@ export default function LoginPage() {
                 </select>
               ) : (
                 <input
+                  suppressHydrationWarning
                   type="text"
                   value={tenantId}
                   onChange={(e) => setTenantId(e.target.value)}
@@ -340,6 +346,7 @@ export default function LoginPage() {
                 Email Address
               </label>
               <input
+                suppressHydrationWarning
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -364,10 +371,11 @@ export default function LoginPage() {
                 </Link>
               </div>
               <input
+                suppressHydrationWarning
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                placeholder="••••••••"
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
                 required
               />
@@ -382,7 +390,7 @@ export default function LoginPage() {
               onMouseEnter={e => { if (!isLoading) e.currentTarget.style.backgroundColor = '#059669'; }}
               onMouseLeave={e => { if (!isLoading) e.currentTarget.style.backgroundColor = '#10b981'; }}
             >
-              {isLoading ? 'Signing inâ€¦' : 'Sign in'}
+              {isLoading ? 'Signing in…' : 'Sign in'}
             </button>
 
             {/* Dev helper */}
@@ -392,7 +400,7 @@ export default function LoginPage() {
               disabled={isLoading}
               className="w-full py-2.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isLoading ? 'Creatingâ€¦' : 'Create Admin User (Dev Only)'}
+              {isLoading ? 'Creating…' : 'Create Admin User (Dev Only)'}
             </button>
           </form>
         ) : (
@@ -429,6 +437,7 @@ export default function LoginPage() {
                 {useBackupCode ? 'Backup Code' : 'Authentication Code'}
               </label>
               <input
+                suppressHydrationWarning
                 type="text"
                 value={mfaCode}
                 onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, useBackupCode ? 8 : 6))}
@@ -451,10 +460,10 @@ export default function LoginPage() {
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Verifyingâ€¦
+                  Verifying…
                 </>
               ) : (
-                'Verify &amp; Sign in'
+                'Verify & Sign in'
               )}
             </button>
 
@@ -483,7 +492,7 @@ export default function LoginPage() {
       {!mfaRequired && (
         <div className="mt-4 w-full px-4 py-3 bg-blue-50 border border-blue-100 rounded-xl">
           <p className="text-xs text-blue-600">
-            <strong>Demo:</strong> admin@test.com Â· Admin123! Â· India Eye Hospital Network
+            <strong>Demo:</strong> admin@test.com · Admin123! · India Eye Hospital Network
           </p>
         </div>
       )}

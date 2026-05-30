@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace CcmsApi.Services;
@@ -37,8 +38,9 @@ public class IpServiceClient
                 eventType       = "COVERAGE_APPROVED"
             };
 
-            var resp = await _http.PostAsJsonAsync(
-                "/api/ip/ccms-callback", payload, ct);
+            var resp = await _http.PostAsync(
+                "/api/ip/ccms-callback",
+                JsonContent.Create(payload), ct);
 
             if (!resp.IsSuccessStatusCode)
                 _log.LogWarning("IpService callback returned {Status} for journey {JourneyId}",
@@ -70,8 +72,9 @@ public class IpServiceClient
                 eventType    = "SETTLEMENT_RECEIVED"
             };
 
-            var resp = await _http.PostAsJsonAsync(
-                "/api/ip/ccms-callback", payload, ct);
+            var resp = await _http.PostAsync(
+                "/api/ip/ccms-callback",
+                JsonContent.Create(payload), ct);
 
             return resp.IsSuccessStatusCode;
         }

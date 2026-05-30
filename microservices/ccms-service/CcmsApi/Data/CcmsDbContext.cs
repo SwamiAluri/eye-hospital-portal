@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using CcmsApi.Functions;    // BillingTransactionRow keyless projection
 using CcmsApi.Models.Domain;
 
 namespace CcmsApi.Data;
@@ -66,6 +67,12 @@ public class CcmsDbContext : DbContext
     // ── Phase 13: Government Scheme Applications ──────────────────────────
     public DbSet<CcmsGovtSchemeApplication> GovtSchemeApplications    { get; set; }
     public DbSet<CcmsGovtSchemeDocument>    GovtSchemeDocuments       { get; set; }
+
+    // ── Migration 122: Visit Insurance Policies ───────────────────────────
+    public DbSet<CcmsVisitInsurancePolicy>  VisitInsurancePolicies    { get; set; }
+
+    // ── Keyless entities (raw SQL projections) ────────────────────────────
+    public DbSet<BillingTransactionRow>     BillingTransactionRows    { get; set; }
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -187,6 +194,8 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.WorkflowInstanceId).HasColumnName("workflow_instance_id");
             e.Property(x => x.FromStateId).HasColumnName("from_state_id");
             e.Property(x => x.ToStateId).HasColumnName("to_state_id");
+            e.Property(x => x.FromStateCode).HasColumnName("from_state_code");
+            e.Property(x => x.ToStateCode).HasColumnName("to_state_code");
             e.Property(x => x.TriggerEvent).HasColumnName("trigger_event");
             e.Property(x => x.ActorUserId).HasColumnName("actor_user_id");
             e.Property(x => x.Notes).HasColumnName("notes");
@@ -218,6 +227,18 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.ClaimSubmissionMode).HasColumnName("claim_submission_mode");
             e.Property(x => x.PreAuthRequired).HasColumnName("pre_auth_required");
             e.Property(x => x.AddressJson).HasColumnName("address_json");
+            // Migration 123
+            e.Property(x => x.PayerCategory).HasColumnName("payer_category");
+            e.Property(x => x.DebtorSubtype).HasColumnName("debtor_subtype");
+            e.Property(x => x.CreditLimit).HasColumnName("credit_limit");
+            e.Property(x => x.ExportCode).HasColumnName("export_code");
+            e.Property(x => x.HospitalIdentifier).HasColumnName("hospital_identifier");
+            e.Property(x => x.ServiceTaxApplicable).HasColumnName("service_tax_applicable");
+            e.Property(x => x.DefaultServiceTaxPercent).HasColumnName("default_service_tax_percent");
+            e.Property(x => x.TdsMandatory).HasColumnName("tds_mandatory");
+            e.Property(x => x.ValidFrom).HasColumnName("valid_from");
+            e.Property(x => x.ValidTo).HasColumnName("valid_to");
+            e.Property(x => x.FormatCode).HasColumnName("format_code");
         });
 
         mb.Entity<CcmsTpaProvider>(e =>
@@ -328,6 +349,7 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.BranchId).HasColumnName("branch_id");
             e.Property(x => x.DoctorId).HasColumnName("doctor_id");
             e.Property(x => x.PayerType).HasColumnName("payer_type");
+            e.Property(x => x.PaymentType).HasColumnName("payment_type");
             e.Property(x => x.InsuranceProviderId).HasColumnName("insurance_provider_id");
             e.Property(x => x.TpaProviderId).HasColumnName("tpa_provider_id");
             e.Property(x => x.GovernmentSchemeId).HasColumnName("government_scheme_id");
@@ -342,6 +364,17 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.SessionPreauthId).HasColumnName("session_preauth_id");
             e.Property(x => x.EmergencyFcApplied).HasColumnName("emergency_fc_applied");
             e.Property(x => x.NotesJson).HasColumnName("notes_json");
+            e.Property(x => x.CounsellorDraftJson).HasColumnName("counsellor_draft_json");
+            e.Property(x => x.IsDraft).HasColumnName("is_draft");
+            e.Property(x => x.DraftSavedAt).HasColumnName("draft_saved_at");
+            // Migration 124
+            e.Property(x => x.ProcessStatus).HasColumnName("process_status");
+            e.Property(x => x.ProcessStatusUpdatedAt).HasColumnName("process_status_updated_at");
+            e.Property(x => x.ServiceTaxApplicable).HasColumnName("service_tax_applicable");
+            e.Property(x => x.ServiceTaxPercent).HasColumnName("service_tax_percent");
+            e.Property(x => x.ServiceTaxAmount).HasColumnName("service_tax_amount");
+            // Denormalized display field (kept in sync by search trigger / migration 129)
+            e.Property(x => x.InsurerName).HasColumnName("search_insurer_name").IsRequired(false);
         });
 
         mb.Entity<CcmsEligibilityCheck>(e =>
@@ -406,8 +439,8 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.ApprovedAmount).HasColumnName("approved_amount");
             e.Property(x => x.RoomClassRequested).HasColumnName("room_class_requested");
             e.Property(x => x.RoomClassApproved).HasColumnName("room_class_approved");
-            e.Property(x => x.DiagnosisJson).HasColumnName("diagnosis_json");
-            e.Property(x => x.ProceduresJson).HasColumnName("procedures_json");
+            e.Property(x => x.DiagnosisJson).HasColumnName("diagnosis_json").HasColumnType("jsonb");
+            e.Property(x => x.ProceduresJson).HasColumnName("procedures_json").HasColumnType("jsonb");
             e.Property(x => x.ValidFrom).HasColumnName("valid_from");
             e.Property(x => x.ValidTo).HasColumnName("valid_to");
             e.Property(x => x.SubmittedAt).HasColumnName("submitted_at");
@@ -416,6 +449,25 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.LegacyPreauthId).HasColumnName("legacy_preauth_id");
             e.Property(x => x.SessionPreauthId).HasColumnName("session_preauth_id");
             e.Property(x => x.RejectionReason).HasColumnName("rejection_reason");
+            // Migration 124: clinical
+            e.Property(x => x.ClinicalSummary).HasColumnName("clinical_summary");
+            e.Property(x => x.TreatingDoctorName).HasColumnName("treating_doctor_name");
+            e.Property(x => x.TreatingDoctorReg).HasColumnName("treating_doctor_reg");
+            e.Property(x => x.AdmissionDate).HasColumnName("admission_date");
+            e.Property(x => x.ExpectedDischargeDate).HasColumnName("expected_discharge_date");
+            e.Property(x => x.ActualDischargeDate).HasColumnName("actual_discharge_date");
+            e.Property(x => x.LengthOfStayDays).HasColumnName("length_of_stay_days");
+            e.Property(x => x.RoomTypeRequested).HasColumnName("room_type_requested");
+            e.Property(x => x.TpaQueryJson).HasColumnName("tpa_query_json").HasColumnType("jsonb");
+            e.Property(x => x.ProcessStatus).HasColumnName("process_status");
+            e.Property(x => x.ProcessStatusUpdatedAt).HasColumnName("process_status_updated_at");
+            // Migration 124: financial
+            e.Property(x => x.EstimatedTotalCost).HasColumnName("estimated_total_cost");
+            e.Property(x => x.CopayAmount).HasColumnName("copay_amount");
+            e.Property(x => x.DeductibleAmount).HasColumnName("deductible_amount");
+            e.Property(x => x.ServiceTaxAmount).HasColumnName("service_tax_amount");
+            e.Property(x => x.NetPayableByInsurer).HasColumnName("net_payable_by_insurer");
+            e.Property(x => x.NetPayableByPatient).HasColumnName("net_payable_by_patient");
         });
 
         mb.Entity<CcmsAuthorizationDocument>(e =>
@@ -568,10 +620,15 @@ public class CcmsDbContext : DbContext
             MapStandardColumns(e);
             e.Property(x => x.CoverageCase_Id).HasColumnName("coverage_case_id");
             e.Property(x => x.ClaimPacketId).HasColumnName("claim_packet_id");
+            e.Property(x => x.SettlementNumber).HasColumnName("settlement_number");
             e.Property(x => x.SettlementType).HasColumnName("settlement_type");
             e.Property(x => x.SettledAmount).HasColumnName("settled_amount");
+            e.Property(x => x.ClaimAmount).HasColumnName("claim_amount");
+            e.Property(x => x.OutstandingAmount).HasColumnName("outstanding_amount");
             e.Property(x => x.PaymentMode).HasColumnName("payment_mode");
             e.Property(x => x.PaymentReference).HasColumnName("payment_reference");
+            e.Property(x => x.PaymentDate).HasColumnName("payment_date");
+            e.Property(x => x.BankReference).HasColumnName("bank_reference");
             e.Property(x => x.SettledAt).HasColumnName("settled_at");
             e.Property(x => x.ReconciliationStatus).HasColumnName("reconciliation_status");
             e.Property(x => x.ReconciliationNotes).HasColumnName("reconciliation_notes");
@@ -627,6 +684,7 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.SentAt).HasColumnName("sent_at");
             e.Property(x => x.DeliveryStatus).HasColumnName("delivery_status");
             e.Property(x => x.ExternalMessageId).HasColumnName("external_message_id");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
         });
 
         mb.Entity<CcmsCommunicationTemplate>(e =>
@@ -672,6 +730,43 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.BlobUrl).HasColumnName("blob_url");
             e.Property(x => x.UploadedAt).HasColumnName("uploaded_at");
         });
+
+        // ── Migration 122: Visit Insurance Policies ────────────────────────
+        mb.Entity<CcmsVisitInsurancePolicy>(e =>
+        {
+            e.ToTable("ccms_visit_insurance_policies");
+            e.HasKey(x => x.Id);
+            MapStandardColumns(e);
+            e.Property(x => x.SessionId).HasColumnName("session_id");
+            e.Property(x => x.CoverageCase_Id).HasColumnName("coverage_case_id");
+            e.Property(x => x.PolicyNumber).HasColumnName("policy_number");
+            e.Property(x => x.CardNumber).HasColumnName("card_number");
+            e.Property(x => x.MembershipNumber).HasColumnName("membership_number");
+            e.Property(x => x.InsuranceProviderId).HasColumnName("insurance_provider_id");
+            e.Property(x => x.TpaProviderId).HasColumnName("tpa_provider_id");
+            e.Property(x => x.InsuredName).HasColumnName("insured_name");
+            e.Property(x => x.RelationshipToInsured).HasColumnName("relationship_to_insured");
+            e.Property(x => x.Occupation).HasColumnName("occupation");
+            e.Property(x => x.Designation).HasColumnName("designation");
+            e.Property(x => x.CompanyName).HasColumnName("company_name");
+            e.Property(x => x.EmployeeId).HasColumnName("employee_id");
+            e.Property(x => x.VideNumber).HasColumnName("vide_number");
+            e.Property(x => x.ContactNumber).HasColumnName("contact_number");
+            e.Property(x => x.DoctorName).HasColumnName("doctor_name");
+            e.Property(x => x.DoctorRegNumber).HasColumnName("doctor_reg_number");
+            e.Property(x => x.DoctorQualification).HasColumnName("doctor_qualification");
+            e.Property(x => x.DoctorContact).HasColumnName("doctor_contact");
+            e.Property(x => x.AccommodationClass).HasColumnName("accommodation_class");
+            e.Property(x => x.DetailsText).HasColumnName("details_text");
+            e.Property(x => x.TpaCoordinatorName).HasColumnName("tpa_coordinator_name");
+            e.Property(x => x.IsPrimary).HasColumnName("is_primary");
+            e.Property(x => x.SortOrder).HasColumnName("sort_order");
+            e.Property(x => x.UnderwritingSnapshotJson).HasColumnName("underwriting_snapshot_json");
+            e.Property(x => x.ServiceTaxApplicable).HasColumnName("service_tax_applicable");
+        });
+
+        // Keyless projections (no table; used only with FromSqlRaw)
+        mb.Entity<BillingTransactionRow>().HasNoKey();
     }
 
     /// Helper to map the standard columns shared by most entities.

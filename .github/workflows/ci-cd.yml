@@ -108,6 +108,169 @@ jobs:
         name: frontend-package
         path: ./apps/hospital-portal-web/.next
 
+  # ── CCMS Service: Build, Test & OpenAPI Contract Generation ─────────────────
+  ccms-build-openapi:
+    name: CCMS — Build, Test & Generate OpenAPI
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore CCMS dependencies
+      run: dotnet restore
+      working-directory: ./microservices/ccms-service/CcmsApi
+
+    - name: Build CCMS service
+      run: dotnet build --configuration Release --no-restore
+      working-directory: ./microservices/ccms-service/CcmsApi
+
+    - name: Run CCMS unit + integration tests
+      run: |
+        if [ -d "../CcmsApi.Tests" ]; then
+          dotnet test ../CcmsApi.Tests/CcmsApi.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --verbosity normal \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults
+        else
+          echo "No test project found — skipping (tests not yet created)"
+        fi
+      working-directory: ./microservices/ccms-service/CcmsApi
+
+    - name: Upload CCMS test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ccms-test-results
+        path: ./microservices/ccms-service/CcmsApi/TestResults
+        if-no-files-found: ignore
+
+    - name: Generate OpenAPI contract (swagger.json)
+      run: |
+        # Start the functions host, wait for it to be ready, then fetch the spec.
+        # Uses the static swagger export endpoint provided by the OpenApi extension.
+        dotnet publish --configuration Release --output ./publish --no-build \
+          -p:CopyOutputSymbolsToPublishDirectory=false
+        # Run host in background with a dummy connection string (spec generation is metadata-only)
+        ASPNETCORE_URLS="http://localhost:7272" \
+        AzureWebJobsStorage="UseDevelopmentStorage=true" \
+        ConnectionStrings__DefaultConnection="Host=localhost;Database=ccms_test;Username=test;Password=test" \
+        func start --port 7272 &
+        HOST_PID=$!
+        # Poll until /api/swagger.json responds (max 30s)
+        for i in $(seq 1 30); do
+          sleep 1
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:7272/api/swagger.json || true)
+          if [ "$STATUS" = "200" ]; then
+            echo "OpenAPI endpoint ready after ${i}s"
+            break
+          fi
+        done
+        curl -s http://localhost:7272/api/swagger.json -o ./ccms-openapi.json
+        curl -s http://localhost:7272/api/swagger.yaml -o ./ccms-openapi.yaml
+        kill $HOST_PID 2>/dev/null || true
+        echo "✅ OpenAPI spec generated ($(wc -c < ./ccms-openapi.json) bytes)"
+      working-directory: ./microservices/ccms-service/CcmsApi
+      continue-on-error: true   # non-blocking: spec is an artifact, not a build gate
+
+    - name: Upload OpenAPI spec artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ccms-openapi-spec
+        path: |
+          ./microservices/ccms-service/CcmsApi/ccms-openapi.json
+          ./microservices/ccms-service/CcmsApi/ccms-openapi.yaml
+        if-no-files-found: ignore
+
+    - name: Commit spec to docs/ (on main only)
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        mkdir -p docs/api
+        cp ./microservices/ccms-service/CcmsApi/ccms-openapi.json docs/api/ccms-openapi.json || true
+        cp ./microservices/ccms-service/CcmsApi/ccms-openapi.yaml docs/api/ccms-openapi.yaml || true
+        git config user.name  "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add docs/api/ccms-openapi.json docs/api/ccms-openapi.yaml || true
+        git diff --cached --quiet || git commit -m "ci: update CCMS OpenAPI spec [skip ci]"
+        git push || true
+      continue-on-error: true
+
+  # ── Frontend: E2E Smoke Tests (Playwright) ──────────────────────────────────
+  e2e-tests:
+    name: Frontend — Playwright E2E Smoke Tests
+    runs-on: ubuntu-latest
+    # Only run on PRs and main pushes (not on feature branch pushes to keep CI fast)
+    if: |
+      github.event_name == 'pull_request' ||
+      github.ref == 'refs/heads/main' ||
+      github.ref == 'refs/heads/develop'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v3
+      with:
+        version: 8
+
+    - name: Install frontend dependencies
+      run: pnpm install --frozen-lockfile
+      working-directory: ./apps/hospital-portal-web
+
+    - name: Install Playwright browsers
+      run: pnpm exec playwright install --with-deps chromium
+      working-directory: ./apps/hospital-portal-web
+
+    - name: Build Next.js app for E2E
+      run: pnpm run build
+      working-directory: ./apps/hospital-portal-web
+      env:
+        NEXT_PUBLIC_API_URL: ${{ secrets.E2E_API_URL || 'http://localhost:5073/api' }}
+        NEXTAUTH_SECRET: 'playwright-ci-secret'
+        NEXTAUTH_URL: 'http://localhost:3000'
+
+    - name: Run Playwright E2E tests (Chromium only on CI)
+      run: pnpm exec playwright test --project=chromium --reporter=github
+      working-directory: ./apps/hospital-portal-web
+      env:
+        PLAYWRIGHT_BASE_URL: ${{ secrets.E2E_FRONTEND_URL || '' }}
+        E2E_API_URL: ${{ secrets.E2E_API_URL || '' }}
+        E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL || 'admin@hospital.local' }}
+        E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD || 'TestPassword123!' }}
+        CI: 'true'
+      continue-on-error: true   # E2E failures are surfaced as warnings, not blockers, until seed data is stable
+
+    - name: Upload Playwright report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-report
+        path: ./apps/hospital-portal-web/e2e/playwright-report
+        retention-days: 14
+        if-no-files-found: ignore
+
+    - name: Upload Playwright test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-test-results
+        path: ./apps/hospital-portal-web/e2e/.test-results
+        retention-days: 7
+        if-no-files-found: ignore
+
   # Database Validation
   database-validation:
     name: Database - Validate Migrations
@@ -136,7 +299,7 @@ jobs:
   # Deploy to Azure (only on main branch)
   deploy-backend:
     name: Deploy Backend to Azure
-    needs: [backend-test, frontend-test, database-validation]
+    needs: [backend-test, ccms-build-openapi, frontend-test, database-validation]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
@@ -285,7 +448,7 @@ jobs:
   # Notification on Failure
   notify-failure:
     name: Notify on Failure
-    needs: [backend-test, frontend-test, deploy-backend, deploy-frontend]
+    needs: [backend-test, ccms-build-openapi, frontend-test, e2e-tests, deploy-backend, deploy-frontend]
     runs-on: ubuntu-latest
     if: failure()
 

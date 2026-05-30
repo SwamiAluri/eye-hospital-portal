@@ -48,6 +48,42 @@
   --topnav-height:           56px;
 }
 
+/* WCAG 2.4.1 — skip link hidden until keyboard focus */
+.skip-to-content {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-to-content:focus {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  background-color: var(--primary-600);
+  color: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  z-index: 9999;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
 @layer base {
   body {
     @apply font-sans text-gray-900 bg-white;

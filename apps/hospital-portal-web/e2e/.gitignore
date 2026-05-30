@@ -1,0 +1,4 @@
+# Playwright generated artifacts — do NOT commit
+.auth/
+.test-results/
+playwright-report/

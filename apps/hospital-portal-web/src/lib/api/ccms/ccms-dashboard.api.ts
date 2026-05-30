@@ -16,6 +16,7 @@ export interface PendingPreAuthItem {
   caseId: string;
   caseNumber: string;
   patientId: string;
+  patientName?: string;
   payerName: string;
   requestedAmount: number;
   currentState: string;

@@ -47,7 +47,7 @@ export async function getClaimById(id: string): Promise<ClaimPacket> {
 }
 
 export async function getClaimByCaseId(caseId: string): Promise<ClaimPacket[]> {
-  const { data } = await getCcmsApi().get(`/ccms/claims/cases/${caseId}`);
+  const { data } = await getCcmsApi().get(`/ccms/coverage-cases/${caseId}/claims`);
   return Array.isArray(data) ? data : [];
 }
 
@@ -64,4 +64,16 @@ export async function submitClaim(id: string, req?: SubmitClaimRequest): Promise
 export async function getClaimQueue(): Promise<ClaimQueueItem[]> {
   const { data } = await getCcmsApi().get('/ccms/claims/queue');
   return Array.isArray(data) ? data : [];
+}
+
+export interface AcknowledgeClaimRequest {
+  tpaAckReference?: string;
+}
+
+export async function acknowledgeClaim(
+  id: string,
+  req?: AcknowledgeClaimRequest,
+): Promise<ClaimPacket> {
+  const { data } = await getCcmsApi().post(`/ccms/claims/${id}/acknowledge`, req ?? {});
+  return data;
 }

@@ -23,6 +23,7 @@ namespace AuthService.Controllers
         private readonly AppDbContext _context;
         private readonly ILogger<AuthController> _logger;
         private readonly INotificationClient _notificationClient;
+        private readonly ISessionManagementService _sessionService;
 
         public AuthController(
             UserManager<AppUser> userManager,
@@ -31,7 +32,8 @@ namespace AuthService.Controllers
             IPermissionService permissionService,
             AppDbContext context,
             ILogger<AuthController> logger,
-            INotificationClient notificationClient)
+            INotificationClient notificationClient,
+            ISessionManagementService sessionService)
         {
             _userManager = userManager;
             _roleManager = roleManager;
@@ -40,6 +42,7 @@ namespace AuthService.Controllers
             _context = context;
             _logger = logger;
             _notificationClient = notificationClient;
+            _sessionService = sessionService;
         }
 
         [HttpPost("login")]
@@ -100,6 +103,7 @@ namespace AuthService.Controllers
 
                     var demoAccessToken = _jwtService.GenerateToken(mockUser, mockRoles, mockPermissions);
                     var demoRefreshToken = _jwtService.GenerateRefreshToken();
+                    await PersistRefreshTokenSessionAsync(mockUser.Id, demoRefreshToken);
 
                     _logger.LogInformation("Demo login successful for {Email}", request.Email);
 
@@ -208,6 +212,7 @@ namespace AuthService.Controllers
                 // Generate JWT token
                 var accessToken = _jwtService.GenerateToken(user, roles.ToList(), permissions);
                 var refreshToken = _jwtService.GenerateRefreshToken();
+                await PersistRefreshTokenSessionAsync(user.Id, refreshToken);
 
                 // Resolve branchId — EF may read a stale PascalCase column for SQL-seeded users;
                 // fall back to user_branches table which is always correctly seeded.
@@ -285,6 +290,85 @@ namespace AuthService.Controllers
             {
                 _logger.LogError(ex, "Logout error");
                 return StatusCode(500, new { message = "An error occurred during logout" });
+            }
+        }
+
+        /// <summary>
+        /// Exchange a valid refresh token for a new access token (and rotated refresh token).
+        /// </summary>
+        [HttpPost("refresh")]
+        [AllowAnonymous]
+        public async Task<ActionResult<LoginResponse>> Refresh([FromBody] RefreshTokenRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.RefreshToken))
+                return BadRequest(new { message = "Refresh token is required" });
+
+            try
+            {
+                var session = await _context.UserSessions
+                    .FirstOrDefaultAsync(s => s.RefreshToken == request.RefreshToken && s.IsActive);
+
+                if (session == null || session.ExpiresAt < DateTime.UtcNow)
+                    return Unauthorized(new { message = "Invalid or expired refresh token" });
+
+                var user = await _userManager.FindByIdAsync(session.UserId.ToString());
+                if (user == null)
+                    return Unauthorized(new { message = "User not found" });
+
+                var status = user.UserStatus?.ToLowerInvariant() ?? "";
+                if (status is "inactive" or "suspended" or "pending_activation" or "pending_invitation")
+                    return Unauthorized(new { message = "User account is not active" });
+
+                HttpContext.Items["TenantId"] = user.TenantId;
+
+                var roles = await _userManager.GetRolesAsync(user);
+                var permissions = await _permissionService.GetUserPermissionsAsync(user.Id, user.TenantId);
+                var accessToken = _jwtService.GenerateToken(user, roles.ToList(), permissions);
+                var newRefreshToken = _jwtService.GenerateRefreshToken();
+
+                session.RefreshToken = newRefreshToken;
+                session.LastActivityTime = DateTime.UtcNow;
+                session.ExpiresAt = DateTime.UtcNow.AddHours(8);
+                session.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                var resolvedBranchId = user.BranchId;
+                if (resolvedBranchId == null)
+                {
+                    var defaultBranch = await _context.UserBranches
+                        .Where(ub => ub.UserId == user.Id && ub.TenantId == user.TenantId && ub.Status == "active")
+                        .OrderByDescending(ub => ub.IsDefault)
+                        .ThenBy(ub => ub.AssignedAt)
+                        .FirstOrDefaultAsync();
+                    resolvedBranchId = defaultBranch?.BranchId;
+                }
+
+                return Ok(new LoginResponse
+                {
+                    Success = true,
+                    Message = "Token refreshed",
+                    AccessToken = accessToken,
+                    RefreshToken = newRefreshToken,
+                    ExpiresIn = 3600,
+                    User = new UserDto
+                    {
+                        Id = user.Id,
+                        UserName = user.UserName,
+                        Email = user.Email,
+                        FirstName = user.FirstName,
+                        LastName = user.LastName,
+                        UserType = user.UserType,
+                        TenantId = user.TenantId,
+                        BranchId = resolvedBranchId,
+                    },
+                    Roles = roles.ToList(),
+                    Permissions = permissions,
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Token refresh error");
+                return StatusCode(500, new { message = "An error occurred during token refresh" });
             }
         }
 
@@ -595,6 +679,33 @@ namespace AuthService.Controllers
         }
 
         /// <summary>
+        /// Persist refresh token in user_sessions so silent token refresh works after JWT expiry.
+        /// Non-fatal — login succeeds even if session persistence fails.
+        /// </summary>
+        private async Task PersistRefreshTokenSessionAsync(Guid userId, string refreshToken)
+        {
+            try
+            {
+                var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+                var ua = Request.Headers.UserAgent.ToString();
+                await _sessionService.CreateSessionAsync(
+                    userId,
+                    deviceId: null,
+                    tokenId: Guid.NewGuid().ToString("N"),
+                    refreshToken: refreshToken,
+                    ipAddress: ip,
+                    userAgent: ua,
+                    location: "",
+                    sessionType: "Web",
+                    loginMethod: "password");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not persist refresh token session for user {UserId}", userId);
+            }
+        }
+
+        /// <summary>
         /// DEBUG: Create default admin user for testing (bypasses tenant requirement)
         /// </summary>
         [AllowAnonymous]
@@ -714,10 +825,14 @@ namespace AuthService.Controllers
                     .FirstOrDefaultAsync();
                 otpResolvedBranchId = otpDefaultBranch?.BranchId;
             }
+            var otpAccessToken = _jwtService.GenerateToken(user, roles.ToList(), permissions);
+            var otpRefreshToken = _jwtService.GenerateRefreshToken();
+            HttpContext.Items["TenantId"] = user.TenantId;
+            await PersistRefreshTokenSessionAsync(user.Id, otpRefreshToken);
             return Ok(new LoginResponse { 
                 Success = true, 
-                AccessToken = _jwtService.GenerateToken(user, roles.ToList(), permissions), 
-                RefreshToken = _jwtService.GenerateRefreshToken(), 
+                AccessToken = otpAccessToken, 
+                RefreshToken = otpRefreshToken, 
                 ExpiresIn = 3600, 
                 User = new UserDto { 
                     Id = user.Id, 
@@ -770,7 +885,11 @@ namespace AuthService.Controllers
                     .FirstOrDefaultAsync();
                 mfaResolvedBranchId = mfaDefaultBranch?.BranchId;
             }
-            return Ok(new LoginResponse { Success = true, AccessToken = _jwtService.GenerateToken(user, roles.ToList(), permissions), RefreshToken = _jwtService.GenerateRefreshToken(), ExpiresIn = 3600, User = new UserDto { Id = user.Id, Email = user.Email, FirstName = user.FirstName, LastName = user.LastName, TenantId = user.TenantId, BranchId = mfaResolvedBranchId }, Roles = roles.ToList(), Permissions = permissions });
+            var mfaAccessToken = _jwtService.GenerateToken(user, roles.ToList(), permissions);
+            var mfaRefreshToken = _jwtService.GenerateRefreshToken();
+            HttpContext.Items["TenantId"] = user.TenantId;
+            await PersistRefreshTokenSessionAsync(user.Id, mfaRefreshToken);
+            return Ok(new LoginResponse { Success = true, AccessToken = mfaAccessToken, RefreshToken = mfaRefreshToken, ExpiresIn = 3600, User = new UserDto { Id = user.Id, Email = user.Email, FirstName = user.FirstName, LastName = user.LastName, TenantId = user.TenantId, BranchId = mfaResolvedBranchId }, Roles = roles.ToList(), Permissions = permissions });
         }
     }
 
@@ -820,5 +939,10 @@ namespace AuthService.Controllers
     public class ValidateResetTokenRequest
     {
         public string Token { get; set; } = "";
+    }
+
+    public class RefreshTokenRequest
+    {
+        public string RefreshToken { get; set; } = "";
     }
 }

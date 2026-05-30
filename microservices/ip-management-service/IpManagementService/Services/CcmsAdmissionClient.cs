@@ -38,11 +38,18 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
 {
     private readonly HttpClient _http;
     private readonly ILogger<CcmsAdmissionClient> _logger;
+    private readonly bool _failClosed;
 
-    public CcmsAdmissionClient(HttpClient http, ILogger<CcmsAdmissionClient> logger)
+    public CcmsAdmissionClient(
+        HttpClient http,
+        ILogger<CcmsAdmissionClient> logger,
+        IConfiguration config)
     {
-        _http   = http;
-        _logger = logger;
+        _http      = http;
+        _logger    = logger;
+        // Set CcmsService:FailClosedOnValidationError=true in production for insurance cases.
+        // Defaults to false (fail-open) to preserve backward compatibility.
+        _failClosed = config.GetValue<bool>("CcmsService:FailClosedOnValidationError", false);
     }
 
     public async Task<CcmsAdmissionValidation> ValidateAdmissionAsync(Guid journeyId, Guid? sessionId, Guid tenantId)
@@ -55,7 +62,9 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
             if (!resp.IsSuccessStatusCode)
             {
                 _logger.LogWarning("CCMS validate-admission returned {Status} for journey {JourneyId}", resp.StatusCode, journeyId);
-                return new CcmsAdmissionValidation(true, "none", null, null, null, null, null); // fail-open
+                return _failClosed
+                    ? new CcmsAdmissionValidation(false, "blocked", null, "Coverage & Claims system unavailable. Cannot validate pre-auth.", null, null, null)
+                    : new CcmsAdmissionValidation(true, "warning", "Coverage & Claims system unavailable. Proceeding with caution.", null, null, null, null);
             }
 
             var body = await resp.Content.ReadFromJsonAsync<CcmsValidationResponse>();
@@ -70,8 +79,11 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "CCMS validate-admission call failed for journey {JourneyId} — allowing admission (fail-open)", journeyId);
-            return new CcmsAdmissionValidation(true, "none", null, null, null, null, null);
+            _logger.LogWarning(ex, "CCMS validate-admission call failed for journey {JourneyId} — {Mode}",
+                journeyId, _failClosed ? "blocking admission (fail-closed)" : "allowing admission (fail-open)");
+            return _failClosed
+                ? new CcmsAdmissionValidation(false, "blocked", null, "Coverage & Claims system unreachable. Cannot validate pre-auth.", null, null, null)
+                : new CcmsAdmissionValidation(true, "warning", "Coverage & Claims system unreachable. Proceeding with caution.", null, null, null, null);
         }
     }
 

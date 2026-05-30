@@ -1,5 +1,6 @@
 using CcmsApi.Data;
 using CcmsApi.Models.Domain;
+using CcmsApi.Models.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -18,7 +19,14 @@ public class EnhancementService
         _log      = log;
     }
 
-    public async Task<CcmsEnhancementRequest> CreateAsync(
+    // ── Mapping ───────────────────────────────────────────────────────────────
+    internal static EnhancementRequestDto ToDto(CcmsEnhancementRequest e) => new(
+        e.Id, e.CoverageCase_Id, e.EnhancementType,
+        e.RequestedAmount, e.ApprovedAmount, e.Reason,
+        e.Status, e.SubmittedAt, e.DecidedAt, e.DecisionBy,
+        e.CreatedAt, e.UpdatedAt);
+
+    public async Task<EnhancementRequestDto> CreateAsync(
         Guid coverageCaseId, Guid actorUserId,
         CreateEnhancementRequest req, CancellationToken ct = default)
     {
@@ -60,10 +68,10 @@ public class EnhancementService
 
         await _db.SaveChangesAsync(ct);
         _log.LogInformation("Enhancement request created for case {CaseId}", coverageCaseId);
-        return enhancement;
+        return ToDto(enhancement);
     }
 
-    public async Task<CcmsEnhancementRequest> DecideAsync(
+    public async Task<EnhancementRequestDto> DecideAsync(
         Guid enhancementId, Guid actorUserId,
         DecideEnhancementRequest req, CancellationToken ct = default)
     {
@@ -95,15 +103,17 @@ public class EnhancementService
         });
 
         await _db.SaveChangesAsync(ct);
-        return enhancement;
+        return ToDto(enhancement);
     }
 
-    public async Task<List<CcmsEnhancementRequest>> GetByCaseIdAsync(
+    public async Task<List<EnhancementRequestDto>> GetByCaseIdAsync(
         Guid coverageCaseId, CancellationToken ct = default)
-        => await _db.EnhancementRequests.AsNoTracking()
+        => (await _db.EnhancementRequests.AsNoTracking()
             .Where(e => e.CoverageCase_Id == coverageCaseId && e.DeletedAt == null)
             .OrderByDescending(e => e.CreatedAt)
-            .ToListAsync(ct);
+            .ToListAsync(ct))
+            .Select(ToDto)
+            .ToList();
 }
 
 public record CreateEnhancementRequest(

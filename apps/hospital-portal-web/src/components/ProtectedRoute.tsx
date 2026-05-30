@@ -1,6 +1,8 @@
 'use client';
 
 import { useCachedAuthStore } from '@/lib/permission-cache';
+import { useAuthStore } from '@/lib/auth-store';
+import { DashboardLoadingSkeleton } from '@/components/DashboardLoadingSkeleton';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -16,7 +18,7 @@ export function ProtectedRoute({
   fallbackPath?: string;
 }) {
   const router = useRouter();
-  const { token, hasPermission, hasRole } = useCachedAuthStore();
+  const { token } = useCachedAuthStore();
   const [isHydrated, setIsHydrated] = useState(false);
   const [showSessionExpired, setShowSessionExpired] = useState(false);
 
@@ -28,12 +30,14 @@ export function ProtectedRoute({
     // Only perform checks after hydration
     if (!isHydrated) return;
 
+    const { hasPermission: checkPermission, hasRole: checkRole } = useAuthStore.getState();
+
     if (!token) {
       console.warn('🔒 ProtectedRoute: No token - redirecting to login');
       // Show session expired message if user was previously logged in
       const wasLoggedIn = typeof window !== 'undefined' && localStorage.getItem('user');
       if (wasLoggedIn) {
-        setShowSessionExpired(true);
+        setShowSessionExpired(prev => (prev ? prev : true));
         // Clear any stale data
         localStorage.clear();
       }
@@ -45,18 +49,18 @@ export function ProtectedRoute({
       return;
     }
 
-    if (requiredPermission && !hasPermission(requiredPermission)) {
+    if (requiredPermission && !checkPermission(requiredPermission)) {
       console.warn('🔒 ProtectedRoute: Missing permission:', requiredPermission);
       router.push(fallbackPath);
       return;
     }
 
-    if (requiredRole && !hasRole(requiredRole)) {
+    if (requiredRole && !checkRole(requiredRole)) {
       console.warn('🔒 ProtectedRoute: Missing role:', requiredRole);
       router.push(fallbackPath);
       return;
     }
-  }, [isHydrated, token, requiredPermission, requiredRole, router, hasPermission, hasRole, fallbackPath]);
+  }, [isHydrated, token, requiredPermission, requiredRole, router, fallbackPath]);
 
   // Show session expired message
   if (showSessionExpired) {
@@ -76,9 +80,13 @@ export function ProtectedRoute({
     );
   }
 
-  // Suppress render until hydrated — layout already shows loading skeleton
-  if (!isHydrated || !token) {
-    return null;
+  // Allow render when token is already in store; only block while hydrating with no token
+  if (!isHydrated) {
+    return token ? <>{children}</> : <DashboardLoadingSkeleton />;
+  }
+
+  if (!token) {
+    return <DashboardLoadingSkeleton />;
   }
 
   return <>{children}</>;

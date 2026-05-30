@@ -29,7 +29,11 @@
     "Mfa__GracePeriodDays": "30",
     
     "Security__RateLimitPerMinute": "5",
-    "Security__AllowedOrigins": "http://localhost:3000,http://localhost:5073"
+    "Security__AllowedOrigins": "http://localhost:3000,http://localhost:5073",
+
+    "InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
+    "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
+    "CcmsService__BaseUrl": "http://localhost:7075"
   },
   "Host": {
     "LocalHttpPort": 7073,

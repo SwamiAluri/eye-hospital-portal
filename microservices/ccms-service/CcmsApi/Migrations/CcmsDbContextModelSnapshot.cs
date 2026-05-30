@@ -22,6 +22,26 @@ namespace CcmsApi.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("CcmsApi.Functions.BillingTransactionRow", b =>
+                {
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsExcluded")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("TransactionType")
+                        .HasColumnType("text");
+
+                    b.ToTable("BillingTransactionRows");
+                });
+
             modelBuilder.Entity("CcmsApi.Models.Domain.CcmsApprovalEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -731,6 +751,14 @@ namespace CcmsApi.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateOnly?>("ActualDischargeDate")
+                        .HasColumnType("date")
+                        .HasColumnName("actual_discharge_date");
+
+                    b.Property<DateOnly?>("AdmissionDate")
+                        .HasColumnType("date")
+                        .HasColumnName("admission_date");
+
                     b.Property<decimal>("ApprovedAmount")
                         .HasColumnType("numeric")
                         .HasColumnName("approved_amount");
@@ -739,6 +767,14 @@ namespace CcmsApi.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("authorization_type");
+
+                    b.Property<string>("ClinicalSummary")
+                        .HasColumnType("text")
+                        .HasColumnName("clinical_summary");
+
+                    b.Property<decimal>("CopayAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("copay_amount");
 
                     b.Property<Guid>("CoverageCase_Id")
                         .HasColumnType("uuid")
@@ -752,6 +788,10 @@ namespace CcmsApi.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by_user_id");
 
+                    b.Property<decimal>("DeductibleAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("deductible_amount");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
@@ -760,9 +800,29 @@ namespace CcmsApi.Migrations
                         .HasColumnType("text")
                         .HasColumnName("diagnosis_json");
 
+                    b.Property<decimal>("EstimatedTotalCost")
+                        .HasColumnType("numeric")
+                        .HasColumnName("estimated_total_cost");
+
+                    b.Property<DateOnly?>("ExpectedDischargeDate")
+                        .HasColumnType("date")
+                        .HasColumnName("expected_discharge_date");
+
                     b.Property<Guid?>("LegacyPreauthId")
                         .HasColumnType("uuid")
                         .HasColumnName("legacy_preauth_id");
+
+                    b.Property<int?>("LengthOfStayDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("length_of_stay_days");
+
+                    b.Property<decimal>("NetPayableByInsurer")
+                        .HasColumnType("numeric")
+                        .HasColumnName("net_payable_by_insurer");
+
+                    b.Property<decimal>("NetPayableByPatient")
+                        .HasColumnType("numeric")
+                        .HasColumnName("net_payable_by_patient");
 
                     b.Property<string>("PreAuthNumber")
                         .HasColumnType("text")
@@ -771,6 +831,15 @@ namespace CcmsApi.Migrations
                     b.Property<string>("ProceduresJson")
                         .HasColumnType("text")
                         .HasColumnName("procedures_json");
+
+                    b.Property<string>("ProcessStatus")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("process_status");
+
+                    b.Property<DateTime?>("ProcessStatusUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("process_status_updated_at");
 
                     b.Property<DateTime?>("ReceivedAt")
                         .HasColumnType("timestamp with time zone")
@@ -792,9 +861,17 @@ namespace CcmsApi.Migrations
                         .HasColumnType("text")
                         .HasColumnName("room_class_requested");
 
+                    b.Property<string>("RoomTypeRequested")
+                        .HasColumnType("text")
+                        .HasColumnName("room_type_requested");
+
                     b.Property<int>("RowVersion")
                         .HasColumnType("integer")
                         .HasColumnName("row_version");
+
+                    b.Property<decimal>("ServiceTaxAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("service_tax_amount");
 
                     b.Property<Guid?>("SessionPreauthId")
                         .HasColumnType("uuid")
@@ -813,9 +890,21 @@ namespace CcmsApi.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
 
+                    b.Property<string>("TpaQueryJson")
+                        .HasColumnType("text")
+                        .HasColumnName("tpa_query_json");
+
                     b.Property<string>("TpaReferenceNumber")
                         .HasColumnType("text")
                         .HasColumnName("tpa_reference_number");
+
+                    b.Property<string>("TreatingDoctorName")
+                        .HasColumnType("text")
+                        .HasColumnName("treating_doctor_name");
+
+                    b.Property<string>("TreatingDoctorReg")
+                        .HasColumnType("text")
+                        .HasColumnName("treating_doctor_reg");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -858,6 +947,10 @@ namespace CcmsApi.Migrations
                         .HasColumnType("text")
                         .HasColumnName("case_number");
 
+                    b.Property<string>("CounsellorDraftJson")
+                        .HasColumnType("text")
+                        .HasColumnName("counsellor_draft_json");
+
                     b.Property<Guid?>("CoveragePackageId")
                         .HasColumnType("uuid")
                         .HasColumnName("coverage_package_id");
@@ -883,6 +976,10 @@ namespace CcmsApi.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("doctor_id");
 
+                    b.Property<DateTime?>("DraftSavedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("draft_saved_at");
+
                     b.Property<bool>("EmergencyFcApplied")
                         .HasColumnType("boolean")
                         .HasColumnName("emergency_fc_applied");
@@ -898,6 +995,14 @@ namespace CcmsApi.Migrations
                     b.Property<Guid?>("InsuranceProviderId")
                         .HasColumnType("uuid")
                         .HasColumnName("insurance_provider_id");
+
+                    b.Property<string>("InsurerName")
+                        .HasColumnType("text")
+                        .HasColumnName("search_insurer_name");
+
+                    b.Property<bool>("IsDraft")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_draft");
 
                     b.Property<Guid?>("JourneyId")
                         .HasColumnType("uuid")
@@ -924,6 +1029,10 @@ namespace CcmsApi.Migrations
                         .HasColumnType("text")
                         .HasColumnName("payer_type");
 
+                    b.Property<string>("PaymentType")
+                        .HasColumnType("text")
+                        .HasColumnName("payment_type");
+
                     b.Property<DateTime?>("PreAuthExpiry")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("pre_auth_expiry");
@@ -932,6 +1041,14 @@ namespace CcmsApi.Migrations
                         .HasColumnType("text")
                         .HasColumnName("pre_auth_number");
 
+                    b.Property<string>("ProcessStatus")
+                        .HasColumnType("text")
+                        .HasColumnName("process_status");
+
+                    b.Property<DateTime?>("ProcessStatusUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("process_status_updated_at");
+
                     b.Property<string>("RoomClassApproved")
                         .HasColumnType("text")
                         .HasColumnName("room_class_approved");
@@ -939,6 +1056,18 @@ namespace CcmsApi.Migrations
                     b.Property<int>("RowVersion")
                         .HasColumnType("integer")
                         .HasColumnName("row_version");
+
+                    b.Property<decimal>("ServiceTaxAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("service_tax_amount");
+
+                    b.Property<bool>("ServiceTaxApplicable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("service_tax_applicable");
+
+                    b.Property<decimal>("ServiceTaxPercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("service_tax_percent");
 
                     b.Property<Guid?>("SessionId")
                         .HasColumnType("uuid")
@@ -1895,13 +2024,42 @@ namespace CcmsApi.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by_user_id");
 
+                    b.Property<decimal?>("CreditLimit")
+                        .HasColumnType("numeric")
+                        .HasColumnName("credit_limit");
+
+                    b.Property<string>("DebtorSubtype")
+                        .HasColumnType("text")
+                        .HasColumnName("debtor_subtype");
+
+                    b.Property<decimal>("DefaultServiceTaxPercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("default_service_tax_percent");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("ExportCode")
+                        .HasColumnType("text")
+                        .HasColumnName("export_code");
+
+                    b.Property<string>("FormatCode")
+                        .HasColumnType("text")
+                        .HasColumnName("format_code");
+
+                    b.Property<string>("HospitalIdentifier")
+                        .HasColumnType("text")
+                        .HasColumnName("hospital_identifier");
+
                     b.Property<string>("LicenseNumber")
                         .HasColumnType("text")
                         .HasColumnName("license_number");
+
+                    b.Property<string>("PayerCategory")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("payer_category");
 
                     b.Property<string>("PortalUrl")
                         .HasColumnType("text")
@@ -1925,10 +2083,18 @@ namespace CcmsApi.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("row_version");
 
+                    b.Property<bool>("ServiceTaxApplicable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("service_tax_applicable");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("status");
+
+                    b.Property<bool>("TdsMandatory")
+                        .HasColumnType("boolean")
+                        .HasColumnName("tds_mandatory");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -1941,6 +2107,14 @@ namespace CcmsApi.Migrations
                     b.Property<Guid?>("UpdatedByUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by_user_id");
+
+                    b.Property<DateOnly?>("ValidFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("valid_from");
+
+                    b.Property<DateOnly?>("ValidTo")
+                        .HasColumnType("date")
+                        .HasColumnName("valid_to");
 
                     b.HasKey("Id");
 
@@ -2194,6 +2368,14 @@ namespace CcmsApi.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("BankReference")
+                        .HasColumnType("text")
+                        .HasColumnName("bank_reference");
+
+                    b.Property<decimal>("ClaimAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("claim_amount");
+
                     b.Property<Guid?>("ClaimPacketId")
                         .HasColumnType("uuid")
                         .HasColumnName("claim_packet_id");
@@ -2213,6 +2395,14 @@ namespace CcmsApi.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
+
+                    b.Property<decimal>("OutstandingAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("outstanding_amount");
+
+                    b.Property<DateOnly?>("PaymentDate")
+                        .HasColumnType("date")
+                        .HasColumnName("payment_date");
 
                     b.Property<string>("PaymentMode")
                         .HasColumnType("text")
@@ -2246,6 +2436,11 @@ namespace CcmsApi.Migrations
                     b.Property<DateTime?>("SettledAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("settled_at");
+
+                    b.Property<string>("SettlementNumber")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("settlement_number");
 
                     b.Property<string>("SettlementType")
                         .IsRequired()
@@ -2431,6 +2626,156 @@ namespace CcmsApi.Migrations
                     b.ToTable("ccms_tpa_providers", (string)null);
                 });
 
+            modelBuilder.Entity("CcmsApi.Models.Domain.CcmsVisitInsurancePolicy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccommodationClass")
+                        .HasColumnType("text")
+                        .HasColumnName("accommodation_class");
+
+                    b.Property<string>("CardNumber")
+                        .HasColumnType("text")
+                        .HasColumnName("card_number");
+
+                    b.Property<string>("CompanyName")
+                        .HasColumnType("text")
+                        .HasColumnName("company_name");
+
+                    b.Property<string>("ContactNumber")
+                        .HasColumnType("text")
+                        .HasColumnName("contact_number");
+
+                    b.Property<Guid?>("CoverageCase_Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("coverage_case_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Designation")
+                        .HasColumnType("text")
+                        .HasColumnName("designation");
+
+                    b.Property<string>("DetailsText")
+                        .HasColumnType("text")
+                        .HasColumnName("details_text");
+
+                    b.Property<string>("DoctorContact")
+                        .HasColumnType("text")
+                        .HasColumnName("doctor_contact");
+
+                    b.Property<string>("DoctorName")
+                        .HasColumnType("text")
+                        .HasColumnName("doctor_name");
+
+                    b.Property<string>("DoctorQualification")
+                        .HasColumnType("text")
+                        .HasColumnName("doctor_qualification");
+
+                    b.Property<string>("DoctorRegNumber")
+                        .HasColumnType("text")
+                        .HasColumnName("doctor_reg_number");
+
+                    b.Property<string>("EmployeeId")
+                        .HasColumnType("text")
+                        .HasColumnName("employee_id");
+
+                    b.Property<Guid?>("InsuranceProviderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("insurance_provider_id");
+
+                    b.Property<string>("InsuredName")
+                        .HasColumnType("text")
+                        .HasColumnName("insured_name");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_primary");
+
+                    b.Property<string>("MembershipNumber")
+                        .HasColumnType("text")
+                        .HasColumnName("membership_number");
+
+                    b.Property<string>("Occupation")
+                        .HasColumnType("text")
+                        .HasColumnName("occupation");
+
+                    b.Property<string>("PolicyNumber")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("policy_number");
+
+                    b.Property<string>("RelationshipToInsured")
+                        .HasColumnType("text")
+                        .HasColumnName("relationship_to_insured");
+
+                    b.Property<int>("RowVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version");
+
+                    b.Property<bool?>("ServiceTaxApplicable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("service_tax_applicable");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TpaCoordinatorName")
+                        .HasColumnType("text")
+                        .HasColumnName("tpa_coordinator_name");
+
+                    b.Property<Guid?>("TpaProviderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tpa_provider_id");
+
+                    b.Property<string>("UnderwritingSnapshotJson")
+                        .HasColumnType("text")
+                        .HasColumnName("underwriting_snapshot_json");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.Property<string>("VideNumber")
+                        .HasColumnType("text")
+                        .HasColumnName("vide_number");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ccms_visit_insurance_policies", (string)null);
+                });
+
             modelBuilder.Entity("CcmsApi.Models.Domain.CcmsWorkflowDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2521,6 +2866,10 @@ namespace CcmsApi.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("FromStateCode")
+                        .HasColumnType("text")
+                        .HasColumnName("from_state_code");
+
                     b.Property<Guid?>("FromStateId")
                         .HasColumnType("uuid")
                         .HasColumnName("from_state_id");
@@ -2545,6 +2894,10 @@ namespace CcmsApi.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<string>("ToStateCode")
+                        .HasColumnType("text")
+                        .HasColumnName("to_state_code");
 
                     b.Property<Guid>("ToStateId")
                         .HasColumnType("uuid")

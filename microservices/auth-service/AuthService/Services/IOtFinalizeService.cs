@@ -144,6 +144,7 @@ namespace AuthService.Services
         public string? Uhid { get; set; }
         public string? Name { get; set; }
         public string? Status { get; set; }
+        public Guid? CounsellingSessionId { get; set; }
     }
 
     public class OtScheduleResponse

@@ -1,3 +1,9 @@
+/**
+ * @deprecated Legacy insurance hooks — no longer imported by any active component.
+ * All new insurance/CCMS flows use hooks in src/hooks/useCcmsPermissions.ts and
+ * the CCMS API clients under src/lib/api/ccms/.
+ * This file is retained for reference only and will be removed in a future cleanup pass.
+ */
 // Insurance Module Hooks - Module 3.6
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApi } from '@/lib/api';

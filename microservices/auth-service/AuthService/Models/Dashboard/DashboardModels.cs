@@ -4,6 +4,7 @@ public class OverviewStats
 {
     public int TotalTenants { get; set; }
     public decimal TenantGrowth { get; set; }
+    public int TotalUsers { get; set; }
     public int ActiveUsers { get; set; }
     public decimal UserGrowth { get; set; }
     public int TotalDepartments { get; set; }
@@ -67,4 +68,10 @@ public class Alert
     public DateTime CreatedAt { get; set; }
     public bool IsRead { get; set; }
     public Guid TenantId { get; set; }
+}
+
+public class ActivitySeriesPoint
+{
+    public string Hour { get; set; } = string.Empty;
+    public int Count { get; set; }
 }

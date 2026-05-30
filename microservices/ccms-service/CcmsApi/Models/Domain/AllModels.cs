@@ -77,6 +77,8 @@ public class CcmsWorkflowHistory : StandardEntity
     public Guid     WorkflowInstanceId { get; set; }
     public Guid?    FromStateId        { get; set; }
     public Guid     ToStateId          { get; set; }
+    public string?  FromStateCode      { get; set; }
+    public string?  ToStateCode        { get; set; }
     public string   TriggerEvent       { get; set; } = string.Empty;
     public Guid?    ActorUserId        { get; set; }
     public string?  Notes              { get; set; }
@@ -99,6 +101,19 @@ public class CcmsInsuranceProvider : StandardEntity
     public string  ClaimSubmissionMode   { get; set; } = "manual"; // manual|portal|api
     public bool    PreAuthRequired       { get; set; } = true;
     public string? AddressJson           { get; set; }
+
+    // ── Migration 123: payer finance fields ───────────────────────────────
+    public string  PayerCategory                { get; set; } = "insurance"; // insurance | other_debtor
+    public string? DebtorSubtype                { get; set; }  // corporate | government | individual | other
+    public decimal? CreditLimit                 { get; set; }
+    public string? ExportCode                   { get; set; }
+    public string? HospitalIdentifier           { get; set; }
+    public bool    ServiceTaxApplicable         { get; set; }
+    public decimal DefaultServiceTaxPercent     { get; set; }
+    public bool    TdsMandatory                 { get; set; }
+    public DateOnly? ValidFrom                  { get; set; }
+    public DateOnly? ValidTo                    { get; set; }
+    public string? FormatCode                   { get; set; }
 }
 
 public class CcmsTpaProvider : StandardEntity
@@ -189,6 +204,7 @@ public class CcmsCoverageCase : StandardEntity
     public Guid?   BranchId            { get; set; }
     public Guid?   DoctorId            { get; set; }
     public string  PayerType           { get; set; } = "insurance"; // insurance|tpa|govt|cashless
+    public string? PaymentType         { get; set; }  // e.g. Insurance|CoPay|CGHS|SGHS|TPA — free-text from counsellor
     public Guid?   InsuranceProviderId { get; set; }
     public Guid?   TpaProviderId       { get; set; }
     public Guid?   GovernmentSchemeId  { get; set; }
@@ -203,6 +219,21 @@ public class CcmsCoverageCase : StandardEntity
     public Guid?   SessionPreauthId   { get; set; }   // FK bridge to insurance_preauth_requests
     public bool    EmergencyFcApplied  { get; set; }
     public string? NotesJson           { get; set; }
+
+    // ── Counsellor draft fields (populated via PATCH from the counselling desk) ──
+    public string?   CounsellorDraftJson { get; set; }  // full draft payload serialised as JSON
+    public bool      IsDraft             { get; set; }
+    public DateTime? DraftSavedAt        { get; set; }
+
+    // ── Denormalized display fields (kept in sync via search trigger / migration 129) ──
+    public string?   InsurerName               { get; set; }  // denormalized payer display name
+
+    // ── Migration 124: process_status + service tax ───────────────────────
+    public string?   ProcessStatus             { get; set; }  // fine-grained sub-status
+    public DateTime? ProcessStatusUpdatedAt    { get; set; }
+    public bool      ServiceTaxApplicable      { get; set; }
+    public decimal   ServiceTaxPercent         { get; set; }
+    public decimal   ServiceTaxAmount          { get; set; }
 }
 
 public class CcmsEligibilityCheck : StandardEntity
@@ -266,6 +297,27 @@ public class CcmsCoverageAuthorization : StandardEntity
     public Guid?    LegacyPreauthId        { get; set; }
     public Guid?    SessionPreauthId       { get; set; }
     public string?  RejectionReason        { get; set; }
+
+    // ── Migration 124: clinical details ───────────────────────────────────
+    public string?  ClinicalSummary           { get; set; }
+    public string?  TreatingDoctorName        { get; set; }
+    public string?  TreatingDoctorReg         { get; set; }
+    public DateOnly? AdmissionDate            { get; set; }
+    public DateOnly? ExpectedDischargeDate    { get; set; }
+    public DateOnly? ActualDischargeDate      { get; set; }
+    public int?     LengthOfStayDays          { get; set; }
+    public string?  RoomTypeRequested         { get; set; }  // general|semi-private|private|icu
+    public string?  TpaQueryJson              { get; set; }  // denormalized Q&A thread
+    public string   ProcessStatus             { get; set; } = "pending";
+    public DateTime? ProcessStatusUpdatedAt   { get; set; }
+
+    // ── Migration 124: financial breakdown ────────────────────────────────
+    public decimal  EstimatedTotalCost        { get; set; }
+    public decimal  CopayAmount               { get; set; }
+    public decimal  DeductibleAmount          { get; set; }
+    public decimal  ServiceTaxAmount          { get; set; }
+    public decimal  NetPayableByInsurer        { get; set; }
+    public decimal  NetPayableByPatient        { get; set; }
 }
 
 public class CcmsAuthorizationDocument : StandardEntity
@@ -394,10 +446,15 @@ public class CcmsSettlement : StandardEntity
 {
     public Guid     CoverageCase_Id        { get; set; }
     public Guid?    ClaimPacketId          { get; set; }
+    public string   SettlementNumber       { get; set; } = string.Empty;
     public string   SettlementType         { get; set; } = "full"; // full|partial
     public decimal  SettledAmount          { get; set; }
+    public decimal  ClaimAmount            { get; set; }
+    public decimal  OutstandingAmount      { get; set; }
     public string?  PaymentMode            { get; set; }
     public string?  PaymentReference       { get; set; }
+    public DateOnly? PaymentDate           { get; set; }
+    public string?  BankReference          { get; set; }
     public DateTime? SettledAt             { get; set; }
     public string   ReconciliationStatus   { get; set; } = "pending";
     public string?  ReconciliationNotes    { get; set; }
@@ -446,6 +503,8 @@ public class CcmsCommunicationLog : StandardEntity
     public DateTime SentAt            { get; set; } = DateTime.UtcNow;
     public string   DeliveryStatus    { get; set; } = "sent";
     public string?  ExternalMessageId { get; set; }
+    /// <summary>Inbound parse draft, reply threading, etc. (jsonb)</summary>
+    public string?  MetadataJson      { get; set; }
 }
 
 public class CcmsCommunicationTemplate : StandardEntity
@@ -482,4 +541,57 @@ public class CcmsGovtSchemeDocument : StandardEntity
     public string   DocumentName            { get; set; } = string.Empty;
     public string?  BlobUrl                 { get; set; }
     public DateTime UploadedAt              { get; set; } = DateTime.UtcNow;
+}
+
+// ── Migration 122: Visit Insurance Policies (multi-policy per session / case) ─
+
+public class CcmsVisitInsurancePolicy : StandardEntity
+{
+    // Owning entity (session or case — at least one must be set)
+    public Guid?   SessionId            { get; set; }
+    public Guid?   CoverageCase_Id      { get; set; }
+
+    // Policy identifiers
+    public string  PolicyNumber         { get; set; } = string.Empty;
+    public string? CardNumber           { get; set; }
+    public string? MembershipNumber     { get; set; }
+
+    // Payer references
+    public Guid?   InsuranceProviderId  { get; set; }
+    public Guid?   TpaProviderId        { get; set; }
+
+    // Insured person
+    public string? InsuredName          { get; set; }
+    public string? RelationshipToInsured { get; set; }  // self|spouse|child|parent|other
+
+    // Employment block
+    public string? Occupation           { get; set; }
+    public string? Designation          { get; set; }
+    public string? CompanyName          { get; set; }
+    public string? EmployeeId           { get; set; }
+    public string? VideNumber           { get; set; }
+    public string? ContactNumber        { get; set; }
+
+    // Doctor block
+    public string? DoctorName           { get; set; }
+    public string? DoctorRegNumber      { get; set; }
+    public string? DoctorQualification  { get; set; }
+    public string? DoctorContact        { get; set; }
+
+    // Accommodation
+    public string? AccommodationClass   { get; set; }   // general|semi-private|private|icu
+    public string? DetailsText          { get; set; }
+
+    // TPA coordination
+    public string? TpaCoordinatorName   { get; set; }
+
+    // Multi-policy ordering
+    public bool    IsPrimary            { get; set; }
+    public int     SortOrder            { get; set; }
+
+    // Underwriting snapshot (JSON: { conditions, alcoholUse, hivRisk, otherAilments })
+    public string? UnderwritingSnapshotJson { get; set; }
+
+    // Service tax override (null = inherit from payer default)
+    public bool?   ServiceTaxApplicable { get; set; }
 }

@@ -136,7 +136,7 @@ export const counsellorsDeskApi = {
     }
   },
 
-  async getSession(id: string): Promise<CounsellingSession> {
+  async getSession(id: string, options?: { skipCatalogFallback?: boolean }): Promise<CounsellingSession> {
     try {
       const response = await getApi().get(`/Counseling/sessions/${id}`);
       const raw = response.data;
@@ -164,7 +164,7 @@ export const counsellorsDeskApi = {
       }
 
       // Path 2 (frontend fallback): fetch the full catalog directly when backend returned empty
-      if (surgeries.length === 0) {
+      if (surgeries.length === 0 && !options?.skipCatalogFallback) {
         try {
           const catalogRes = await getApi().get('/servicecatalog/full');
           const fullCatalog = catalogRes.data as {
@@ -230,13 +230,14 @@ export const counsellorsDeskApi = {
         wantToSeeDoctor?: boolean;
         interestedToUpgrade?: boolean;
         notRequiredPreAuth?: boolean;
+        ccmsCoverageCaseId?: string;
+        ccmsCaseNumber?: string;
+        ccmsCurrentState?: string;
+        ccmsLastEvent?: string;
       } = {};
       if (raw.packageAddonsJson) {
         try { cd = JSON.parse(raw.packageAddonsJson); } catch { /* ignore invalid JSON */ }
       }
-      // DEBUG — remove after confirming restore works
-      console.log('[getSession] packageAddonsJson:', raw.packageAddonsJson);
-      console.log('[getSession] cd.selectedSurgeryId:', cd.selectedSurgeryId);
 
       // Derive decision: blob → boolean fallback (patientAgreedToSurgery / pendingDecision)
       const restoredDecision: string =
@@ -315,6 +316,9 @@ export const counsellorsDeskApi = {
         wantToSeeDoctor: cd.wantToSeeDoctor ?? false,
         interestedToUpgrade: cd.interestedToUpgrade ?? false,
         notRequiredPreAuth: cd.notRequiredPreAuth ?? false,
+        ccmsCoverageCaseId: cd.ccmsCoverageCaseId,
+        ccmsCaseNumber: cd.ccmsCaseNumber,
+        ccmsCurrentState: cd.ccmsCurrentState,
         isFollowUpRequired: raw.pendingDecision ?? false,
         status,
         followUpReason: raw.reasonsForDelay ?? '',
@@ -417,10 +421,24 @@ export const counsellorsDeskApi = {
     }
   },
 
-  async getFinalizeList(filters?: { date?: string; uhid?: string; name?: string; status?: string }): Promise<FinalizeSurgeryRecord[]> {
+  async getFinalizeList(filters?: { date?: string; uhid?: string; name?: string; status?: string; sessionId?: string }): Promise<FinalizeSurgeryRecord[]> {
     const response = await getApi().get('/Counseling/ot-schedule', { params: filters });
     const raw: any[] = Array.isArray(response.data) ? response.data : [];
     return raw.map(mapOtRecord);
+  },
+
+  /** Lookup a single OT record by counselling session (server-filtered). */
+  async getOtRecordForSession(
+    sessionId: string,
+    filters?: { uhid?: string; name?: string },
+  ): Promise<FinalizeSurgeryRecord | null> {
+    if (!sessionId) return null;
+    const list = await this.getFinalizeList({
+      sessionId,
+      uhid: filters?.uhid,
+      name: filters?.name,
+    }).catch(() => [] as FinalizeSurgeryRecord[]);
+    return list[0] ?? null;
   },
 
   async upsertOtSchedule(data: Partial<FinalizeSurgeryRecord> & { patientId: string; counsellingSessionId?: string }): Promise<FinalizeSurgeryRecord> {

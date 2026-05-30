@@ -92,7 +92,8 @@ public class DashboardFunctions
         var pendingStates = new[] { "PREAUTH_GENERATED", "PREAUTH_SENT", "WAITING_APPROVAL", "CLARIFICATION_REQUIRED", "RESUBMITTED" };
         var now = DateTime.UtcNow;
 
-        var list = await _db.CoverageCases
+        // Load cases + their latest authorization's requested amount
+        var cases = await _db.CoverageCases
             .AsNoTracking()
             .Where(c => c.TenantId == claims!.TenantId
                 && c.DeletedAt == null
@@ -102,15 +103,69 @@ public class DashboardFunctions
             .Select(c => new
             {
                 caseId          = c.Id.ToString(),
+                caseId_guid     = c.Id,
                 caseNumber      = c.CaseNumber,
                 patientId       = c.PatientId.ToString(),
-                payerName       = c.PayerType,
-                requestedAmount = c.ApprovedAmount,
+                patientName     = c.PatientName,
+                payerName       = c.InsurerName ?? c.PayerType,
                 currentState    = c.CurrentState,
                 ageInHours      = (int)(now - c.CreatedAt).TotalHours,
                 urgencyLevel    = (int)(now - c.CreatedAt).TotalHours > 48 ? "high" : "normal",
+                counsellorDraftJson = c.CounsellorDraftJson,
             })
             .ToListAsync();
+
+        // Enrich with requested amount from authorizations
+        var caseGuids = cases.Select(c => c.caseId_guid).ToList();
+        var authAmounts = await _db.CoverageAuthorizations
+            .AsNoTracking()
+            .Where(a => a.TenantId == claims!.TenantId
+                && a.DeletedAt == null
+                && caseGuids.Contains(a.CoverageCase_Id))
+            .GroupBy(a => a.CoverageCase_Id)
+            .Select(g => new { CaseId = g.Key, RequestedAmount = g.Max(a => a.RequestedAmount) })
+            .ToDictionaryAsync(x => x.CaseId, x => x.RequestedAmount);
+
+        var list = cases.Select(c =>
+        {
+            // Requested amount: authorization > draft JSON > 0
+            decimal reqAmt = 0;
+            if (authAmounts.TryGetValue(c.caseId_guid, out var authAmt) && authAmt > 0)
+            {
+                reqAmt = authAmt;
+            }
+            else if (!string.IsNullOrEmpty(c.counsellorDraftJson))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(c.counsellorDraftJson);
+                    foreach (var key in new[] { "estimatedAmount", "sessionPackageRate", "EstimatedAmount" })
+                    {
+                        if (doc.RootElement.TryGetProperty(key, out var val)
+                            && val.ValueKind == System.Text.Json.JsonValueKind.Number
+                            && val.TryGetDecimal(out var d) && d > 0)
+                        {
+                            reqAmt = d;
+                            break;
+                        }
+                    }
+                }
+                catch { /* ignore */ }
+            }
+
+            return new
+            {
+                caseId          = c.caseId,
+                caseNumber      = c.caseNumber,
+                patientId       = c.patientId,
+                patientName     = c.patientName,
+                payerName       = c.payerName,
+                requestedAmount = reqAmt,
+                currentState    = c.currentState,
+                ageInHours      = c.ageInHours,
+                urgencyLevel    = c.urgencyLevel,
+            };
+        }).ToList();
 
         return await req.OkJsonAsync(list);
     }

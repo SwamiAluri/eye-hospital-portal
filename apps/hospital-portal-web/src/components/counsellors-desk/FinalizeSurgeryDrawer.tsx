@@ -96,7 +96,7 @@ export function FinalizeSurgeryDrawer({ isOpen, onClose, patient, onSave }: Fina
       {/* Backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+          className="fixed inset-0 z-40 bg-black/30"
           onClick={onClose}
         />
       )}

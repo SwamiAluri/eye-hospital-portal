@@ -1,6 +1,7 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback, type ComponentType } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import {
   Phone, History, RotateCcw, Search,
@@ -17,9 +18,25 @@ import type {
   PatientIntention,
   ReQueuePayload,
 } from '@/types/counsellors-desk';
-import PatientHistoryDrawer from '@/components/counsellors-desk/followup/PatientHistoryDrawer';
-import ContactLogModal from '@/components/counsellors-desk/followup/ContactLogModal';
-import SendReminderModal from '@/components/counsellors-desk/followup/SendReminderModal';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import {
+  useActiveFollowupsQuery,
+  useColdLeadsQuery,
+  usePostSurgeryFollowupsQuery,
+} from '@/hooks/use-counsellors-desk-queries';
+
+const PatientHistoryDrawer = dynamic(
+  () => import('@/components/counsellors-desk/followup/PatientHistoryDrawer'),
+  { ssr: false },
+);
+const ContactLogModal = dynamic(
+  () => import('@/components/counsellors-desk/followup/ContactLogModal'),
+  { ssr: false },
+);
+const SendReminderModal = dynamic(
+  () => import('@/components/counsellors-desk/followup/SendReminderModal'),
+  { ssr: false },
+);
 
 // ============================================================================
 // Constants
@@ -260,7 +277,7 @@ function ReQueueModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         <div className="px-5 py-4 bg-gradient-to-r from-emerald-600 to-teal-600">
           <h3 className="font-semibold text-white text-sm flex items-center gap-2">
@@ -315,22 +332,43 @@ export default function SurgeryFollowupPage() {
   const router = useRouter();
   const [activeTab,   setActiveTab]   = useState<TabId>('active');
   const [search,      setSearch]      = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [dateFilter,  setDateFilter]  = useState<DateFilter>('all');
 
-  const [activeItems, setActiveItems] = useState<ActiveFollowupRecord[]>([]);
-  const [activeTotal, setActiveTotal] = useState(0);
-  const [activePage,  setActivePage]  = useState(1);
+  const [activePage, setActivePage] = useState(1);
+  const [coldPage, setColdPage] = useState(1);
+  const [postPage, setPostPage] = useState(1);
 
-  const [coldItems, setColdItems] = useState<ColdLeadRecord[]>([]);
-  const [coldTotal, setColdTotal] = useState(0);
-  const [coldPage,  setColdPage]  = useState(1);
+  const [tabFetched, setTabFetched] = useState<Record<TabId, boolean>>({
+    active: true,
+    cold: false,
+    'post-surgery': false,
+  });
 
-  const [postItems, setPostItems] = useState<PostSurgeryFollowupRecord[]>([]);
-  const [postTotal, setPostTotal] = useState(0);
-  const [postPage,  setPostPage]  = useState(1);
+  useEffect(() => {
+    setTabFetched(prev => ({ ...prev, [activeTab]: true }));
+    setDateFilter('all');
+  }, [activeTab]);
 
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
+  const activeQuery = useActiveFollowupsQuery(activePage, tabFetched.active);
+  const coldQuery = useColdLeadsQuery(coldPage, tabFetched.cold);
+  const postQuery = usePostSurgeryFollowupsQuery(postPage, tabFetched['post-surgery']);
+
+  const activeItems = activeQuery.data?.items ?? [];
+  const activeTotal = activeQuery.data?.total ?? 0;
+  const coldItems = coldQuery.data?.items ?? [];
+  const coldTotal = coldQuery.data?.total ?? 0;
+  const postItems = postQuery.data?.items ?? [];
+  const postTotal = postQuery.data?.total ?? 0;
+
+  const currentQuery = activeTab === 'active' ? activeQuery : activeTab === 'cold' ? coldQuery : postQuery;
+  const showSkeleton = currentQuery.isLoading && !currentQuery.data;
+  const isRefreshing = currentQuery.isFetching && !!currentQuery.data;
+  const error = currentQuery.isError
+    ? (activeTab === 'active' ? 'Failed to load active follow-ups'
+      : activeTab === 'cold' ? 'Failed to load cold leads'
+      : 'Failed to load post-surgery patients')
+    : null;
 
   const [historyDrawer, setHistoryDrawer] = useState<{ sessionId: string; patientName: string } | null>(null);
   const [contactModal,  setContactModal]  = useState<{ sessionId: string; patientName: string; phone: string | null } | null>(null);
@@ -339,50 +377,14 @@ export default function SurgeryFollowupPage() {
 
   const PAGE_SIZE = 20;
 
-  const loadActive = useCallback(async (page = 1) => {
-    setLoading(true); setError(null);
-    try {
-      const data = await counsellorsDeskApi.getActiveFollowups({ page, pageSize: PAGE_SIZE });
-      setActiveItems(data.items); setActiveTotal(data.total); setActivePage(page);
-    } catch { setError('Failed to load active follow-ups'); }
-    finally   { setLoading(false); }
-  }, []);
-
-  const loadCold = useCallback(async (page = 1) => {
-    setLoading(true); setError(null);
-    try {
-      const data = await counsellorsDeskApi.getColdLeads({ page, pageSize: PAGE_SIZE });
-      setColdItems(data.items); setColdTotal(data.total); setColdPage(page);
-    } catch { setError('Failed to load cold leads'); }
-    finally   { setLoading(false); }
-  }, []);
-
-  const loadPost = useCallback(async (page = 1) => {
-    setLoading(true); setError(null);
-    try {
-      const data = await counsellorsDeskApi.getPostSurgeryFollowups({ page, pageSize: PAGE_SIZE });
-      setPostItems(data.items); setPostTotal(data.total); setPostPage(page);
-    } catch { setError('Failed to load post-surgery patients'); }
-    finally   { setLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    setDateFilter('all');
-    if (activeTab === 'active') loadActive(1);
-    else if (activeTab === 'cold') loadCold(1);
-    else loadPost(1);
-  }, [activeTab, loadActive, loadCold, loadPost]);
-
   const handleRefresh = () => {
-    if (activeTab === 'active') loadActive(activePage);
-    else if (activeTab === 'cold') loadCold(coldPage);
-    else loadPost(postPage);
+    void currentQuery.refetch();
   };
 
   const fmtDate = (d: string) =>
     new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
-  const searchLC = search.toLowerCase();
+  const searchLC = debouncedSearch.toLowerCase();
 
   // ── Filtered lists ────────────────────────────────────────────────────────
   const filteredActive = activeItems.filter(r =>
@@ -437,9 +439,9 @@ export default function SurgeryFollowupPage() {
   const currentPage  = activeTab === 'active' ? activePage     : activeTab === 'cold' ? coldPage     : postPage;
 
   const handlePageChange = (p: number) => {
-    if (activeTab === 'active') loadActive(p);
-    else if (activeTab === 'cold') loadCold(p);
-    else loadPost(p);
+    if (activeTab === 'active') setActivePage(p);
+    else if (activeTab === 'cold') setColdPage(p);
+    else setPostPage(p);
   };
 
   return (
@@ -488,9 +490,10 @@ export default function SurgeryFollowupPage() {
           </div>
           <button
             onClick={handleRefresh}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-60"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
@@ -565,7 +568,7 @@ export default function SurgeryFollowupPage() {
 
           {/* List */}
           <div className="flex-1 overflow-y-auto">
-            {loading ? (
+            {showSkeleton ? (
               Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
             ) : currentItems.length === 0 ? (
               <EmptyState message={

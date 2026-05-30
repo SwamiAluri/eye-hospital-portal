@@ -9,3 +9,7 @@ export * from './ccms-claims.api';
 export * from './ccms-settlements.api';
 export * from './ccms-master-data.api';
 export * from './ccms-dashboard.api';
+export * from './ccms-eligibility.api';
+export * from './ccms-communications.api';
+export * from './ccms-documents.api';
+export * from './ccms-workspace.api';

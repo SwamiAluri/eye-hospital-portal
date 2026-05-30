@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { useAuthStore } from './auth-store';
+import { attachAuthRequestInterceptor, attachAuthResponseInterceptor } from './auth-interceptors';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -15,48 +15,12 @@ export const initializeApi = () => {
   });
 
   // Add request interceptor to include tenant ID and token
-  axiosInstance.interceptors.request.use((config) => {
-    const { tenantId, token } = useAuthStore.getState();
-    if (tenantId) {
-      (config.headers as any)['X-Tenant-ID'] = tenantId;
-    }
-    
-    if (token) {
-      (config.headers as any).Authorization = `Bearer ${token}`;
-    }
-    
-    return config;
+  attachAuthRequestInterceptor(axiosInstance);
+
+  // Add response interceptor for error handling + silent token refresh
+  attachAuthResponseInterceptor(axiosInstance, {
+    skipLogoutUrls: ['/patients', '/users', '/departments', '/appointments/stats'],
   });
-
-  // Add response interceptor for error handling
-  axiosInstance.interceptors.response.use(
-    (response) => response,
-    (error) => {
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('API Error:', error.config?.url, error.response?.status, error.response?.data);
-      }
-
-      if (error.response?.status === 401) {
-        const url = error.config?.url || '';
-
-        // Don't auto-logout for specific endpoints - let component handle it
-        const skipLogoutUrls = ['/patients', '/users', '/departments', '/appointments/stats'];
-        const shouldSkipLogout = skipLogoutUrls.some(path => url.includes(path));
-
-        if (shouldSkipLogout) {
-          return Promise.reject(error);
-        }
-
-        alert(`Session expired. Please log in again.`);
-        useAuthStore.getState().logout();
-        window.location.href = '/auth/login';
-      } else if (error.response?.status === 403) {
-        // Permission denied - redirect to unauthorized page
-        window.location.href = '/dashboard/unauthorized';
-      }
-      return Promise.reject(error);
-    }
-  );
 
   return axiosInstance;
 };
@@ -228,6 +192,9 @@ export const dashboardApi = {
   getQuickStats: () => getApi().get('/admin/dashboard/quick-stats'),
   getRecentActivities: (limit: number = 10) => getApi().get('/admin/dashboard/recent-activities', { params: { limit } }),
   getAlerts: () => getApi().get('/admin/dashboard/alerts'),
+  getActivitySeries: (hours: number = 24) =>
+    getApi().get('/admin/dashboard/activity-series', { params: { hours } }),
+  dismissAlert: (id: string) => getApi().delete(`/admin/dashboard/alerts/${id}`),
 };
 
 export const settingsApi = {

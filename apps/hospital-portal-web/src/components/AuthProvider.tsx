@@ -1,19 +1,27 @@
 'use client';
 
 import { useEffect } from 'react';
-import { hydrateAuthFromStorage, useAuthStore } from '@/lib/auth-store';
+import { hydrateAuthFromStorage } from '@/lib/auth-store';
 import { initializeApi } from '@/lib/api';
+import { initCcmsApi } from '@/lib/api/ccms/ccms-base';
+import { SessionIdleGuard } from '@/components/SessionIdleGuard';
+import { subscribeLogoutBroadcast, logoutEverywhere } from '@/lib/logout-everywhere';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    // Hydrate auth from localStorage on mount
     hydrateAuthFromStorage();
-    
-    // Initialize API with interceptors
     initializeApi();
-    
+    initCcmsApi();
 
+    return subscribeLogoutBroadcast((reason) => {
+      void logoutEverywhere(reason, { broadcast: false });
+    });
   }, []);
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <SessionIdleGuard />
+    </>
+  );
 }

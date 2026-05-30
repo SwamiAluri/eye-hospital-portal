@@ -28,10 +28,23 @@ public class SettlementFunctions
         var body = await JsonSerializer.DeserializeAsync<RecordSettlementRequest>(req.Body);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
-        var result = await _svc.RecordSettlementAsync(id, claims!.UserId, body);
-        var resp = req.CreateResponse(HttpStatusCode.Created);
-        await resp.WriteAsJsonAsync(result);
-        return resp;
+        try
+        {
+            var result = await _svc.RecordSettlementAsync(id, claims!.UserId, body);
+            var resp = req.CreateResponse(HttpStatusCode.Created);
+            await resp.WriteAsJsonAsync(result);
+            return resp;
+        }
+        catch (KeyNotFoundException)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+        catch (InvalidOperationException ex)
+        {
+            var resp = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
+            await resp.WriteAsJsonAsync(new { error = ex.Message });
+            return resp;
+        }
     }
 
     // GET /api/ccms/coverage-cases/{id}/settlements
@@ -54,8 +67,46 @@ public class SettlementFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
-        await _svc.ReconcileAsync(id, claims!.UserId);
-        return req.CreateResponse(HttpStatusCode.NoContent);
+        try
+        {
+            await _svc.ReconcileAsync(id, claims!.UserId);
+            return req.CreateResponse(HttpStatusCode.NoContent);
+        }
+        catch (KeyNotFoundException)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+        catch (InvalidOperationException ex)
+        {
+            var resp = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
+            await resp.WriteAsJsonAsync(new { error = ex.Message });
+            return resp;
+        }
+    }
+
+    // POST /api/ccms/coverage-cases/{id}/close
+    [Function("CloseCoverageCase")]
+    public async Task<HttpResponseData> CloseCase(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/coverage-cases/{id:guid}/close")] HttpRequestData req, Guid id)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        try
+        {
+            await _svc.CloseCaseAsync(id, claims!.UserId);
+            return req.CreateResponse(HttpStatusCode.NoContent);
+        }
+        catch (KeyNotFoundException)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+        catch (InvalidOperationException ex)
+        {
+            var resp = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
+            await resp.WriteAsJsonAsync(new { error = ex.Message });
+            return resp;
+        }
     }
 
     // GET /api/ccms/settlements/aging

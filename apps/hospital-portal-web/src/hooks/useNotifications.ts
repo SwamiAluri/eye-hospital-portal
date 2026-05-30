@@ -1,7 +1,15 @@
+'use client';
+
 import { useEffect, useRef, useState } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { useAuthStore } from '@/lib/auth-store';
 import toast from 'react-hot-toast';
+import {
+  acquireNotificationConnection,
+  releaseNotificationConnection,
+  startNotificationConnection,
+  isSignalRAbortError,
+} from '@/lib/signalr/notification-hub';
 
 export interface NotificationEvent {
   type: string;
@@ -17,51 +25,37 @@ export function useNotifications() {
   const { token } = useAuthStore();
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
+  const handlersForConnection = useRef<signalR.HubConnection | null>(null);
 
   useEffect(() => {
     if (!token) return;
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5073/api';
-    const hubUrl = apiUrl.replace('/api', '/notificationHub');
+    let mounted = true;
+    const newConnection = acquireNotificationConnection(token);
 
-    const newConnection = new signalR.HubConnectionBuilder()
-      .withUrl(hubUrl, {
-        accessTokenFactory: () => token,
-      })
-      .withAutomaticReconnect({
-        nextRetryDelayInMilliseconds: (retryContext) => {
-          if (retryContext.previousRetryCount >= maxReconnectAttempts) {
-            toast.error('Lost connection to notifications. Please refresh the page.');
-            return null; // Stop reconnecting
-          }
-          // Exponential backoff: 2s, 4s, 8s, 16s, 32s
-          return Math.min(2000 * Math.pow(2, retryContext.previousRetryCount), 32000);
-        },
-      })
-      .configureLogging(signalR.LogLevel.Information)
-      .build();
+    if (handlersForConnection.current !== newConnection) {
+      handlersForConnection.current = newConnection;
 
-    // Connection lifecycle handlers
-    newConnection.onreconnecting((error) => {
-      setIsConnected(false);
-      console.warn('SignalR reconnecting...', error);
-      toast.loading('Reconnecting to live updates...', { id: 'signalr-reconnect' });
-    });
+      newConnection.onreconnecting((error) => {
+        setIsConnected(false);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('SignalR reconnecting...', error);
+        }
+        toast.loading('Reconnecting to live updates...', { id: 'signalr-reconnect' });
+      });
 
-    newConnection.onreconnected((connectionId) => {
-      setIsConnected(true);
-      reconnectAttempts.current = 0;
-      console.log('SignalR reconnected:', connectionId);
-      toast.success('Reconnected to live updates', { id: 'signalr-reconnect' });
-    });
+      newConnection.onreconnected(() => {
+        setIsConnected(true);
+        reconnectAttempts.current = 0;
+        toast.success('Reconnected to live updates', { id: 'signalr-reconnect' });
+      });
 
-    newConnection.onclose((error) => {
-      setIsConnected(false);
-      console.error('SignalR connection closed:', error);
-      if (error) {
-        toast.error('Connection to live updates lost');
-      }
-    });
+      newConnection.onclose((error) => {
+        setIsConnected(false);
+        if (error && !isSignalRAbortError(error)) {
+          toast.error('Connection to live updates lost');
+        }
+      });
 
     // Generic notification handler
     newConnection.on('ReceiveNotification', (type: string, message: string, details: string) => {
@@ -264,7 +258,7 @@ export function useNotifications() {
             duration: 8000,
             ...(scheduleId && {
               onClick: () => {
-                window.location.href = `/dashboard/counselor?tab=surgery-confirmed&scheduleId=${scheduleId}`;
+                window.location.href = `/dashboard/counsellors-desk/finalize-surgery${scheduleId ? `?scheduleId=${scheduleId}` : ''}`;
               },
             }),
           }
@@ -302,7 +296,7 @@ export function useNotifications() {
             duration: 8000,
             ...(scheduleId && {
               onClick: () => {
-                window.location.href = `/dashboard/counselor?tab=surgery-confirmed&scheduleId=${scheduleId}&panel=coordination`;
+                window.location.href = `/dashboard/counsellors-desk/finalize-surgery${scheduleId ? `?scheduleId=${scheduleId}` : ''}`;
               },
             }),
           }
@@ -310,20 +304,20 @@ export function useNotifications() {
       }
     });
 
+    }
+
     // Start connection
-    newConnection
-      .start()
+    startNotificationConnection(newConnection)
       .then(() => {
-        console.log('SignalR Connected');
+        if (!mounted) return;
         setIsConnected(true);
+        setConnection(newConnection);
         toast.success('Connected to live updates', { duration: 2000 });
       })
       .catch((err: Error) => {
-        // Silently ignore 404 — the notifications hub is not yet deployed on this environment
+        if (!mounted || isSignalRAbortError(err)) return;
         const msg = err?.message ?? '';
-        if (msg.includes('404') || msg.includes('Not Found')) {
-          return;
-        }
+        if (msg.includes('404') || msg.includes('Not Found')) return;
         console.error('SignalR Connection Error:', err);
         reconnectAttempts.current++;
         if (reconnectAttempts.current < maxReconnectAttempts) {
@@ -331,10 +325,9 @@ export function useNotifications() {
         }
       });
 
-    setConnection(newConnection);
-
     return () => {
-      newConnection.stop();
+      mounted = false;
+      releaseNotificationConnection();
     };
   }, [token]);
 

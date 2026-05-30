@@ -11,7 +11,7 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
-import { useAuthStore } from '../auth-store';
+import { attachAuthRequestInterceptor, attachAuthResponseInterceptor } from '../auth-interceptors';
 
 const IP_MANAGEMENT_API_URL =
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_IP_MANAGEMENT_API_URL) ||
@@ -22,13 +22,8 @@ let _client: AxiosInstance | null = null;
 function getClient(): AxiosInstance {
   if (_client) return _client;
   _client = axios.create({ baseURL: IP_MANAGEMENT_API_URL });
-
-  _client.interceptors.request.use((config) => {
-    const { tenantId, token } = useAuthStore.getState();
-    if (tenantId) (config.headers as Record<string, string>)['X-Tenant-ID'] = tenantId;
-    if (token) (config.headers as Record<string, string>).Authorization = `Bearer ${token}`;
-    return config;
-  });
+  attachAuthRequestInterceptor(_client);
+  attachAuthResponseInterceptor(_client);
 
   return _client;
 }

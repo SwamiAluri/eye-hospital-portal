@@ -18,7 +18,7 @@ import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { usePatientTypeConfigs } from '@/hooks/use-patient-type-configs';
 import { useCounselingSession, useUpdateCounselingSession } from '@/hooks/use-counseling-sessions';
 import { toast } from 'sonner';
-import { CustomDocumentModal } from '@/components/counselor/CustomDocumentModal';
+import { CustomDocumentModal } from '@/components/widgets/CustomDocumentModal';
 
 // ── Icon config per type ─────────────────────────────────────────────────────
 const typeConfig: Record<string, {

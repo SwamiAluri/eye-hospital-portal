@@ -2,6 +2,8 @@ using CcmsApi.Data;
 using CcmsApi.Models.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace CcmsApi.Services;
 
@@ -28,6 +30,10 @@ public interface IWorkflowEngine
     /// <summary>Get complete transition history for an instance.</summary>
     Task<List<CcmsWorkflowHistory>> GetHistoryAsync(
         Guid instanceId, CancellationToken ct = default);
+
+    /// <summary>Resolve workflow state GUIDs to state codes (system-tenant rows via nil-UUID RLS context).</summary>
+    Task<Dictionary<Guid, string>> ResolveStateCodesAsync(
+        List<Guid> stateIds, CancellationToken ct = default);
 }
 
 public record TransitionResult(
@@ -89,6 +95,8 @@ public class WorkflowEngine : IWorkflowEngine
             WorkflowInstanceId = instance.Id,
             FromStateId        = null,
             ToStateId          = initialStateId,
+            FromStateCode      = null,
+            ToStateCode        = initialStateCode,
             TriggerEvent       = "START",
             ActorUserId        = actorUserId,
             TransitionedAt     = DateTime.UtcNow,
@@ -243,12 +251,12 @@ public class WorkflowEngine : IWorkflowEngine
             insCmd.CommandText =
                 "INSERT INTO ccms_workflow_history " +
                 "(id, tenant_id, workflow_instance_id, from_state_id, to_state_id, " +
-                " trigger_event, actor_user_id, notes, transitioned_at, " +
+                " from_state_code, to_state_code, trigger_event, actor_user_id, notes, transitioned_at, " +
                 " created_at, updated_at, created_by_user_id, updated_by_user_id, " +
                 " deleted_at, status, row_version) " +
                 "VALUES " +
                 "(@hid, @tenant_id, @instance_id, @from_state_id, @to_state_id, " +
-                " @trigger_event, @actor_user_id, @notes, NOW(), " +
+                " @from_state_code, @to_state_code, @trigger_event, @actor_user_id, @notes, NOW(), " +
                 " NOW(), NOW(), @actor_user_id, @actor_user_id, " +
                 " NULL, 'active', 1)";
             void AddParam(string name, object? val)
@@ -261,9 +269,11 @@ public class WorkflowEngine : IWorkflowEngine
             AddParam("hid",           Guid.NewGuid());
             AddParam("tenant_id",     instance.TenantId);
             AddParam("instance_id",   instanceId);
-            AddParam("from_state_id", fromState.Id);
-            AddParam("to_state_id",   toState.Id);
-            AddParam("trigger_event", triggerEvent);
+            AddParam("from_state_id",   fromState.Id);
+            AddParam("to_state_id",     toState.Id);
+            AddParam("from_state_code", fromState.StateCode);
+            AddParam("to_state_code",   toState.StateCode);
+            AddParam("trigger_event",   triggerEvent);
             AddParam("actor_user_id", actorUserId);
             AddParam("notes",         (object?)notes);
             await insCmd.ExecuteNonQueryAsync(ct);
@@ -317,5 +327,52 @@ public class WorkflowEngine : IWorkflowEngine
             .Where(h => h.WorkflowInstanceId == instanceId && h.DeletedAt == null)
             .OrderBy(h => h.TransitionedAt)
             .ToListAsync(ct);
+    }
+
+    public async Task<Dictionary<Guid, string>> ResolveStateCodesAsync(
+        List<Guid> stateIds, CancellationToken ct = default)
+    {
+        if (stateIds.Count == 0) return new Dictionary<Guid, string>();
+
+        var result = new Dictionary<Guid, string>();
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync(ct);
+
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        try
+        {
+            using (var setCmd = conn.CreateCommand())
+            {
+                setCmd.Transaction = tx;
+                setCmd.CommandText = "SET LOCAL app.current_tenant_id = '00000000-0000-0000-0000-000000000000'";
+                await setCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var qCmd = conn.CreateCommand();
+            qCmd.Transaction = tx;
+            qCmd.CommandText = "SELECT id, state_code FROM ccms_workflow_states WHERE id = ANY(@ids) AND deleted_at IS NULL";
+            var p = new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = stateIds.ToArray() };
+            qCmd.Parameters.Add(p);
+
+            await using var reader = await qCmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                result[reader.GetGuid(0)] = reader.GetString(1);
+        }
+        finally
+        {
+            await tx.RollbackAsync(ct);
+        }
+
+        if (result.Count == 0)
+        {
+            var efResult = await _db.WorkflowStates
+                .AsNoTracking()
+                .Where(s => stateIds.Contains(s.Id))
+                .ToDictionaryAsync(s => s.Id, s => s.StateCode, ct);
+            foreach (var kv in efResult) result[kv.Key] = kv.Value;
+        }
+
+        return result;
     }
 }

@@ -31,5 +31,66 @@ namespace AuthService.Services
         Task<List<TPACommunicationDto>> GetTPACommunicationsAsync(Guid preAuthId, Guid tenantId);
         Task<TPACommunicationDto> LogCommunicationAsync(LogTPACommunicationRequest request, Guid tenantId, Guid loggedByUserId);
         Task<TPACommunicationDto> RecordResponseAsync(Guid communicationId, string responseText, Guid tenantId);
+
+        // CCMS Support Endpoints
+        Task<List<SessionSummaryDto>> GetSessionSummariesBatchAsync(List<Guid> sessionIds, Guid tenantId);
+        Task<UnderwritingProfileDto?> GetUnderwritingProfileAsync(Guid patientId, Guid tenantId);
+
+        // Chronic conditions CRUD
+        Task<ChronicConditionsDto> GetChronicConditionsAsync(Guid patientId, Guid tenantId);
+        Task UpsertChronicConditionsAsync(Guid patientId, Guid tenantId, UpsertChronicConditionsRequest request);
+
+        // patient_insurance sync from CCMS primary policy (fire-and-forget, best-effort)
+        Task SyncPatientInsuranceFromCcmsAsync(Guid patientId, PatientInsuranceSyncRequest request);
     }
+
+    // ── CCMS-facing DTOs ─────────────────────────────────────────────────────────
+
+    public record SessionSummaryDto(
+        Guid    SessionId,
+        string? PatientName,
+        string? PatientMobile,
+        string? ProcedureName,
+        string? CounsellorName,
+        string? PaymentType,
+        DateTime? CounselledAt
+    );
+
+    public record UnderwritingConditionDto(
+        string  ConditionName,
+        string? Icd10Code,
+        string  Severity,        // mild | moderate | severe
+        bool    IsPreExisting,
+        string? Notes
+    );
+
+    public record UnderwritingProfileDto(
+        Guid    PatientId,
+        List<UnderwritingConditionDto> Conditions,
+        string? Notes,
+        DateTime? LastUpdated
+    );
+
+    public record ChronicConditionsDto(
+        Guid    PatientId,
+        List<UnderwritingConditionDto> Conditions,
+        string? Notes,
+        DateTime? LastUpdated
+    );
+
+    public record UpsertChronicConditionsRequest(
+        List<UnderwritingConditionDto> Conditions,
+        string? Notes = null
+    );
+
+    public record PatientInsuranceSyncRequest(
+        string  PatientId,
+        string  PolicyNumber,
+        string  ProviderName,
+        string? InsuredName,
+        string? Relationship,
+        string? ContactPhone,
+        string? StartDate,
+        string? EndDate
+    );
 }

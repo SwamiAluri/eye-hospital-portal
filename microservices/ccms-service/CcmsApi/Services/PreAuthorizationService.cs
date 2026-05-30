@@ -1,5 +1,6 @@
 using CcmsApi.Data;
 using CcmsApi.Models.Domain;
+using CcmsApi.Models.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -12,21 +13,43 @@ public class PreAuthorizationService
 {
     private readonly CcmsDbContext _db;
     private readonly IWorkflowEngine _workflow;
+    private readonly ClarificationService _clarification;
     private readonly ILogger<PreAuthorizationService> _log;
 
     public PreAuthorizationService(
         CcmsDbContext db,
         IWorkflowEngine workflow,
+        ClarificationService clarification,
         ILogger<PreAuthorizationService> log)
     {
-        _db       = db;
-        _workflow = workflow;
-        _log      = log;
+        _db            = db;
+        _workflow      = workflow;
+        _clarification = clarification;
+        _log           = log;
+    }
+
+    // ── Mapping ───────────────────────────────────────────────────────────────
+    internal static AuthorizationSummaryDto ToDto(CcmsCoverageAuthorization a)
+    {
+        var requested = a.RequestedAmount > 0 ? a.RequestedAmount : a.EstimatedTotalCost;
+        var estimated = a.EstimatedTotalCost > 0 ? a.EstimatedTotalCost : requested;
+        return new(
+            a.Id, a.CoverageCase_Id, a.AuthorizationType,
+            a.PreAuthNumber, requested, a.ApprovedAmount,
+            a.RoomClassRequested, a.RoomClassApproved,
+            a.ValidFrom, a.ValidTo, a.SubmittedAt, a.ReceivedAt,
+            a.TpaReferenceNumber, a.RejectionReason, a.CreatedAt,
+            a.Status, a.ProcessStatus,
+            a.ClinicalSummary, a.TreatingDoctorName, a.TreatingDoctorReg,
+            a.AdmissionDate, a.ExpectedDischargeDate, a.LengthOfStayDays,
+            a.RoomTypeRequested,
+            estimated, a.CopayAmount, a.DeductibleAmount,
+            a.ServiceTaxAmount, a.NetPayableByInsurer, a.NetPayableByPatient);
     }
 
     // ── Generate Pre-Auth ────────────────────────────────────────────────────
 
-    public async Task<CcmsCoverageAuthorization> GeneratePreAuthAsync(
+    public async Task<AuthorizationSummaryDto> GeneratePreAuthAsync(
         Guid coverageCaseId, Guid actorUserId,
         GeneratePreAuthRequest req, CancellationToken ct = default)
     {
@@ -34,23 +57,49 @@ public class PreAuthorizationService
             .FirstOrDefaultAsync(c => c.Id == coverageCaseId && c.DeletedAt == null, ct)
             ?? throw new KeyNotFoundException($"Coverage case {coverageCaseId} not found.");
 
+        var hasPrimaryPolicy = await _db.VisitInsurancePolicies
+            .AnyAsync(p => p.CoverageCase_Id == coverageCaseId && p.IsPrimary && p.DeletedAt == null, ct);
+        if (!hasPrimaryPolicy)
+            throw new InvalidOperationException(
+                "Cannot generate pre-auth: capture a primary visit policy first (Counsellor Coverage tab or visit policies).");
+
+        var requestedAmount = req.RequestedAmount > 0
+            ? req.RequestedAmount
+            : req.EstimatedTotalCost;
+        var estimatedTotal = req.EstimatedTotalCost > 0 ? req.EstimatedTotalCost : requestedAmount;
+
         var auth = new CcmsCoverageAuthorization
         {
-            Id                 = Guid.NewGuid(),
-            TenantId           = coverageCase.TenantId,
-            CoverageCase_Id    = coverageCaseId,
-            AuthorizationType  = "preauth",
-            RequestedAmount    = req.RequestedAmount,
-            RoomClassRequested = req.RoomClassRequested,
-            DiagnosisJson      = req.DiagnosisJson,
-            ProceduresJson     = req.ProceduresJson,
-            LegacyPreauthId    = coverageCase.LegacyPreauthId,
-            SessionPreauthId   = coverageCase.SessionPreauthId,
-            CreatedAt          = DateTime.UtcNow,
-            UpdatedAt          = DateTime.UtcNow,
-            CreatedByUserId    = actorUserId,
-            UpdatedByUserId    = actorUserId,
-            Status             = "active"
+            Id                       = Guid.NewGuid(),
+            TenantId                 = coverageCase.TenantId,
+            CoverageCase_Id          = coverageCaseId,
+            AuthorizationType        = "preauth",
+            RequestedAmount          = requestedAmount,
+            RoomClassRequested       = req.RoomClassRequested,
+            RoomTypeRequested        = req.RoomTypeRequested ?? req.RoomClassRequested,
+            DiagnosisJson            = req.DiagnosisJson,
+            ProceduresJson           = req.ProceduresJson,
+            ClinicalSummary          = req.ClinicalSummary,
+            TreatingDoctorName       = req.TreatingDoctorName,
+            TreatingDoctorReg        = req.TreatingDoctorReg,
+            AdmissionDate            = req.AdmissionDate,
+            ExpectedDischargeDate    = req.ExpectedDischargeDate,
+            LengthOfStayDays         = req.LengthOfStayDays,
+            EstimatedTotalCost       = estimatedTotal,
+            CopayAmount              = req.CopayAmount,
+            DeductibleAmount         = req.DeductibleAmount,
+            ServiceTaxAmount         = req.ServiceTaxAmount,
+            NetPayableByInsurer       = req.NetPayableByInsurer > 0 ? req.NetPayableByInsurer : estimatedTotal,
+            NetPayableByPatient       = req.NetPayableByPatient,
+            ProcessStatus            = "pending",
+            ProcessStatusUpdatedAt   = DateTime.UtcNow,
+            LegacyPreauthId          = coverageCase.LegacyPreauthId,
+            SessionPreauthId         = coverageCase.SessionPreauthId,
+            CreatedAt                = DateTime.UtcNow,
+            UpdatedAt                = DateTime.UtcNow,
+            CreatedByUserId          = actorUserId,
+            UpdatedByUserId          = actorUserId,
+            Status                   = "active"
         };
 
         _db.CoverageAuthorizations.Add(auth);
@@ -72,12 +121,12 @@ public class PreAuthorizationService
 
         await _db.SaveChangesAsync(ct);
         _log.LogInformation("Pre-auth generated for case {CaseId}", coverageCaseId);
-        return auth;
+        return ToDto(auth);
     }
 
     // ── Mark as Sent ─────────────────────────────────────────────────────────
 
-    public async Task<CcmsCoverageAuthorization> MarkSentAsync(
+    public async Task<AuthorizationSummaryDto> MarkSentAsync(
         Guid authorizationId, Guid actorUserId,
         string? tpaReferenceNumber = null, CancellationToken ct = default)
     {
@@ -85,39 +134,52 @@ public class PreAuthorizationService
             .FirstOrDefaultAsync(a => a.Id == authorizationId && a.DeletedAt == null, ct)
             ?? throw new KeyNotFoundException($"Authorization {authorizationId} not found.");
 
-        auth.SubmittedAt        = DateTime.UtcNow;
-        auth.TpaReferenceNumber = tpaReferenceNumber;
+        var alreadySubmitted = auth.SubmittedAt.HasValue;
+
+        if (!alreadySubmitted)
+        {
+            auth.SubmittedAt = DateTime.UtcNow;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tpaReferenceNumber))
+        {
+            auth.TpaReferenceNumber = tpaReferenceNumber;
+        }
+
         auth.UpdatedAt          = DateTime.UtcNow;
         auth.UpdatedByUserId    = actorUserId;
         auth.RowVersion         += 1;
 
-        var coverageCase = await _db.CoverageCases
-            .FirstOrDefaultAsync(c => c.Id == auth.CoverageCase_Id && c.DeletedAt == null, ct);
-
-        if (coverageCase is not null && coverageCase.WorkflowInstanceId.HasValue)
+        if (!alreadySubmitted)
         {
-            await _workflow.FireAsync(
-                coverageCase.WorkflowInstanceId.Value,
-                "SEND_PREAUTH", actorUserId, null, ct);
+            var coverageCase = await _db.CoverageCases
+                .FirstOrDefaultAsync(c => c.Id == auth.CoverageCase_Id && c.DeletedAt == null, ct);
 
-            // Then auto-transition to WAITING_APPROVAL
-            await _workflow.FireAsync(
-                coverageCase.WorkflowInstanceId.Value,
-                "WAIT_RESPONSE", actorUserId, null, ct);
+            if (coverageCase is not null && coverageCase.WorkflowInstanceId.HasValue)
+            {
+                await _workflow.FireAsync(
+                    coverageCase.WorkflowInstanceId.Value,
+                    "SEND_PREAUTH", actorUserId, null, ct);
 
-            coverageCase.CurrentState    = "WAITING_APPROVAL";
-            coverageCase.UpdatedAt       = DateTime.UtcNow;
-            coverageCase.UpdatedByUserId = actorUserId;
-            coverageCase.RowVersion      += 1;
+                // Then auto-transition to WAITING_APPROVAL
+                await _workflow.FireAsync(
+                    coverageCase.WorkflowInstanceId.Value,
+                    "WAIT_RESPONSE", actorUserId, null, ct);
+
+                coverageCase.CurrentState    = "WAITING_APPROVAL";
+                coverageCase.UpdatedAt       = DateTime.UtcNow;
+                coverageCase.UpdatedByUserId = actorUserId;
+                coverageCase.RowVersion      += 1;
+            }
         }
 
         await _db.SaveChangesAsync(ct);
-        return auth;
+        return ToDto(auth);
     }
 
     // ── Record TPA Response ──────────────────────────────────────────────────
 
-    public async Task<CcmsCoverageAuthorization> RecordTpaResponseAsync(
+    public async Task<AuthorizationSummaryDto> RecordTpaResponseAsync(
         Guid authorizationId, Guid actorUserId,
         RecordTpaResponseRequest req, CancellationToken ct = default)
     {
@@ -128,6 +190,10 @@ public class PreAuthorizationService
         var coverageCase = await _db.CoverageCases
             .FirstOrDefaultAsync(c => c.Id == auth.CoverageCase_Id && c.DeletedAt == null, ct)
             ?? throw new InvalidOperationException("Coverage case not found.");
+
+        if (auth.ReceivedAt.HasValue && !req.ForceAmend)
+            throw new InvalidOperationException(
+                "TPA response was already recorded for this authorization. Use Record Response only once, or contact an administrator to amend.");
 
         auth.ReceivedAt          = DateTime.UtcNow;
         auth.TpaReferenceNumber  = req.TpaReferenceNumber ?? auth.TpaReferenceNumber;
@@ -220,18 +286,63 @@ public class PreAuthorizationService
         coverageCase.RowVersion      += 1;
 
         await _db.SaveChangesAsync(ct);
+
+        if (req.Decision.Equals("CLARIFICATION", StringComparison.OrdinalIgnoreCase))
+        {
+            var queryText = req.ClarificationQuery ?? req.RejectionReason;
+            if (!string.IsNullOrWhiteSpace(queryText))
+            {
+                await _clarification.AddQueryAsync(
+                    authorizationId, actorUserId,
+                    new AddClarificationQueryRequest(queryText.Trim()), ct);
+            }
+        }
+
         _log.LogInformation("TPA response recorded for auth {AuthId}: {Decision}", authorizationId, req.Decision);
-        return auth;
+        return ToDto(auth);
     }
 
     // ── Get Authorizations for a Case ────────────────────────────────────────
 
-    public async Task<List<CcmsCoverageAuthorization>> GetByCaseIdAsync(
+    public async Task<List<AuthorizationSummaryDto>> GetByCaseIdAsync(
         Guid coverageCaseId, CancellationToken ct = default)
-        => await _db.CoverageAuthorizations.AsNoTracking()
+        => (await _db.CoverageAuthorizations.AsNoTracking()
             .Where(a => a.CoverageCase_Id == coverageCaseId && a.DeletedAt == null)
             .OrderByDescending(a => a.CreatedAt)
-            .ToListAsync(ct);
+            .ToListAsync(ct))
+            .Select(ToDto)
+            .ToList();
+
+    // ── Update process_status ────────────────────────────────────────────────
+
+    public async Task<AuthorizationSummaryDto> UpdateProcessStatusAsync(
+        Guid authorizationId, Guid actorUserId, string processStatus,
+        CancellationToken ct = default)
+    {
+        var auth = await _db.CoverageAuthorizations
+            .FirstOrDefaultAsync(a => a.Id == authorizationId && a.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Authorization {authorizationId} not found.");
+
+        auth.ProcessStatus          = processStatus;
+        auth.ProcessStatusUpdatedAt = DateTime.UtcNow;
+        auth.UpdatedAt              = DateTime.UtcNow;
+        auth.UpdatedByUserId        = actorUserId;
+        auth.RowVersion            += 1;
+
+        // Mirror to the coverage case for quick filtering
+        var coverageCase = await _db.CoverageCases
+            .FirstOrDefaultAsync(c => c.Id == auth.CoverageCase_Id && c.DeletedAt == null, ct);
+        if (coverageCase is not null)
+        {
+            coverageCase.ProcessStatus          = processStatus;
+            coverageCase.ProcessStatusUpdatedAt = DateTime.UtcNow;
+            coverageCase.UpdatedAt              = DateTime.UtcNow;
+            coverageCase.UpdatedByUserId        = actorUserId;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return ToDto(auth);
+    }
 
     // ── Authorization Queue (pending TPA response) ────────────────────────────
 
@@ -270,10 +381,25 @@ public class PreAuthorizationService
 // ── Request DTOs ─────────────────────────────────────────────────────────────
 
 public record GeneratePreAuthRequest(
-    decimal  RequestedAmount,
-    string?  RoomClassRequested,
-    string?  DiagnosisJson,
-    string?  ProceduresJson
+    decimal   RequestedAmount,
+    string?   RoomClassRequested   = null,
+    string?   RoomTypeRequested    = null,
+    string?   DiagnosisJson        = null,
+    string?   ProceduresJson       = null,
+    // Migration 124: clinical
+    string?   ClinicalSummary      = null,
+    string?   TreatingDoctorName   = null,
+    string?   TreatingDoctorReg    = null,
+    DateOnly? AdmissionDate        = null,
+    DateOnly? ExpectedDischargeDate = null,
+    int?      LengthOfStayDays     = null,
+    // Migration 124: financial
+    decimal   EstimatedTotalCost   = 0,
+    decimal   CopayAmount          = 0,
+    decimal   DeductibleAmount     = 0,
+    decimal   ServiceTaxAmount     = 0,
+    decimal   NetPayableByInsurer   = 0,
+    decimal   NetPayableByPatient   = 0
 );
 
 public record RecordTpaResponseRequest(
@@ -285,7 +411,9 @@ public record RecordTpaResponseRequest(
     DateTime? ValidTo,
     string?  TpaReferenceNumber,
     string?  RejectionReason,
-    string?  EventSource
+    string?  EventSource,
+    string?  ClarificationQuery = null,
+    bool     ForceAmend         = false
 );
 
 public record AuthQueueItem(

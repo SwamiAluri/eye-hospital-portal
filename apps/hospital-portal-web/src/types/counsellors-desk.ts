@@ -143,6 +143,10 @@ export interface CounsellingSession {
   wantToSeeDoctor: boolean;
   interestedToUpgrade: boolean;
   notRequiredPreAuth: boolean;
+  /** Synced from CCMS via auth internal callback (PackageAddonsJson) */
+  ccmsCoverageCaseId?: string;
+  ccmsCaseNumber?: string;
+  ccmsCurrentState?: string;
   isFollowUpRequired: boolean;
   status: WaitingListStatus;
   sessionStatus?: string;

@@ -59,6 +59,7 @@ const nextConfig = {
   // Redirect duplicate /imaging/* routes to canonical /diagnostic/* routes
   async redirects() {
     return [
+      { source: '/favicon.ico', destination: '/favicon.svg', permanent: false },
       { source: '/dashboard/imaging/oct', destination: '/dashboard/diagnostic/oct-imaging', permanent: true },
       { source: '/dashboard/imaging/biometry', destination: '/dashboard/diagnostic/biometry', permanent: true },
       { source: '/dashboard/imaging/electrophysiology', destination: '/dashboard/diagnostic/electrophysiology', permanent: true },

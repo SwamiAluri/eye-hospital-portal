@@ -1,5 +1,6 @@
 using CcmsApi.Data;
 using CcmsApi.Models.Domain;
+using CcmsApi.Models.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -20,7 +21,14 @@ public class ClaimPacketGeneratorService
         _log      = log;
     }
 
-    public async Task<CcmsClaimPacket> GenerateClaimAsync(
+    // ── Mapping ───────────────────────────────────────────────────────────────
+    internal static ClaimPacketDto ToDto(CcmsClaimPacket c) => new(
+        c.Id, c.CoverageCase_Id, c.ClaimNumber, c.ClaimedAmount,
+        c.ClaimType, c.SubmissionMode, c.Status,
+        c.SubmittedAt, c.AcknowledgedAt, c.TpaClaimNumber,
+        c.ExpectedSettlementDate, c.CreatedAt, c.UpdatedAt);
+
+    public async Task<ClaimPacketDto> GenerateClaimAsync(
         Guid coverageCaseId, Guid actorUserId,
         GenerateClaimRequest req, CancellationToken ct = default)
     {
@@ -33,6 +41,8 @@ public class ClaimPacketGeneratorService
             .Where(b => b.CoverageCase_Id == coverageCaseId && b.DeletedAt == null)
             .OrderByDescending(b => b.CreatedAt)
             .FirstOrDefaultAsync(ct);
+        if (billing is null)
+            throw new InvalidOperationException("Cannot generate claim: allocate the bill on the Billing tab first.");
 
         var claimNumber = await GenerateClaimNumberAsync(coverageCase.TenantId, ct);
 
@@ -54,12 +64,12 @@ public class ClaimPacketGeneratorService
 
         _db.ClaimPackets.Add(packet);
 
-        // Workflow: BILL_FINALIZED → CLAIM_READY
+        // Workflow: BILL_FINALIZED → CLAIM_READY (seed trigger: PREPARE_CLAIM)
         if (coverageCase.WorkflowInstanceId.HasValue)
         {
             await _workflow.FireAsync(
                 coverageCase.WorkflowInstanceId.Value,
-                "GENERATE_CLAIM", actorUserId, null, ct);
+                "PREPARE_CLAIM", actorUserId, null, ct);
         }
 
         coverageCase.CurrentState    = "CLAIM_READY";
@@ -69,10 +79,10 @@ public class ClaimPacketGeneratorService
 
         await _db.SaveChangesAsync(ct);
         _log.LogInformation("Claim packet {ClaimNo} generated for case {CaseId}", claimNumber, coverageCaseId);
-        return packet;
+        return ToDto(packet);
     }
 
-    public async Task<CcmsClaimPacket> SubmitClaimAsync(
+    public async Task<ClaimPacketDto> SubmitClaimAsync(
         Guid claimPacketId, Guid actorUserId, string? tpaClaimNumber = null, CancellationToken ct = default)
     {
         var packet = await _db.ClaimPackets
@@ -99,15 +109,48 @@ public class ClaimPacketGeneratorService
         }
 
         await _db.SaveChangesAsync(ct);
-        return packet;
+        return ToDto(packet);
     }
 
-    public async Task<List<CcmsClaimPacket>> GetByCaseIdAsync(
+    public async Task<ClaimPacketDto> AcknowledgeClaimAsync(
+        Guid claimPacketId, Guid actorUserId, string? tpaAckReference = null, CancellationToken ct = default)
+    {
+        var packet = await _db.ClaimPackets
+            .FirstOrDefaultAsync(c => c.Id == claimPacketId && c.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Claim packet {claimPacketId} not found.");
+
+        packet.AcknowledgedAt    = DateTime.UtcNow;
+        packet.TpaClaimNumber    = tpaAckReference ?? packet.TpaClaimNumber;
+        packet.UpdatedAt         = DateTime.UtcNow;
+        packet.UpdatedByUserId   = actorUserId;
+        packet.RowVersion        += 1;
+
+        var coverageCase = await _db.CoverageCases
+            .FirstOrDefaultAsync(c => c.Id == packet.CoverageCase_Id && c.DeletedAt == null, ct);
+
+        if (coverageCase is not null)
+        {
+            if (coverageCase.WorkflowInstanceId.HasValue)
+                await _workflow.FireAsync(coverageCase.WorkflowInstanceId.Value, "CLAIM_ACKNOWLEDGED", actorUserId, null, ct);
+            coverageCase.CurrentState    = "CLAIM_IN_PROCESS";
+            coverageCase.UpdatedAt       = DateTime.UtcNow;
+            coverageCase.UpdatedByUserId = actorUserId;
+            coverageCase.RowVersion      += 1;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _log.LogInformation("Claim packet {ClaimId} acknowledged", claimPacketId);
+        return ToDto(packet);
+    }
+
+    public async Task<List<ClaimPacketDto>> GetByCaseIdAsync(
         Guid coverageCaseId, CancellationToken ct = default)
-        => await _db.ClaimPackets.AsNoTracking()
+        => (await _db.ClaimPackets.AsNoTracking()
             .Where(c => c.CoverageCase_Id == coverageCaseId && c.DeletedAt == null)
             .OrderByDescending(c => c.CreatedAt)
-            .ToListAsync(ct);
+            .ToListAsync(ct))
+            .Select(ToDto)
+            .ToList();
 
     // ── Claims Queue (ready/pending submission) ───────────────────────────────
 

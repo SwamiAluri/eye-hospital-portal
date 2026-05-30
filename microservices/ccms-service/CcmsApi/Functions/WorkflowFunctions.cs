@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 using CcmsApi.Services;
 using CcmsApi.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace CcmsApi.Functions;
 
@@ -92,6 +94,7 @@ public class WorkflowFunctions
     }
 
     // ── GET /api/ccms/workflow/instances/{instanceId}/history ────────────────
+    // Returns normalized DTO shape: { fromState, toState, actionCode, performedAt, comment }
     [Function("GetWorkflowHistory")]
     public async Task<HttpResponseData> GetHistory(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get",
@@ -105,8 +108,49 @@ public class WorkflowFunctions
             if (!Guid.TryParse(instanceId, out var id))
                 return await BadRequest(req, "Invalid instanceId.", ct);
 
-            var history = await _engine.GetHistoryAsync(id, ct);
-            return await Ok(req, history, ct);
+            var rawHistory = await _engine.GetHistoryAsync(id, ct);
+            if (!rawHistory.Any())
+                return await Ok(req, Array.Empty<object>(), ct);
+
+            // ── Resolve state IDs → state codes using raw ADO.NET with nil-UUID tenant context.
+            // ccms_workflow_states rows for the CCMS_MAIN definition are system-tenant rows
+            // (tenant_id = '00000000-0000-0000-0000-000000000000'). EF Core's
+            // TenantCommandInterceptor runs under the REAL tenant, so RLS hides them.
+            // Using the same SET LOCAL pattern as FetchSystemWorkflowAsync bypasses RLS.
+            // Always attempt ID lookup — denormalized codes may be missing on legacy rows.
+            var stateIds = rawHistory
+                .SelectMany(h => new[] { h.FromStateId, (Guid?)h.ToStateId })
+                .Where(sid => sid.HasValue)
+                .Select(sid => sid!.Value)
+                .Distinct()
+                .ToList();
+
+            var statesById = stateIds.Count > 0
+                ? await _engine.ResolveStateCodesAsync(stateIds, ct)
+                : new Dictionary<Guid, string>();
+
+            var dto = rawHistory.Select(h =>
+            {
+                // Prefer denormalized code → ID lookup → sentinel (never raw GUID)
+                var from = !string.IsNullOrEmpty(h.FromStateCode)
+                    ? h.FromStateCode
+                    : h.FromStateId.HasValue && statesById.TryGetValue(h.FromStateId.Value, out var f)
+                        ? f : "DRAFT";
+                var to = !string.IsNullOrEmpty(h.ToStateCode)
+                    ? h.ToStateCode
+                    : statesById.TryGetValue(h.ToStateId, out var t)
+                        ? t : "UNKNOWN";
+                return new
+                {
+                    fromState   = from,
+                    toState     = to,
+                    actionCode  = h.TriggerEvent,
+                    performedAt = h.TransitionedAt.ToString("O"),
+                    comment     = h.Notes,
+                };
+            });
+
+            return await Ok(req, dto, ct);
         }
         catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message, ct); }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message, ct); }

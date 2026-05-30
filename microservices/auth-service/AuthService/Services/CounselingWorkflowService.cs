@@ -21,6 +21,7 @@ namespace AuthService.Services
         private readonly Interfaces.IBlobStorageService _blobStorageService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly string _ccmsBaseUrl;
+        private readonly string _internalApiKey;
 
         public CounselingWorkflowService(
             AppDbContext context, 
@@ -34,6 +35,125 @@ namespace AuthService.Services
             _blobStorageService = blobStorageService;
             _httpClientFactory = httpClientFactory;
             _ccmsBaseUrl = configuration["CcmsService:BaseUrl"] ?? "http://localhost:7075/api";
+            _internalApiKey = configuration["InternalApi:Key"] ?? string.Empty;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> ApplyCcmsCallbackAsync(
+            Guid sessionId,
+            Guid? tenantId,
+            Guid coverageCaseId,
+            string caseNumber,
+            string eventType,
+            string? currentState = null)
+        {
+            var query = _context.CounselingSession.Where(s => s.Id == sessionId && s.DeletedAt == null);
+            if (tenantId.HasValue)
+                query = query.Where(s => s.TenantId == tenantId.Value);
+
+            var session = await query.FirstOrDefaultAsync();
+            if (session is null) return false;
+
+            var merged = MergeCcmsIntoPackageAddons(
+                session.PackageAddonsJson,
+                coverageCaseId,
+                caseNumber,
+                eventType,
+                currentState);
+
+            session.PackageAddonsJson = merged;
+            session.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        private static string MergeCcmsIntoPackageAddons(
+            string? existingJson,
+            Guid coverageCaseId,
+            string caseNumber,
+            string eventType,
+            string? currentState)
+        {
+            var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(existingJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(existingJson);
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        dict[prop.Name] = prop.Value.ValueKind switch
+                        {
+                            JsonValueKind.String  => prop.Value.GetString(),
+                            JsonValueKind.Number  => prop.Value.TryGetDecimal(out var d) ? d : prop.Value.GetRawText(),
+                            JsonValueKind.True    => true,
+                            JsonValueKind.False   => false,
+                            JsonValueKind.Null    => null,
+                            _                     => prop.Value.GetRawText(),
+                        };
+                    }
+                }
+                catch { /* start fresh if blob is corrupt */ }
+            }
+
+            dict["ccmsCoverageCaseId"] = coverageCaseId.ToString();
+            dict["ccmsCaseNumber"]     = caseNumber;
+            dict["ccmsLastEvent"]      = eventType;
+            dict["ccmsLinkedAt"]       = DateTime.UtcNow.ToString("o");
+            if (!string.IsNullOrWhiteSpace(currentState))
+                dict["ccmsCurrentState"] = currentState;
+
+            return JsonSerializer.Serialize(dict);
+        }
+
+        private static (bool NotRequiredPreAuth, string? InsurerName, decimal? Estimate,
+            Guid? InsuranceProviderId, Guid? TpaProviderId, Guid? GovernmentSchemeId)
+            ParseCcmsFieldsFromPackageAddons(string? packageAddonsJson)
+        {
+            var notRequired = false;
+            string? insurerName = null;
+            decimal? estimate = null;
+            Guid? insuranceProviderId = null;
+            Guid? tpaProviderId = null;
+            Guid? governmentSchemeId = null;
+
+            if (string.IsNullOrWhiteSpace(packageAddonsJson))
+                return (notRequired, insurerName, estimate, insuranceProviderId, tpaProviderId, governmentSchemeId);
+
+            try
+            {
+                using var doc = JsonDocument.Parse(packageAddonsJson);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("notRequiredPreAuth", out var nrp))
+                {
+                    notRequired = nrp.ValueKind == JsonValueKind.True
+                        || (nrp.ValueKind == JsonValueKind.String
+                            && string.Equals(nrp.GetString(), "true", StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (root.TryGetProperty("insuranceCompany", out var ic))
+                    insurerName = ic.GetString();
+
+                if (root.TryGetProperty("rate", out var rate) && rate.TryGetDecimal(out var r))
+                    estimate = r;
+
+                if (root.TryGetProperty("insuranceProviderId", out var ip)
+                    && Guid.TryParse(ip.GetString(), out var ipGuid))
+                    insuranceProviderId = ipGuid;
+
+                if (root.TryGetProperty("tpaProviderId", out var tp)
+                    && Guid.TryParse(tp.GetString(), out var tpGuid))
+                    tpaProviderId = tpGuid;
+
+                if (root.TryGetProperty("governmentSchemeId", out var gs)
+                    && Guid.TryParse(gs.GetString(), out var gsGuid))
+                    governmentSchemeId = gsGuid;
+            }
+            catch { /* ignore malformed JSON */ }
+
+            return (notRequired, insurerName, estimate, insuranceProviderId, tpaProviderId, governmentSchemeId);
         }
 
         // ============================================================================
@@ -976,41 +1096,82 @@ namespace AuthService.Services
 
                 // Fire-and-forget: notify CCMS if insurance/govt payment type
                 var insuranceTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                    { "Insurance", "TPA", "CoPay", "CGHS", "SGHS", "GovernmentScheme" };
+                    { "Insurance", "TPA", "CoPay", "CGHS", "SGHS", "GovernmentScheme", "ESH", "Arograshree", "Railway" };
                 if (insuranceTypes.Contains(session.PatientType ?? ""))
                 {
+                    // Resolve patient display name for CCMS case creation
+                    string? ccmsPatientName = null;
+                    if (session.PatientId != Guid.Empty)
+                    {
+                        var pt = await _context.Patients
+                            .AsNoTracking()
+                            .Where(p => p.Id == session.PatientId)
+                            .Select(p => new { p.FirstName, p.LastName })
+                            .FirstOrDefaultAsync();
+                        if (pt != null)
+                            ccmsPatientName = $"{pt.FirstName} {pt.LastName}".Trim();
+                    }
+
+                    var capturedPatientName = ccmsPatientName;
+                    var capturedPaymentType = session.PatientType ?? "Insurance";
+                    var capturedPackageAddons = session.PackageAddonsJson;
+                    var capturedBranchId = session.BranchId;
+                    var capturedDoctorId = session.ReferredByDoctorId;
+                    var capturedPatientId = session.PatientId;
+                    var capturedPackageId = session.SelectedPackageId;
+                    var capturedTenantId = tenantId;
+                    var capturedSessionId = sessionId;
+                    var capturedUserId = currentUserId;
+                    var capturedInternalKey = _internalApiKey;
+                    var capturedCcmsUrl = _ccmsBaseUrl;
+
                     _ = Task.Run(async () =>
                     {
                         try
                         {
+                            var fields = ParseCcmsFieldsFromPackageAddons(capturedPackageAddons);
                             var payload = new
                             {
-                                tenantId = tenantId,
-                                sessionId = sessionId,
+                                tenantId = capturedTenantId,
+                                sessionId = capturedSessionId,
                                 journeyId = (Guid?)null,
-                                patientId = session.PatientId,
-                                patientName = (string?)null,
-                                paymentType = session.PatientType,
-                                notRequiredPreAuth = false,
-                                branchId = session.BranchId,
-                                doctorId = session.ReferredByDoctorId,
-                                insuranceProviderId = (Guid?)null,
-                                tpaProviderId = (Guid?)null,
-                                governmentSchemeId = (Guid?)null,
-                                packageId = session.SelectedPackageId,
+                                patientId = capturedPatientId,
+                                patientName = capturedPatientName,
+                                paymentType = capturedPaymentType,
+                                notRequiredPreAuth = fields.NotRequiredPreAuth,
+                                branchId = capturedBranchId,
+                                doctorId = capturedDoctorId,
+                                insuranceProviderId = fields.InsuranceProviderId,
+                                tpaProviderId = fields.TpaProviderId,
+                                governmentSchemeId = fields.GovernmentSchemeId,
+                                packageId = capturedPackageId,
                                 legacyPreauthId = (Guid?)null,
                                 sessionPreauthId = (Guid?)null,
-                                actorUserId = currentUserId,
+                                actorUserId = capturedUserId,
                             };
                             var json = JsonSerializer.Serialize(payload);
                             var client = _httpClientFactory.CreateClient();
-                            await client.PostAsync(
-                                $"{_ccmsBaseUrl}/ccms/integration/counselling-completed",
-                                new StringContent(json, Encoding.UTF8, "application/json"));
+                            var request = new HttpRequestMessage(
+                                HttpMethod.Post,
+                                $"{capturedCcmsUrl}/ccms/integration/counselling-completed")
+                            {
+                                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+                            };
+                            if (!string.IsNullOrWhiteSpace(capturedInternalKey))
+                                request.Headers.Add("X-Internal-Key", capturedInternalKey);
+                            request.Headers.Add("X-Idempotency-Key", $"counselling-complete-{capturedSessionId}");
+
+                            var response = await client.SendAsync(request);
+                            if (!response.IsSuccessStatusCode)
+                            {
+                                _logger.LogWarning(
+                                    "CCMS counselling-completed returned {Status} for session {SessionId}",
+                                    response.StatusCode, capturedSessionId);
+                            }
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "CCMS counselling-completed callback failed for session {SessionId}", sessionId);
+                            _logger.LogWarning(ex, "CCMS counselling-completed callback failed for session {SessionId}", capturedSessionId);
                         }
                     });
                 }

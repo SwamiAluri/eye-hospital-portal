@@ -77,4 +77,25 @@ public class TwilioSmsService : ISmsService
             return (false, null, ex.Message);
         }
     }
+
+    public async Task<(bool Success, string? MessageId, string? Error)> SendTextAsync(
+        string toPhoneNumber,
+        string body)
+    {
+        try
+        {
+            var message = await MessageResource.CreateAsync(
+                to: new PhoneNumber(toPhoneNumber),
+                from: new PhoneNumber(_fromNumber),
+                body: body);
+
+            _logger.LogInformation("SMS sent to {Phone}, MessageSid: {MessageSid}", toPhoneNumber, message.Sid);
+            return (true, message.Sid, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send SMS to {Phone}", toPhoneNumber);
+            return (false, null, ex.Message);
+        }
+    }
 }

@@ -82,8 +82,19 @@ public class JwtService
             throw new UnauthorizedAccessException("Invalid tenantId.");
 
         _tenantCtx.Set(tenantId);
+        _lastPrincipal = principal;
         return (userId, tenantId);
     }
+
+    // Cache the last validated principal for permission extraction
+    [ThreadStatic] private static ClaimsPrincipal? _lastPrincipal;
+
+    /// <summary>Returns permission codes from the last validated JWT (thread-local).</summary>
+    public string[] GetLastPermissions()
+        => _lastPrincipal?.Claims
+              .Where(c => c.Type == "permissions" || c.Type == "permission")
+              .Select(c => c.Value)
+              .ToArray() ?? Array.Empty<string>();
 
     /// <summary>
     /// For internal service-to-service calls that use X-Internal-Key instead of JWT.
@@ -114,7 +125,7 @@ public class JwtService
         try
         {
             var (userId, tenantId) = ValidateAndExtract(request);
-            claims = new JwtClaims(userId, tenantId);
+            claims = new JwtClaims(userId, tenantId, GetLastPermissions());
             error  = string.Empty;
             return true;
         }
@@ -141,4 +152,7 @@ public class JwtService
 }
 
 /// <summary>Extracted JWT claims returned by the bool overload of ValidateAndExtract.</summary>
-public record JwtClaims(Guid UserId, Guid TenantId);
+public record JwtClaims(Guid UserId, Guid TenantId, string[]? Permissions = null)
+{
+    public string[] SafePermissions => Permissions ?? Array.Empty<string>();
+}

@@ -1,18 +1,14 @@
 import { useAuthStore } from '@/lib/auth-store';
 
 export function useHasPermission(permission: string): boolean {
-  const { user } = useAuthStore();
-  
-  // For now, return true for admin users
-  // TODO: Implement proper permission checking based on user roles
-  return true;
+  return useAuthStore.getState().hasPermission(permission);
 }
 
 export function usePermissions() {
-  const { user } = useAuthStore();
-  
+  const permissions = useAuthStore(s => s.permissions);
+
   return {
-    hasPermission: (permission: string) => true, // TODO: Implement proper permission checking
-    permissions: user?.permissions || [],
+    hasPermission: (permission: string) => useAuthStore.getState().hasPermission(permission),
+    permissions: permissions ?? [],
   };
 }
