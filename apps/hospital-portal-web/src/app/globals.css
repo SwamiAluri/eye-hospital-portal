@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import '../components/counsellors-desk/session/counselling-session-theme.css';
+
 /* Dark Mode Utilities */
 /* @import '../styles/dark-mode.css'; */
 
@@ -311,4 +313,83 @@ body {
   .modal-content-responsive {
     padding: 1rem !important;
   }
+}
+
+@keyframes queue-ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-queue-ticker {
+  display: inline-flex;
+  min-width: 200%;
+  animation: queue-ticker-scroll 28s linear infinite;
+}
+
+/* Queue TV — 1080p signage utilities */
+.queue-tv-shell {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.queue-tv-clock {
+  font-size: clamp(1.25rem, 2.5vw, 2rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.queue-tv-token-prefix {
+  font-size: clamp(0.875rem, 1.5vw, 1.25rem);
+  letter-spacing: 0.05em;
+}
+
+.queue-tv-token-suffix {
+  font-size: clamp(3rem, 8vw, 6rem);
+  line-height: 1;
+  min-height: 72px;
+}
+
+.queue-tv-name {
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+}
+
+.queue-tv-next-token-prefix {
+  font-size: clamp(0.75rem, 1.2vw, 1rem);
+  letter-spacing: 0.04em;
+}
+
+.queue-tv-next-token {
+  font-size: clamp(1.75rem, 3vw, 2.75rem);
+  line-height: 1.1;
+}
+
+.queue-tv-next-name {
+  font-size: clamp(1.125rem, 2vw, 1.75rem);
+}
+
+.queue-tv-next-meta {
+  font-size: clamp(0.875rem, 1.25vw, 1.125rem);
+}
+
+@keyframes queue-slide-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.queue-slide-progress {
+  width: 0%;
+  animation-name: queue-slide-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.telugu {
+  font-family: var(--font-telugu), 'Noto Sans Telugu', sans-serif;
 }

@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+import { useLeaveTypes } from '@/hooks/use-hr-masters'
 import { Breadcrumb } from '@/components/ui/breadcrumb'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,6 +11,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, Download, Calendar, Clock, CheckCircle, XCircle } from 'lucide-react'
 
 export default function LeavePage() {
+  const { types: leaveTypes } = useLeaveTypes()
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState('all')
+
   return (
     <div className="p-8 bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -100,16 +105,15 @@ export default function LeavePage() {
                 placeholder="Search employees..."
                 className="md:w-64"
               />
-              <Select>
+              <Select value={leaveTypeFilter} onValueChange={setLeaveTypeFilter}>
                 <SelectTrigger className="md:w-48">
                   <SelectValue placeholder="Leave type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="casual">Casual Leave</SelectItem>
-                  <SelectItem value="sick">Sick Leave</SelectItem>
-                  <SelectItem value="annual">Annual Leave</SelectItem>
-                  <SelectItem value="unpaid">Unpaid Leave</SelectItem>
+                  {leaveTypes.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Select>

@@ -29,6 +29,10 @@ import {
   UploadPreOpDocumentRequest,
 } from '@/lib/api/ip-management.api';
 import { useAuthStore } from '@/lib/auth-store';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { useMasterListOptions } from '@/hooks/use-master-list-options';
+
+const FALLBACK_ADMISSION_TYPES = ['DayCare', 'IPD', 'Emergency'];
 
 // ─── Category display labels ──────────────────────────────────────────────────
 
@@ -76,6 +80,10 @@ export function PreOpTab({
   onAdmitSuccess,
 }: PreOpTabProps) {
   const { user } = useAuthStore();
+  const { options: admissionTypeOptions } = useMasterValues('ward.admission_type');
+  const admissionTypes = admissionTypeOptions.length > 0
+    ? admissionTypeOptions.map((o) => o.label)
+    : FALLBACK_ADMISSION_TYPES;
   const branchId = branchIdProp ?? user?.branchId;
   const isReadOnly =
     (isLocked ?? false) || clinicalState === 'Discharged';
@@ -940,9 +948,9 @@ export function PreOpTab({
                     }
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                   >
-                    <option>DayCare</option>
-                    <option>IPD</option>
-                    <option>Emergency</option>
+                    {admissionTypes.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1112,6 +1120,14 @@ export function PreOpTab({
 
 // ─── Respond Section Inline Modal ────────────────────────────────────────────
 
+const PREOP_CLEARANCE_FALLBACK = [
+  'Fit for Local Anesthesia',
+  'Fit for General Anesthesia',
+  'Conditional Clearance',
+  'Deferred - Pending Tests',
+  'Not Fit for Surgery',
+] as const;
+
 function RespondSectionInlineModal({ category, isExternal, onClose, onSubmit, saving }: {
   category: string;
   isExternal?: boolean;
@@ -1119,7 +1135,13 @@ function RespondSectionInlineModal({ category, isExternal, onClose, onSubmit, sa
   onSubmit: (req: RespondToSectionRequest) => void;
   saving: boolean;
 }) {
+  const isAnaesthesia = category === 'Anaesthesia';
+  const { labels: clearanceLabels } = useMasterListOptions(
+    'clinical.preop_clearance',
+    PREOP_CLEARANCE_FALLBACK,
+  );
   const [status, setStatus] = useState<'RespondedClear' | 'RespondedConcerns'>('RespondedClear');
+  const [clearanceType, setClearanceType] = useState('');
   const [notes, setNotes] = useState('');
   const [extName, setExtName] = useState('');
   const [extContact, setExtContact] = useState('');
@@ -1176,13 +1198,17 @@ function RespondSectionInlineModal({ category, isExternal, onClose, onSubmit, sa
         </div>
         <div className="flex justify-end gap-2 px-6 pb-4">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
-          <button type="button" disabled={saving || (isExternal && !extName.trim())} onClick={() => onSubmit({
-            responseStatus: status,
-            responseNotes: notes || undefined,
-            isExternalResponder: isExternal,
-            externalResponderName: isExternal ? extName : undefined,
-            externalResponderContact: isExternal ? extContact : undefined,
-          })}
+          <button type="button" disabled={saving || (isExternal && !extName.trim())} onClick={() => {
+            const clearancePrefix = clearanceType ? `Clearance: ${clearanceType}. ` : '';
+            const combinedNotes = `${clearancePrefix}${notes}`.trim() || undefined;
+            onSubmit({
+              responseStatus: status,
+              responseNotes: combinedNotes,
+              isExternalResponder: isExternal,
+              externalResponderName: isExternal ? extName : undefined,
+              externalResponderContact: isExternal ? extContact : undefined,
+            });
+          }}
             className={`px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 ${status === 'RespondedConcerns' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}>
             {saving ? 'Submitting…' : 'Submit Response'}
           </button>

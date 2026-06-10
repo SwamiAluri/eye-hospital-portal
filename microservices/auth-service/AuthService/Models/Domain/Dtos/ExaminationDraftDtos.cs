@@ -14,6 +14,9 @@ public class SaveExaminationDraftRequest
     [Required]
     public Guid DoctorId { get; set; }
 
+    /// <summary>When set, draft is scoped to this visit (optometry exam).</summary>
+    public Guid? VisitId { get; set; }
+
     [Required]
     public string Data { get; set; } = "{}"; // JSON string with all form data (visualAcuityData, iopData, etc.)
 
@@ -28,6 +31,7 @@ public class ExaminationDraftResponse
     public Guid Id { get; set; }
     public Guid PatientId { get; set; }
     public Guid DoctorId { get; set; }
+    public Guid? VisitId { get; set; }
     public Guid TenantId { get; set; }
     public string Data { get; set; } = "{}";
     public int CompletionPercentage { get; set; }

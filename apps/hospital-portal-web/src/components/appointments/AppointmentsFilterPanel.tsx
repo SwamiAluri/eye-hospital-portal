@@ -1,7 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Filter, X, Search, Calendar, Users, Stethoscope, Building2, Tag } from 'lucide-react';
+import { useMasterValues } from '@/hooks/use-master-values';
+import {
+  resolveAppointmentStatusFilter,
+  statusChipColor,
+} from '@/lib/appointments/appointment-status-filter';
 
 export interface AppointmentsFilters {
   search: string;
@@ -26,21 +31,14 @@ interface AppointmentsFilterPanelProps {
   onTogglePanel: () => void;
 }
 
-const STATUS_OPTIONS = [
-  { value: 'scheduled', label: 'Scheduled', color: 'blue' },
-  { value: 'confirmed', label: 'Confirmed', color: 'green' },
-  { value: 'in-progress', label: 'In Progress', color: 'yellow' },
-  { value: 'completed', label: 'Completed', color: 'gray' },
-  { value: 'cancelled', label: 'Cancelled', color: 'red' },
-  { value: 'no-show', label: 'No Show', color: 'red' }
-];
-
-const PRIORITY_OPTIONS = [
-  { value: 'low', label: 'Low', color: 'green' },
-  { value: 'normal', label: 'Normal', color: 'blue' },
-  { value: 'high', label: 'High', color: 'yellow' },
-  { value: 'urgent', label: 'Urgent', color: 'red' }
-];
+const PRIORITY_COLORS: Record<string, string> = {
+  routine: 'green',
+  urgent: 'yellow',
+  emergency: 'red',
+  low: 'green',
+  normal: 'blue',
+  high: 'yellow',
+};
 
 export default function AppointmentsFilterPanel({
   filters,
@@ -51,6 +49,12 @@ export default function AppointmentsFilterPanel({
   showPanel,
   onTogglePanel
 }: AppointmentsFilterPanelProps) {
+  const { options: priorityOptions } = useMasterValues('appointment.priority');
+  const { options: statusMaster } = useMasterValues('appointment.status');
+  const statusOptions = useMemo(
+    () => resolveAppointmentStatusFilter(statusMaster),
+    [statusMaster],
+  );
   const [localFilters, setLocalFilters] = useState<AppointmentsFilters>(filters);
   const [activeFiltersCount, setActiveFiltersCount] = useState(0);
 
@@ -65,11 +69,11 @@ export default function AppointmentsFilterPanel({
     count += localFilters.doctors.length;
     count += localFilters.departments.length;
     count += localFilters.branches.length;
-    if (localFilters.statuses.length < STATUS_OPTIONS.length) count++;
-    if (localFilters.priorities.length < PRIORITY_OPTIONS.length) count++;
+    if (localFilters.statuses.length < statusOptions.length) count++;
+    if (priorityOptions.length > 0 && localFilters.priorities.length < priorityOptions.length) count++;
     if (localFilters.dateRange.start || localFilters.dateRange.end) count++;
     setActiveFiltersCount(count);
-  }, [localFilters]);
+  }, [localFilters, statusOptions.length, priorityOptions.length]);
 
   const handleSearchChange = (value: string) => {
     const updated = { ...localFilters, search: value };
@@ -147,8 +151,8 @@ export default function AppointmentsFilterPanel({
       doctors: [],
       departments: [],
       branches: [],
-      statuses: STATUS_OPTIONS.map(s => s.value),
-      priorities: PRIORITY_OPTIONS.map(p => p.value),
+      statuses: statusOptions.map((s) => s.value),
+      priorities: priorityOptions.map((p) => p.value),
       dateRange: { start: '', end: '' }
     };
     setLocalFilters(cleared);
@@ -265,19 +269,26 @@ export default function AppointmentsFilterPanel({
                 Status
               </label>
               <div className="flex flex-wrap gap-2">
-                {STATUS_OPTIONS.map(status => (
-                  <button
-                    key={status.value}
-                    onClick={() => toggleStatus(status.value)}
-                    className={`px-3 py-1 text-sm rounded-full transition-colors ${
-                      localFilters.statuses.includes(status.value)
-                        ? `bg-${status.color}-100 text-${status.color}-700 border-2 border-${status.color}-500`
-                        : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:border-gray-300'
-                    }`}
-                  >
-                    {status.label}
-                  </button>
-                ))}
+                {statusOptions.length === 0 ? (
+                  <span className="text-xs text-gray-400">No statuses in Master Data</span>
+                ) : (
+                  statusOptions.map((status) => {
+                    const color = statusChipColor(status);
+                    return (
+                      <button
+                        key={status.value}
+                        onClick={() => toggleStatus(status.value)}
+                        className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                          localFilters.statuses.includes(status.value)
+                            ? `bg-${color}-100 text-${color}-700 border-2 border-${color}-500`
+                            : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:border-gray-300'
+                        }`}
+                      >
+                        {status.label}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -288,19 +299,26 @@ export default function AppointmentsFilterPanel({
                 Priority
               </label>
               <div className="flex flex-wrap gap-2">
-                {PRIORITY_OPTIONS.map(priority => (
-                  <button
-                    key={priority.value}
-                    onClick={() => togglePriority(priority.value)}
-                    className={`px-3 py-1 text-sm rounded-full transition-colors ${
-                      localFilters.priorities.includes(priority.value)
-                        ? `bg-${priority.color}-100 text-${priority.color}-700 border-2 border-${priority.color}-500`
-                        : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:border-gray-300'
-                    }`}
-                  >
-                    {priority.label}
-                  </button>
-                ))}
+                {priorityOptions.length === 0 ? (
+                  <span className="text-xs text-gray-400">No priorities in Master Data</span>
+                ) : (
+                  priorityOptions.map((priority) => {
+                    const color = PRIORITY_COLORS[priority.value.toLowerCase()] ?? 'gray';
+                    return (
+                      <button
+                        key={priority.value}
+                        onClick={() => togglePriority(priority.value)}
+                        className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                          localFilters.priorities.includes(priority.value)
+                            ? `bg-${color}-100 text-${color}-700 border-2 border-${color}-500`
+                            : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:border-gray-300'
+                        }`}
+                      >
+                        {priority.label}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
 

@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Phone, X, Upload, Camera, Send, UserPlus, CheckCircle, CreditCard } from 'lucide-react';
 import { getApi } from '@/lib/api';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { defaultMasterCode } from '@/lib/master-data/appointment-master';
 import { useRouter } from 'next/navigation';
 import PhoneInput from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
@@ -96,7 +98,10 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
-  const [appointmentType, setAppointmentType] = useState('consultation');
+  const { options: appointmentTypeOptions } = useMasterValues('appointment.type');
+  const { options: consultationTypeOptions } = useMasterValues('appointment.consultation_type');
+  const [appointmentType, setAppointmentType] = useState('');
+  const [consultationType, setConsultationType] = useState('');
   const [notes, setNotes] = useState('');
   const [bookingAppointment, setBookingAppointment] = useState(false);
   
@@ -108,6 +113,15 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
   useEffect(() => {
     loadAllDoctors();
   }, []);
+
+  useEffect(() => {
+    if (!appointmentType && appointmentTypeOptions.length > 0) {
+      setAppointmentType(defaultMasterCode(appointmentTypeOptions, 'OPD'));
+    }
+    if (!consultationType && consultationTypeOptions.length > 0) {
+      setConsultationType(defaultMasterCode(consultationTypeOptions, 'FIRST_VISIT'));
+    }
+  }, [appointmentType, appointmentTypeOptions, consultationType, consultationTypeOptions]);
 
   // Auto-calculate age from DOB
   useEffect(() => {
@@ -433,11 +447,11 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
 
     try {
       // Determine duration based on appointment type
-      let durationMinutes = 30; // Default
-      if (appointmentType === 'consultation') durationMinutes = 30;
-      else if (appointmentType === 'followup') durationMinutes = 20;
-      else if (appointmentType === 'emergency') durationMinutes = 45;
-      else if (appointmentType === 'checkup') durationMinutes = 30;
+      let durationMinutes = 30;
+      const typeKey = appointmentType.toUpperCase();
+      if (typeKey === 'REVIEW' || typeKey === 'FOLLOW_UP') durationMinutes = 20;
+      else if (typeKey === 'EMERGENCY' || typeKey === 'TELECONSULT') durationMinutes = 45;
+      else if (typeKey === 'SURGERY') durationMinutes = 60;
       
       const appointmentData = {
         patientId: selectedPatient.id,
@@ -447,6 +461,7 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
         appointmentTime: selectedTime,
         durationMinutes: durationMinutes, // Required field
         appointmentType,
+        consultationType: consultationType || undefined,
         notes,
         status: 'Scheduled', // Changed from 'scheduled' to 'Scheduled' (capital S)
       };
@@ -841,12 +856,26 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
                     onChange={(e) => setAppointmentType(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="consultation">Consultation</option>
-                    <option value="followup">Follow-up</option>
-                    <option value="emergency">Emergency</option>
-                    <option value="checkup">Check-up</option>
+                    <option value="">{appointmentTypeOptions.length === 0 ? 'No types configured' : 'Select type'}</option>
+                    {appointmentTypeOptions.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Consultation Type</label>
+                <select
+                  value={consultationType}
+                  onChange={(e) => setConsultationType(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">{consultationTypeOptions.length === 0 ? 'No types configured' : 'Select consultation type'}</option>
+                  {consultationTypeOptions.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

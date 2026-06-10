@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   opdBillingApi, 
   OpdBill, 
@@ -67,6 +67,18 @@ import {
 import { format, parseISO } from 'date-fns';
 import { useAuthStore } from '@/lib/auth-store';
 import { toast } from 'sonner';
+import { usePaymentModes } from '@/hooks/use-payment-modes';
+import type { LucideIcon } from 'lucide-react';
+
+const PAYMENT_MODE_ICONS: Partial<Record<PaymentMode, LucideIcon>> = {
+  cash: Banknote,
+  card: CreditCard,
+  upi: Smartphone,
+  net_banking: Building2,
+  cheque: FileText,
+  insurance: Building2,
+  wallet: Banknote,
+};
 
 type TabType = 'generate' | 'pending' | 'paid' | 'rules';
 
@@ -89,6 +101,13 @@ export default function OpdBillingPage() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedBill, setSelectedBill] = useState<OpdBill | null>(null);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
+
+  useEffect(() => {
+    if (paymentModeChoices.length === 0) return;
+    if (!paymentModeChoices.some((m) => m.apiMode === paymentMode)) {
+      setPaymentMode(paymentModeChoices[0].apiMode);
+    }
+  }, [paymentModeChoices, paymentMode]);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDetails, setPaymentDetails] = useState({
     cardLastFour: '',
@@ -970,36 +989,21 @@ export default function OpdBillingPage() {
                   <SelectValue placeholder="Select payment mode" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">
-                    <div className="flex items-center gap-2">
-                      <Banknote className="h-4 w-4" />
-                      Cash
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="card">
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="h-4 w-4" />
-                      Card
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="upi">
-                    <div className="flex items-center gap-2">
-                      <Smartphone className="h-4 w-4" />
-                      UPI
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="net_banking">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4" />
-                      Net Banking
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="cheque">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      Cheque
-                    </div>
-                  </SelectItem>
+                  {paymentModesLoading ? (
+                    <SelectItem value="cash" disabled>Loading…</SelectItem>
+                  ) : (
+                    paymentModeChoices.map((choice) => {
+                      const Icon = PAYMENT_MODE_ICONS[choice.apiMode] ?? Banknote;
+                      return (
+                        <SelectItem key={choice.masterCode} value={choice.apiMode}>
+                          <div className="flex items-center gap-2">
+                            <Icon className="h-4 w-4" />
+                            {choice.label}
+                          </div>
+                        </SelectItem>
+                      );
+                    })
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -1268,11 +1272,11 @@ export default function OpdBillingPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="upi">UPI</SelectItem>
-                  <SelectItem value="net_banking">Net Banking</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
+                  {refundModeChoices.map((choice) => (
+                    <SelectItem key={choice.masterCode} value={choice.apiMode as RefundMode}>
+                      {choice.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

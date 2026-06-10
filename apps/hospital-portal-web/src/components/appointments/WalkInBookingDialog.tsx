@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,8 @@ import { ConflictDetection } from './ConflictDetection';
 import { Calendar, UserPlus, Clock, AlertCircle, CheckCircle, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { TimeSlot } from '@/lib/api/appointments-enhanced.api';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { defaultMasterCode } from '@/lib/master-data/appointment-master';
 
 interface WalkInBookingDialogProps {
   isOpen: boolean;
@@ -31,7 +33,7 @@ export interface WalkInBookingData {
   startTime: string;
   duration: number;
   appointmentType: 'walk-in';
-  priority: 'normal' | 'high' | 'urgent';
+  priority: string;
   reasonForVisit: string;
   notes?: string;
   isWalkIn: true;
@@ -43,9 +45,10 @@ export function WalkInBookingDialog({
   onSubmit,
   preSelectedDate
 }: WalkInBookingDialogProps) {
+  const { options: priorityOptions } = useMasterValues('appointment.priority');
   const [formData, setFormData] = useState<Partial<WalkInBookingData>>({
     appointmentType: 'walk-in',
-    priority: 'normal',
+    priority: '',
     isWalkIn: true,
     appointmentDate: preSelectedDate ? format(preSelectedDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
     duration: 15
@@ -54,6 +57,15 @@ export function WalkInBookingDialog({
   const [showSlotAvailability, setShowSlotAvailability] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!formData.priority && priorityOptions.length > 0) {
+      setFormData((prev) => ({
+        ...prev,
+        priority: defaultMasterCode(priorityOptions, 'ROUTINE'),
+      }));
+    }
+  }, [formData.priority, priorityOptions]);
 
   const handleSlotSelect = (slot: TimeSlot) => {
     setSelectedSlot(slot);
@@ -88,7 +100,7 @@ export function WalkInBookingDialog({
   const handleClose = () => {
     setFormData({
       appointmentType: 'walk-in',
-      priority: 'normal',
+      priority: defaultMasterCode(priorityOptions, 'ROUTINE'),
       isWalkIn: true,
       appointmentDate: format(new Date(), 'yyyy-MM-dd'),
       duration: 15
@@ -208,9 +220,13 @@ export function WalkInBookingDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="normal">Normal</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="urgent">Urgent</SelectItem>
+                      {priorityOptions.length === 0 ? (
+                        <SelectItem value="" disabled>No priorities configured</SelectItem>
+                      ) : (
+                        priorityOptions.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

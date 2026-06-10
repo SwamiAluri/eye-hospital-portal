@@ -152,7 +152,8 @@ namespace AuthService.Hubs
         {
             try
             {
-                var tenantId = Context.User?.FindFirstValue("TenantId");
+                var tenantId = Context.User?.FindFirstValue("TenantId")
+                            ?? Context.User?.FindFirstValue("tenant_id");
                 if (string.IsNullOrEmpty(tenantId))
                     return;
 

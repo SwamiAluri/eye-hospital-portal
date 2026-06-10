@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useEpTypes } from '@/hooks/use-lab-masters';
 
 interface ElectrophysiologyData {
   patientId: string;
@@ -44,6 +45,7 @@ interface ElectrophysiologyFormProps {
 }
 
 export default function ElectrophysiologyForm({ patientId, initialData, onSave, readOnly = false }: ElectrophysiologyFormProps) {
+  const { types: epTypes } = useEpTypes();
   const [formData, setFormData] = useState<ElectrophysiologyData>({
     patientId,
     examinationDate: initialData?.examinationDate || new Date(),
@@ -74,12 +76,21 @@ export default function ElectrophysiologyForm({ patientId, initialData, onSave, 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Test Type</label>
-            <select value={formData.testType} onChange={e => setFormData({ ...formData, testType: e.target.value as any })} disabled={readOnly} className="w-full px-3 py-2 border border-gray-300 rounded-md">
-              <option>ERG</option>
-              <option>VEP</option>
-              <option>EOG</option>
-              <option>Multifocal ERG</option>
-              <option>Pattern ERG</option>
+            <select
+              value={formData.testType}
+              onChange={(e) => setFormData({ ...formData, testType: e.target.value as ElectrophysiologyData['testType'] })}
+              disabled={readOnly}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            >
+              {epTypes.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+              {formData.testType &&
+                !epTypes.some((t) => t.value === formData.testType) && (
+                  <option value={formData.testType}>{formData.testType}</option>
+                )}
             </select>
           </div>
           <div>

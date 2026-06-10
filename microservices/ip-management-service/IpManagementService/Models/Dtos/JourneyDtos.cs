@@ -93,7 +93,11 @@ public record PatientJourneyDetailDto(
     string?  PatientName,
     string?  PatientGender,
     DateTime? PatientDob,
-    bool     OtDetailsSaved
+    bool     OtDetailsSaved,
+    bool     DischargeOverrideApplied,
+    bool     WhoSupervisorOverrideApplied,
+    IReadOnlyDictionary<string, bool>? ChecklistPhaseStatus,
+    IReadOnlyList<ChecklistGateWarningDto>? TransitionWarnings
 );
 
 // ─── Admit ────────────────────────────────────────────────────────────────────
@@ -111,7 +115,8 @@ public record AdmitPatientRequest(
     Guid?   PrimarySurgeonId,
     bool    OverrideStateCheck,
     bool    BypassFinancialClearance,
-    string? OverrideReason
+    string? OverrideReason,
+    bool    AcknowledgeWarnings = false
 );
 
 // ─── Ward Updation Modal (update ward, bed, doctor, nurse) ────────────────────
@@ -145,7 +150,10 @@ public record UpdateOtDetailsRequest(
 
 // ─── State transitions ────────────────────────────────────────────────────────
 
-public record TransitionRequest(string NewState, string? Reason = null);
+public record TransitionRequest(
+    string  NewState,
+    string? Reason = null,
+    bool    AcknowledgeWarnings = false);
 
 // ─── Emergency FC Modal ───────────────────────────────────────────────────────
 

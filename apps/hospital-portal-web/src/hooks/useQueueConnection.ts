@@ -6,19 +6,52 @@ import * as signalR from '@microsoft/signalr';
 import { useAuthStore } from '@/lib/auth-store';
 import toast from 'react-hot-toast';
 
+interface TokenCalledPayload {
+  id?: string;
+  tokenNumber?: string;
+  TokenNumber?: string;
+  roomNumber?: string;
+  RoomNumber?: string;
+  doctorName?: string;
+  DoctorName?: string;
+  queueType?: string;
+  QueueType?: string;
+  calledAt?: string;
+  CalledAt?: string;
+}
+
+interface QueueUpdatePayload {
+  tenantId?: string;
+  branchId?: string;
+  departmentId?: string;
+  queueType?: string;
+  QueueType?: string;
+  action?: string;
+  Action?: string;
+  tokenNumber?: string;
+  TokenNumber?: string;
+  visitId?: string;
+  VisitId?: string;
+  timestamp?: string;
+  Timestamp?: string;
+  [key: string]: unknown;
+}
+
 interface QueueUpdate {
   tenantId: string;
   branchId: string;
   departmentId?: string;
   queueType: string;
   timestamp: Date;
-  data: any;
+  data: QueueUpdatePayload;
 }
 
 interface PatientCalled {
   tenantId: string;
   branchId: string;
   patientName: string;
+  tokenNumber?: string;
+  roomNumber?: string;
   queueType: string;
   timestamp: Date;
 }
@@ -188,22 +221,71 @@ export function useQueueConnection({
         return;
       }
 
-      // Register event handlers
-      conn.on('QueueUpdated', (update: QueueUpdate) => {
-        console.log('Queue updated:', update);
-        onQueueUpdate?.(update);
+      const normalizeQueueUpdate = (payload: QueueUpdatePayload): QueueUpdate => ({
+        tenantId: String(payload.tenantId ?? ''),
+        branchId: String(payload.branchId ?? branchId ?? ''),
+        departmentId: payload.departmentId ? String(payload.departmentId) : undefined,
+        queueType: String(payload.queueType ?? payload.QueueType ?? queueType ?? ''),
+        timestamp: new Date(payload.timestamp ?? payload.Timestamp ?? Date.now()),
+        data: payload,
       });
 
-      conn.on('PatientCalled', (data: PatientCalled) => {
-        console.log('Patient called:', data);
-        onPatientCalled?.(data);
+      const handleQueueUpdate = (payload: QueueUpdatePayload | QueueUpdate) => {
+        const raw = ('data' in payload && payload.data ? payload.data : payload) as QueueUpdatePayload;
+        console.log('Queue update:', raw);
+        onQueueUpdate?.(normalizeQueueUpdate(raw));
+      };
+
+      const handlePatientCalled = (payload: TokenCalledPayload | PatientCalled) => {
+        const tokenNumber = String(
+          (payload as TokenCalledPayload).tokenNumber ??
+          (payload as TokenCalledPayload).TokenNumber ??
+          (payload as PatientCalled).tokenNumber ??
+          '',
+        );
+        const roomNumber = String(
+          (payload as TokenCalledPayload).roomNumber ??
+          (payload as TokenCalledPayload).RoomNumber ??
+          (payload as PatientCalled).roomNumber ??
+          '',
+        );
+        const doctorName = String(
+          (payload as TokenCalledPayload).doctorName ??
+          (payload as TokenCalledPayload).DoctorName ??
+          (payload as PatientCalled).patientName ??
+          tokenNumber,
+        );
+        const called: PatientCalled = {
+          tenantId: String((payload as PatientCalled).tenantId ?? ''),
+          branchId: String((payload as PatientCalled).branchId ?? branchId ?? ''),
+          patientName: doctorName,
+          tokenNumber: tokenNumber || undefined,
+          roomNumber: roomNumber || undefined,
+          queueType: String(
+            (payload as TokenCalledPayload).queueType ??
+            (payload as TokenCalledPayload).QueueType ??
+            (payload as PatientCalled).queueType ??
+            queueType ??
+            '',
+          ),
+          timestamp: new Date(),
+        };
+        console.log('Patient called:', called);
+        onPatientCalled?.(called);
         if (showToasts) {
-          toast(`📢 ${data.patientName} called to ${data.queueType}`, { 
+          toast(`📢 Token ${called.tokenNumber ?? called.patientName} called`, {
             icon: '🔔',
-            duration: 5000 
+            duration: 5000,
           });
         }
-      });
+      };
+
+      // Register event handlers (backend uses TokenCalled + QueueUpdate)
+      conn.on('QueueUpdated', handleQueueUpdate);
+      conn.on('QueueUpdate', handleQueueUpdate);
+      conn.on('QueueDisplayUpdated', handleQueueUpdate);
+      conn.on('PatientCalled', handlePatientCalled);
+      conn.on('TokenCalled', handlePatientCalled);
 
       conn.on('QueuePositionChanged', (data: QueuePositionChanged) => {
         console.log('Queue position changed:', data);

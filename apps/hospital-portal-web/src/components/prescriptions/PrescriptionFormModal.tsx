@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MedicationSearchCombobox } from './MedicationSearchCombobox';
 import { prescriptionApi } from '@/lib/api/prescriptions.api';
 import { useConfirmation } from '@/components/common/ConfirmationDialog';
+import { useMasterListOptions } from '@/hooks/use-master-list-options';
 
 interface Patient {
   id: string;
@@ -83,6 +84,10 @@ const frequencyOptions = [
 ];
 
 export function PrescriptionFormModal({ patients, onClose, onSuccess }: Props) {
+  const { labels: formLabels } = useMasterListOptions('pharmacy.drug_form', formOptions);
+  const { labels: routeLabels } = useMasterListOptions('pharmacy.drug_route', routeOptions);
+  const { labels: frequencyLabels } = useMasterListOptions('pharmacy.dosage_frequency', frequencyOptions);
+
   const [step, setStep] = useState(1);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [diagnosis, setDiagnosis] = useState('');
@@ -488,7 +493,7 @@ export function PrescriptionFormModal({ patients, onClose, onSuccess }: Props) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {formOptions.map((form) => (
+                      {formLabels.map((form) => (
                         <SelectItem key={form} value={form}>
                           {form}
                         </SelectItem>
@@ -511,7 +516,7 @@ export function PrescriptionFormModal({ patients, onClose, onSuccess }: Props) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {routeOptions.map((route) => (
+                      {routeLabels.map((route) => (
                         <SelectItem key={route} value={route}>
                           {route}
                         </SelectItem>
@@ -531,7 +536,7 @@ export function PrescriptionFormModal({ patients, onClose, onSuccess }: Props) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {frequencyOptions.map((freq) => (
+                      {frequencyLabels.map((freq) => (
                         <SelectItem key={freq} value={freq}>
                           {freq}
                         </SelectItem>

@@ -1,17 +1,13 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import {
-  listCoveragePackages,
-  listInsurancePayers,
-  type CoveragePackage,
-  type InsurancePayer,
-} from '@/lib/api/ccms/ccms-master-data.api';
+import { listCoveragePackages, type CoveragePackage } from '@/lib/api/ccms/ccms-master-data.api';
+import { useCcmsAlignedPayers } from '@/hooks/use-ccms-case';
 import { RefreshCw, AlertCircle, Package } from 'lucide-react';
 
 export default function CoveragePlansPage() {
+  const { selectable: payers } = useCcmsAlignedPayers();
   const [packages, setPackages] = useState<CoveragePackage[]>([]);
-  const [payers, setPayers] = useState<InsurancePayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payerFilter, setPayerFilter] = useState<string>('');
@@ -20,8 +16,8 @@ export default function CoveragePlansPage() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([listCoveragePackages(payerFilter || undefined), listInsurancePayers()])
-      .then(([pkgs, pays]) => { setPackages(pkgs); setPayers(pays); })
+    listCoveragePackages(payerFilter || undefined)
+      .then((pkgs) => setPackages(pkgs))
       .catch(e => setError(e?.message ?? 'Failed to load coverage packages'))
       .finally(() => setLoading(false));
   }, [payerFilter]);
@@ -68,7 +64,7 @@ export default function CoveragePlansPage() {
           >
             <option value="">All Payers</option>
             {payers.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.providerCode} value={p.ccmsId ?? ''}>{p.name}</option>
             ))}
           </select>
         </div>

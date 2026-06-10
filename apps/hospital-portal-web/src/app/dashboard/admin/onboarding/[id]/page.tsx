@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/onboarding.api';
 import { getApi } from '@/lib/api';
 import { useConfirmation } from '@/components/common/ConfirmationDialog';
+import { useChecklistDefaults } from '@/hooks/use-system-masters';
 
 interface Employee {
   id: string;
@@ -31,6 +32,7 @@ export default function OnboardingDetailsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'checklist' | 'access'>('overview');
+  const { items: defaultChecklistItems } = useChecklistDefaults();
 
   useEffect(() => {
     loadData();
@@ -346,6 +348,21 @@ export default function OnboardingDetailsPage() {
       {/* Checklist Tab */}
       {activeTab === 'checklist' && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          {checklistItems.length === 0 && defaultChecklistItems.length > 0 && (
+            <div className="px-6 py-4 border-b border-gray-100 bg-slate-50">
+              <p className="text-sm font-medium text-gray-700 mb-2">Default checklist template (master)</p>
+              <ul className="flex flex-wrap gap-2">
+                {defaultChecklistItems.map((item) => (
+                  <li
+                    key={item}
+                    className="text-xs px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-600"
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>

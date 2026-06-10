@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { patientApi } from '@/lib/api/patients.api';
 import RegistrationCardPreview from '@/components/patients/RegistrationCardPreview';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { MasterValuesSelect } from '@/components/master-data/MasterValuesSelect';
 import { X } from 'lucide-react';
 
 interface NewPatientModalProps {
@@ -85,6 +87,7 @@ interface PatientFormData {
 }
 
 export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProps) {
+  const { options: insuranceProviderOptions } = useMasterValues('insurance.provider');
 
   const [formData, setFormData] = useState<PatientFormData>({
     // Phase 6: Extended Demographics
@@ -588,19 +591,13 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Title
                   </label>
-                  <select
+                  <MasterValuesSelect
+                    entityType="patient.title"
+                    optionValue="label"
                     value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Select Title</option>
-                    <option value="Dr">Dr.</option>
-                    <option value="Mr">Mr.</option>
-                    <option value="Ms">Ms.</option>
-                    <option value="Mrs">Mrs.</option>
-                    <option value="Master">Master</option>
-                    <option value="Miss">Miss</option>
-                  </select>
+                    onChange={(v) => setFormData({ ...formData, title: v })}
+                    placeholder="Select Title"
+                  />
                 </div>
 
                 <div className="col-span-2">
@@ -692,9 +689,10 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                     onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
+                    <option value="">Select Gender</option>
+                    {genderOptions.map((o) => (
+                      <option key={o.value} value={o.label}>{o.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -738,51 +736,26 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Nationality
                     </label>
-                    <select
+                    <MasterValuesSelect
+                      entityType="patient.nationality"
+                      optionValue="label"
                       value={formData.nationality}
-                      onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Select Nationality</option>
-                      <option value="Indian">Indian</option>
-                      <option value="American">American</option>
-                      <option value="British">British</option>
-                      <option value="Canadian">Canadian</option>
-                      <option value="Australian">Australian</option>
-                      <option value="German">German</option>
-                      <option value="French">French</option>
-                      <option value="Chinese">Chinese</option>
-                      <option value="Japanese">Japanese</option>
-                      <option value="Other">Other</option>
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, nationality: v })}
+                      placeholder="Select Nationality"
+                    />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Occupation
                     </label>
-                    <select
+                    <MasterValuesSelect
+                      entityType="patient.occupation"
+                      optionValue="label"
                       value={formData.occupation}
-                      onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Select Occupation</option>
-                      <option value="Student">Student</option>
-                      <option value="Homemaker">Homemaker</option>
-                      <option value="Retired">Retired</option>
-                      <option value="Unemployed">Unemployed</option>
-                      <option value="Business Owner">Business Owner</option>
-                      <option value="Self Employed">Self Employed</option>
-                      <option value="Private Sector">Private Sector</option>
-                      <option value="Government Employee">Government Employee</option>
-                      <option value="Healthcare Professional">Healthcare Professional</option>
-                      <option value="Teacher/Professor">Teacher/Professor</option>
-                      <option value="Engineer">Engineer</option>
-                      <option value="IT Professional">IT Professional</option>
-                      <option value="Skilled Labor">Skilled Labor</option>
-                      <option value="Agriculture">Agriculture</option>
-                      <option value="Other">Other</option>
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, occupation: v })}
+                      placeholder="Select Occupation"
+                    />
                   </div>
                 </div>
 
@@ -791,40 +764,26 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Marital Status
                     </label>
-                    <select
+                    <MasterValuesSelect
+                      entityType="patient.marital_status"
+                      optionValue="label"
                       value={formData.maritalStatus}
-                      onChange={(e) => setFormData({ ...formData, maritalStatus: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Select Status</option>
-                      <option value="Single">Single</option>
-                      <option value="Married">Married</option>
-                      <option value="Divorced">Divorced</option>
-                      <option value="Widowed">Widowed</option>
-                      <option value="Separated">Separated</option>
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, maritalStatus: v })}
+                      placeholder="Select Status"
+                    />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Religion
                     </label>
-                    <select
+                    <MasterValuesSelect
+                      entityType="patient.religion"
+                      optionValue="label"
                       value={formData.religion}
-                      onChange={(e) => setFormData({ ...formData, religion: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Select Religion (Optional)</option>
-                      <option value="Hindu">Hindu</option>
-                      <option value="Muslim">Muslim</option>
-                      <option value="Christian">Christian</option>
-                      <option value="Sikh">Sikh</option>
-                      <option value="Buddhist">Buddhist</option>
-                      <option value="Jain">Jain</option>
-                      <option value="Jewish">Jewish</option>
-                      <option value="Other">Other</option>
-                      <option value="Prefer not to say">Prefer not to say</option>
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, religion: v })}
+                      placeholder="Select Religion (Optional)"
+                    />
                   </div>
                 </div>
 
@@ -1002,21 +961,13 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Blood Group
                   </label>
-                  <select
+                  <MasterValuesSelect
+                    entityType="patient.blood_group"
+                    optionValue="label"
                     value={formData.bloodGroup}
-                    onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Select Blood Group</option>
-                    <option value="A+">A+</option>
-                    <option value="A-">A-</option>
-                    <option value="B+">B+</option>
-                    <option value="B-">B-</option>
-                    <option value="AB+">AB+</option>
-                    <option value="AB-">AB-</option>
-                    <option value="O+">O+</option>
-                    <option value="O-">O-</option>
-                  </select>
+                    onChange={(v) => setFormData({ ...formData, bloodGroup: v })}
+                    placeholder="Select Blood Group"
+                  />
                 </div>
 
                 <div>
@@ -1245,21 +1196,16 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     ID Proof Type
                   </label>
-                  <select
+                  <MasterValuesSelect
+                    entityType="patient.id_proof_type"
                     value={formData.idProofType}
-                    onChange={(e) => setFormData({ ...formData, idProofType: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Select Primary ID Type</option>
-                    <option value="Aadhaar">Aadhaar Card</option>
-                    <option value="NationalID">National ID</option>
-                    <option value="Passport">Passport</option>
-                    <option value="DrivingLicense">Driving License</option>
-                  </select>
+                    onChange={(v) => setFormData({ ...formData, idProofType: v })}
+                    placeholder="Select Primary ID Type"
+                  />
                 </div>
 
                 {/* Conditional ID Number Field */}
-                {formData.idProofType === 'Aadhaar' && (
+                {formData.idProofType === 'AADHAAR' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Aadhaar Number (India)
@@ -1287,7 +1233,7 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                   </div>
                 )}
 
-                {formData.idProofType === 'NationalID' && (
+                {formData.idProofType === 'PAN' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       National ID Number
@@ -1302,7 +1248,7 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                   </div>
                 )}
 
-                {formData.idProofType === 'Passport' && (
+                {formData.idProofType === 'PASSPORT' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Passport Number
@@ -1317,7 +1263,7 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                   </div>
                 )}
 
-                {formData.idProofType === 'DrivingLicense' && (
+                {formData.idProofType === 'DL' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Driving License Number
@@ -1427,21 +1373,13 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Relationship
                     </label>
-                    <select
+                    <MasterValuesSelect
+                      entityType="patient.relationship"
+                      optionValue="label"
                       value={formData.guardianRelationship}
-                      onChange={(e) => setFormData({ ...formData, guardianRelationship: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Select Relationship</option>
-                      <option value="Parent">Parent</option>
-                      <option value="Legal Guardian">Legal Guardian</option>
-                      <option value="Grandparent">Grandparent</option>
-                      <option value="Sibling">Sibling</option>
-                      <option value="Spouse">Spouse</option>
-                      <option value="Child">Child</option>
-                      <option value="Caregiver">Caregiver</option>
-                      <option value="Other">Other</option>
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, guardianRelationship: v })}
+                      placeholder="Select Relationship"
+                    />
                   </div>
                 </div>
 
@@ -1586,19 +1524,13 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Relationship
                   </label>
-                  <select
+                  <MasterValuesSelect
+                    entityType="patient.relationship"
+                    optionValue="label"
                     value={formData.emergencyContactRelation}
-                    onChange={(e) => setFormData({ ...formData, emergencyContactRelation: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Select Relationship</option>
-                    <option value="Spouse">Spouse</option>
-                    <option value="Parent">Parent</option>
-                    <option value="Child">Child</option>
-                    <option value="Sibling">Sibling</option>
-                    <option value="Friend">Friend</option>
-                    <option value="Other">Other</option>
-                  </select>
+                    onChange={(v) => setFormData({ ...formData, emergencyContactRelation: v })}
+                    placeholder="Select Relationship"
+                  />
                 </div>
               </div>
 
@@ -1635,12 +1567,16 @@ export default function NewPatientModal({ isOpen, onClose }: NewPatientModalProp
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Insurance Provider
                 </label>
-                <input
-                  type="text"
+                <select
                   value={formData.insuranceProvider}
                   onChange={(e) => setFormData({ ...formData, insuranceProvider: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                />
+                >
+                  <option value="">Select Insurance Provider</option>
+                  {insuranceProviderOptions.map((o) => (
+                    <option key={o.value} value={o.label}>{o.label}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

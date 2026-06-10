@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Noto_Sans_Telugu } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
 import { ThemeProvider } from '@/lib/theme/ThemeProvider';
@@ -10,6 +10,13 @@ const inter = Inter({
   display: 'swap',
   weight: ['300', '400', '500', '600', '700'],
   variable: '--font-inter',
+});
+
+const notoSansTelugu = Noto_Sans_Telugu({
+  subsets: ['telugu'],
+  display: 'swap',
+  weight: ['400', '600'],
+  variable: '--font-telugu',
 });
 
 export const metadata: Metadata = {
@@ -35,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={inter.variable}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${notoSansTelugu.variable}`}>
       <head>
         <meta name="color-scheme" content="light dark" />
       </head>

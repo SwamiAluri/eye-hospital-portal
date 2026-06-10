@@ -14,7 +14,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Eye, Check, Zap, Info, ChevronDown, ChevronUp, IndianRupee } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
-import { useIolOptions, useSurgeryTypesWithPricing } from '@/hooks/use-master-data';
+import {
+  useClinicalIolWithPricing,
+  useCounsellorProcedureVariants,
+} from '@/hooks/use-clinical-catalog-master';
+import { buildCounsellorIolDtos } from '@/lib/master-data/clinical-catalog-master';
 import { useAuthStore } from '@/lib/auth-store';
 import type { RecommendedProcedureItem } from '@/lib/api/master-data.api';
 import type { IolMasterDto, FlatVariantDto } from '@/lib/api/service-catalog.api';
@@ -117,7 +121,7 @@ function filterByCategory(types: FlatVariantDto[], tab: SurgeryCategoryTab): Fla
 // ─── IOL Card ────────────────────────────────────────────────────────────────
 
 function IOLCard({ iol, selected, onSelect }: { iol: IolMasterDto; selected: boolean; onSelect: () => void }) {
-  const price = iol.defaultPrice;
+  const price = iol.price ?? (iol as IolMasterDto & { defaultPrice?: number }).defaultPrice ?? 0;
   return (
     <button
       type="button"
@@ -492,17 +496,17 @@ function FreeBrowsePanel({
       : 'per-eye'
     : 'per-eye';
 
-  // Fetch all surgery types once — filter client-side per tab switch (no re-fetch)
-  const { data: stData, isLoading: stLoading } = useSurgeryTypesWithPricing();
-  const allSurgeryTypes = stData?.data ?? [];
+  // B2.3 — catalog + master join (no legacy master-data.api surgery types)
+  const { variants: allSurgeryTypes, loading: stLoading } = useCounsellorProcedureVariants(true);
   const visibleTypes = filterByCategory(allSurgeryTypes, categoryTab);
 
   // IOL catalog — only when Cataract + hasIolOptions procedure is selected
   const showIolPicker = !!selectedProcedure?.hasIolOptions && selectedProcedure.categoryCode.toLowerCase() === 'cataract';
-  const { data: iolData, isLoading: iolLoading } = useIolOptions(
-    showIolPicker ? selectedProcedure?.id : undefined
+  const { items: iolItems, loading: iolLoading } = useClinicalIolWithPricing(
+    showIolPicker ? selectedProcedure?.id : undefined,
   );
-  const filteredIols = filterIOLsByTab(iolData ?? [], iolTypeFilter);
+  const iolData = showIolPicker ? buildCounsellorIolDtos(iolItems) : [];
+  const filteredIols = filterIOLsByTab(iolData, iolTypeFilter);
 
   // Synthetic key for the selected procedure + eye
   const synthKey = selectedProcedure ? `${procEye}-${selectedProcedure.id}` : null;
@@ -510,7 +514,9 @@ function FreeBrowsePanel({
   const canConfirm = !!selectedProcedure && (!showIolPicker || !!synthSel?.confirmed);
 
   // Pricing
-  const procPrice = selectedProcedure ? selectedProcedure.defaultPrice : null;
+  const procPrice = selectedProcedure
+    ? (selectedProcedure.price ?? (selectedProcedure as FlatVariantDto & { defaultPrice?: number }).defaultPrice ?? null)
+    : null;
   const procTotal = procPrice != null
     ? (eyeBehavior === 'per-eye' && procEye === 'Both' ? procPrice * 2 : procPrice)
     : null;
@@ -554,7 +560,7 @@ function FreeBrowsePanel({
         ) : (
           <div className="space-y-1.5">
             {visibleTypes.map(st => {
-              const price = st.defaultPrice;
+              const price = st.price ?? (st as FlatVariantDto & { defaultPrice?: number }).defaultPrice ?? 0;
               const isSelected = selectedProcedure?.id === st.id;
               return (
                 <button
@@ -744,7 +750,7 @@ export default function IOLRecommendationWidget({
   );
 
   const handleIOLSelect = (key: string, iol: IolMasterDto | null, eyeSelection: EyeSelection) => {
-    const unitPrice = iol ? (iol.defaultPrice ?? null) : null;
+    const unitPrice = iol ? (iol.price ?? (iol as IolMasterDto & { defaultPrice?: number }).defaultPrice ?? null) : null;
     const next: ProcedureIOLState = {
       ...iolState,
       [key]: iol

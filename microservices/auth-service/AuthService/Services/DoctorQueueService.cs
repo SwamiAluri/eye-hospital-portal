@@ -12,12 +12,18 @@ public class DoctorQueueService : IDoctorQueueService
     private readonly AppDbContext _context;
     private readonly ILogger<DoctorQueueService> _logger;
     private readonly IHubContext<QueueHub> _hubContext;
+    private readonly IQueueDisplayNotifier _queueDisplayNotifier;
 
-    public DoctorQueueService(AppDbContext context, ILogger<DoctorQueueService> logger, IHubContext<QueueHub> hubContext)
+    public DoctorQueueService(
+        AppDbContext context,
+        ILogger<DoctorQueueService> logger,
+        IHubContext<QueueHub> hubContext,
+        IQueueDisplayNotifier queueDisplayNotifier)
     {
         _context = context;
         _logger = logger;
         _hubContext = hubContext;
+        _queueDisplayNotifier = queueDisplayNotifier;
     }
 
     public async Task<List<QueueItem>> GetDoctorQueueAsync(Guid tenantId, string? date = null)
@@ -187,6 +193,7 @@ public class DoctorQueueService : IDoctorQueueService
             queueItem.UpdatedAt = DateTime.UtcNow;
             
             await _context.SaveChangesAsync();
+            await _queueDisplayNotifier.NotifyBranchDisplayUpdatedAsync(tenantId, queueItem.BranchId);
 
             // Notify via SignalR
             var patientName = queueItem.Patient != null 
@@ -231,6 +238,7 @@ public class DoctorQueueService : IDoctorQueueService
             queueItem.UpdatedAt = DateTime.UtcNow;
             
             await _context.SaveChangesAsync();
+            await _queueDisplayNotifier.NotifyBranchDisplayUpdatedAsync(tenantId, queueItem.BranchId);
 
             // Notify via SignalR
             await _hubContext.Clients.Group($"branch-{queueItem.BranchId}")
@@ -269,6 +277,7 @@ public class DoctorQueueService : IDoctorQueueService
             queueItem.UpdatedAt = DateTime.UtcNow;
             
             await _context.SaveChangesAsync();
+            await _queueDisplayNotifier.NotifyBranchDisplayUpdatedAsync(tenantId, queueItem.BranchId);
 
             _logger.LogInformation("Patient {TokenNumber} skipped. Reason: {Reason}", 
                 queueItem.TokenNumber, reason);

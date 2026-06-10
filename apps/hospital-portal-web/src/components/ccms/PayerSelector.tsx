@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { type InsurancePayer } from '../../lib/api/ccms/ccms-master-data.api';
-import { useCcmsMasterData } from '@/hooks/use-ccms-case';
+import { useCcmsAlignedPayers } from '@/hooks/use-ccms-case';
 
 interface Props {
   value: string;
@@ -10,23 +10,22 @@ interface Props {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
-  /** Fallback list used when the CCMS master-data endpoint is unavailable */
-  fallbackPayers?: InsurancePayer[];
+  /** When true, only payers with a CCMS row are listed (default). */
+  configuredOnly?: boolean;
 }
 
 export function PayerSelector({
   value,
   onChange,
-  placeholder = 'Select insurer / TPA…',
+  placeholder = 'Select insurer…',
   disabled,
   className,
-  fallbackPayers = [],
+  configuredOnly = true,
 }: Props) {
-  const { payers: cachedPayers, isLoading } = useCcmsMasterData();
-  const payers = cachedPayers.length > 0 ? cachedPayers : fallbackPayers;
-  const usedFallback = cachedPayers.length === 0 && fallbackPayers.length > 0;
+  const { aligned, selectable, isLoading } = useCcmsAlignedPayers();
+  const options = configuredOnly ? selectable : aligned;
 
-  if (isLoading && payers.length === 0) {
+  if (isLoading && options.length === 0) {
     return (
       <select disabled className={`${className} opacity-50`}>
         <option>Loading payers…</option>
@@ -37,22 +36,25 @@ export function PayerSelector({
   return (
     <select
       value={value}
-      onChange={e => {
-        const selected = payers.find(p => p.id === e.target.value) ?? null;
-        onChange(e.target.value, selected);
+      onChange={(e) => {
+        const entry = options.find((p) => p.ccmsId === e.target.value) ?? null;
+        onChange(e.target.value, entry?.ccmsPayer ?? null);
       }}
-      disabled={disabled}
+      disabled={disabled || options.length === 0}
       className={className}
     >
-      <option value="">{placeholder}</option>
-      {payers.map(p => (
-        <option key={p.id} value={p.id}>
-          {p.name}{p.shortCode ? ` (${p.shortCode})` : ''}
+      <option value="">{options.length === 0 ? 'No insurers configured' : placeholder}</option>
+      {options.map((p) => (
+        <option
+          key={p.providerCode}
+          value={p.ccmsId ?? ''}
+          disabled={!p.selectable}
+        >
+          {p.name}
+          {p.ccmsPayer?.shortCode ? ` (${p.ccmsPayer.shortCode})` : ''}
+          {!p.selectable ? ' — not configured in CCMS' : ''}
         </option>
       ))}
-      {usedFallback && payers.length > 0 && (
-        <option disabled value="">── CCMS offline — showing local list ──</option>
-      )}
     </select>
   );
 }

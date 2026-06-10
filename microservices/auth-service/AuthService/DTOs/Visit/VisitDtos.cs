@@ -118,6 +118,9 @@ public class SendToRequestDto
     public Guid? AssignToUserId { get; set; }
     
     public string? Reason { get; set; }
+
+    /// <summary>Routing reason code from master data (e.g. INITIAL_REFRACTION, POST_INVESTIGATION).</summary>
+    public string? ReasonCode { get; set; }
 }
 
 public class VisitQueueDto

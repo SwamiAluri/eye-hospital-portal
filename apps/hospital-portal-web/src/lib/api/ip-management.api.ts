@@ -87,6 +87,8 @@ export interface PatientJourneyRowDto {
 
 export interface PatientJourneyDetailDto extends PatientJourneyRowDto {
   branchId: string;
+  patientId: string;
+  otFinalizeScheduleId: string | null;
   // OT / Staff
   anesthesiologistName: string | null;  // legacy alias
   anaesthetistName: string | null;
@@ -122,6 +124,10 @@ export interface PatientJourneyDetailDto extends PatientJourneyRowDto {
   emergencyFcReason: string | null;
   totalBilled: number;
   dischargeOverrideReason: string | null;
+  dischargeOverrideApplied?: boolean;
+  whoSupervisorOverrideApplied?: boolean;
+  checklistPhaseStatus?: Record<string, boolean> | null;
+  transitionWarnings?: ChecklistGateWarningDto[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -139,6 +145,7 @@ export interface AdmitPatientRequest {
   overrideStateCheck?: boolean;
   bypassFinancialClearance?: boolean;
   overrideReason?: string;
+  acknowledgeWarnings?: boolean;
 }
 
 export interface UpdateWardAssignmentRequest {
@@ -178,9 +185,24 @@ export interface IolCatalogItemDto {
   productCode: string | null;
 }
 
+export interface ChecklistGateWarningDto {
+  code: string;
+  message: string;
+  severity: 'warn' | 'block';
+  canOverride: boolean;
+}
+
+export interface ChecklistGateResultDto {
+  transition: string;
+  canProceed: boolean;
+  requiresOverride: boolean;
+  warnings: ChecklistGateWarningDto[];
+}
+
 export interface TransitionRequest {
   newState: string;
   reason?: string;
+  acknowledgeWarnings?: boolean;
 }
 
 export interface EmergencyFcRequest {
@@ -512,6 +534,517 @@ export interface IpIoTypeDto {
   displayOrder: number;
 }
 
+// ─── Counsellor Outpatient Safety Checklist (S0) ─────────────────────────────
+
+export interface CounsellorOutpatientItemDto {
+  itemId: string;
+  itemKey: string;
+  itemLabel: string;
+  description: string | null;
+  displayOrder: number;
+  isCompleted: boolean;
+  isBypassed: boolean;
+  notes: string | null;
+  completedAt: string | null;
+  completedByRole?: string | null;
+}
+
+export interface CounsellorOutpatientChecklistDto {
+  counselingSessionId: string;
+  totalItems: number;
+  completedItems: number;
+  items: CounsellorOutpatientItemDto[];
+}
+
+export interface SaveCounsellorCompletionRequest {
+  isCompleted: boolean;
+  isBypassed?: boolean;
+  bypassReason?: string;
+  notes?: string;
+}
+
+// ─── Ward Checklist (S1 — Form 2) ────────────────────────────────────────────
+
+export interface WardChecklistItemDto {
+  itemId: string;
+  itemKey: string;
+  itemLabel: string;
+  description: string | null;
+  displayOrder: number;
+  isCompleted: boolean;
+  isBypassed: boolean;
+  notes: string | null;
+  completedAt: string | null;
+  source: string | null;
+  completedByRole?: string | null;
+}
+
+export interface WardChecklistDto {
+  journeyId: string;
+  totalItems: number;
+  completedItems: number;
+  financialState: string;
+  balanceDue: number | null;
+  emergencyFcApplied: boolean;
+  wardCheckInAt: string | null;
+  informedOtTeamAt: string | null;
+  items: WardChecklistItemDto[];
+}
+
+export interface SaveWardChecklistCompletionRequest {
+  isCompleted: boolean;
+  isBypassed?: boolean;
+  bypassReason?: string;
+  notes?: string;
+}
+
+// ─── Medication Log (S2 — Form 4 pre-op) ─────────────────────────────────────
+
+export interface MedicationDoseDto {
+  id: string;
+  doseNumber: number;
+  administeredAt: string | null;
+  administeredByUserId: string | null;
+  notes: string | null;
+}
+
+export interface MedicationDrugDto {
+  medicineName: string;
+  medicationId: string | null;
+  displayOrder: number;
+  doses: MedicationDoseDto[];
+}
+
+export interface MedicationLogDto {
+  journeyId: string;
+  anaesthesiaType: string | null;
+  xylocaineSensitivityResult: string | null;
+  surgeryNotes: string | null;
+  sentToOtAt: string | null;
+  receivedFromOtAt: string | null;
+  wardCheckoutAt: string | null;
+  drugs: MedicationDrugDto[];
+}
+
+export interface AddMedicationDrugRequest {
+  medicineName: string;
+  medicationId?: string;
+  doseCount?: number;
+}
+
+export interface SaveMedicationDoseRequest {
+  administeredAt?: string;
+  notes?: string;
+  clearAdministration?: boolean;
+}
+
+export interface UpdateMedicationLogMetaRequest {
+  anaesthesiaType?: string;
+  xylocaineSensitivityResult?: string;
+  surgeryNotes?: string;
+}
+
+// ─── Ward Post-Op Checklist (S2 — Form 4 post-op) ────────────────────────────
+
+export interface IolStickerChecksDto {
+  barcodeScan: boolean;
+  stickerInFile: boolean;
+  inventoryMatch: boolean;
+}
+
+export interface WardInvestigationItemDto {
+  itemId: string;
+  itemKey: string;
+  itemLabel: string;
+  description: string | null;
+  displayOrder: number;
+  isCompleted: boolean;
+  isBypassed: boolean;
+  notes: string | null;
+  completedAt: string | null;
+  source: string | null;
+  appliesToJourney: boolean;
+}
+
+export interface WardInvestigationChecklistDto {
+  journeyId: string;
+  totalItems: number;
+  completedItems: number;
+  anaesthesiaType: string | null;
+  items: WardInvestigationItemDto[];
+}
+
+export interface WardPostOpItemDto {
+  itemId: string;
+  itemKey: string;
+  itemLabel: string;
+  description: string | null;
+  formCode: string | null;
+  displayOrder: number;
+  isCompleted: boolean;
+  isBypassed: boolean;
+  notes: string | null;
+  completedAt: string | null;
+  isBlockingEffective?: boolean;
+}
+
+export interface WardPostOpChecklistDto {
+  journeyId: string;
+  totalItems: number;
+  completedItems: number;
+  sentToOtAt: string | null;
+  receivedFromOtAt: string | null;
+  wardCheckoutAt: string | null;
+  iolStickerChecks: IolStickerChecksDto;
+  items: WardPostOpItemDto[];
+}
+
+export interface SaveWardPostOpCompletionRequest {
+  isCompleted: boolean;
+  isBypassed?: boolean;
+  bypassReason?: string;
+  notes?: string;
+}
+
+// ─── OT Surgical Safety (S3 — Form 1 OT) ─────────────────────────────────────
+
+export interface SurgicalSafetyGateDto {
+  billingGateSatisfied: boolean;
+  billingVerifiedAuto: boolean;
+  emergencyFcApplied: boolean;
+  balanceDue: number | null;
+  financialState: string;
+  beforeAnaesthesiaComplete: boolean;
+  whoTimeoutComplete: boolean;
+  afterSurgeryComplete: boolean;
+  warnings: string[];
+}
+
+export interface BeforeAnaesthesiaSectionDto {
+  identityConfirmed: boolean;
+  eyeRe: boolean;
+  eyeLe: boolean;
+  topicalAntibioticsUsed: boolean;
+  surgeryType: string | null;
+  billingVerifiedOverride: boolean;
+  ascanVerified: boolean;
+  allergyKnown: boolean;
+  allergyDetails: string | null;
+  consentFormChecked: boolean;
+  fitnessConfirmed: boolean;
+  completedAt: string | null;
+  completedByRole?: string | null;
+}
+
+export interface WhoTimeoutSectionDto {
+  patientIdentity: boolean;
+  correctEye: boolean;
+  correctProcedure: boolean;
+  consentConfirmed: boolean;
+  surgeonUserId: string | null;
+  nurseUserId: string | null;
+  completedAt: string | null;
+  completedByRole?: string | null;
+}
+
+export interface AfterSurgerySectionDto {
+  procedureNameRecorded: boolean;
+  postopMedicationInstructed: boolean;
+  postopPositionInstructed: boolean;
+  completedAt: string | null;
+  completedByRole?: string | null;
+}
+
+export interface SurgicalSafetyChecklistDto {
+  journeyId: string;
+  eyeOperated: string | null;
+  procedureName: string | null;
+  beforeAnaesthesia: BeforeAnaesthesiaSectionDto;
+  whoTimeout: WhoTimeoutSectionDto;
+  afterSurgery: AfterSurgerySectionDto;
+  gates: SurgicalSafetyGateDto;
+}
+
+export interface SaveBeforeAnaesthesiaRequest {
+  identityConfirmed: boolean;
+  eyeRe: boolean;
+  eyeLe: boolean;
+  topicalAntibioticsUsed: boolean;
+  surgeryType?: string;
+  billingVerifiedOverride: boolean;
+  ascanVerified: boolean;
+  allergyKnown: boolean;
+  allergyDetails?: string;
+  consentFormChecked: boolean;
+  fitnessConfirmed: boolean;
+}
+
+export interface SaveWhoTimeoutRequest {
+  patientIdentity: boolean;
+  correctEye: boolean;
+  correctProcedure: boolean;
+  consentConfirmed: boolean;
+  surgeonUserId?: string;
+  nurseUserId?: string;
+}
+
+export interface SaveAfterSurgeryRequest {
+  procedureNameRecorded: boolean;
+  postopMedicationInstructed: boolean;
+  postopPositionInstructed: boolean;
+}
+
+// ─── PAC Assessment (S4 — Form 3) ─────────────────────────────────────────────
+
+export interface PacInvestigationsDto {
+  hgb?: string | null;
+  fbs?: string | null;
+  serumCreatinine?: string | null;
+  hiv?: string | null;
+  hBsAg?: string | null;
+  hcv?: string | null;
+  xray?: string | null;
+  ecg?: string | null;
+  echo2d?: string | null;
+  bloodGroup?: string | null;
+  others?: string | null;
+}
+
+export interface PacSystemicReviewDto {
+  cvs?: string | null;
+  respiratory?: string | null;
+  renal?: string | null;
+  hepaticGi?: string | null;
+  diabetes?: string | null;
+  cns?: string | null;
+  others?: string | null;
+}
+
+export interface PacAirwayExamDto {
+  mallampati?: number | null;
+  mouthOpening?: string | null;
+  mentohyoid?: string | null;
+  neck?: string | null;
+  teeth?: string | null;
+  lungs?: string | null;
+  heart?: string | null;
+  venousAccess?: string | null;
+}
+
+export interface PacMedicationLineDto {
+  name: string;
+  dose?: string | null;
+  frequency?: string | null;
+}
+
+export interface PacAssessmentDto {
+  journeyId: string;
+  patientName: string | null;
+  uhid: string | null;
+  procedureName: string | null;
+  eyeOperated: string | null;
+  assessedAt: string | null;
+  preOpDiagnosis: string | null;
+  bp: string | null;
+  hr: number | null;
+  physicalStatusAsa: number | null;
+  investigations: PacInvestigationsDto;
+  allergies: string | null;
+  systemicReview: PacSystemicReviewDto;
+  pastAnaestheticHistory: string | null;
+  airwayExam: PacAirwayExamDto;
+  anaesthesiaPlan: string | null;
+  periOpExplained: boolean;
+  consentType: string | null;
+  currentMedications: PacMedicationLineDto[];
+  preOpConsultations: string | null;
+  medicationsAdvised: string | null;
+  investigationsAdvised: string | null;
+  completedByDesignation: string | null;
+  assessmentStatus: string;
+  completedAt: string | null;
+  isComplete: boolean;
+}
+
+export interface SavePacAssessmentRequest {
+  assessedAt?: string | null;
+  preOpDiagnosis?: string | null;
+  bp?: string | null;
+  hr?: number | null;
+  physicalStatusAsa?: number | null;
+  investigations?: PacInvestigationsDto | null;
+  allergies?: string | null;
+  systemicReview?: PacSystemicReviewDto | null;
+  pastAnaestheticHistory?: string | null;
+  airwayExam?: PacAirwayExamDto | null;
+  anaesthesiaPlan?: string | null;
+  periOpExplained?: boolean | null;
+  consentType?: string | null;
+  currentMedications?: PacMedicationLineDto[] | null;
+  preOpConsultations?: string | null;
+  medicationsAdvised?: string | null;
+  investigationsAdvised?: string | null;
+  completedByDesignation?: string | null;
+}
+
+function pacStr(raw: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const k of keys) {
+    const v = raw[k];
+    if (typeof v === 'string') return v;
+  }
+  return null;
+}
+
+function pacNum(raw: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = raw[k];
+    if (typeof v === 'number' && !Number.isNaN(v)) return v;
+  }
+  return null;
+}
+
+function normalizePacInvestigations(raw: unknown): PacInvestigationsDto {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    hgb: pacStr(o, 'hgb', 'Hgb'),
+    fbs: pacStr(o, 'fbs', 'Fbs'),
+    serumCreatinine: pacStr(o, 'serumCreatinine', 'SerumCreatinine'),
+    hiv: pacStr(o, 'hiv', 'Hiv'),
+    hBsAg: pacStr(o, 'hBsAg', 'HBsAg'),
+    hcv: pacStr(o, 'hcv', 'Hcv'),
+    xray: pacStr(o, 'xray', 'Xray'),
+    ecg: pacStr(o, 'ecg', 'Ecg'),
+    echo2d: pacStr(o, 'echo2d', 'Echo2d'),
+    bloodGroup: pacStr(o, 'bloodGroup', 'BloodGroup'),
+    others: pacStr(o, 'others', 'Others'),
+  };
+}
+
+function normalizePacSystemicReview(raw: unknown): PacSystemicReviewDto {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    cvs: pacStr(o, 'cvs', 'Cvs'),
+    respiratory: pacStr(o, 'respiratory', 'Respiratory'),
+    renal: pacStr(o, 'renal', 'Renal'),
+    hepaticGi: pacStr(o, 'hepaticGi', 'HepaticGi'),
+    diabetes: pacStr(o, 'diabetes', 'Diabetes'),
+    cns: pacStr(o, 'cns', 'Cns'),
+    others: pacStr(o, 'others', 'Others'),
+  };
+}
+
+function normalizePacAirwayExam(raw: unknown): PacAirwayExamDto {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    mallampati: pacNum(o, 'mallampati', 'Mallampati'),
+    mouthOpening: pacStr(o, 'mouthOpening', 'MouthOpening'),
+    mentohyoid: pacStr(o, 'mentohyoid', 'Mentohyoid'),
+    neck: pacStr(o, 'neck', 'Neck'),
+    teeth: pacStr(o, 'teeth', 'Teeth'),
+    lungs: pacStr(o, 'lungs', 'Lungs'),
+    heart: pacStr(o, 'heart', 'Heart'),
+    venousAccess: pacStr(o, 'venousAccess', 'VenousAccess'),
+  };
+}
+
+function normalizePacMedications(raw: unknown): PacMedicationLineDto[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map(item => {
+    const o = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+    return {
+      name: pacStr(o, 'name', 'Name') ?? '',
+      dose: pacStr(o, 'dose', 'Dose'),
+      frequency: pacStr(o, 'frequency', 'Frequency'),
+    };
+  });
+}
+
+/** Normalize PAC API payloads (handles PascalCase + missing nested defaults). */
+export function normalizePacAssessment(raw: unknown): PacAssessmentDto | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    journeyId: String(r.journeyId ?? r.JourneyId ?? ''),
+    patientName: pacStr(r, 'patientName', 'PatientName'),
+    uhid: pacStr(r, 'uhid', 'Uhid'),
+    procedureName: pacStr(r, 'procedureName', 'ProcedureName'),
+    eyeOperated: pacStr(r, 'eyeOperated', 'EyeOperated'),
+    assessedAt: pacStr(r, 'assessedAt', 'AssessedAt'),
+    preOpDiagnosis: pacStr(r, 'preOpDiagnosis', 'PreOpDiagnosis'),
+    bp: pacStr(r, 'bp', 'Bp'),
+    hr: pacNum(r, 'hr', 'Hr'),
+    physicalStatusAsa: pacNum(r, 'physicalStatusAsa', 'PhysicalStatusAsa'),
+    investigations: normalizePacInvestigations(r.investigations ?? r.Investigations),
+    allergies: pacStr(r, 'allergies', 'Allergies'),
+    systemicReview: normalizePacSystemicReview(r.systemicReview ?? r.SystemicReview),
+    pastAnaestheticHistory: pacStr(r, 'pastAnaestheticHistory', 'PastAnaestheticHistory'),
+    airwayExam: normalizePacAirwayExam(r.airwayExam ?? r.AirwayExam),
+    anaesthesiaPlan: pacStr(r, 'anaesthesiaPlan', 'AnaesthesiaPlan'),
+    periOpExplained: Boolean(r.periOpExplained ?? r.PeriOpExplained ?? false),
+    consentType: pacStr(r, 'consentType', 'ConsentType'),
+    currentMedications: normalizePacMedications(r.currentMedications ?? r.CurrentMedications),
+    preOpConsultations: pacStr(r, 'preOpConsultations', 'PreOpConsultations'),
+    medicationsAdvised: pacStr(r, 'medicationsAdvised', 'MedicationsAdvised'),
+    investigationsAdvised: pacStr(r, 'investigationsAdvised', 'InvestigationsAdvised'),
+    completedByDesignation: pacStr(r, 'completedByDesignation', 'CompletedByDesignation'),
+    assessmentStatus: pacStr(r, 'assessmentStatus', 'AssessmentStatus') ?? 'Draft',
+    completedAt: pacStr(r, 'completedAt', 'CompletedAt'),
+    isComplete: Boolean(r.isComplete ?? r.IsComplete ?? false),
+  };
+}
+
+// ─── Anaesthesia Monitoring (S4 — Form 5) ─────────────────────────────────────
+
+export interface MonitoringReadingDto {
+  id: string;
+  elapsedMin: number;
+  pulse: number | null;
+  spo2: number | null;
+  recordedAt: string | null;
+}
+
+export interface AnaesthesiaMonitoringDto {
+  journeyId: string;
+  preOpPulse: number | null;
+  preOpBp: string | null;
+  preOpSpo2: number | null;
+  preOpConsentConfirmed: boolean;
+  preOpReviewAt: string | null;
+  readings: MonitoringReadingDto[];
+  dischargePr: number | null;
+  dischargeBp: string | null;
+  generalConditionNormal: boolean | null;
+  dischargeRemarks: string | null;
+  dischargeClearedAt: string | null;
+  dischargeClearanceComplete: boolean;
+}
+
+export interface SavePreOpReviewRequest {
+  pulse?: number | null;
+  bp?: string | null;
+  spo2?: number | null;
+  consentConfirmed: boolean;
+}
+
+export interface SaveMonitoringReadingRequest {
+  elapsedMin: number;
+  pulse?: number | null;
+  spo2?: number | null;
+}
+
+export interface UpdateMonitoringReadingRequest {
+  elapsedMin?: number | null;
+  pulse?: number | null;
+  spo2?: number | null;
+}
+
+export interface SaveDischargeClearanceRequest {
+  pulse?: number | null;
+  bp?: string | null;
+  generalConditionNormal?: boolean | null;
+  remarks?: string | null;
+}
+
 // ─── Audit Log Types ──────────────────────────────────────────────────────────
 
 export interface JourneyAuditLogDto {
@@ -574,6 +1107,8 @@ export interface PreOpCompletionDto {
   completedByUserId: string | null;
   completedAt: string | null;
   updatedAt: string;
+  formCode?: string | null;
+  source?: string | null;
 }
 
 export interface PreOpDocumentDto {
@@ -836,14 +1371,48 @@ export const ipManagementApi = {
     return r.data;
   },
 
-  async acceptInOT(id: string): Promise<PatientJourneyDetailDto> {
-    const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/accept`, {});
+  async acceptInOT(id: string, acknowledgeWarnings = false): Promise<PatientJourneyDetailDto> {
+    const r = await getClient().post<PatientJourneyDetailDto>(
+      `/ip-management/journeys/${id}/accept`,
+      {},
+      { params: acknowledgeWarnings ? { acknowledgeWarnings: true } : undefined },
+    );
     return r.data;
   },
 
-  async startSurgery(id: string): Promise<PatientJourneyDetailDto> {
-    const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/start-surgery`, {});
+  async startSurgery(id: string, acknowledgeWhoWarning = false): Promise<PatientJourneyDetailDto> {
+    const r = await getClient().post<PatientJourneyDetailDto>(
+      `/ip-management/journeys/${id}/start-surgery`,
+      {},
+      { params: acknowledgeWhoWarning ? { acknowledgeWhoWarning: true } : undefined },
+    );
     return r.data;
+  },
+
+  async getTransitionGates(id: string, newState: string): Promise<ChecklistGateResultDto | null> {
+    try {
+      const r = await getClient().get<ChecklistGateResultDto>(
+        `/ip-management/journeys/${id}/transition-gates`,
+        { params: { newState } },
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getTransitionGates failed', e);
+      return null;
+    }
+  },
+
+  async applyWhoSupervisorOverride(id: string, reason?: string): Promise<PatientJourneyDetailDto | null> {
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(
+        `/ip-management/journeys/${id}/who-supervisor-override`,
+        { reason: reason ?? null },
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] applyWhoSupervisorOverride failed', e);
+      return null;
+    }
   },
 
   async transitionFinancial(id: string, req: TransitionRequest): Promise<PatientJourneyDetailDto | null> {
@@ -1448,6 +2017,413 @@ export const ipManagementApi = {
     } catch (e) {
       console.warn('[ip-management] getIolCatalog failed', e);
       return [];
+    }
+  },
+
+  // ── Ward Checklist (S1 — Form 2) ──────────────────────────────────────────
+  async getWardChecklist(journeyId: string, paymentMode?: string): Promise<WardChecklistDto | null> {
+    try {
+      const params = paymentMode ? { paymentMode } : undefined;
+      const r = await getClient().get<WardChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-checklist`,
+        { params },
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getWardChecklist failed', e);
+      return null;
+    }
+  },
+
+  async getWardInvestigationChecklist(journeyId: string): Promise<WardInvestigationChecklistDto | null> {
+    try {
+      const r = await getClient().get<WardInvestigationChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-investigation-checklist`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getWardInvestigationChecklist failed', e);
+      return null;
+    }
+  },
+
+  async saveWardInvestigationCompletion(
+    journeyId: string,
+    itemId: string,
+    req: SaveWardChecklistCompletionRequest,
+  ): Promise<WardInvestigationChecklistDto | null> {
+    try {
+      const r = await getClient().post<WardInvestigationChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-investigation-checklist/completions/${itemId}`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveWardInvestigationCompletion failed', e);
+      return null;
+    }
+  },
+
+  async saveWardChecklistCompletion(
+    journeyId: string,
+    itemId: string,
+    req: SaveWardChecklistCompletionRequest,
+  ): Promise<WardChecklistDto | null> {
+    try {
+      const r = await getClient().post<WardChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-checklist/completions/${itemId}`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveWardChecklistCompletion failed', e);
+      return null;
+    }
+  },
+
+  // ── Medication Log (S2 — Form 4 pre-op) ───────────────────────────────────
+  async getMedicationLog(journeyId: string): Promise<MedicationLogDto | null> {
+    try {
+      const r = await getClient().get<MedicationLogDto>(
+        `/ip-management/journeys/${journeyId}/medication-log`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getMedicationLog failed', e);
+      return null;
+    }
+  },
+
+  async updateMedicationLogMeta(
+    journeyId: string,
+    req: UpdateMedicationLogMetaRequest,
+  ): Promise<MedicationLogDto | null> {
+    try {
+      const r = await getClient().put<MedicationLogDto>(
+        `/ip-management/journeys/${journeyId}/medication-log/meta`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] updateMedicationLogMeta failed', e);
+      return null;
+    }
+  },
+
+  async addMedicationDrug(
+    journeyId: string,
+    req: AddMedicationDrugRequest,
+  ): Promise<MedicationLogDto | null> {
+    try {
+      const r = await getClient().post<MedicationLogDto>(
+        `/ip-management/journeys/${journeyId}/medication-log/drugs`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] addMedicationDrug failed', e);
+      return null;
+    }
+  },
+
+  async saveMedicationDose(
+    journeyId: string,
+    doseId: string,
+    req: SaveMedicationDoseRequest,
+  ): Promise<MedicationLogDto | null> {
+    try {
+      const r = await getClient().post<MedicationLogDto>(
+        `/ip-management/journeys/${journeyId}/medication-log/doses/${doseId}`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveMedicationDose failed', e);
+      return null;
+    }
+  },
+
+  async removeMedicationDrug(
+    journeyId: string,
+    medicineName: string,
+  ): Promise<MedicationLogDto | null> {
+    try {
+      const r = await getClient().delete<MedicationLogDto>(
+        `/ip-management/journeys/${journeyId}/medication-log/drugs/${encodeURIComponent(medicineName)}`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] removeMedicationDrug failed', e);
+      return null;
+    }
+  },
+
+  // ── Ward Post-Op Checklist (S2 — Form 4 post-op) ──────────────────────────
+  async getWardPostOpChecklist(journeyId: string): Promise<WardPostOpChecklistDto | null> {
+    try {
+      const r = await getClient().get<WardPostOpChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-postop-checklist`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getWardPostOpChecklist failed', e);
+      return null;
+    }
+  },
+
+  async saveWardPostOpCompletion(
+    journeyId: string,
+    itemId: string,
+    req: SaveWardPostOpCompletionRequest,
+  ): Promise<WardPostOpChecklistDto | null> {
+    try {
+      const r = await getClient().post<WardPostOpChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-postop-checklist/completions/${itemId}`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveWardPostOpCompletion failed', e);
+      return null;
+    }
+  },
+
+  async saveIolStickerChecks(
+    journeyId: string,
+    req: IolStickerChecksDto,
+  ): Promise<WardPostOpChecklistDto | null> {
+    try {
+      const r = await getClient().put<WardPostOpChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-postop-checklist/iol-sticker`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveIolStickerChecks failed', e);
+      return null;
+    }
+  },
+
+  // ── OT Surgical Safety (S3 — Form 1 OT) ────────────────────────────────────
+  async getSurgicalSafetyChecklist(journeyId: string): Promise<SurgicalSafetyChecklistDto | null> {
+    try {
+      const r = await getClient().get<SurgicalSafetyChecklistDto>(
+        `/ip-management/journeys/${journeyId}/surgical-safety`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getSurgicalSafetyChecklist failed', e);
+      return null;
+    }
+  },
+
+  async saveBeforeAnaesthesia(
+    journeyId: string,
+    req: SaveBeforeAnaesthesiaRequest,
+  ): Promise<SurgicalSafetyChecklistDto | null> {
+    try {
+      const r = await getClient().put<SurgicalSafetyChecklistDto>(
+        `/ip-management/journeys/${journeyId}/surgical-safety/before-anaesthesia`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveBeforeAnaesthesia failed', e);
+      return null;
+    }
+  },
+
+  async saveWhoTimeout(
+    journeyId: string,
+    req: SaveWhoTimeoutRequest,
+  ): Promise<SurgicalSafetyChecklistDto | null> {
+    try {
+      const r = await getClient().put<SurgicalSafetyChecklistDto>(
+        `/ip-management/journeys/${journeyId}/surgical-safety/who-timeout`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveWhoTimeout failed', e);
+      return null;
+    }
+  },
+
+  async saveAfterSurgery(
+    journeyId: string,
+    req: SaveAfterSurgeryRequest,
+  ): Promise<SurgicalSafetyChecklistDto | null> {
+    try {
+      const r = await getClient().put<SurgicalSafetyChecklistDto>(
+        `/ip-management/journeys/${journeyId}/surgical-safety/after-surgery`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveAfterSurgery failed', e);
+      return null;
+    }
+  },
+
+  // ── PAC Assessment (S4 — Form 3) ───────────────────────────────────────────
+  async getPacAssessment(journeyId: string): Promise<PacAssessmentDto | null> {
+    try {
+      const r = await getClient().get<PacAssessmentDto>(
+        `/ip-management/journeys/${journeyId}/pac-assessment`,
+      );
+      return normalizePacAssessment(r.data);
+    } catch (e) {
+      console.warn('[ip-management] getPacAssessment failed', e);
+      return null;
+    }
+  },
+
+  async savePacAssessment(
+    journeyId: string,
+    req: SavePacAssessmentRequest,
+  ): Promise<PacAssessmentDto | null> {
+    try {
+      const r = await getClient().put<PacAssessmentDto>(
+        `/ip-management/journeys/${journeyId}/pac-assessment`,
+        req,
+      );
+      return normalizePacAssessment(r.data);
+    } catch (e) {
+      console.warn('[ip-management] savePacAssessment failed', e);
+      return null;
+    }
+  },
+
+  async completePacAssessment(journeyId: string): Promise<PacAssessmentDto | null> {
+    try {
+      const r = await getClient().post<PacAssessmentDto>(
+        `/ip-management/journeys/${journeyId}/pac-assessment/complete`,
+      );
+      return normalizePacAssessment(r.data);
+    } catch (e) {
+      console.warn('[ip-management] completePacAssessment failed', e);
+      return null;
+    }
+  },
+
+  // ── Anaesthesia Monitoring (S4 — Form 5) ───────────────────────────────────
+  async getAnaesthesiaMonitoring(journeyId: string): Promise<AnaesthesiaMonitoringDto | null> {
+    try {
+      const r = await getClient().get<AnaesthesiaMonitoringDto>(
+        `/ip-management/journeys/${journeyId}/anaesthesia-monitoring`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getAnaesthesiaMonitoring failed', e);
+      return null;
+    }
+  },
+
+  async savePreOpReview(
+    journeyId: string,
+    req: SavePreOpReviewRequest,
+  ): Promise<AnaesthesiaMonitoringDto | null> {
+    try {
+      const r = await getClient().put<AnaesthesiaMonitoringDto>(
+        `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/pre-op-review`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] savePreOpReview failed', e);
+      return null;
+    }
+  },
+
+  async addMonitoringReading(
+    journeyId: string,
+    req: SaveMonitoringReadingRequest,
+  ): Promise<AnaesthesiaMonitoringDto | null> {
+    try {
+      const r = await getClient().post<AnaesthesiaMonitoringDto>(
+        `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/readings`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] addMonitoringReading failed', e);
+      return null;
+    }
+  },
+
+  async updateMonitoringReading(
+    journeyId: string,
+    readingId: string,
+    req: UpdateMonitoringReadingRequest,
+  ): Promise<AnaesthesiaMonitoringDto | null> {
+    try {
+      const r = await getClient().put<AnaesthesiaMonitoringDto>(
+        `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/readings/${readingId}`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] updateMonitoringReading failed', e);
+      return null;
+    }
+  },
+
+  async removeMonitoringReading(
+    journeyId: string,
+    readingId: string,
+  ): Promise<AnaesthesiaMonitoringDto | null> {
+    try {
+      const r = await getClient().delete<AnaesthesiaMonitoringDto>(
+        `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/readings/${readingId}`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] removeMonitoringReading failed', e);
+      return null;
+    }
+  },
+
+  async saveDischargeClearance(
+    journeyId: string,
+    req: SaveDischargeClearanceRequest,
+  ): Promise<AnaesthesiaMonitoringDto | null> {
+    try {
+      const r = await getClient().put<AnaesthesiaMonitoringDto>(
+        `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/discharge-clearance`,
+        req,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveDischargeClearance failed', e);
+      return null;
+    }
+  },
+
+  // ── Counsellor Outpatient Safety Checklist (S0) ───────────────────────────
+  async getCounsellorOutpatientChecklist(sessionId: string): Promise<CounsellorOutpatientChecklistDto | null> {
+    try {
+      const r = await getClient().get<CounsellorOutpatientChecklistDto>(
+        `/ip-management/counsellor/sessions/${sessionId}/outpatient-checklist`);
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getCounsellorOutpatientChecklist failed', e);
+      return null;
+    }
+  },
+
+  async saveCounsellorOutpatientCompletion(
+    sessionId: string,
+    itemId: string,
+    req: SaveCounsellorCompletionRequest,
+  ): Promise<CounsellorOutpatientChecklistDto | null> {
+    try {
+      const r = await getClient().post<CounsellorOutpatientChecklistDto>(
+        `/ip-management/counsellor/sessions/${sessionId}/outpatient-checklist/completions/${itemId}`,
+        req);
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveCounsellorOutpatientCompletion failed', e);
+      return null;
     }
   },
 

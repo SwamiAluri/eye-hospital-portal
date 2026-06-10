@@ -37,8 +37,31 @@ namespace AuthService.Services
         public bool IsMasterDataGroupEnabled(string groupKey)
         {
             if (!IsMasterDataEnabled()) return false;
-            return _config.GetValue<bool>($"FeatureFlags:MasterData:EnabledGroups:{groupKey}", false);
+            var flagKey = ResolveFlagGroupKey(groupKey);
+            return _config.GetValue<bool>($"FeatureFlags:MasterData:EnabledGroups:{flagKey}", false);
         }
+
+        /// <summary>Maps registry snake_case group_key to appsettings PascalCase flag keys.</summary>
+        private static string ResolveFlagGroupKey(string groupKey) =>
+            GroupKeyToFlagKey.TryGetValue(groupKey, out var flagKey) ? flagKey : groupKey;
+
+        private static readonly Dictionary<string, string> GroupKeyToFlagKey =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["patient_setup"]   = "PatientSetup",
+                ["clinical"]        = "Clinical",
+                ["appointments"]    = "Appointments",
+                ["counsellor"]      = "Counsellor",
+                ["billing_finance"] = "BillingFinance",
+                ["insurance"]       = "Insurance",
+                ["inventory"]       = "Inventory",
+                ["pharmacy"]        = "Pharmacy",
+                ["lab_diagnostics"] = "LabDiagnostics",
+                ["ward_ip"]         = "WardIp",
+                ["hr_staff"]        = "HrStaff",
+                ["system"]          = "System",
+                ["operations"]      = "Operations",
+            };
 
         public IReadOnlyList<string> GetEnabledMasterDataGroups()
         {

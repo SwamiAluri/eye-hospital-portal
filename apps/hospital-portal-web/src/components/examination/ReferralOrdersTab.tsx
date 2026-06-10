@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { ExamCard, ExamInput, ExamSelect, StatusBadge, ActionButton } from './ExamCard';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { useImagingModalities } from '@/hooks/use-lab-masters';
 import { UserPlus, FileImage, MessageSquare, Edit2, Trash2, Printer, Plus } from 'lucide-react';
 
 // Type definitions for Referrals & Orders
@@ -58,6 +60,10 @@ export default function ReferralOrdersTab({
   onSaveReceptionReferral,
   onPrintReferral,
 }: ReferralOrdersTabProps) {
+  const { options: scanTypeOptions } = useMasterValues('clinical.scan_type');
+  const { choices: imagingModalityChoices } = useImagingModalities();
+  const { options: eyeNotationOptions } = useMasterValues('clinical.eye_notation');
+
   // ========== STATE ==========
   const [doctors, setDoctors] = useState<DoctorReferral[]>([]);
   const [imaging, setImaging] = useState<ImagingOrder[]>([]);
@@ -540,18 +546,18 @@ export default function ReferralOrdersTab({
                 onChange={(value) => setNewImaging({ ...newImaging, orderType: value })}
                 disabled={!canEdit}
               >
-                <option value="">Select imaging type</option>
-                <option value="OCT (Optical Coherence Tomography)">OCT (Optical Coherence Tomography)</option>
-                <option value="Fundus Photography">Fundus Photography</option>
-                <option value="FFA (Fundus Fluorescein Angiography)">FFA (Fundus Fluorescein Angiography)</option>
-                <option value="ICG (Indocyanine Green Angiography)">ICG (Indocyanine Green Angiography)</option>
-                <option value="Corneal Topography">Corneal Topography</option>
-                <option value="Pachymetry">Pachymetry</option>
-                <option value="Automated Visual Field">Automated Visual Field</option>
-                <option value="OCT Angiography">OCT Angiography</option>
-                <option value="Ultrasound B-scan">Ultrasound B-scan</option>
-                <option value="UBM (Ultrasound Biomicroscopy)">UBM (Ultrasound Biomicroscopy)</option>
-                <option value="Anterior Segment OCT">Anterior Segment OCT</option>
+                <option value="">
+                  {imagingModalityChoices.length === 0 && scanTypeOptions.length === 0
+                    ? 'No imaging types configured'
+                    : 'Select imaging type'}
+                </option>
+                {imagingModalityChoices.map((o) => (
+                  <option key={o.value} value={o.label}>{o.label}</option>
+                ))}
+                {imagingModalityChoices.length === 0 &&
+                  scanTypeOptions.map((o) => (
+                    <option key={o.value} value={o.label}>{o.label}</option>
+                  ))}
               </ExamSelect>
               <ExamSelect
                 label="Eye(s)"
@@ -559,9 +565,10 @@ export default function ReferralOrdersTab({
                 onChange={(value) => setNewImaging({ ...newImaging, eye: value })}
                 disabled={!canEdit}
               >
-                <option value="Both">Both Eyes</option>
-                <option value="OD">OD (Right Eye)</option>
-                <option value="OS">OS (Left Eye)</option>
+                <option value="">{eyeNotationOptions.length === 0 ? 'No eye options' : 'Select eye'}</option>
+                {eyeNotationOptions.map((o) => (
+                  <option key={o.value} value={o.label}>{o.label}</option>
+                ))}
               </ExamSelect>
 
               <ExamSelect

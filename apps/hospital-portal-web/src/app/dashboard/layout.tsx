@@ -24,14 +24,20 @@ export default function DashboardLayout({
   const openSidebar = useCallback(() => setSidebarOpen(true), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
-  // Immersive routes hide TopNav and remove wrapper padding for full-bleed dashboards
-  const immersiveRoutes = ['/dashboard/optometrist', '/dashboard/optometrist/exam'];
-  const isImmersive = immersiveRoutes.some(r => pathname === r);
+  // Immersive routes hide TopNav/sidebar for full-bleed kiosk views only
+  const immersiveRoutes = ['/dashboard/frontdesk/queue-display'];
+  const isImmersive = immersiveRoutes.some((r) => pathname === r || pathname.startsWith(`${r}/`));
 
   // No-pad routes: keep TopNav but render children directly (no padding wrapper, no outer scroll)
-  const noPadRoutes = ['/dashboard/counselor/analytics'];
-  const isNoPad = noPadRoutes.some(r => pathname.startsWith(r));
-  
+  const noPadRoutes = ['/dashboard/counselor/analytics', '/dashboard/optometrist/exam'];
+  const isCounsellingSessionPage =
+    /^\/dashboard\/counsellors-desk\/[^/]+$/.test(pathname) &&
+    pathname !== '/dashboard/counsellors-desk/waiting-list' &&
+    pathname !== '/dashboard/counsellors-desk/finalize-surgery' &&
+    pathname !== '/dashboard/counsellors-desk/surgery-followup';
+  const isNoPad =
+    noPadRoutes.some((r) => pathname.startsWith(r)) || isCounsellingSessionPage;
+
   useEffect(() => {
     setIsClient(true);
     setIsInIframe(window.self !== window.top);
@@ -47,8 +53,7 @@ export default function DashboardLayout({
     return <DashboardLoadingSkeleton />;
   }
 
-  // If in iframe, render only children without dashboard layout
-  if (isInIframe) {
+  if (isInIframe || isImmersive) {
     return (
       <ProtectedRoute>
         {children}

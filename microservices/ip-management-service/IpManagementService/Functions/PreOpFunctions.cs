@@ -43,6 +43,9 @@ public class PreOpFunctions
         _jwt   = jwt;
     }
 
+    private void RequireWardEdit(HttpRequestData req) =>
+        IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermWardEdit);
+
     // ── Section Items ──────────────────────────────────────────────────────────
 
     [Function("GetPreOpSectionItems")]
@@ -76,6 +79,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<InitPreOpClearanceRequest>(req.Body, Json)
@@ -121,6 +125,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<SavePreOpCompletionRequest>(req.Body, Json)
@@ -142,6 +147,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<BatchSavePreOpCompletionsRequest>(req.Body, Json)
@@ -165,6 +171,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<AddPreOpVitalRequest>(req.Body, Json)
@@ -192,6 +199,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<UploadPreOpDocumentRequest>(req.Body, Json)
@@ -224,6 +232,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<VerifyPreOpDocumentRequest>(req.Body, Json)
@@ -247,6 +256,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<ApprovePreOpClearanceRequest>(req.Body, Json)
@@ -269,6 +279,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<DeferPreOpClearanceRequest>(req.Body, Json)
@@ -292,6 +303,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid    = _jwt.ExtractTenantId(req, tenantId);
             var body   = await TryDeserializeAsync<RequestPreOpSectionRequest>(req.Body)
@@ -312,6 +324,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<RespondPreOpSectionRequest>(req.Body, Json)
@@ -333,6 +346,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<ConfirmPreOpSectionRequest>(req.Body, Json)
@@ -354,6 +368,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<PutSectionOnHoldRequest>(req.Body, Json)
@@ -376,6 +391,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<RejectSectionRequest>(req.Body, Json)
@@ -419,6 +435,7 @@ public class PreOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<EscalateSectionRequest>(req.Body, Json)

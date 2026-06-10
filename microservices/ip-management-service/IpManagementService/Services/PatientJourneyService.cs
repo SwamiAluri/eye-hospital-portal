@@ -17,15 +17,24 @@ public class PatientJourneyService
     private readonly IpManagementDbContext      _db;
     private readonly IPreOpNotificationClient   _notifications;
     private readonly ICcmsAdmissionClient       _ccms;
+    private readonly SurgicalSafetyService        _surgicalSafety;
+    private readonly ChecklistGateService         _gates;
+    private readonly PreOpClearanceService        _preOp;
 
     public PatientJourneyService(
         IpManagementDbContext db,
         IPreOpNotificationClient notifications,
-        ICcmsAdmissionClient ccms)
+        ICcmsAdmissionClient ccms,
+        SurgicalSafetyService surgicalSafety,
+        ChecklistGateService gates,
+        PreOpClearanceService preOp)
     {
-        _db            = db;
-        _notifications = notifications;
-        _ccms          = ccms;
+        _db             = db;
+        _notifications  = notifications;
+        _ccms           = ccms;
+        _surgicalSafety = surgicalSafety;
+        _gates          = gates;
+        _preOp          = preOp;
     }
 
     // ── List ───────────────────────────────────────────────────────────────────
@@ -109,13 +118,41 @@ public class PatientJourneyService
         }).ToList();
     }
 
+    /// <summary>Onboard Expected journeys: seed clearance + copy counsellor P0 completions.</summary>
+    public async Task OnboardExpectedJourneysAsync(Guid tenantId, Guid branchId, Guid userId)
+    {
+        var expectedIds = await _db.PatientJourneys
+            .Where(j => j.TenantId == tenantId
+                        && j.BranchId == branchId
+                        && j.ClinicalState == ClinicalState.Expected
+                        && j.CounselingSessionId != null
+                        && j.DeletedAt == null)
+            .Select(j => j.Id)
+            .ToListAsync();
+
+        foreach (var journeyId in expectedIds)
+            await _preOp.EnsureJourneyOnboardedAsync(journeyId, tenantId, userId);
+    }
+
+    public async Task EnsureJourneyOnboardedAsync(Guid id, Guid tenantId, Guid userId)
+    {
+        var j = await _db.PatientJourneys.FirstOrDefaultAsync(
+            x => x.Id == id && x.TenantId == tenantId && x.DeletedAt == null);
+        if (j is null || j.CounselingSessionId is null) return;
+        await _preOp.EnsureJourneyOnboardedAsync(id, tenantId, userId);
+    }
+
     // ── Get detail ─────────────────────────────────────────────────────────────
 
-    public async Task<PatientJourneyDetailDto?> GetDetailAsync(Guid id, Guid tenantId)
+    public async Task<PatientJourneyDetailDto?> GetDetailAsync(Guid id, Guid tenantId, Guid? userId = null)
     {
         var j = await _db.PatientJourneys.FirstOrDefaultAsync(
             j => j.Id == id && j.TenantId == tenantId && j.DeletedAt == null);
         if (j is null) return null;
+
+        if (userId.HasValue && j.CounselingSessionId.HasValue)
+            await _preOp.EnsureJourneyOnboardedAsync(id, tenantId, userId.Value);
+
         var patient = await _db.Patients.FirstOrDefaultAsync(
             p => p.Id == j.PatientId && p.DeletedAt == null);
         return MapDetail(j, patient);
@@ -140,6 +177,10 @@ public class PatientJourneyService
 
         if (!req.OverrideStateCheck)
             StateTransitionValidator.ValidateClinical(j.ClinicalState, ClinicalState.Admitted);
+
+        var admitGate = await _gates.EvaluateTransitionAsync(j, ClinicalState.Admitted, tenantId);
+        if (admitGate.Warnings.Count > 0 && !req.AcknowledgeWarnings && !req.OverrideStateCheck)
+            return MapDetail(j, transitionWarnings: admitGate.Warnings);
 
         var previousSnapshot = SnapshotStates(j);
 
@@ -166,7 +207,7 @@ public class PatientJourneyService
                        ClinicalState.Expected, ClinicalState.Admitted,
                        previousSnapshot, SnapshotStates(j));
 
-        return MapDetail(j);
+        return MapDetail(j, transitionWarnings: admitGate.Warnings.Count > 0 ? admitGate.Warnings : null);
     }
 
     // ── Update ward assignment ────────────────────────────────────────────────
@@ -227,10 +268,31 @@ public class PatientJourneyService
     // ── Clinical state transition ──────────────────────────────────────────────
 
     public async Task<PatientJourneyDetailDto> TransitionClinicalAsync(
-        Guid id, Guid tenantId, Guid userId, TransitionRequest req)
+        Guid id, Guid tenantId, Guid userId, TransitionRequest req,
+        IReadOnlyList<string>? callerRoles = null)
     {
         var j = await RequireJourneyAsync(id, tenantId);
         StateTransitionValidator.ValidateClinical(j.ClinicalState, req.NewState);
+
+        // OT return requires authorized role
+        if (req.NewState == ClinicalState.ReadyForSurgery
+            && (j.ClinicalState == ClinicalState.SentToOT || j.ClinicalState == ClinicalState.InOT)
+            && callerRoles is { Count: > 0 }
+            && !IpChecklistAuth.HasAnyRole(callerRoles, IpChecklistAuth.OtReturnRoles.ToArray()))
+        {
+            throw new UnauthorizedAccessException(
+                "Only OT Nurse, Anaesthetist, or Surgeon may return a patient from OT.");
+        }
+
+        var gateResult = await _gates.EvaluateTransitionAsync(j, req.NewState, tenantId);
+        if (!gateResult.CanProceed)
+            throw new InvalidOperationException(
+                string.Join(" ", gateResult.Warnings.Select(w => w.Message)));
+
+        if (gateResult.Warnings.Count > 0 && !req.AcknowledgeWarnings && !j.DischargeOverrideApplied)
+        {
+            return MapDetail(j, transitionWarnings: gateResult.Warnings);
+        }
 
         var prev = j.ClinicalState;
         j.ClinicalState   = req.NewState;
@@ -246,7 +308,12 @@ public class PatientJourneyService
         else if (req.NewState == ClinicalState.SentToOT)
         {
             // Advance OT state in lockstep so AcceptInOtAsync guard passes
-            j.OtState = OtState.SentToOT;
+            j.OtState     = OtState.SentToOT;
+            j.SentToOtAt ??= DateTime.UtcNow;
+        }
+        else if (req.NewState == ClinicalState.PostOp)
+        {
+            j.ReceivedFromOtAt ??= DateTime.UtcNow;
         }
         else if (req.NewState == ClinicalState.ReadyForSurgery)
         {
@@ -272,9 +339,10 @@ public class PatientJourneyService
         }
         else if (req.NewState == ClinicalState.Discharged)
         {
-            j.DischargedAt = DateTime.UtcNow;
-            j.IsDischarged = true;
-            j.IsLocked     = true;
+            j.DischargedAt    = DateTime.UtcNow;
+            j.WardCheckoutAt ??= DateTime.UtcNow;
+            j.IsDischarged    = true;
+            j.IsLocked        = true;
 
             // CCMS: fire-and-forget patient-discharged event
             await _ccms.NotifyPatientDischargedAsync(id, j.CounselingSessionId, tenantId, userId);
@@ -283,12 +351,34 @@ public class PatientJourneyService
         await _db.SaveChangesAsync();
         await LogAsync(j, userId, "ClinicalStateChanged", "ClinicalState",
                        prev, req.NewState, null, null);
+        return MapDetail(j, transitionWarnings: gateResult.Warnings.Count > 0 ? gateResult.Warnings : null);
+    }
+
+    public async Task<ChecklistGateResultDto> GetTransitionGatesAsync(
+        Guid id, Guid tenantId, string newState)
+    {
+        var j = await RequireJourneyAsync(id, tenantId);
+        return await _gates.EvaluateTransitionAsync(j, newState, tenantId);
+    }
+
+    public async Task<PatientJourneyDetailDto> ApplyWhoSupervisorOverrideAsync(
+        Guid id, Guid tenantId, Guid userId, WhoSupervisorOverrideRequest req)
+    {
+        var j = await RequireJourneyAsync(id, tenantId);
+        j.WhoSupervisorOverrideApplied = true;
+        j.WhoSupervisorOverrideBy      = userId;
+        j.WhoSupervisorOverrideAt      = DateTime.UtcNow;
+        j.UpdatedAt                    = DateTime.UtcNow;
+        j.UpdatedByUserId              = userId;
+        await _db.SaveChangesAsync();
+        await LogAsync(j, userId, "WhoSupervisorOverrideApplied", null, null, null, req.Reason, null);
         return MapDetail(j);
     }
 
     // ── Accept patient in OT (SentToOT → OtState.Accepted) ───────────────────
 
-    public async Task<PatientJourneyDetailDto> AcceptInOtAsync(Guid id, Guid tenantId, Guid userId)
+    public async Task<PatientJourneyDetailDto> AcceptInOtAsync(
+        Guid id, Guid tenantId, Guid userId, bool acknowledgeWarnings = false)
     {
         var j = await RequireJourneyAsync(id, tenantId);
 
@@ -300,6 +390,12 @@ public class PatientJourneyService
             throw new InvalidOperationException(
                 $"Cannot accept: OT state must be SentToOT (currently {j.OtState}).");
 
+        await _surgicalSafety.ValidateBillingGateForAcceptAsync(id, tenantId);
+
+        var acceptGate = await _gates.EvaluateAcceptInOtAsync(id, tenantId);
+        if (acceptGate.Warnings.Count > 0 && !acknowledgeWarnings)
+            return MapDetail(j, transitionWarnings: acceptGate.Warnings);
+
         var prevOt = j.OtState;
         j.OtState         = OtState.Accepted;
         j.UpdatedAt       = DateTime.UtcNow;
@@ -307,18 +403,24 @@ public class PatientJourneyService
 
         await _db.SaveChangesAsync();
         await LogAsync(j, userId, "OtPatientAccepted", "OtState", prevOt, j.OtState, null, null);
-        return MapDetail(j);
+        return MapDetail(j, transitionWarnings: acceptGate.Warnings.Count > 0 ? acceptGate.Warnings : null);
     }
 
     // ── Start surgery (OtState.Accepted → InProgress, clinicalState → InOT) ──
 
-    public async Task<PatientJourneyDetailDto> StartSurgeryAsync(Guid id, Guid tenantId, Guid userId)
+    public async Task<PatientJourneyDetailDto> StartSurgeryAsync(
+        Guid id, Guid tenantId, Guid userId, bool acknowledgeWhoWarning = false)
     {
         var j = await RequireJourneyAsync(id, tenantId);
 
         if (j.OtState != OtState.Accepted)
             throw new InvalidOperationException(
                 $"Cannot start surgery: OT state must be Accepted (currently {j.OtState}).");
+
+        var whoGate = await _gates.EvaluateStartSurgeryAsync(
+            id, tenantId, j.WhoSupervisorOverrideApplied);
+        if (whoGate.Warnings.Count > 0 && !acknowledgeWhoWarning && !j.WhoSupervisorOverrideApplied)
+            return MapDetail(j, transitionWarnings: whoGate.Warnings);
 
         var prevClinical = j.ClinicalState;
         var prevOt       = j.OtState;
@@ -466,7 +568,10 @@ public class PatientJourneyService
             j.PostOpState,
         });
 
-    private static PatientJourneyDetailDto MapDetail(PatientJourney j, IpPatient? patient = null) => new(
+    private static PatientJourneyDetailDto MapDetail(
+        PatientJourney j,
+        IpPatient? patient = null,
+        IReadOnlyList<ChecklistGateWarningDto>? transitionWarnings = null) => new(
         j.Id, j.TenantId, j.BranchId, j.PatientId, j.Uhid,
         j.OtFinalizeScheduleId, j.CounselingSessionId, j.WardId,
         j.ClinicalState, j.OtState, j.FinancialState, j.PostOpState,
@@ -481,7 +586,6 @@ public class PatientJourneyService
         j.EmergencyFcApplied, j.GovernmentApprovalSubmitted, j.InsurancePreauthSubmitted, j.IsCampPatient,
         j.OtReturnReason,
         j.PackageAmount ?? 0m, j.TotalAdvances ?? 0m, j.TotalPaid ?? 0m, j.BalanceDue ?? 0m,
-        // Patient info from join
         patient != null && !string.IsNullOrWhiteSpace(patient.FirstName + patient.LastName)
             ? (patient.FirstName + " " + patient.LastName).Trim()
             : null,
@@ -490,6 +594,10 @@ public class PatientJourneyService
         j.PrimarySurgeonId != null
             && !string.IsNullOrWhiteSpace(j.AnaesthetistName)
             && !string.IsNullOrWhiteSpace(j.OperationTheatreName)
-            && !string.IsNullOrWhiteSpace(j.AnaesthesiaType)
+            && !string.IsNullOrWhiteSpace(j.AnaesthesiaType),
+        j.DischargeOverrideApplied,
+        j.WhoSupervisorOverrideApplied,
+        ChecklistPhaseStatusService.Parse(j.ChecklistPhaseStatus),
+        transitionWarnings
     );
 }

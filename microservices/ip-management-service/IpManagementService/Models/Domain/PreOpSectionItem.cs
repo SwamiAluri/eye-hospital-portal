@@ -40,6 +40,14 @@ public class PreOpSectionItem
     public int      DisplayOrder          { get; set; } = 0;
     public bool     IsActive              { get; set; } = true;
 
+    /// <summary>e.g. OUTPATIENT_SAFETY, WARD_CHECKLIST</summary>
+    public string?  FormCode              { get; set; }
+
+    /// <summary>e.g. counsellor, ward, ot</summary>
+    public string?  FormContext           { get; set; }
+
+    public string?  ResponsibleDepartmentCode { get; set; }
+
     public DateTime CreatedAt             { get; set; }
     public DateTime UpdatedAt             { get; set; }
     public DateTime? DeletedAt            { get; set; }

@@ -21,6 +21,7 @@ public interface IVisitService
     
     // Queue / Routing Operations
     Task<VisitDto?> SendToAsync(SendToRequestDto request, Guid userId);
+    Task<VisitDto?> SendToByAppointmentAsync(Guid appointmentId, SendToRequestDto request, Guid userId);
     Task<VisitDto?> AssignToStaffAsync(Guid visitId, Guid staffId, Guid userId);
     
     // Visit Completion
@@ -28,6 +29,14 @@ public interface IVisitService
     
     // Token Generation
     Task<string> GenerateTokenAsync(Guid branchId);
+
+    /// <summary>
+    /// Ensures a visit exists at optometry for today and starts the exam (creates visit/appointment if needed).
+    /// </summary>
+    Task<OptometryQueuePatientDto?> OpenOptometryExamAsync(
+        OptometryOpenExamRequestDto request,
+        Guid tenantId,
+        Guid userId);
     
     // Statistics
     Task<int> GetTodayVisitCountAsync(Guid branchId);

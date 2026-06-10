@@ -17,6 +17,9 @@ namespace AuthService.Services.Interfaces
         /// <summary>Returns all active values for a specific entity type with pagination.</summary>
         Task<MasterValueListResponse> GetByEntityTypeAsync(Guid tenantId, string entityType, bool includeInactive = false, int page = 1, int pageSize = 50);
 
+        /// <summary>Returns all active values for dropdown lookups (no pagination, max 500).</summary>
+        Task<MasterLookupResponse> GetLookupAsync(Guid tenantId, string entityType);
+
         /// <summary>Returns a single value by id.</summary>
         Task<MasterValueDto?> GetByIdAsync(Guid tenantId, Guid id);
 

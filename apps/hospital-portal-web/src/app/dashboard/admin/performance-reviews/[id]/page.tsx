@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { performanceReviewApi, PerformanceReview, ReviewGoal, ReviewCompetency } from '@/lib/api/performance-review.api';
 import { ArrowLeft, Save, Send, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { usePerformanceRatings } from '@/hooks/use-hr-masters';
 
 export default function PerformanceReviewDetailsPage() {
   const params = useParams();
@@ -572,18 +573,19 @@ export default function PerformanceReviewDetailsPage() {
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Score (1-5)
+                          Rating
                         </label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          max="5"
+                        <select
                           value={comp.score || 0}
                           onChange={(e) => updateCompetency(index, 'score', Number(e.target.value))}
                           disabled={!isEditing}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                        />
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 bg-white"
+                        >
+                          <option value={0}>Not rated</option>
+                          {performanceRatings.map((r) => (
+                            <option key={r.value} value={r.score}>{r.label}</option>
+                          ))}
+                        </select>
                       </div>
                       {isEditing && (
                         <div className="col-span-2 flex items-end">

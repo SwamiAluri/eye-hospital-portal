@@ -4,8 +4,10 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, Tent, X, Building2, AlertTriangle,
   Lock, Activity, ClipboardList, FileText, Stethoscope, CirclePlus,
-  SquareCheck, Square, Pencil, LogOut,
+  SquareCheck, Square, Pencil, LogOut, Pill,
 } from 'lucide-react';
+import { PacAssessmentForm } from '@/components/ip-management/PacAssessmentForm';
+import { AnaesthesiaMonitoringPanel } from '@/components/ip-management/AnaesthesiaMonitoringPanel';
 import JourneyModal from '@/components/ip-management/JourneyModal';
 import {
   ipManagementApi,
@@ -29,12 +31,20 @@ import { useAuthStore } from '@/lib/auth-store';
 import { StatusBadge } from '@/components/counsellors-desk/StatusBadge';
 import { getSurgeons, Surgeon, getNurses, Nurse } from '@/lib/api/widgets.api';
 import { PreOpChecklistModal } from '@/components/ip-management/PreOpChecklistModal';
+import { PreOpMedicationLog } from '@/components/ip-management/PreOpMedicationLog';
+import { WardPostOpChecklist } from '@/components/ip-management/WardPostOpChecklist';
+import { WardExpectedP0Banner } from '@/components/ip-management/WardExpectedP0Banner';
+import { WardExpectedP0Chip } from '@/components/ip-management/WardExpectedP0Chip';
+import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
+import { transitionClinicalWithGates } from '@/lib/ip-checklist/transition-gates';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ClinicalTab = 'All' | 'Expected' | 'Admitted' | 'ReadyForSurgery' | 'InOT' | 'SurgeryCompleted' | 'PostOp' | 'ReadyForDischarge' | 'Discharged';
 type ModalType = 'preop' | 'admit' | 'wardUpdation' | 'caseSheet' | 'emergencyFc' | 'sendToOT' | 'postOpWard' | 'discharge' | 'journey';
-type WardUpdationTab = 'General' | 'Remark' | 'Vitals' | 'Nurse Records';
+type WardUpdationTab = 'General' | 'Remark' | 'Vitals' | 'Nurse Records' | 'Medication Log' | 'PAC';
+
+const PAC_EDITABLE_STATES = new Set(['Expected', 'Admitted', 'ReadyForSurgery']);
 
 const STATUS_TABS: { key: ClinicalTab; label: string; color: string; activeClass: string }[] = [
   { key: 'All',               label: 'All',               color: 'bg-slate-500',   activeClass: 'bg-slate-600 border-slate-600 text-white' },
@@ -155,7 +165,7 @@ function AdmitModal({ journey, wards, onClose, onSaved }: {
     setSaving(true);
     setError('');
     try {
-      const result = await ipManagementApi.admitPatient(journey.id, {
+      const payload = {
         wardId: wardId || undefined,
         admissionType: admissionType || undefined,
         bedNumber: roomBed || undefined,
@@ -168,7 +178,19 @@ function AdmitModal({ journey, wards, onClose, onSaved }: {
         overrideStateCheck: overrideStateCheck || undefined,
         bypassFinancialClearance: bypassFinancialClearance || undefined,
         overrideReason: overrideReason || undefined,
-      });
+      };
+      let result = await ipManagementApi.admitPatient(journey.id, payload);
+      const warnings = result?.transitionWarnings ?? [];
+      if (result && warnings.length > 0) {
+        const proceed = window.confirm(
+          `Checklist warnings:\n\n${warnings.map(w => `• ${w.message}`).join('\n')}\n\nAdmit anyway?`,
+        );
+        if (!proceed) {
+          setSaving(false);
+          return;
+        }
+        result = await ipManagementApi.admitPatient(journey.id, { ...payload, acknowledgeWarnings: true });
+      }
       if (result) {
         onSaved({ ...journey, clinicalState: result.clinicalState, wardName: result.wardName, bedNumber: result.bedNumber, admittedAt: result.admittedAt });
         onClose();
@@ -204,6 +226,12 @@ function AdmitModal({ journey, wards, onClose, onSaved }: {
             </div>
             <StatusBadge status={journey.clinicalState} size="sm" />
           </div>
+
+          <WardExpectedP0Banner
+            journeyId={journey.id}
+            counselingSessionId={journey.counselingSessionId}
+            clinicalState={journey.clinicalState}
+          />
 
           {error && <p className="text-red-600 text-xs bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
 
@@ -488,6 +516,7 @@ function WardUpdationModal({ journey, wards, onClose, onSaved, readOnly }: {
   onSaved: (updated: PatientJourneyRowDto) => void;
   readOnly?: boolean;
 }) {
+  const { canEditWardChecklist, canEditPac } = useIpChecklistPermissions();
   const [activeTab, setActiveTab] = useState<WardUpdationTab>('General');
   const [wardId, setWardId] = useState(wards.find(w => w.wardName === journey.wardName)?.id ?? '');
   const [roomBed, setRoomBed] = useState(journey.bedNumber ?? '');
@@ -495,6 +524,8 @@ function WardUpdationModal({ journey, wards, onClose, onSaved, readOnly }: {
   const [remark, setRemark] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [pacCompleted, setPacCompleted] = useState<boolean | null>(null);
+  const [pacWarningDismissed, setPacWarningDismissed] = useState(false);
 
   // ── Master Data ───────────────────────────────────────────────────────────
   const [masterMeds, setMasterMeds] = useState<OphthMedicationDto[]>([]);
@@ -542,7 +573,8 @@ function WardUpdationModal({ journey, wards, onClose, onSaved, readOnly }: {
   const [pendingVitals,       setPendingVitals]       = useState<AddVitalSignRequest[]>([]);
   const [pendingNurseRecords, setPendingNurseRecords] = useState<AddNurseRecordRequest[]>([]);
 
-  const RO = readOnly || journey.clinicalState === 'Discharged';
+  const RO = readOnly || journey.clinicalState === 'Discharged' || !canEditWardChecklist;
+  const pacRO = RO || !canEditPac || !PAC_EDITABLE_STATES.has(journey.clinicalState);
 
   // Load master data once (meds, io-types)
   useEffect(() => {
@@ -557,6 +589,12 @@ function WardUpdationModal({ journey, wards, onClose, onSaved, readOnly }: {
     if (!wardId) { setWardBeds([]); return; }
     ipManagementApi.getBedAvailability(wardId).then(setWardBeds).catch(() => {});
   }, [wardId]);
+
+  useEffect(() => {
+    ipManagementApi.getPacAssessment(journey.id).then(pac => {
+      if (pac) setPacCompleted(pac.assessmentStatus === 'Completed');
+    }).catch(() => {});
+  }, [journey.id]);
 
   function handleTabChange(tab: WardUpdationTab) {
     setActiveTab(tab);
@@ -582,6 +620,13 @@ function WardUpdationModal({ journey, wards, onClose, onSaved, readOnly }: {
 
   async function handleSaveAndMarkReady(e: React.FormEvent) {
     e.preventDefault();
+    if (!pacWarningDismissed && pacCompleted === false) {
+      const proceed = window.confirm(
+        'PAC assessment is not completed. You can still mark ready for surgery, but ward item "PAC done & documented" may be incomplete.\n\nProceed anyway?',
+      );
+      if (!proceed) return;
+      setPacWarningDismissed(true);
+    }
     setSaving(true);
     setError('');
     try {
@@ -594,7 +639,7 @@ function WardUpdationModal({ journey, wards, onClose, onSaved, readOnly }: {
       for (const n of pendingNurseRecords) {
         await ipManagementApi.addNurseRecord(journey.id, n);
       }
-      const result = await ipManagementApi.transitionClinical(journey.id, {
+      const result = await transitionClinicalWithGates(journey.id, {
         newState: 'ReadyForSurgery',
         reason:   remark || undefined,
       });
@@ -762,7 +807,9 @@ function WardUpdationModal({ journey, wards, onClose, onSaved, readOnly }: {
             {([
               { key: 'General'       as WardUpdationTab, label: 'General' },
               { key: 'Vitals'        as WardUpdationTab, label: 'Vitals',        icon: <Activity className="h-3.5 w-3.5" /> },
+              { key: 'Medication Log' as WardUpdationTab, label: 'Medication Log', icon: <Pill className="h-3.5 w-3.5" /> },
               { key: 'Nurse Records' as WardUpdationTab, label: 'Nurse Records', icon: <ClipboardList className="h-3.5 w-3.5" /> },
+              { key: 'PAC'           as WardUpdationTab, label: 'PAC',           icon: <Stethoscope className="h-3.5 w-3.5" /> },
               { key: 'Remark'        as WardUpdationTab, label: 'Remark' },
             ]).map(({ key, label, icon }) => (
               <button key={key} onClick={() => handleTabChange(key)}
@@ -1360,6 +1407,34 @@ function WardUpdationModal({ journey, wards, onClose, onSaved, readOnly }: {
               </div>
             )}
 
+            {/* ── Medication Log Tab (Form 4 pre-op) ── */}
+            {activeTab === 'Medication Log' && (
+              <div className="p-5">
+                <PreOpMedicationLog
+                  journeyId={journey.id}
+                  readOnly={RO}
+                  masterMedications={masterMeds}
+                />
+              </div>
+            )}
+
+            {/* ── PAC Tab (Form 3) ── */}
+            {activeTab === 'PAC' && (
+              <div className="p-5">
+                {pacCompleted === false && !RO && (
+                  <div className="mb-4 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>PAC assessment is incomplete. You may still mark ready for surgery, but you will be prompted to confirm.</span>
+                  </div>
+                )}
+                <PacAssessmentForm
+                  journeyId={journey.id}
+                  readOnly={pacRO}
+                  onStatusChange={completed => setPacCompleted(completed)}
+                />
+              </div>
+            )}
+
           </div>
 
           {/* Footer — always visible */}
@@ -1552,7 +1627,7 @@ function SendToOTModal({ journey, onClose, onSaved }: {
     setSaving(true);
     setError('');
     try {
-      const result = await ipManagementApi.transitionClinical(journey.id, { newState: 'SentToOT' });
+      const result = await transitionClinicalWithGates(journey.id, { newState: 'SentToOT' });
       if (result) {
         onSaved({ ...journey, clinicalState: result.clinicalState });
         onClose();
@@ -1638,7 +1713,7 @@ function PostOpWardModal({ journey, onClose, onSaved }: {
   onClose: () => void;
   onSaved: (updated: PatientJourneyRowDto) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'Overview' | 'NurseChecklist' | 'SurgeonChecklist'>('Overview');
+  const [activeTab, setActiveTab] = useState<'Overview' | 'Form4Checklist' | 'NurseChecklist' | 'SurgeonChecklist'>('Form4Checklist');
   const [nurseItems,  setNurseItems]  = useState<ChecklistItemDto[]>([]);
   const [surgeonItems,setSurgeonItems]= useState<ChecklistItemDto[]>([]);
   const [nurseChecks, setNurseChecks] = useState<Record<string, { done: boolean; notes: string }>>({});
@@ -1671,7 +1746,7 @@ function PostOpWardModal({ journey, onClose, onSaved }: {
     setChecklistLoading(false);
   }
 
-  function handleTabChange(tab: 'Overview' | 'NurseChecklist' | 'SurgeonChecklist') {
+  function handleTabChange(tab: 'Overview' | 'Form4Checklist' | 'NurseChecklist' | 'SurgeonChecklist') {
     setActiveTab(tab);
     if (tab === 'NurseChecklist') loadChecklist('nurse');
     if (tab === 'SurgeonChecklist') loadChecklist('surgeon');
@@ -1704,7 +1779,7 @@ function PostOpWardModal({ journey, onClose, onSaved }: {
     setMarking(true);
     setError('');
     try {
-      const result = await ipManagementApi.transitionClinical(journey.id, { newState: 'ReadyForDischarge' });
+      const result = await transitionClinicalWithGates(journey.id, { newState: 'ReadyForDischarge' });
       if (result) {
         onSaved({ ...journey, clinicalState: result.clinicalState });
         onClose();
@@ -1722,6 +1797,7 @@ function PostOpWardModal({ journey, onClose, onSaved }: {
 
   const tabs = [
     { key: 'Overview'        as const, label: 'Overview'         },
+    { key: 'Form4Checklist'  as const, label: 'Form 4 Checklist' },
     { key: 'NurseChecklist'  as const, label: 'Nurse Checklist'  },
     { key: 'SurgeonChecklist'as const, label: 'Surgeon Checklist'},
   ];
@@ -1766,7 +1842,6 @@ function PostOpWardModal({ journey, onClose, onSaved }: {
         <div className="flex-1 overflow-y-auto p-6">
           {error && <p className="text-red-600 text-xs bg-red-50 px-3 py-2 rounded-lg mb-4">{error}</p>}
 
-          {/* Overview */}
           {activeTab === 'Overview' && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
@@ -1791,7 +1866,14 @@ function PostOpWardModal({ journey, onClose, onSaved }: {
             </div>
           )}
 
-          {/* Checklists */}
+          {activeTab === 'Form4Checklist' && (
+            <WardPostOpChecklist
+              journeyId={journey.id}
+              counselingSessionId={journey.counselingSessionId ?? undefined}
+            />
+          )}
+
+          {/* Legacy nurse / surgeon checklists */}
           {(activeTab === 'NurseChecklist' || activeTab === 'SurgeonChecklist') && (
             <div className="space-y-3">
               {checklistLoading ? (
@@ -1862,6 +1944,7 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
   onClose: () => void;
   onSaved: (updated: PatientJourneyRowDto) => void;
 }) {
+  const { canEditMonitoring } = useIpChecklistPermissions();
   const [form, setForm] = useState<SaveDischargeSummaryRequest>({
     conditionAtDischarge: '',
     diagnosisCodes: '',
@@ -1878,10 +1961,16 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
   const [finalizing, setFinalizing] = useState(false);
   const [discharging, setDischarging] = useState(false);
   const [error, setError] = useState('');
+  const [anaesClearanceComplete, setAnaesClearanceComplete] = useState<boolean | null>(null);
+  const [nurseSummaryIssued, setNurseSummaryIssued] = useState(false);
+  const [overrideApplying, setOverrideApplying] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const data = await ipManagementApi.getDischargeSummary(journey.id);
+      const [data, postOp] = await Promise.all([
+        ipManagementApi.getDischargeSummary(journey.id),
+        ipManagementApi.getWardPostOpChecklist(journey.id),
+      ]);
       if (data) {
         setForm({
           conditionAtDischarge:  data.conditionAtDischarge ?? '',
@@ -1895,6 +1984,8 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
         });
         setIsFinalized(data.summaryStatus === 'Final');
       }
+      const issued = postOp?.items.find(i => i.itemKey === 'discharge_summary_issued');
+      setNurseSummaryIssued(!!issued?.isCompleted || !!issued?.isBypassed);
       setLoading(false);
     })();
   }, [journey.id]);
@@ -1929,12 +2020,26 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
     }
   }
 
+  async function handleDischargeOverride() {
+    const reason = window.prompt('Reason for discharge override (checklist gates incomplete):');
+    if (!reason?.trim()) return;
+    setOverrideApplying(true);
+    try {
+      await ipManagementApi.applyDischargeOverride(journey.id, { reason: reason.trim() });
+      setError('');
+    } catch {
+      setError('Failed to apply discharge override.');
+    } finally {
+      setOverrideApplying(false);
+    }
+  }
+
   async function handleDischarge() {
     if (!isFinalized) { setError('Please finalize the discharge summary first.'); return; }
     setDischarging(true);
     setError('');
     try {
-      const result = await ipManagementApi.transitionClinical(journey.id, { newState: 'Discharged' });
+      const result = await transitionClinicalWithGates(journey.id, { newState: 'Discharged' });
       if (result) {
         onSaved({ ...journey, clinicalState: result.clinicalState });
         onClose();
@@ -1972,6 +2077,22 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           {error && <p className="text-red-600 text-xs bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className={`rounded-lg border px-3 py-2 ${isFinalized ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+              <p className="font-semibold text-gray-700">Clinical summary</p>
+              <p className={`mt-0.5 ${isFinalized ? 'text-green-800' : 'text-gray-600'}`}>
+                {isFinalized ? 'Final — locked' : 'Draft — not finalized'}
+              </p>
+            </div>
+            <div className={`rounded-lg border px-3 py-2 ${nurseSummaryIssued ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+              <p className="font-semibold text-gray-700">Nurse checklist (P10)</p>
+              <p className={`mt-0.5 ${nurseSummaryIssued ? 'text-green-800' : 'text-amber-800'}`}>
+                {nurseSummaryIssued ? 'discharge_summary_issued ✓' : 'discharge_summary_issued pending'}
+              </p>
+            </div>
+          </div>
+
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />)}</div>
           ) : fields.map(({ label, key, type, rows, options }) => (
@@ -1994,11 +2115,24 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
               )}
             </div>
           ))}
+
+          <AnaesthesiaMonitoringPanel
+            journeyId={journey.id}
+            mode="discharge"
+            readOnly={isFinalized || !canEditMonitoring}
+            onClearanceChange={setAnaesClearanceComplete}
+          />
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-100 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Close</button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Close</button>
+            <button onClick={handleDischargeOverride} disabled={overrideApplying}
+              className="px-3 py-2 text-xs border border-amber-300 text-amber-800 rounded-lg hover:bg-amber-50 disabled:opacity-50">
+              {overrideApplying ? 'Applying…' : 'Discharge override'}
+            </button>
+          </div>
           {!isFinalized && (
             <div className="flex gap-2">
               <button onClick={handleSave} disabled={saving}
@@ -2336,6 +2470,10 @@ export default function WardManagementPage() {
                     } ${transitionLoading === j.id ? 'opacity-50 pointer-events-none' : ''}`}>
                     <td className="px-3 py-3">
                       <StatusBadge status={j.clinicalState} size="sm" />
+                      <WardExpectedP0Chip
+                        counselingSessionId={j.counselingSessionId}
+                        clinicalState={j.clinicalState}
+                      />
                       {j.clinicalState === 'ReadyForSurgery' && j.otReturnReason && (
                         <span className="flex items-center gap-1 text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5 mt-1 whitespace-nowrap">
                           ⚠ Returned from OT

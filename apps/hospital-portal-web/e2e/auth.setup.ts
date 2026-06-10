@@ -1,28 +1,41 @@
 /**
- * Playwright auth setup — runs once before any test project.
- * Logs in with a test user and saves the browser storage state so all
- * subsequent test files share the same authenticated session.
+ * Playwright auth setup — logs in via API and seeds localStorage (reliable vs UI login).
  */
 import { test as setup, expect } from '@playwright/test';
+import fs from 'fs';
 import path from 'path';
+import { apiLogin, E2E_TENANT_ID, seedBrowserAuth, type LoginPayload } from './helpers/auth';
 
-const AUTH_FILE = path.join(__dirname, '.auth/user.json');
+const AUTH_DIR = path.join(__dirname, '.auth');
+const AUTH_FILE = path.join(AUTH_DIR, 'user.json');
 
-setup('authenticate as test user', async ({ page }) => {
-  await page.goto('/login');
+function authInitPayload(login: LoginPayload) {
+  return {
+    accessToken: login.accessToken,
+    refreshToken: login.refreshToken,
+    userJson: JSON.stringify(login.user),
+    rolesJson: JSON.stringify(login.roles),
+    permissionsJson: JSON.stringify(login.permissions),
+    tenantId: E2E_TENANT_ID,
+  };
+}
 
-  // Fill credentials — override with env vars so CI can supply real creds
-  await page.getByLabel(/email|username/i).fill(
-    process.env.E2E_TEST_EMAIL ?? 'admin@hospital.local',
-  );
-  await page.getByLabel(/password/i).fill(
-    process.env.E2E_TEST_PASSWORD ?? 'TestPassword123!',
-  );
-  await page.getByRole('button', { name: /sign in|login|submit/i }).click();
+setup('authenticate as test user', async ({ page, request }) => {
+  fs.mkdirSync(AUTH_DIR, { recursive: true });
+  const login = await apiLogin(request);
+  const payload = authInitPayload(login);
 
-  // Wait for redirect to the dashboard — indicates successful login
-  await expect(page).toHaveURL(/dashboard/, { timeout: 15_000 });
+  await page.context().addInitScript((auth) => {
+    localStorage.setItem('auth_token', auth.accessToken);
+    localStorage.setItem('refresh_token', auth.refreshToken);
+    localStorage.setItem('user', auth.userJson);
+    localStorage.setItem('roles', auth.rolesJson);
+    localStorage.setItem('permissions', auth.permissionsJson);
+    localStorage.setItem('tenant_id', auth.tenantId);
+  }, payload);
 
-  // Persist auth cookies / localStorage for the entire test suite
+  await seedBrowserAuth(page, login);
+  await page.goto('/dashboard');
+  await expect(page.locator('nav, aside, [class*="sidebar"]').first()).toBeVisible({ timeout: 30_000 });
   await page.context().storageState({ path: AUTH_FILE });
 });

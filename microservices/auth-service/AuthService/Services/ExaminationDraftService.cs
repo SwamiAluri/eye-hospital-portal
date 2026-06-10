@@ -16,14 +16,19 @@ public class ExaminationDraftService : IExaminationDraftService
         _logger = logger;
     }
 
-    public async Task<ExaminationDraft?> GetDraftAsync(Guid patientId, Guid doctorId, Guid tenantId)
+    public async Task<ExaminationDraft?> GetDraftAsync(
+        Guid patientId,
+        Guid doctorId,
+        Guid tenantId,
+        Guid? visitId = null)
     {
         try
         {
             var draft = await _context.Set<ExaminationDraft>()
-                .Where(d => d.PatientId == patientId && 
-                           d.DoctorId == doctorId && 
+                .Where(d => d.PatientId == patientId &&
+                           d.DoctorId == doctorId &&
                            d.TenantId == tenantId &&
+                           d.VisitId == visitId &&
                            d.ExpiresAt > DateTime.UtcNow)
                 .OrderByDescending(d => d.Timestamp)
                 .FirstOrDefaultAsync();

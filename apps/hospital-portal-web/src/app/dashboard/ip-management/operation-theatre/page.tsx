@@ -21,6 +21,17 @@ import { getSurgeons, Surgeon, getNurses, Nurse, getOtTheaters, OtTheater } from
 import { useAuthStore } from '@/lib/auth-store';
 import { StatusBadge } from '@/components/counsellors-desk/StatusBadge';
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog';
+import { buildOtPresetMap, useOtIntraOpPresets } from '@/hooks/use-ot-intraop-presets';
+import { OtSurgicalSafetyChecklist } from '@/components/ip-management/OtSurgicalSafetyChecklist';
+import { AnaesthesiaMonitoringPanel } from '@/components/ip-management/AnaesthesiaMonitoringPanel';
+import { SurgicalSafetyGateDto } from '@/lib/api/ip-management.api';
+import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
+import {
+  acceptInOtWithGates,
+  startSurgeryWithGates,
+  transitionClinicalWithGates,
+} from '@/lib/ip-checklist/transition-gates';
+import { toast } from 'react-hot-toast';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -251,6 +262,7 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
     bloodLossMl: '',
     ivFluidMl: '',
   });
+  const { presets: masterPresets } = useOtIntraOpPresets(FALLBACK_PRESETS);
   const [presets, setPresets] = useState<Record<string, string[]>>(FALLBACK_PRESETS);
   const [presetsLoading, setPresetsLoading] = useState(false);
   const [anaesthetistSearch, setAnaesthetistSearch] = useState(journey.anaesthetistName ?? journey.anesthesiologistName ?? '');
@@ -279,13 +291,7 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
       setNurses(n);
       setOtTheaters(theaters);
       setIolCatalog(catalog);
-      const pMap: Record<string, string[]> = Object.fromEntries(
-        Object.entries(FALLBACK_PRESETS).map(([k, v]) => [k, [...v]])
-      );
-      for (const p of allPresets as IntraOpPresetDto[]) {
-        if (!pMap[p.fieldName]) pMap[p.fieldName] = [];
-        if (!pMap[p.fieldName].includes(p.optionLabel)) pMap[p.fieldName].push(p.optionLabel);
-      }
+      const pMap = buildOtPresetMap(FALLBACK_PRESETS, masterPresets, allPresets as IntraOpPresetDto[]);
       setPresets(pMap);
       setPresetsLoading(false);
       if (note) {
@@ -305,7 +311,7 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
       }
       setStaffLoading(false);
     });
-  }, [journey.id]);
+  }, [journey.id, masterPresets]);
 
   // Close anaesthetist dropdown on outside click
   useEffect(() => {
@@ -606,6 +612,9 @@ function ReturnPatientModal({ journey, onClose, onSaved }: {
   onClose: () => void;
   onSaved: (updated: PatientJourneyDetailDto) => void;
 }) {
+  const roles = useAuthStore(s => s.roles);
+  const allowedReturn = roles.length === 0 || roles.some(r =>
+    ['OT Nurse', 'OTNurse', 'Anaesthetist', 'Anesthetist', 'Surgeon', 'Doctor', 'Admin'].includes(r));
   const [selected, setSelected] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -613,11 +622,15 @@ function ReturnPatientModal({ journey, onClose, onSaved }: {
 
   async function handleReturn() {
     if (!selected) return;
+    if (!allowedReturn) {
+      setError('Only OT Nurse, Anaesthetist, or Surgeon may return a patient from OT.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
       const reason = notes.trim() ? `${selected} — ${notes.trim()}` : selected;
-      const result = await ipManagementApi.transitionClinical(journey.id, {
+      const result = await transitionClinicalWithGates(journey.id, {
         newState: 'ReadyForSurgery',
         reason,
       });
@@ -1602,8 +1615,17 @@ interface SurgeryDetailModalProps {
 
 function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenReturn }: SurgeryDetailModalProps) {
   const { clinicalState, otState } = journey;
+  const { canSignOtSafety, canEditMonitoring, canOverrideWhoTimeout } = useIpChecklistPermissions();
+  const roles = useAuthStore(s => s.roles);
+  const canReturnFromOt = roles.length === 0 || roles.some(r =>
+    ['OT Nurse', 'OTNurse', 'Anaesthetist', 'Anesthetist', 'Surgeon', 'Doctor', 'Admin'].includes(r));
+  const [safetyGates, setSafetyGates] = useState<SurgicalSafetyGateDto | null>(null);
+  const [monitoringReadingsEmpty, setMonitoringReadingsEmpty] = useState(false);
+  const [whoOverrideApplying, setWhoOverrideApplying] = useState(false);
 
   const isReadOnly = clinicalState === 'SurgeryCompleted' || clinicalState === 'PostOp';
+  const safetyReadOnly = isReadOnly || !canSignOtSafety;
+  const monitoringReadOnly = isReadOnly || !canEditMonitoring;
 
   const showAccept = clinicalState === 'SentToOT' && otState === 'SentToOT';
   const showStart  = clinicalState === 'SentToOT' && otState === 'Accepted' && journey.otDetailsSaved;
@@ -1651,6 +1673,7 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
     bloodLossMl: '',
     ivFluidMl: '',
   });
+  const { presets: masterPresets } = useOtIntraOpPresets(FALLBACK_PRESETS);
   const [presets, setPresets] = useState<Record<string, string[]>>(FALLBACK_PRESETS);
   const [presetsLoading, setPresetsLoading] = useState(false);
   const [verifyingBarcode, setVerifyingBarcode] = useState(false);
@@ -1671,14 +1694,7 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
       setOtTheaters(theaters);
       setIolCatalog(catalog);
 
-      // Build presets map keyed by fieldName — seed from fallback so chips always show
-      const pMap: Record<string, string[]> = Object.fromEntries(
-        Object.entries(FALLBACK_PRESETS).map(([k, v]) => [k, [...v]])
-      );
-      for (const p of allPresets as IntraOpPresetDto[]) {
-        if (!pMap[p.fieldName]) pMap[p.fieldName] = [];
-        if (!pMap[p.fieldName].includes(p.optionLabel)) pMap[p.fieldName].push(p.optionLabel);
-      }
+      const pMap = buildOtPresetMap(FALLBACK_PRESETS, masterPresets, allPresets as IntraOpPresetDto[]);
       setPresets(pMap);
       setPresetsLoading(false);
 
@@ -1697,7 +1713,7 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
       }
       setStaffLoading(false);
     });
-  }, [journey.id]);
+  }, [journey.id, masterPresets]);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -1706,6 +1722,16 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    if (clinicalState !== 'InOT') {
+      setMonitoringReadingsEmpty(false);
+      return;
+    }
+    ipManagementApi.getAnaesthesiaMonitoring(journey.id)
+      .then(m => setMonitoringReadingsEmpty(!m?.readings?.length))
+      .catch(() => setMonitoringReadingsEmpty(false));
+  }, [journey.id, clinicalState]);
 
   const filteredAnaesthetists = surgeons.filter(s =>
     s.name.toLowerCase().includes(anaesthetistSearch.toLowerCase())
@@ -1773,7 +1799,7 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[92vh]">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-2xl">
           <div className="flex items-center gap-2">
@@ -1809,6 +1835,58 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
               <StatusBadge status={otState} size="sm" />
             </div>
           </div>
+
+          <OtSurgicalSafetyChecklist
+            journeyId={journey.id}
+            patientId={'patientId' in journey ? journey.patientId : undefined}
+            patientName={journey.patientName ?? undefined}
+            eyeOperated={journey.eyeOperated}
+            financialState={journey.financialState}
+            balanceDue={journey.balanceDue}
+            emergencyFcApplied={journey.isEmergencyFc}
+            readOnly={safetyReadOnly}
+            surgeons={surgeons.map(s => ({ id: s.id, name: s.name }))}
+            nurses={nurses.map(n => ({ id: n.id, name: n.name }))}
+            onGatesChange={setSafetyGates}
+          />
+
+          {safetyGates && !safetyGates.whoTimeoutComplete && !journey.whoSupervisorOverrideApplied
+            && canOverrideWhoTimeout && clinicalState === 'SentToOT' && otState === 'Accepted' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex items-center justify-between gap-2">
+              <p className="text-xs text-amber-900">WHO timeout incomplete — supervisor may override to allow start surgery.</p>
+              <button
+                type="button"
+                disabled={whoOverrideApplying}
+                onClick={async () => {
+                  const reason = window.prompt('Reason for WHO supervisor override:');
+                  if (!reason?.trim()) return;
+                  setWhoOverrideApplying(true);
+                  try {
+                    const updated = await ipManagementApi.applyWhoSupervisorOverride(journey.id, reason.trim());
+                    if (updated) {
+                      onSaved(updated);
+                      toast.success('WHO supervisor override applied.');
+                    } else {
+                      toast.error('Failed to apply WHO override.');
+                    }
+                  } finally {
+                    setWhoOverrideApplying(false);
+                  }
+                }}
+                className="shrink-0 px-2.5 py-1 text-xs font-medium border border-amber-400 text-amber-900 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+              >
+                {whoOverrideApplying ? 'Applying…' : 'Supervisor override'}
+              </button>
+            </div>
+          )}
+
+          {(clinicalState === 'SentToOT' || clinicalState === 'InOT' || clinicalState === 'SurgeryCompleted') && (
+            <AnaesthesiaMonitoringPanel
+              journeyId={journey.id}
+              mode="ot"
+              readOnly={monitoringReadOnly}
+            />
+          )}
 
           {/* OT form */}
           <form id="surgery-detail-form" onSubmit={handleSave} className="space-y-5">
@@ -2082,7 +2160,17 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
           <div className="flex items-center gap-2">
             {showAccept && (
               <button type="button"
-                onClick={() => onOpenConfirm('accept', 'Accept this patient into the Operation Theatre?')}
+                onClick={() => {
+                  if (safetyGates && !safetyGates.billingGateSatisfied) {
+                    toast.error('Billing clearance required before accepting patient in OT. Apply Emergency FC or confirm payment.');
+                    return;
+                  }
+                  let msg = 'Accept this patient into the Operation Theatre?';
+                  if (safetyGates && !safetyGates.beforeAnaesthesiaComplete) {
+                    msg += '\n\nNote: Before Anaesthesia checklist is not yet complete.';
+                  }
+                  onOpenConfirm('accept', msg);
+                }}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Accept Patient
@@ -2090,7 +2178,13 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
             )}
             {clinicalState === 'SentToOT' && otState === 'Accepted' && !isReadOnly && (
               <button type="button"
-                onClick={() => onOpenConfirm('startSurgery', 'Start surgery for this patient now?')}
+                onClick={() => {
+                  let msg = 'Start surgery for this patient now?';
+                  if (safetyGates && !safetyGates.whoTimeoutComplete) {
+                    msg += '\n\nWarning: WHO timeout checklist is not complete.';
+                  }
+                  onOpenConfirm('startSurgery', msg);
+                }}
                 disabled={!journey.otDetailsSaved}
                 title={!journey.otDetailsSaved ? 'Save surgeon, anaesthetist, OT room & anaesthesia type first' : undefined}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
@@ -2099,14 +2193,30 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
               </button>
             )}
             {showEnd && (
-              <button type="button"
-                onClick={() => onOpenConfirm('endSurgery', 'Mark this surgery as completed?')}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg">
-                <StopCircle className="h-3.5 w-3.5" />
-                End Surgery
-              </button>
+              <div className="flex items-center gap-2">
+                {monitoringReadingsEmpty && (
+                  <span
+                    className="text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded-full px-2 py-1"
+                    title="Form 5 intra-op monitoring readings are empty (informational only)"
+                  >
+                    Monitoring empty
+                  </span>
+                )}
+                <button type="button"
+                  onClick={() => {
+                    let msg = 'Mark this surgery as completed?';
+                    if (safetyGates && !safetyGates.afterSurgeryComplete) {
+                      msg += '\n\nWarning: After Surgery checklist is not complete.';
+                    }
+                    onOpenConfirm('endSurgery', msg);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg">
+                  <StopCircle className="h-3.5 w-3.5" />
+                  End Surgery
+                </button>
+              </div>
             )}
-            {showReturn && (
+            {showReturn && canReturnFromOt && (
               <button type="button" onClick={onOpenReturn}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold border border-rose-300 text-rose-600 hover:bg-rose-50 bg-white rounded-lg">
                 <UserX className="h-3.5 w-3.5" />
@@ -2154,7 +2264,7 @@ function ExpandedPanel({ journey, onSaved, onViewDetails }: ExpandedPanelProps) 
   async function handleMoveToPostOp() {
     setMovingToPostOp(true);
     try {
-      const result = await ipManagementApi.transitionClinical(journey.id, { newState: 'PostOp' });
+      const result = await transitionClinicalWithGates(journey.id, { newState: 'PostOp' });
       if (result) onSaved(result);
     } finally {
       setMovingToPostOp(false);
@@ -2326,7 +2436,7 @@ function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpda
   async function handleMoveToPostOp() {
     setMovingToPostOp(true);
     try {
-      const result = await ipManagementApi.transitionClinical(journey.id, { newState: 'PostOp' });
+      const result = await transitionClinicalWithGates(journey.id, { newState: 'PostOp' });
       if (result) onDetailUpdated(result);
     } finally {
       setMovingToPostOp(false);
@@ -2522,16 +2632,18 @@ export default function OperationTheatrePage() {
     try {
       let result: PatientJourneyDetailDto | null = null;
       if (confirmModal.action === 'accept') {
-        result = await ipManagementApi.acceptInOT(confirmModal.journeyId);
+        result = await acceptInOtWithGates(confirmModal.journeyId);
       } else if (confirmModal.action === 'startSurgery') {
-        result = await ipManagementApi.startSurgery(confirmModal.journeyId);
+        result = await startSurgeryWithGates(confirmModal.journeyId);
       } else if (confirmModal.action === 'endSurgery') {
-        result = await ipManagementApi.transitionClinical(confirmModal.journeyId, { newState: 'SurgeryCompleted' });
+        result = await transitionClinicalWithGates(confirmModal.journeyId, { newState: 'SurgeryCompleted' });
       }
       if (result) handleDetailUpdated(result);
       setConfirmModal(null);
-    } catch {
-      // keep modal open on error so user can retry
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        ?? (e instanceof Error ? e.message : 'Action failed.');
+      toast.error(msg);
     } finally {
       setActionLoading(false);
     }

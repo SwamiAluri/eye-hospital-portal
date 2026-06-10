@@ -102,6 +102,10 @@ jobs:
       env:
         NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL || 'http://localhost:5073/api' }}
 
+    - name: Run optometry parity tests (F0 / Program A / Program B gates)
+      run: pnpm run test:unit:optometry
+      working-directory: ./apps/hospital-portal-web
+
     - name: Upload frontend artifact
       uses: actions/upload-artifact@v3
       with:
@@ -242,14 +246,24 @@ jobs:
         NEXTAUTH_SECRET: 'playwright-ci-secret'
         NEXTAUTH_URL: 'http://localhost:3000'
 
+    - name: Resolve optometry E2E fixtures (Program A)
+      run: |
+        npx tsx scripts/resolve-e2e-optometry-fixtures.ts --github-env >> "$GITHUB_ENV" || true
+      working-directory: ./apps/hospital-portal-web
+      env:
+        API_URL: ${{ secrets.E2E_API_URL || 'http://localhost:5073' }}
+
     - name: Run Playwright E2E tests (Chromium only on CI)
       run: pnpm exec playwright test --project=chromium --reporter=github
       working-directory: ./apps/hospital-portal-web
       env:
         PLAYWRIGHT_BASE_URL: ${{ secrets.E2E_FRONTEND_URL || '' }}
         E2E_API_URL: ${{ secrets.E2E_API_URL || '' }}
-        E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL || 'admin@hospital.local' }}
-        E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD || 'TestPassword123!' }}
+        E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL || 'admin@test.com' }}
+        E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD || 'Admin123!' }}
+        E2E_TEST_TENANT_ID: ${{ secrets.E2E_TEST_TENANT_ID || '155fe198-6ae5-4a01-9254-ead5b427247e' }}
+        E2E_OPTOMETRY_PATIENT_ID: ${{ env.E2E_OPTOMETRY_PATIENT_ID }}
+        E2E_OPTOMETRY_VISIT_ID: ${{ env.E2E_OPTOMETRY_VISIT_ID }}
         CI: 'true'
       continue-on-error: true   # E2E failures are surfaced as warnings, not blockers, until seed data is stable
 

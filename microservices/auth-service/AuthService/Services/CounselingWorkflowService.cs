@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using AuthService.Context;
 using AuthService.Models.Counselor;
 using AuthService.Models.Domain;
+using AuthService.Services.Interfaces;
 
 namespace AuthService.Services
 {
@@ -20,6 +21,7 @@ namespace AuthService.Services
         private readonly ILogger<CounselingWorkflowService> _logger;
         private readonly Interfaces.IBlobStorageService _blobStorageService;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IQueueDisplayNotifier _queueDisplayNotifier;
         private readonly string _ccmsBaseUrl;
         private readonly string _internalApiKey;
 
@@ -28,12 +30,14 @@ namespace AuthService.Services
             ILogger<CounselingWorkflowService> logger,
             Interfaces.IBlobStorageService blobStorageService,
             IHttpClientFactory httpClientFactory,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            IQueueDisplayNotifier queueDisplayNotifier)
         {
             _context = context;
             _logger = logger;
             _blobStorageService = blobStorageService;
             _httpClientFactory = httpClientFactory;
+            _queueDisplayNotifier = queueDisplayNotifier;
             _ccmsBaseUrl = configuration["CcmsService:BaseUrl"] ?? "http://localhost:7075/api";
             _internalApiKey = configuration["InternalApi:Key"] ?? string.Empty;
         }
@@ -874,6 +878,9 @@ namespace AuthService.Services
                     session.PatientType = request.PatientType;
                 }
 
+                if (!string.IsNullOrWhiteSpace(request.SessionType))
+                    session.SessionType = request.SessionType.Trim();
+
                 if (request.CounselorId.HasValue) session.CounselorId = request.CounselorId.Value;
                 if (request.SessionStartTime.HasValue) session.SessionStartTime = request.SessionStartTime.Value;
                 if (request.SessionEndTime.HasValue) session.SessionEndTime = request.SessionEndTime.Value;
@@ -988,7 +995,7 @@ namespace AuthService.Services
             }
         }
 
-        public async Task<SessionOperationResult> StartSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId)
+        public async Task<SessionOperationResult> StartSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, string? sessionType = null)
         {
             try
             {
@@ -1003,6 +1010,9 @@ namespace AuthService.Services
                         Message = "Session not found"
                     };
                 }
+
+                if (!string.IsNullOrWhiteSpace(sessionType))
+                    session.SessionType = sessionType.Trim();
 
                 session.Status = "InProgress";
                 session.SessionStartTime = DateTime.UtcNow;
@@ -1091,6 +1101,11 @@ namespace AuthService.Services
                 }
 
                 await _context.SaveChangesAsync();
+
+                if (queueItem != null)
+                {
+                    await NotifyQueueDisplayAsync(session.TenantId, queueItem.BranchId);
+                }
 
                 _logger.LogInformation("Completed counseling session {SessionId}", sessionId);
 
@@ -1546,6 +1561,7 @@ namespace AuthService.Services
 
                 _context.CounselorQueue.Add(queueItem);
                 await _context.SaveChangesAsync();
+                await NotifyQueueDisplayAsync(request.TenantId, request.BranchId);
 
                 _logger.LogInformation("Added session {SessionId} to counselor queue", request.SessionId);
 
@@ -1588,6 +1604,8 @@ namespace AuthService.Services
 
                 await _context.SaveChangesAsync();
 
+                await NotifyQueueDisplayAsync(tenantId, queueItem.BranchId);
+
                 _logger.LogInformation("Updated queue item {QueueItemId} status to {Status}", queueItemId, status);
 
                 return (await GetQueueItemByIdAsync(tenantId, queueItemId))!;
@@ -1624,6 +1642,7 @@ namespace AuthService.Services
                 nextPatient.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
+                await NotifyQueueDisplayAsync(nextPatient.TenantId, nextPatient.BranchId);
 
                 _logger.LogInformation("Called next patient - Queue Item {QueueItemId}", nextPatient.Id);
 
@@ -1689,6 +1708,7 @@ namespace AuthService.Services
                 }
 
                 await _context.SaveChangesAsync();
+                await NotifyQueueDisplayAsync(tenantId, queueItem.BranchId);
 
                 _logger.LogInformation("Started session from queue - Queue Item {QueueItemId}", queueItemId);
                 return true;
@@ -1716,6 +1736,7 @@ namespace AuthService.Services
                 queueItem.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
+                await NotifyQueueDisplayAsync(tenantId, queueItem.BranchId);
 
                 _logger.LogInformation("Completed queue item {QueueItemId}", queueItemId);
                 return true;
@@ -1742,6 +1763,7 @@ namespace AuthService.Services
                 queueItem.DeletedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
+                await NotifyQueueDisplayAsync(tenantId, queueItem.BranchId);
 
                 _logger.LogInformation("Removed queue item {QueueItemId} - Reason: {Reason}", queueItemId, reason);
                 return true;
@@ -2314,5 +2336,8 @@ namespace AuthService.Services
 
             await _context.SaveChangesAsync();
         }
+
+        private Task NotifyQueueDisplayAsync(Guid tenantId, Guid branchId) =>
+            _queueDisplayNotifier.NotifyBranchDisplayUpdatedAsync(tenantId, branchId);
     }
 }

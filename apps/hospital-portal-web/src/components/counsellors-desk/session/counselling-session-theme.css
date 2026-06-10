@@ -1,0 +1,110 @@
+/**
+ * Scoped theme for the counselling session workspace.
+ * Semantic tokens align with shadcn naming; values inherit inside `.counselling-session`.
+ */
+:root {
+  /* App-wide shadcn fallbacks (counselling-session overrides below) */
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+  --ring: 173 58% 39%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --radius: 0.5rem;
+}
+
+.counselling-session {
+  /* HSL components (no hsl() wrapper) — teal primary on slate neutrals */
+  --counselling-background: 210 40% 98%;
+  --counselling-foreground: 222 47% 11%;
+  --counselling-primary: 173 58% 32%;
+  --counselling-primary-foreground: 0 0% 100%;
+  --counselling-muted: 210 40% 96%;
+  --counselling-muted-foreground: 215 16% 47%;
+  --counselling-card: 0 0% 100%;
+  --counselling-card-foreground: 222 47% 11%;
+  --counselling-border: 214 32% 91%;
+  --counselling-input: 214 32% 91%;
+  --counselling-accent: 173 58% 95%;
+  --counselling-accent-foreground: 173 58% 28%;
+  --counselling-ring: 173 58% 39%;
+  --counselling-destructive: 0 84% 60%;
+  --counselling-destructive-foreground: 0 0% 100%;
+  --counselling-radius: 1rem;
+
+  /* shadcn component aliases (scoped) */
+  --background: var(--counselling-background);
+  --foreground: var(--counselling-foreground);
+  --primary: var(--counselling-primary);
+  --primary-foreground: var(--counselling-primary-foreground);
+  --muted: var(--counselling-muted);
+  --muted-foreground: var(--counselling-muted-foreground);
+  --card: var(--counselling-card);
+  --card-foreground: var(--counselling-card-foreground);
+  --border: var(--counselling-border);
+  --input: var(--counselling-input);
+  --accent: var(--counselling-accent);
+  --accent-foreground: var(--counselling-accent-foreground);
+  --ring: var(--counselling-ring);
+  --destructive: var(--counselling-destructive);
+  --destructive-foreground: var(--counselling-destructive-foreground);
+  --radius: var(--counselling-radius);
+}
+
+.counselling-session .counselling-card {
+  border-radius: var(--counselling-radius);
+  border: 1px solid hsl(var(--counselling-border) / 0.6);
+  background: hsl(var(--counselling-card));
+  box-shadow: 0 1px 2px 0 hsl(var(--counselling-foreground) / 0.04);
+}
+
+.counselling-session .counselling-selected-row {
+  border-left: 4px solid hsl(var(--counselling-primary));
+  background: hsl(var(--counselling-primary) / 0.08);
+}
+
+.counselling-session .counselling-readonly-panel {
+  border-radius: 0.75rem;
+  border: 1px solid hsl(var(--counselling-border));
+  background: hsl(var(--counselling-muted) / 0.9);
+}
+
+.counselling-session .counselling-glass-radio {
+  background: hsl(var(--counselling-card) / 0.65);
+  backdrop-filter: blur(12px);
+  border: 1px solid hsl(var(--counselling-border) / 0.8);
+  box-shadow: 0 1px 3px hsl(var(--counselling-foreground) / 0.06);
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+.counselling-session .animate-accordion-down {
+  animation: accordion-down 0.2s ease-out;
+}
+
+.counselling-session [id^='counselling-step-'] {
+  scroll-margin-top: 7rem;
+}

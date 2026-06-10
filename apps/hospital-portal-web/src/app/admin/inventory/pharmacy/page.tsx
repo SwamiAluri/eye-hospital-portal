@@ -10,6 +10,7 @@ import {
   StockBatchDto,
 } from '@/lib/api/inventory-service.api';
 import { useStores } from '@/hooks/useInventoryReferenceData';
+import { useInventoryPaymentModeLabels } from '@/hooks/use-payment-modes';
 
 const STATUS_TABS = [
   { key: 'All',             label: 'All',              dot: 'bg-slate-400',   activeClass: 'bg-slate-600 border-slate-600 text-white' },
@@ -32,8 +33,6 @@ const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
   PaidOrSettled:   { bg: 'bg-green-100 text-green-700',   label: 'Paid'            },
   Cancelled:       { bg: 'bg-red-100 text-red-700',       label: 'Cancelled'       },
 };
-
-const PAYMENT_MODES = ['Cash', 'Credit', 'UPI', 'NEFT', 'RTGS', 'Cheque'];
 
 function fmtDate(s?: string) {
   return s ? new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -235,7 +234,7 @@ function RecordPaymentModal({ billId, onClose, onDone }: { billId: string; onClo
             <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode</label>
             <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}
+              {paymentModeLabels.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
         </div>

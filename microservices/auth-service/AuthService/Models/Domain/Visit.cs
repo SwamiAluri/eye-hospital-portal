@@ -87,6 +87,15 @@ public class Visit
     [Column("assigned_at")]
     public DateTime? AssignedAt { get; set; }
 
+    /// <summary>Active optometry room code (OPT-1, OPT-2) while patient is with optometrist.</summary>
+    [Column("active_room_code")]
+    [StringLength(50)]
+    public string? ActiveRoomCode { get; set; }
+
+    /// <summary>Number of times patient has been queued at optometrist this visit.</summary>
+    [Column("optometry_pass_count")]
+    public int OptometryPassCount { get; set; } = 0;
+
     // Clinical completion
     [Column("completed_at")]
     public DateTime? CompletedAt { get; set; }

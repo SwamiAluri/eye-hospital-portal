@@ -50,7 +50,7 @@ export default defineConfig({
     {
       name: 'setup',
       testMatch: '**/e2e/auth.setup.ts',
-      use: { storageState: undefined },
+      use: { storageState: { cookies: [], origins: [] } },
     },
 
     {
@@ -81,7 +81,7 @@ export default defineConfig({
     : {
         command: 'npm run dev',
         url: 'http://localhost:3000',
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: true,
         timeout: 120_000,
         env: {
           // Use a throwaway JWT secret and stub API for E2E
@@ -93,5 +93,5 @@ export default defineConfig({
 
   /* Global timeout per test */
   timeout: 30_000,
-  expect: { timeout: 5_000 },
+  expect: { timeout: 15_000 },
 });

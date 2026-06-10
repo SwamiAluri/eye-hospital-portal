@@ -99,4 +99,19 @@ namespace AuthService.Models.MasterData
         public int Disabled { get; set; }
         public int SystemLocked { get; set; }
     }
+
+    /// <summary>Lightweight option for module dropdowns (lookup API).</summary>
+    public class MasterLookupOptionDto
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+        public object? Metadata { get; set; }
+        public int SortOrder { get; set; }
+    }
+
+    public class MasterLookupResponse
+    {
+        public string EntityType { get; set; } = string.Empty;
+        public List<MasterLookupOptionDto> Items { get; set; } = new();
+    }
 }

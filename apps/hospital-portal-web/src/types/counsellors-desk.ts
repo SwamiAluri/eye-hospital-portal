@@ -1,5 +1,23 @@
 // Types for Counsellors Desk & IP Management modules
 
+import type {
+  CounsellingDiscountType,
+  CounsellingEstimateMode,
+} from './counselling-estimate';
+
+/** Re-export estimate types for API/session consumers (B5). */
+export type {
+  CounsellingEstimate,
+  CounsellingEstimateMode,
+  CounsellingEstimateState,
+  CounsellingPackageAddonsBlob,
+  CounsellingPackageTemplate,
+  CounsellingSettings,
+  EstimateLine,
+  EstimateMode,
+  PackageTemplate,
+} from './counselling-estimate';
+
 export type WaitingListStatus =
   | 'Pending'
   | 'Processed'
@@ -149,6 +167,8 @@ export interface CounsellingSession {
   ccmsCurrentState?: string;
   isFollowUpRequired: boolean;
   status: WaitingListStatus;
+  /** Master code from counsellor.session_type (e.g. INITIAL, FOLLOW_UP). */
+  sessionTypeCode?: string;
   sessionStatus?: string;
   followUpReason?: string;
   followUpDate?: string;
@@ -163,6 +183,17 @@ export interface CounsellingSession {
   previousPackageName?: string;
   /** AddOnSurgery: numeric package amount before the upgrade. */
   previousPackageAmount?: number;
+
+  /** Estimate engine (Phase 1+) — restored from package_addons_json blob. */
+  estimateMode?: CounsellingEstimateMode;
+  packageTemplateId?: string | null;
+  discountType?: CounsellingDiscountType | null;
+  discountValue?: number;
+  discountReason?: string;
+  discountAmount?: number;
+  itemizedSubtotal?: number;
+  bundleSavings?: number;
+  finalPayableAmount?: number;
 }
 
 export interface FinalizeSurgeryRecord {
@@ -324,6 +355,8 @@ export interface AddPatientFormData {
   surgeryName: string;
   doctor: string;
   remarks: string;
+  /** Master code from counsellor.session_type */
+  sessionTypeCode: string;
 }
 
 export interface WaitingListFilters {
@@ -436,14 +469,12 @@ export interface FollowupPagedResponse<T> {
 export interface ReQueuePayload {
   newIntention?: PatientIntention;
   notes?: string;
+  /** Master code from counsellor.session_type */
+  sessionType?: string;
 }
 
-export type ReminderMessageType =
-  | 'CallbackReminder'
-  | 'AppointmentReminder'
-  | 'WellnessCheck'
-  | 'PostSurgeryFollowup'
-  | 'General';
+/** Master code from counsellor.reminder_type (or legacy API keys) */
+export type ReminderMessageType = string;
 
 export interface SendReminderPayload {
   channel: 'SMS' | 'WhatsApp' | 'Email';

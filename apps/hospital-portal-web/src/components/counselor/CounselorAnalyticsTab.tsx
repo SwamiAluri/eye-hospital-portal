@@ -15,7 +15,7 @@ import { ConversionFunnelChart } from './ConversionFunnelChart';
 import { useCounselorAnalytics } from '@/hooks/use-counselor-analytics';
 import type { AnalyticsSummary } from '@/hooks/use-counselor-analytics';
 
-const PERIOD_OPTIONS = [
+const ANALYTICS_PERIODS = [
   { value: 7,   label: '7 days'  },
   { value: 30,  label: '30 days' },
   { value: 60,  label: '60 days' },
@@ -126,7 +126,7 @@ export function CounselorAnalyticsTab() {
         <div className="flex items-center gap-2">
           {/* Period selector */}
           <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
-            {PERIOD_OPTIONS.map(o => (
+            {ANALYTICS_PERIODS.map(o => (
               <button
                 key={o.value}
                 onClick={() => setPeriod(o.value)}

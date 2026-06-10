@@ -51,6 +51,13 @@ const FIELD_LABELS: Record<string, string> = {
   wantToSeeDoctor:      'Wants to See Doctor',
   interestedToUpgrade:  'Interested to Upgrade',
   notRequiredPreAuth:   'No Pre-Auth Required',
+  estimateMode:         'Estimate Mode',
+  packageTemplateId:  'Package Template',
+  discountType:         'Discount Type',
+  discountValue:        'Discount Value',
+  discountReason:       'Discount Reason',
+  discountAmount:       'Discount Applied (₹)',
+  finalPayableAmount:   'Final Payable (₹)',
 };
 
 /** Human-readable display for raw field values stored in the audit trail. */
@@ -67,6 +74,10 @@ const VALUE_LABELS: Record<string, string> = {
   Cash:             'Cash',
   Insurance:        'Insurance',
   CoPay:            'Co-Pay',
+  custom:           'Custom estimate',
+  package:          'Package estimate',
+  percent:          'Percentage (%)',
+  flat:             'Flat amount (₹)',
 };
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;

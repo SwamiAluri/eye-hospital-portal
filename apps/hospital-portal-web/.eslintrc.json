@@ -1,0 +1,34 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "overrides": [
+    {
+      "files": ["src/components/counsellors-desk/session/**/*.tsx"],
+      "excludedFiles": ["src/components/counsellors-desk/session/primitives/**/*.tsx"],
+      "rules": {
+        "react/forbid-elements": [
+          "error",
+          {
+            "forbid": [
+              {
+                "element": "button",
+                "message": "Use CounsellingButton or another primitive from session/primitives."
+              },
+              {
+                "element": "input",
+                "message": "Use CounsellingInput or CounsellingSearchInput from session/primitives."
+              },
+              {
+                "element": "select",
+                "message": "Use CounsellingSelect from session/primitives."
+              },
+              {
+                "element": "textarea",
+                "message": "Use CounsellingTextarea from session/primitives."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

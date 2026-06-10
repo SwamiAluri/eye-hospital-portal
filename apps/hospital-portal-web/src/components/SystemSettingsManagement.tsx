@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { PatientTypeRulesPanel } from '@/components/settings/PatientTypeRulesPanel';
 
 // Types
 interface SystemSettings {
@@ -115,7 +116,7 @@ interface IntegrationSettings {
   calendarProvider: 'google' | 'outlook' | 'none';
 }
 
-type SettingTab = 'general' | 'email' | 'notifications' | 'security' | 'appearance' | 'integration';
+type SettingTab = 'general' | 'email' | 'notifications' | 'security' | 'appearance' | 'integration' | 'patientTypes';
 
 // Initial settings data
 const initialSettings: SystemSettings = {
@@ -195,32 +196,9 @@ const tabs = [
   { id: 'notifications' as SettingTab, label: 'Notifications', icon: Bell, description: 'Alert and reminder preferences' },
   { id: 'security' as SettingTab, label: 'Security', icon: Shield, description: 'Password and authentication policies' },
   { id: 'appearance' as SettingTab, label: 'Appearance', icon: Palette, description: 'Theme and branding customization' },
-  { id: 'integration' as SettingTab, label: 'Integration', icon: Database, description: 'API and third-party services' }
+  { id: 'integration' as SettingTab, label: 'Integration', icon: Database, description: 'API and third-party services' },
+  { id: 'patientTypes' as SettingTab, label: 'Patient Types', icon: User, description: 'Counsellor payment type workflow rules (read-only)' },
 ];
-
-const TIMEZONE_FALLBACK = [
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'America/Phoenix',
-  'Pacific/Honolulu',
-  'Europe/London',
-  'Europe/Paris',
-  'Asia/Tokyo',
-  'Australia/Sydney'
-].map(tz => ({ value: tz, label: tz }));
-
-const LANGUAGE_FALLBACK = [
-  { value: 'en', label: 'English' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'zh', label: 'Chinese' },
-  { value: 'ja', label: 'Japanese' }
-];
-
-const CURRENCY_FALLBACK = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'].map(c => ({ value: c, label: c }));
 
 export function SystemSettingsManagement() {
   const [activeTab, setActiveTab] = useState<SettingTab>('general');
@@ -230,9 +208,9 @@ export function SystemSettingsManagement() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [showSmtpPassword, setShowSmtpPassword] = useState(false);
 
-  const { options: timezoneOptions } = useMasterValues('system.timezone', TIMEZONE_FALLBACK);
-  const { options: languageOptions }  = useMasterValues('system.language',  LANGUAGE_FALLBACK);
-  const { options: currencyOptions }  = useMasterValues('system.currency',  CURRENCY_FALLBACK);
+  const { options: timezoneOptions } = useMasterValues('system.timezone');
+  const { options: languageOptions }  = useMasterValues('system.language');
+  const { options: currencyOptions }  = useMasterValues('system.currency');
 
   const handleSettingChange = (category: keyof SystemSettings, field: string, value: any) => {
     setSettings(prev => ({
@@ -1239,6 +1217,14 @@ export function SystemSettingsManagement() {
                 </CardContent>
               </Card>
             </div>
+          )}
+
+          {activeTab === 'patientTypes' && (
+            <Card>
+              <CardContent className="pt-6">
+                <PatientTypeRulesPanel />
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>

@@ -178,6 +178,7 @@ public class AppointmentsController : ControllerBase
             DoctorId = request.DoctorId,
             AppointmentDate = request.AppointmentDate,
             AppointmentType = request.AppointmentType,
+            ConsultationType = request.ConsultationType,
             DurationMinutes = request.DurationMinutes,
             Notes = request.Notes,
             Status = "Scheduled"
@@ -429,6 +430,7 @@ public class AppointmentsController : ControllerBase
                 : "Unknown Doctor",
             AppointmentDate = appointment.AppointmentDate,
             AppointmentType = appointment.AppointmentType,
+            ConsultationType = appointment.ConsultationType,
             DurationMinutes = appointment.DurationMinutes,
             Status = appointment.Status,
             Notes = appointment.Notes,

@@ -22,6 +22,8 @@ interface ExamCardProps {
     variant?: 'success' | 'warning' | 'error' | 'info' | 'neutral';
   };
   className?: string;
+  /** Compact padding for dense slit-lamp layouts */
+  dense?: boolean;
 }
 
 export function ExamCard({
@@ -34,6 +36,7 @@ export function ExamCard({
   icon,
   badge,
   className = '',
+  dense = false,
 }: ExamCardProps) {
   const [isExpanded, setIsExpanded] = React.useState(defaultExpanded);
 
@@ -49,7 +52,7 @@ export function ExamCard({
     <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${className}`}>
       {/* Header */}
       <div
-        className={`px-6 py-4 border-b border-gray-100 ${
+        className={`${dense ? 'px-4 py-2.5' : 'px-6 py-4'} border-b border-gray-100 ${
           collapsible ? 'cursor-pointer hover:bg-gray-50 transition-colors' : ''
         }`}
         onClick={() => collapsible && setIsExpanded(!isExpanded)}
@@ -95,7 +98,7 @@ export function ExamCard({
 
       {/* Content */}
       {(!collapsible || isExpanded) && (
-        <div className="px-6 py-5">{children}</div>
+        <div className={dense ? 'px-4 py-3' : 'px-6 py-5'}>{children}</div>
       )}
     </div>
   );
@@ -115,10 +118,11 @@ interface ExamInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function ExamInput({ label, error, helpText, infoTooltip, className = '', ...props }: ExamInputProps) {
+  const dense = className.includes('dense') || className.includes('py-1');
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1.5 inline-flex items-center">
+        <label className={`block font-medium text-gray-700 inline-flex items-center ${dense ? 'text-xs mb-1' : 'text-sm mb-1.5'}`}>
           {label}
           {infoTooltip && <InfoTooltip content={infoTooltip} />}
         </label>
@@ -167,10 +171,12 @@ export function ExamSelect({ label, error, helpText, infoTooltip, className = ''
     }
   };
 
+  const dense = className.includes('text-sm') && className.includes('py-1');
+
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1.5 inline-flex items-center">
+        <label className={`block font-medium text-gray-700 inline-flex items-center ${dense ? 'text-xs mb-1' : 'text-sm mb-1.5'}`}>
           {label}
           {infoTooltip && <InfoTooltip content={infoTooltip} />}
         </label>

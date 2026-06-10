@@ -1,6 +1,12 @@
 'use client';
 
 import { useMemo } from 'react';
+import { useMasterValues } from '@/hooks/use-master-values';
+import {
+  resolveCcmsPayers,
+  selectableAlignedPayers,
+  type AlignedCcmsPayer,
+} from '@/lib/ccms/resolve-ccms-payers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ccmsKeys } from '@/lib/ccms/ccms-query-keys';
 import { buildWorkspaceSections, type CaseDataLoadFlags } from '@/lib/ccms/ccms-tab-loading';
@@ -77,6 +83,28 @@ export function useCcmsMasterData(enabled = true) {
     payers: payersQuery.data ?? [],
     tpas: tpasQuery.data ?? [],
     isLoading: payersQuery.isLoading || tpasQuery.isLoading,
+  };
+}
+
+/** Master `insurance.provider` options joined to CCMS payer UUIDs (no free-text). */
+export function useCcmsAlignedPayers(enabled = true): {
+  aligned: AlignedCcmsPayer[];
+  selectable: AlignedCcmsPayer[];
+  isLoading: boolean;
+} {
+  const { options: masterOptions, loading: masterLoading } = useMasterValues('insurance.provider');
+  const { payers: ccmsPayers, isLoading: ccmsLoading } = useCcmsMasterData(enabled);
+
+  const aligned = useMemo(
+    () => resolveCcmsPayers(masterOptions, ccmsPayers),
+    [masterOptions, ccmsPayers],
+  );
+  const selectable = useMemo(() => selectableAlignedPayers(aligned), [aligned]);
+
+  return {
+    aligned,
+    selectable,
+    isLoading: masterLoading || ccmsLoading,
   };
 }
 

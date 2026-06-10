@@ -12,6 +12,8 @@ export interface Appointment {
   startTime: string;
   endTime: string;
   appointmentType: string;
+  consultationType?: string;
+  priority?: string;
   appointmentCategory?: 'OPD' | 'Surgery' | 'Diagnostic' | 'Follow-up' | 'Emergency';
   specialty?: string;
   status: 'scheduled' | 'confirmed' | 'in-progress' | 'completed' | 'cancelled' | 'no-show';
@@ -37,7 +39,9 @@ export interface Appointment {
 }
 
 export interface AppointmentFilters {
+  /** ISO date (YYYY-MM-DD) - maps to backend fromDate/toDate. */
   startDate?: string;
+  /** ISO date (YYYY-MM-DD) - maps to backend fromDate/toDate. */
   endDate?: string;
   doctorId?: string;
   patientId?: string;
@@ -56,6 +60,8 @@ export interface CreateAppointmentDto {
   startTime: string;
   duration: number;
   appointmentType: string;
+  consultationType?: string;
+  priority?: string;
   appointmentCategory?: 'OPD' | 'Surgery' | 'Diagnostic' | 'Follow-up' | 'Emergency';
   specialty?: string;
   reasonForVisit?: string;
@@ -135,8 +141,9 @@ export const appointmentsApi = {
   // List appointments with filters
   getAll: async (filters?: AppointmentFilters) => {
     const params = new URLSearchParams();
-    if (filters?.startDate) params.append('startDate', filters.startDate);
-    if (filters?.endDate) params.append('endDate', filters.endDate);
+    // Backend expects fromDate/toDate. Keep startDate/endDate in type for UI callsites.
+    if (filters?.startDate) params.append('fromDate', filters.startDate);
+    if (filters?.endDate) params.append('toDate', filters.endDate);
     if (filters?.doctorId) params.append('doctorId', filters.doctorId);
     if (filters?.patientId) params.append('patientId', filters.patientId);
     if (filters?.departmentId) params.append('departmentId', filters.departmentId);

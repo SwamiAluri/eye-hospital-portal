@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { employeesApi } from '@/lib/api';
-
-interface EmploymentType {
-  id: string;
-  typeCode: string;
-  typeName: string;
-  description?: string;
-}
+import { useEmploymentTypes } from '@/hooks/use-hr-masters';
 
 interface Employee {
   id: string;
@@ -17,7 +11,7 @@ interface Employee {
   jobTitle: string;
   departmentId?: string;
   branchId?: string;
-  employmentType?: string | EmploymentType;  // Can be string or object
+  employmentType?: string | { typeName?: string };
   employmentTypeId?: string;
   dateOfJoining?: string;
   hireDate?: string; // Backend returns this name
@@ -53,7 +47,7 @@ interface User {
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
+  const { types: employmentTypes } = useEmploymentTypes();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -97,7 +91,6 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     fetchEmployees();
-    fetchEmploymentTypes();
   }, [currentPage, searchTerm, employmentTypeFilter, statusFilter, departmentFilter]);
 
   const fetchEmployees = async () => {
@@ -134,17 +127,6 @@ export default function EmployeesPage() {
       console.error('Error fetching employees:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchEmploymentTypes = async () => {
-    try {
-      const response = await employeesApi.getEmploymentTypes();
-      if (response.data) {
-        setEmploymentTypes(response.data);
-      }
-    } catch (err) {
-      console.error('Error fetching employment types:', err);
     }
   };
 
@@ -321,8 +303,8 @@ export default function EmployeesPage() {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="">All Employment Types</option>
-            {employmentTypes.map(type => (
-              <option key={type.id} value={type.typeName}>{type.typeName}</option>
+            {employmentTypes.map((type) => (
+              <option key={type.value} value={type.label}>{type.label}</option>
             ))}
           </select>
           <select
@@ -576,11 +558,9 @@ export default function EmployeesPage() {
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">Select Type</option>
-                    <option value="full-time">Full-Time</option>
-                    <option value="part-time">Part-Time</option>
-                    <option value="contract">Contract</option>
-                    <option value="temporary">Temporary</option>
-                    <option value="intern">Intern</option>
+                    {employmentTypes.map((type) => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
                   </select>
                 </div>
 

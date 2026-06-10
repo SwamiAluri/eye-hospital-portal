@@ -16,15 +16,21 @@ public class VisitService : IVisitService
 {
     private readonly AppDbContext _context;
     private readonly IOpdBillService _opdBillService;
+    private readonly IOptometryQueueService _optometryQueueService;
+    private readonly IQueueDisplayNotifier _queueDisplayNotifier;
     private readonly ILogger<VisitService> _logger;
 
     public VisitService(
         AppDbContext context,
         IOpdBillService opdBillService,
+        IOptometryQueueService optometryQueueService,
+        IQueueDisplayNotifier queueDisplayNotifier,
         ILogger<VisitService> logger)
     {
         _context = context;
         _opdBillService = opdBillService;
+        _optometryQueueService = optometryQueueService;
+        _queueDisplayNotifier = queueDisplayNotifier;
         _logger = logger;
     }
 
@@ -115,10 +121,7 @@ public class VisitService : IVisitService
                 && v.Status != "completed"
                 && v.Status != "cancelled");
 
-        if (!string.IsNullOrEmpty(station))
-        {
-            query = query.Where(v => v.CurrentStation == station);
-        }
+        query = ApplyStationFilter(query, station);
 
         if (assignedTo.HasValue)
         {
@@ -283,15 +286,18 @@ public class VisitService : IVisitService
             .Where(b => b.AppointmentId == request.AppointmentId && b.DeletedAt == null)
             .FirstOrDefaultAsync();
 
-        // Get branchId from bill, or use first available branch as fallback
+        // Branch must be derived from bill or user profile (no hardcoded / first-branch fallback).
         var branchId = bill?.BranchId;
         if (branchId == null || branchId == Guid.Empty)
         {
-            // Fallback: get first active branch for tenant
-            var fallbackBranch = await _context.Branches
-                .Where(b => b.TenantId == appointment.TenantId && b.DeletedAt == null)
-                .FirstOrDefaultAsync();
-            branchId = fallbackBranch?.Id ?? Guid.Empty;
+            var user = await _context.Users.Where(u => u.Id == userId).Select(u => new { u.BranchId }).FirstOrDefaultAsync();
+            branchId = user?.BranchId;
+        }
+        if (branchId == null || branchId == Guid.Empty)
+        {
+            result.Success = false;
+            result.Message = "Branch is not configured for this check-in (missing bill branch and user branch)";
+            return result;
         }
 
         // Generate token
@@ -334,6 +340,8 @@ public class VisitService : IVisitService
 
         await _context.SaveChangesAsync();
 
+        await _queueDisplayNotifier.NotifyBranchDisplayUpdatedAsync(visit.TenantId, visit.BranchId);
+
         _logger.LogInformation("Patient checked in: Visit {VisitId}, Token {Token}, Emergency: {IsEmergency}",
             visit.Id, tokenNumber, request.IsEmergency);
 
@@ -359,17 +367,25 @@ public class VisitService : IVisitService
             return null;
         }
 
-        visit.CurrentStation = request.Station;
+        visit.CurrentStation = NormalizeStation(request.Station);
+
         visit.AssignedTo = request.AssignToUserId;
-        visit.AssignedAt = DateTime.UtcNow;
+        visit.AssignedAt = request.AssignToUserId.HasValue ? DateTime.UtcNow : null;
+        if (request.AssignToUserId == null)
+        {
+            visit.ActiveRoomCode = null;
+        }
         visit.UpdatedAt = DateTime.UtcNow;
         visit.UpdatedByUserId = userId;
 
-        // Update status based on station
-        visit.Status = request.Station switch
+        visit.Status = visit.CurrentStation switch
         {
+            "reception" => "checked_in",
             "optometrist" => "with_optometrist",
             "doctor" => "with_doctor",
+            "counselor" or "counsellor" => "with_counselor",
+            "imaging" => "at_imaging",
+            "billing" => "at_billing",
             "pharmacy" => "at_pharmacy",
             "optical" => "at_optical",
             "completed" => "completed",
@@ -378,10 +394,110 @@ public class VisitService : IVisitService
 
         await _context.SaveChangesAsync();
 
+        await _queueDisplayNotifier.NotifyBranchDisplayUpdatedAsync(visit.TenantId, visit.BranchId);
+
+        var reasonCode = request.ReasonCode ?? request.Reason;
+        if (visit.CurrentStation == "optometrist")
+        {
+            await _optometryQueueService.RecordStationEventAsync(
+                visit.TenantId,
+                visit.BranchId,
+                visit.Id,
+                visit.PatientId,
+                "optometrist",
+                "queued",
+                userId,
+                reasonCode: reasonCode ?? "INITIAL_REFRACTION",
+                reasonNotes: request.Reason,
+                assignedToUserId: request.AssignToUserId);
+        }
+
         _logger.LogInformation("Visit {VisitId} sent to {Station}, assigned to {AssignedTo}",
-            visit.Id, request.Station, request.AssignToUserId);
+            visit.Id, visit.CurrentStation, request.AssignToUserId);
 
         return await GetByIdAsync(visit.Id);
+    }
+
+    private static string NormalizeStation(string station)
+    {
+        var s = (station ?? string.Empty).Trim().ToLowerInvariant();
+        return s switch
+        {
+            "optometry" => "optometrist",
+            "counselling" => "counselor",
+            "counsellor" => "counselor",
+            _ => s,
+        };
+    }
+
+    private static IQueryable<Visit> ApplyStationFilter(IQueryable<Visit> query, string? station)
+    {
+        if (string.IsNullOrEmpty(station))
+        {
+            return query;
+        }
+
+        var normalized = NormalizeStation(station);
+        if (normalized == "optometrist")
+        {
+            return query.Where(v =>
+                v.CurrentStation == "optometrist" || v.CurrentStation == "optometry");
+        }
+
+        return query.Where(v => v.CurrentStation == normalized);
+    }
+
+    /// <summary>
+    /// Route by appointment even when check-in has not happened yet.
+    /// If a visit does not exist for this appointment, creates a visit with a token and marks it checked-in.
+    /// </summary>
+    public async Task<VisitDto?> SendToByAppointmentAsync(Guid appointmentId, SendToRequestDto request, Guid userId)
+    {
+        var existing = await _context.Visits.Where(v => v.AppointmentId == appointmentId && v.DeletedAt == null).FirstOrDefaultAsync();
+        if (existing == null)
+        {
+            var appointment = await _context.Appointments
+                .Include(a => a.Patient)
+                .Where(a => a.Id == appointmentId && a.DeletedAt == null)
+                .FirstOrDefaultAsync();
+            if (appointment == null) return null;
+
+            // Use user branch; bill may not exist yet when routing before payment/check-in.
+            var user = await _context.Users.Where(u => u.Id == userId).Select(u => new { u.BranchId }).FirstOrDefaultAsync();
+            var branchId = user?.BranchId;
+            if (branchId == null || branchId == Guid.Empty) return null;
+
+            var tokenNumber = await GenerateTokenAsync(branchId.Value);
+            var tokenParts = tokenNumber.Split('-');
+            var tokenSequence = int.Parse(tokenParts.Last());
+
+            existing = new Visit
+            {
+                Id = Guid.NewGuid(),
+                TenantId = appointment.TenantId,
+                PatientId = appointment.PatientId,
+                AppointmentId = appointment.Id,
+                BranchId = branchId.Value,
+                ConsultantId = appointment.DoctorId,
+                DepartmentId = appointment.DepartmentId,
+                VisitType = appointment.AppointmentType?.ToLower() ?? "new",
+                VisitCategory = "paid",
+                Status = "checked_in",
+                TokenNumber = tokenNumber,
+                TokenSequence = tokenSequence,
+                CheckedInAt = DateTime.UtcNow,
+                CheckedInBy = userId,
+                CurrentStation = "reception",
+                CreatedAt = DateTime.UtcNow,
+                CreatedByUserId = userId
+            };
+            _context.Visits.Add(existing);
+            await _context.SaveChangesAsync();
+        }
+
+        // Now route using existing SendTo logic.
+        request.VisitId = existing.Id;
+        return await SendToAsync(request, userId);
     }
 
     public async Task<VisitDto?> AssignToStaffAsync(Guid visitId, Guid staffId, Guid userId)
@@ -506,10 +622,7 @@ public class VisitService : IVisitService
                 && v.Status != "completed" 
                 && v.Status != "cancelled");
 
-        if (!string.IsNullOrEmpty(station))
-        {
-            query = query.Where(v => v.CurrentStation == station);
-        }
+        query = ApplyStationFilter(query, station);
 
         return await query.CountAsync();
     }
@@ -665,5 +778,212 @@ public class VisitService : IVisitService
         if (!validation.BillValid) return validation.BillMessage ?? "Bill validation failed";
         if (!validation.PaymentValid) return validation.PaymentMessage ?? "Payment validation failed";
         return "Unknown validation error";
+    }
+
+    public async Task<OptometryQueuePatientDto?> OpenOptometryExamAsync(
+        OptometryOpenExamRequestDto request,
+        Guid tenantId,
+        Guid userId)
+    {
+        const string optometristStation = "optometrist";
+        var today = DateTime.UtcNow.Date;
+
+        var patient = await _context.Patients
+            .FirstOrDefaultAsync(p =>
+                p.Id == request.PatientId &&
+                p.TenantId == tenantId &&
+                p.DeletedAt == null);
+
+        if (patient == null)
+        {
+            return null;
+        }
+
+        var visit = await _context.Visits
+            .Include(v => v.Appointment)
+            .Where(v =>
+                v.TenantId == tenantId &&
+                v.BranchId == request.BranchId &&
+                v.PatientId == request.PatientId &&
+                v.DeletedAt == null &&
+                v.CheckedInAt.HasValue &&
+                v.CheckedInAt.Value.Date == today &&
+                v.Status != "cancelled" &&
+                v.Status != "no_show")
+            .OrderByDescending(v => v.CheckedInAt)
+            .FirstOrDefaultAsync();
+
+        if (visit != null && visit.Status == "completed")
+        {
+            visit = null;
+        }
+
+        if (visit != null)
+        {
+            var station = (visit.CurrentStation ?? string.Empty).ToLowerInvariant();
+            if (station != optometristStation && station != "optometry")
+            {
+                await SendToAsync(new SendToRequestDto
+                {
+                    VisitId = visit.Id,
+                    Station = optometristStation,
+                    ReasonCode = "DOCTOR_REQUESTED",
+                    Reason = request.ChiefComplaint,
+                }, userId);
+
+                visit = await _context.Visits
+                    .Include(v => v.Appointment)
+                    .FirstAsync(v => v.Id == visit.Id);
+            }
+            else
+            {
+                var latestOptoEvent = await _context.VisitStationEvents
+                    .Where(e => e.VisitId == visit.Id && e.Station == optometristStation)
+                    .OrderByDescending(e => e.CreatedAt)
+                    .Select(e => e.EventType)
+                    .FirstOrDefaultAsync();
+
+                if (latestOptoEvent is "completed" or "referred" or "skipped")
+                {
+                    visit.Status = "with_optometrist";
+                    visit.AssignedTo = null;
+                    visit.AssignedAt = null;
+                    visit.ActiveRoomCode = null;
+                    visit.UpdatedAt = DateTime.UtcNow;
+                    visit.UpdatedByUserId = userId;
+                    await _context.SaveChangesAsync();
+
+                    await _optometryQueueService.RecordStationEventAsync(
+                        tenantId,
+                        request.BranchId,
+                        visit.Id,
+                        visit.PatientId,
+                        optometristStation,
+                        "queued",
+                        userId,
+                        reasonCode: "DOCTOR_REQUESTED",
+                        reasonNotes: request.ChiefComplaint);
+                }
+            }
+        }
+        else
+        {
+            visit = await CreateDirectOptometryVisitAsync(
+                tenantId,
+                request.BranchId,
+                patient,
+                userId,
+                request.ChiefComplaint);
+        }
+
+        await _optometryQueueService.EnsureQueueItemForVisitAsync(visit.Id, tenantId, userId);
+
+        return await _optometryQueueService.StartAsync(
+            visit.Id,
+            tenantId,
+            userId,
+            request.RoomCode);
+    }
+
+    private async Task<Visit> CreateDirectOptometryVisitAsync(
+        Guid tenantId,
+        Guid branchId,
+        Patient patient,
+        Guid userId,
+        string? chiefComplaint)
+    {
+        const string optometristStation = "optometrist";
+        var today = DateTime.UtcNow.Date;
+        var now = DateTime.UtcNow;
+        var doctorId = await ResolveDoctorIdForDirectVisitAsync(tenantId, userId);
+        var complaint = string.IsNullOrWhiteSpace(chiefComplaint)
+            ? "Optometry examination"
+            : chiefComplaint.Trim();
+
+        var appointment = await _context.Appointments
+            .Where(a =>
+                a.TenantId == tenantId &&
+                a.PatientId == patient.Id &&
+                a.DeletedAt == null &&
+                a.AppointmentDate.Date == today)
+            .FirstOrDefaultAsync();
+
+        if (appointment == null)
+        {
+            appointment = new Appointment
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                PatientId = patient.Id,
+                DoctorId = doctorId,
+                AppointmentDate = today,
+                StartTime = new TimeSpan(now.Hour, now.Minute, 0),
+                AppointmentType = "optometry-direct",
+                DurationMinutes = 15,
+                Priority = "normal",
+                Status = "checked_in",
+                ReasonForVisit = complaint,
+                Notes = "Created for direct optometry examination",
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            _context.Appointments.Add(appointment);
+            await _context.SaveChangesAsync();
+        }
+
+        var tokenNumber = await GenerateTokenAsync(branchId);
+        var tokenParts = tokenNumber.Split('-');
+        var tokenSequence = int.Parse(tokenParts.Last());
+
+        var visit = new Visit
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            PatientId = patient.Id,
+            AppointmentId = appointment.Id,
+            BranchId = branchId,
+            ConsultantId = doctorId,
+            DepartmentId = appointment.DepartmentId,
+            VisitType = "review",
+            VisitCategory = "free",
+            Status = "with_optometrist",
+            TokenNumber = tokenNumber,
+            TokenSequence = tokenSequence,
+            CheckedInAt = now,
+            CheckedInBy = userId,
+            CurrentStation = optometristStation,
+            Notes = complaint,
+            CreatedAt = now,
+            CreatedByUserId = userId,
+        };
+
+        _context.Visits.Add(visit);
+        await _context.SaveChangesAsync();
+
+        await _queueDisplayNotifier.NotifyBranchDisplayUpdatedAsync(tenantId, branchId);
+
+        await _optometryQueueService.RecordStationEventAsync(
+            tenantId,
+            branchId,
+            visit.Id,
+            visit.PatientId,
+            optometristStation,
+            "queued",
+            userId,
+            reasonCode: "INITIAL_REFRACTION",
+            reasonNotes: complaint);
+
+        return visit;
+    }
+
+    private async Task<Guid> ResolveDoctorIdForDirectVisitAsync(Guid tenantId, Guid fallbackUserId)
+    {
+        var doctorId = await _context.Appointments
+            .Where(a => a.TenantId == tenantId && a.DeletedAt == null)
+            .OrderByDescending(a => a.AppointmentDate)
+            .Select(a => a.DoctorId)
+            .FirstOrDefaultAsync();
+
+        return doctorId != Guid.Empty ? doctorId : fallbackUserId;
     }
 }

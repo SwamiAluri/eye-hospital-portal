@@ -39,6 +39,28 @@ namespace AuthService.Controllers
                 ? uid
                 : Guid.Empty;
 
+        // GET /api/master-values/lookup/{entityType}
+        // Lightweight active-only list for module dropdowns (all clinical/front-desk roles).
+        [HttpGet("lookup/{entityType}")]
+        [RequirePermission("master_data.lookup")]
+        public async Task<IActionResult> GetLookup(string entityType)
+        {
+            try
+            {
+                var tenantId = CurrentTenantId;
+                if (tenantId == Guid.Empty)
+                    return BadRequest(new { message = "Tenant ID is required." });
+
+                var result = await _service.GetLookupAsync(tenantId, entityType);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting master lookup for entity type {EntityType}", entityType);
+                return StatusCode(500, new { message = "Failed to retrieve master lookup values." });
+            }
+        }
+
         // GET /api/master-values/groups
         [HttpGet("groups")]
         [RequirePermission("master_data.view")]

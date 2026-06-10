@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useMasterValues } from '@/hooks/use-master-values';
 
 export type PaymentMode = 'cash' | 'card' | 'upi' | 'online' | 'insurance' | 'credit';
 
@@ -91,6 +92,27 @@ const PAYMENT_METHODS = [
 
 const CARD_NETWORKS = ['Visa', 'Mastercard', 'RuPay', 'American Express', 'Diners Club'];
 
+const MASTER_TO_DIALOG_MODE: Record<string, PaymentMode> = {
+  CASH: 'cash',
+  CARD: 'card',
+  UPI: 'upi',
+  ONLINE: 'online',
+  INSURANCE: 'insurance',
+  CREDIT: 'credit',
+  NEFT: 'online',
+  RTGS: 'online',
+  CHEQUE: 'cash',
+};
+
+const DIALOG_MODE_META: Record<PaymentMode, { icon: typeof Banknote; color: string }> = {
+  cash: { icon: Banknote, color: 'bg-green-100 text-green-800' },
+  card: { icon: CreditCard, color: 'bg-blue-100 text-blue-800' },
+  upi: { icon: Smartphone, color: 'bg-purple-100 text-purple-800' },
+  online: { icon: Globe, color: 'bg-indigo-100 text-indigo-800' },
+  insurance: { icon: Building2, color: 'bg-orange-100 text-orange-800' },
+  credit: { icon: AlertCircle, color: 'bg-yellow-100 text-yellow-800' },
+};
+
 export const PaymentDialog: React.FC<PaymentDialogProps> = ({
   isOpen,
   onClose,
@@ -100,7 +122,32 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
   patientName,
   balanceDue,
 }) => {
+  const { options: paymentModeOptions } = useMasterValues('billing.payment_mode');
+  const paymentMethods = useMemo(() => {
+    const fromMaster = paymentModeOptions
+      .map((o) => {
+        const value = MASTER_TO_DIALOG_MODE[o.value.toUpperCase()];
+        if (!value) return null;
+        const meta = DIALOG_MODE_META[value];
+        return { value, label: o.label, icon: meta.icon, color: meta.color };
+      })
+      .filter((m): m is NonNullable<typeof m> => m != null);
+    const seen = new Set<string>();
+    const unique = fromMaster.filter((m) => {
+      if (seen.has(m.value)) return false;
+      seen.add(m.value);
+      return true;
+    });
+    return unique.length > 0 ? unique : PAYMENT_METHODS;
+  }, [paymentModeOptions]);
+
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
+
+  useEffect(() => {
+    if (!paymentMethods.some((m) => m.value === paymentMode)) {
+      setPaymentMode(paymentMethods[0]?.value ?? 'cash');
+    }
+  }, [paymentMethods, paymentMode]);
   const [amount, setAmount] = useState(balanceDue?.toString() || billAmount.toString());
   const [cardDetails, setCardDetails] = useState({
     cardLastFour: '',
@@ -201,7 +248,7 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
     onSubmit(paymentData);
   };
 
-  const selectedMethod = PAYMENT_METHODS.find((m) => m.value === paymentMode);
+  const selectedMethod = paymentMethods.find((m) => m.value === paymentMode);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -233,7 +280,7 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
           <div>
             <Label className="mb-3 block">Payment Method</Label>
             <div className="grid grid-cols-3 gap-3">
-              {PAYMENT_METHODS.map((method) => {
+              {paymentMethods.map((method) => {
                 const Icon = method.icon;
                 const isSelected = paymentMode === method.value;
                 return (

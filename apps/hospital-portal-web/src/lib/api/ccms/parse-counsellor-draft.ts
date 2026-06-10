@@ -19,6 +19,8 @@ export interface CounsellorDraftSnapshot {
   estimatedMedicines?: number | string;
   estimatedOther?: number | string;
   estimatedAmount?: number | string;
+  /** Counselling desk final payable after discount (from package_addons_json). */
+  finalPayableAmount?: number | string;
   clinicalNotes?: string;
   urgencyLevel?: string;
   tpaContactPerson?: string;

@@ -34,7 +34,7 @@ public class ExaminationDraftController : ControllerBase
     /// POST /api/Examinations/draft
     /// </summary>
     [HttpPost("draft")]
-    [RequirePermission("examination.create")]
+    [RequirePermission("CLINICAL:EXAMINATION:EDIT")]
     public async Task<ActionResult<ExaminationDraftResponse>> SaveDraft([FromBody] SaveExaminationDraftRequest request)
     {
         try
@@ -64,12 +64,26 @@ public class ExaminationDraftController : ControllerBase
                 return Forbid("You can only save drafts for yourself");
             }
 
+            var visitId = request.VisitId ?? TryParseVisitIdFromData(request.Data);
+
+            // Optometry exam drafts must be visit-scoped; doctor desk drafts may omit visitId.
+            if (request.VisitId.HasValue && !visitId.HasValue)
+            {
+                return BadRequest("Invalid VisitId for examination draft");
+            }
+
+            if (IsOptometryExamDraft(request.Data) && !visitId.HasValue)
+            {
+                return BadRequest("VisitId is required for optometry examination drafts");
+            }
+
             // Check for existing draft
             var existingDraft = await _context.ExaminationDrafts
-                .FirstOrDefaultAsync(d => 
-                    d.PatientId == request.PatientId && 
+                .FirstOrDefaultAsync(d =>
+                    d.PatientId == request.PatientId &&
                     d.DoctorId == request.DoctorId &&
-                    d.TenantId == tenantGuid);
+                    d.TenantId == tenantGuid &&
+                    d.VisitId == visitId);
 
             var now = DateTime.UtcNow;
             var expiresAt = request.ExpiresAt ?? now.AddHours(24);
@@ -80,14 +94,18 @@ public class ExaminationDraftController : ControllerBase
             if (existingDraft != null)
             {
                 // Update existing draft
-                _logger.LogInformation("Updating existing draft {DraftId} for patient {PatientId}", 
-                    existingDraft.Id, request.PatientId);
+                _logger.LogInformation("Updating existing draft {DraftId} for patient {PatientId} visit {VisitId}",
+                    existingDraft.Id, request.PatientId, visitId);
 
                 existingDraft.Data = request.Data;
                 existingDraft.UpdatedAt = now;
                 existingDraft.ExpiresAt = expiresAt;
                 existingDraft.CompletionPercentage = completionPercentage;
                 existingDraft.UpdatedByUserId = userGuid;
+                if (visitId.HasValue && existingDraft.VisitId == null)
+                {
+                    existingDraft.VisitId = visitId;
+                }
 
                 await _context.SaveChangesAsync();
 
@@ -102,6 +120,7 @@ public class ExaminationDraftController : ControllerBase
                     PatientId = request.PatientId,
                     DoctorId = request.DoctorId,
                     TenantId = tenantGuid,
+                    VisitId = visitId,
                     Data = request.Data,
                     Timestamp = now,
                     CreatedAt = now,
@@ -118,8 +137,8 @@ public class ExaminationDraftController : ControllerBase
                 _logger.LogInformation("Created new draft {DraftId} for patient {PatientId}", 
                     newDraft.Id, request.PatientId);
 
-                return CreatedAtAction(nameof(GetDraft), 
-                    new { patientId = request.PatientId }, 
+                return CreatedAtAction(nameof(GetDraft),
+                    new { patientId = request.PatientId, visitId },
                     MapToResponse(newDraft));
             }
         }
@@ -131,12 +150,14 @@ public class ExaminationDraftController : ControllerBase
     }
 
     /// <summary>
-    /// Get draft for a specific patient (returns 404 if not found)
-    /// GET /api/Examinations/draft/{patientId}
+    /// Get draft for a specific patient (optionally scoped to visit). Returns 404 if not found.
+    /// GET /api/Examinations/draft/{patientId}?visitId={visitId}
     /// </summary>
     [HttpGet("draft/{patientId}")]
-    [RequirePermission("examination.view")]
-    public async Task<ActionResult<ExaminationDraftResponse>> GetDraft(Guid patientId)
+    [RequirePermission("CLINICAL:EXAMINATION:VIEW")]
+    public async Task<ActionResult<ExaminationDraftResponse>> GetDraft(
+        Guid patientId,
+        [FromQuery] Guid? visitId = null)
     {
         try
         {
@@ -156,16 +177,18 @@ public class ExaminationDraftController : ControllerBase
             var userGuid = Guid.Parse(userId);
 
             var draft = await _context.ExaminationDrafts
-                .FirstOrDefaultAsync(d => 
-                    d.PatientId == patientId && 
+                .FirstOrDefaultAsync(d =>
+                    d.PatientId == patientId &&
                     d.DoctorId == userGuid &&
                     d.TenantId == tenantGuid &&
+                    d.VisitId == visitId &&
                     d.ExpiresAt > DateTime.UtcNow); // Only return non-expired drafts
 
             if (draft == null)
             {
-                _logger.LogInformation("No draft found for patient {PatientId} and doctor {DoctorId}", 
-                    patientId, userGuid);
+                _logger.LogInformation(
+                    "No draft found for patient {PatientId}, doctor {DoctorId}, visit {VisitId}",
+                    patientId, userGuid, visitId);
                 return NotFound("No draft found for this patient");
             }
 
@@ -182,12 +205,14 @@ public class ExaminationDraftController : ControllerBase
     }
 
     /// <summary>
-    /// Delete draft for a specific patient
-    /// DELETE /api/Examinations/draft/{patientId}
+    /// Delete draft for a specific patient (optionally scoped to visit).
+    /// DELETE /api/Examinations/draft/{patientId}?visitId={visitId}
     /// </summary>
     [HttpDelete("draft/{patientId}")]
-    [RequirePermission("examination.delete")]
-    public async Task<ActionResult> DeleteDraft(Guid patientId)
+    [RequirePermission("CLINICAL:EXAMINATION:EDIT")]
+    public async Task<ActionResult> DeleteDraft(
+        Guid patientId,
+        [FromQuery] Guid? visitId = null)
     {
         try
         {
@@ -207,10 +232,11 @@ public class ExaminationDraftController : ControllerBase
             var userGuid = Guid.Parse(userId);
 
             var draft = await _context.ExaminationDrafts
-                .FirstOrDefaultAsync(d => 
-                    d.PatientId == patientId && 
+                .FirstOrDefaultAsync(d =>
+                    d.PatientId == patientId &&
                     d.DoctorId == userGuid &&
-                    d.TenantId == tenantGuid);
+                    d.TenantId == tenantGuid &&
+                    d.VisitId == visitId);
 
             if (draft == null)
             {
@@ -238,7 +264,7 @@ public class ExaminationDraftController : ControllerBase
     /// GET /api/Examinations/drafts
     /// </summary>
     [HttpGet("drafts")]
-    [RequirePermission("examination.view")]
+    [RequirePermission("CLINICAL:EXAMINATION:VIEW")]
     public async Task<ActionResult<List<ExaminationDraftResponse>>> GetAllDrafts()
     {
         try
@@ -321,6 +347,7 @@ public class ExaminationDraftController : ControllerBase
             Id = draft.Id,
             PatientId = draft.PatientId,
             DoctorId = draft.DoctorId,
+            VisitId = draft.VisitId,
             TenantId = draft.TenantId,
             Data = draft.Data,
             CompletionPercentage = draft.CompletionPercentage,
@@ -367,6 +394,47 @@ public class ExaminationDraftController : ControllerBase
         catch
         {
             return 0; // If parsing fails, return 0% completion
+        }
+    }
+
+    private static Guid? TryParseVisitIdFromData(string jsonData)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonData);
+            if (!doc.RootElement.TryGetProperty("visitId", out var visitEl)) return null;
+            var raw = visitEl.GetString();
+            return Guid.TryParse(raw, out var visitId) ? visitId : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Optometry exam working copies (versioned draft payload); doctor desk drafts omit these markers.
+    /// </summary>
+    private static bool IsOptometryExamDraft(string jsonData)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonData);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("version", out var versionEl) &&
+                versionEl.ValueKind == JsonValueKind.Number &&
+                versionEl.GetInt32() == 1)
+            {
+                return true;
+            }
+            if (root.TryGetProperty("vaExtended", out _)) return true;
+            if (root.TryGetProperty("iopExtended", out _)) return true;
+            if (root.TryGetProperty("medicalHistorySnapshot", out _)) return true;
+            return false;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

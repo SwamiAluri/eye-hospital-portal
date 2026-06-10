@@ -6,6 +6,7 @@ import { patientApi } from '@/lib/api/patients.api';
 import RegistrationCardPreview from '@/components/patients/RegistrationCardPreview';
 import { X } from 'lucide-react';
 import { useMasterValues } from '@/hooks/use-master-values';
+import { MasterValuesSelect } from '@/components/master-data/MasterValuesSelect';
 
 interface PatientFormData {
   // Phase 6: Extended Demographics
@@ -169,50 +170,14 @@ export default function NewPatientPage() {
   const [savedPatient, setSavedPatient] = useState<any>(null);
   const [showRegistrationCard, setShowRegistrationCard] = useState(false);
 
-  // ── Master data dropdowns (feature-flag aware, fallback to hardcoded) ─────────
-  const TITLE_FALLBACK = [
-    { value: 'Dr', label: 'Dr.' }, { value: 'Mr', label: 'Mr.' },
-    { value: 'Ms', label: 'Ms.' }, { value: 'Mrs', label: 'Mrs.' },
-    { value: 'Master', label: 'Master' }, { value: 'Miss', label: 'Miss' },
-  ];
-  const GENDER_FALLBACK = [
-    { value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' },
-    { value: 'Other', label: 'Other' },
-  ];
-  const OCCUPATION_FALLBACK = [
-    { value: 'Student', label: 'Student' }, { value: 'Homemaker', label: 'Homemaker' },
-    { value: 'Retired', label: 'Retired' }, { value: 'Unemployed', label: 'Unemployed' },
-    { value: 'Business Owner', label: 'Business Owner' }, { value: 'Self Employed', label: 'Self Employed' },
-    { value: 'Private Sector', label: 'Private Sector' }, { value: 'Government Employee', label: 'Government Employee' },
-    { value: 'Healthcare Professional', label: 'Healthcare Professional' },
-    { value: 'Teacher/Professor', label: 'Teacher/Professor' }, { value: 'Engineer', label: 'Engineer' },
-    { value: 'IT Professional', label: 'IT Professional' }, { value: 'Skilled Labor', label: 'Skilled Labor' },
-    { value: 'Agriculture', label: 'Agriculture' }, { value: 'Other', label: 'Other' },
-  ];
-  const MARITAL_FALLBACK = [
-    { value: 'Single', label: 'Single' }, { value: 'Married', label: 'Married' },
-    { value: 'Divorced', label: 'Divorced' }, { value: 'Widowed', label: 'Widowed' },
-    { value: 'Separated', label: 'Separated' },
-  ];
-  const RELIGION_FALLBACK = [
-    { value: 'Hindu', label: 'Hindu' }, { value: 'Muslim', label: 'Muslim' },
-    { value: 'Christian', label: 'Christian' }, { value: 'Sikh', label: 'Sikh' },
-    { value: 'Buddhist', label: 'Buddhist' }, { value: 'Jain', label: 'Jain' },
-    { value: 'Jewish', label: 'Jewish' }, { value: 'Other', label: 'Other' },
-    { value: 'Prefer not to say', label: 'Prefer not to say' },
-  ];
-  const BLOOD_GROUP_FALLBACK = [
-    { value: 'A+', label: 'A+' }, { value: 'A-', label: 'A-' },
-    { value: 'B+', label: 'B+' }, { value: 'B-', label: 'B-' },
-    { value: 'AB+', label: 'AB+' }, { value: 'AB-', label: 'AB-' },
-    { value: 'O+', label: 'O+' }, { value: 'O-', label: 'O-' },
-  ];
-  const { options: titleOptions } = useMasterValues('patient.title', TITLE_FALLBACK);
-  const { options: genderOptions } = useMasterValues('patient.gender', GENDER_FALLBACK);
-  const { options: occupationOptions } = useMasterValues('patient.occupation', OCCUPATION_FALLBACK);
-  const { options: maritalOptions } = useMasterValues('patient.marital_status', MARITAL_FALLBACK);
-  const { options: religionOptions } = useMasterValues('patient.religion', RELIGION_FALLBACK);
-  const { options: bloodGroupOptions } = useMasterValues('patient.blood_group', BLOOD_GROUP_FALLBACK);
+  // ── Master data dropdowns (lookup API — no hardcoded fallbacks) ─────────────
+  const { options: titleOptions } = useMasterValues('patient.title');
+  const { options: genderOptions } = useMasterValues('patient.gender');
+  const { options: occupationOptions } = useMasterValues('patient.occupation');
+  const { options: maritalOptions } = useMasterValues('patient.marital_status');
+  const { options: religionOptions } = useMasterValues('patient.religion');
+  const { options: bloodGroupOptions } = useMasterValues('patient.blood_group');
+  const { options: nationalityOptions } = useMasterValues('patient.nationality');
 
   // Webcam state
   const [showWebcam, setShowWebcam] = useState(false);
@@ -731,17 +696,10 @@ export default function NewPatientPage() {
                       onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="">Select Nationality</option>
-                      <option value="Indian">Indian</option>
-                      <option value="American">American</option>
-                      <option value="British">British</option>
-                      <option value="Canadian">Canadian</option>
-                      <option value="Australian">Australian</option>
-                      <option value="German">German</option>
-                      <option value="French">French</option>
-                      <option value="Chinese">Chinese</option>
-                      <option value="Japanese">Japanese</option>
-                      <option value="Other">Other</option>
+                      <option value="">{nationalityOptions.length === 0 ? 'No nationalities configured' : 'Select Nationality'}</option>
+                      {nationalityOptions.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -1208,21 +1166,16 @@ export default function NewPatientPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     ID Proof Type
                   </label>
-                  <select
+                  <MasterValuesSelect
+                    entityType="patient.id_proof_type"
                     value={formData.idProofType}
-                    onChange={(e) => setFormData({ ...formData, idProofType: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Select Primary ID Type</option>
-                    <option value="Aadhaar">Aadhaar Card</option>
-                    <option value="NationalID">National ID</option>
-                    <option value="Passport">Passport</option>
-                    <option value="DrivingLicense">Driving License</option>
-                  </select>
+                    onChange={(v) => setFormData({ ...formData, idProofType: v })}
+                    placeholder="Select Primary ID Type"
+                  />
                 </div>
 
                 {/* Conditional ID Number Field */}
-                {formData.idProofType === 'Aadhaar' && (
+                {(formData.idProofType === 'AADHAAR' || formData.idProofType === 'Aadhaar') && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Aadhaar Number (India)
@@ -1250,7 +1203,10 @@ export default function NewPatientPage() {
                   </div>
                 )}
 
-                {formData.idProofType === 'NationalID' && (
+                {formData.idProofType &&
+                  !['AADHAAR', 'Aadhaar', 'PASSPORT', 'Passport', 'DL', 'DrivingLicense'].includes(
+                    formData.idProofType,
+                  ) && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       National ID Number
@@ -1265,7 +1221,7 @@ export default function NewPatientPage() {
                   </div>
                 )}
 
-                {formData.idProofType === 'Passport' && (
+                {(formData.idProofType === 'PASSPORT' || formData.idProofType === 'Passport') && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Passport Number
@@ -1280,7 +1236,7 @@ export default function NewPatientPage() {
                   </div>
                 )}
 
-                {formData.idProofType === 'DrivingLicense' && (
+                {(formData.idProofType === 'DL' || formData.idProofType === 'DrivingLicense') && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Driving License Number
@@ -1390,21 +1346,12 @@ export default function NewPatientPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Relationship
                     </label>
-                    <select
+                    <MasterValuesSelect
+                      entityType="patient.relationship"
                       value={formData.guardianRelationship}
-                      onChange={(e) => setFormData({ ...formData, guardianRelationship: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Select Relationship</option>
-                      <option value="Parent">Parent</option>
-                      <option value="Legal Guardian">Legal Guardian</option>
-                      <option value="Grandparent">Grandparent</option>
-                      <option value="Sibling">Sibling</option>
-                      <option value="Spouse">Spouse</option>
-                      <option value="Child">Child</option>
-                      <option value="Caregiver">Caregiver</option>
-                      <option value="Other">Other</option>
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, guardianRelationship: v })}
+                      placeholder="Select Relationship"
+                    />
                   </div>
                 </div>
 
@@ -1549,19 +1496,12 @@ export default function NewPatientPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Relationship
                   </label>
-                  <select
+                  <MasterValuesSelect
+                    entityType="patient.relationship"
                     value={formData.emergencyContactRelation}
-                    onChange={(e) => setFormData({ ...formData, emergencyContactRelation: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Select Relationship</option>
-                    <option value="Spouse">Spouse</option>
-                    <option value="Parent">Parent</option>
-                    <option value="Child">Child</option>
-                    <option value="Sibling">Sibling</option>
-                    <option value="Friend">Friend</option>
-                    <option value="Other">Other</option>
-                  </select>
+                    onChange={(v) => setFormData({ ...formData, emergencyContactRelation: v })}
+                    placeholder="Select Relationship"
+                  />
                 </div>
               </div>
 

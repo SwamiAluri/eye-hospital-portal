@@ -21,7 +21,13 @@ public class PreOpCompletion
     public Guid?    DocumentId            { get; set; }
 
     public Guid?    CompletedByUserId     { get; set; }
+    public string?  CompletedByRole       { get; set; }
     public DateTime? CompletedAt          { get; set; }
+
+    /// <summary>ward | counsellor | copied_from_counsellor</summary>
+    public string?  Source                { get; set; }
+    public DateTime? CopiedAt             { get; set; }
+    public Guid?    CounsellorCompletionId { get; set; }
 
     public Guid?    CreatedByUserId       { get; set; }
     public Guid?    UpdatedByUserId       { get; set; }

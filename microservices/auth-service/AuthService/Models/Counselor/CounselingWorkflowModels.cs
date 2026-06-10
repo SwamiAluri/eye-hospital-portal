@@ -211,8 +211,19 @@ namespace AuthService.Models.Counselor
         public bool AddToQueue { get; set; } = true; // Auto-add to counselor queue
     }
 
+    public class StartCounselingSessionRequest
+    {
+        /// <summary>Master code from counsellor.session_type (e.g. INITIAL, FOLLOW_UP).</summary>
+        [MaxLength(30)]
+        public string? SessionType { get; set; }
+    }
+
     public class UpdateCounselingSessionRequest
     {
+        /// <summary>Master code from counsellor.session_type (e.g. INITIAL, FOLLOW_UP).</summary>
+        [MaxLength(30)]
+        public string? SessionType { get; set; }
+
         public Guid? CounselorId { get; set; }
         public DateTime? SessionStartTime { get; set; }
         public DateTime? SessionEndTime { get; set; }

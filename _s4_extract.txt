@@ -1,0 +1,884 @@
+=== LINE 40 [Form 3] ===
+Safety Form 1]
+        C4[PAC Form 3/5]
+        C5[Post-op Form 4]
+    end
+
+    C0 -.->|soft, non-blocking| E
+    C1 -.->|soft at admit| A
+    C2 -.->|optional gate| S
+    C3 -.->|optional gate| I
+    C4 -.->|optional gate| R
+    C5 -.->|optional gate| D
+```
+
+---
+
+## 2. Your Clarifications — Locked Decisions
+
+| # | Decision | Implementation rule |
+|---|---|---|
+| 1 | Outpatient checklist at **Counsellor Desk + Ward Expected** | Same item catalog, two `form_context` values; **never blocks** journey creation or `Expected → Admitted` |
+| 2 | Xylocaine sensitivity | Show when `anaesthesia_type = Local`; `is_blocking = false` (optional) |
+| 3 | Fellow work-up | No fellow role; completable by Junior Doctor, OT staff, or Nurse |
+| 4 | Billing gate at OT Before Anaesthesia | Hard block by default; **Emergency FC override** allows proceed |
+| 5 | Day-care post-op (Form 4) | Ward post-op checklist shown; `is_blocking = false` for `admission_type = DayCare` |
+| 6 | Witness consent | Item exists; `is_blocking = false` (optional) |
+| 7 | Anaesthesia monitoring | Start with 0–5, 10, 15, 20 min; **allow adding rows** beyond 20 min |
+| 8 | IOL power sticker | Three checks: barcode scan + manual "sticker in file" + IOL inventory match; all optional |
+| 9 | Return from OT | OT Nurse, Anaesthetist, or Surgeon can authorize; existing `transitionClinical(ReadyForSurgery)` + reason |
+| 10 | Build order | Form 2 → Form 4 → Form 1 OT → Form 3/5 | |
+| 11 | State machine | **No major flow changes** — columns/tables only |
+
+---
+
+## 3. Checklist Phase Map (No New Clinical States)
+
+Each phase maps to an **existing** clinical state window. Gates are configurable; only items marked `is_blocking = true` hard-block transitions (unless override applies).
+
+| Phase | Form | UI location | Active during state(s) | Blocks transition? |
+|---|---|---|---|---|
+| **P0: Outpatient** | Form 1 (top) | Counsellor Desk + Ward Expected | Before/during `Expected` | **Never** |
+| **P1: Ward Pre-op** | Form 2 | Ward → Expected modal | `Expected` (pre-admit) | **Never** (per your answer) |
+| **P2: Ward Investigations** | Form 1 (Ward) | Ward → Expected/Admitted | `Expected`, `Admitted` | Soft only |
+| **P3: Pre-op Medication** | Form 4 (pre section) | Ward → Admitted | `Admitted` | Optional gate before `SentToOT` |
+| **P4: OT Before Anaesthesia** | Form 1 (OT) | OT → SentToOT | `SentToOT` | Billing: hard unless Emergency FC |
+| **P5: WHO Before Incision** | Form 1 (OT) | OT → Accepted | `SentToOT` (ot=Accepted) | Optional gate before `startSurgery` |
+| **P6: Intra-op Monitoring** | Form 5 | OT → InOT | `InOT` | Non-blocking (record only) |
+| **P7: OT After Surgery** | Form 1 (OT) | OT → SurgeryCompleted | `SurgeryCompleted` | Optional gate before `PostOp` |
+| **P8: Ward Post-op** | Form 4 (post) + Form 1 Ward | Ward → PostOp | `PostOp` | Optional; DayCare items non-blocking |
+| **P9: PAC** | Form 3 | Ward tab / Anaesthesia tab | `Expected` through `ReadyForSurgery` | Optional gate before `ReadyForSurgery` |
+| **P10: Anaesthesia Discharge** | Form 5 (bottom) | Ward → ReadyForDischarge | `ReadyForDischarge` | Optional gate before `Discharged` |
+| **P11: Discharge Summary** | Existing | Ward → ReadyForDischarge | `ReadyForDischarge` | Existing finalize flow |
+
+---
+
+## 4. Phase-by-Phase Implementation (Your Priority Order)
+
+### Phase 1 — Form 2: Ward Checklist (Build first)
+
+**Scope:** 17 ward pre-op items as a dedicated checklist entity, shown in Ward Expected modal alongside existing `PreOpTab`.
+
+**DB additions:**
+
+```sql
+-- Extend checklist catalog (no state machine change)
+ALTER TABLE pre_op_section_items ADD COLUMN IF NOT EXISTS
+  form_code VARCHAR(30),          -- 'WARD_CHECKLIST', 'OUTPATIENT_SAFETY', etc.
+  form_context VARCHAR(30),       -- 'counsellor' | 'ward' | 'ot' | 'anaesthesia'
+  anaesthesia_type_filter VARCHAR(20), -- 'Local' | 'General' | 'Topical' | NULL
+  admission_type_filter VARCHAR(20);   -- 'DayCare' | 'IPD' | 'Emergency' | NULL
+
+-- Timestamps (new columns on patient_journey — no state ch
+
+=== LINE 40 [Form 5] ===
+**P6: Intra-op Monitoring** | Form 5 | OT → InOT | `InOT` | Non-blocking (record only) |
+| **P7: OT After Surgery** | Form 1 (OT) | OT → SurgeryCompleted | `SurgeryCompleted` | Optional gate before `PostOp` |
+| **P8: Ward Post-op** | Form 4 (post) + Form 1 Ward | Ward → PostOp | `PostOp` | Optional; DayCare items non-blocking |
+| **P9: PAC** | Form 3 | Ward tab / Anaesthesia tab | `Expected` through `ReadyForSurgery` | Optional gate before `ReadyForSurgery` |
+| **P10: Anaesthesia Discharge** | Form 5 (bottom) | Ward → ReadyForDischarge | `ReadyForDischarge` | Optional gate before `Discharged` |
+| **P11: Discharge Summary** | Existing | Ward → ReadyForDischarge | `ReadyForDischarge` | Existing finalize flow |
+
+---
+
+## 4. Phase-by-Phase Implementation (Your Priority Order)
+
+### Phase 1 — Form 2: Ward Checklist (Build first)
+
+**Scope:** 17 ward pre-op items as a dedicated checklist entity, shown in Ward Expected modal alongside existing `PreOpTab`.
+
+**DB additions:**
+
+```sql
+-- Extend checklist catalog (no state machine change)
+ALTER TABLE pre_op_section_items ADD COLUMN IF NOT EXISTS
+  form_code VARCHAR(30),          -- 'WARD_CHECKLIST', 'OUTPATIENT_SAFETY', etc.
+  form_context VARCHAR(30),       -- 'counsellor' | 'ward' | 'ot' | 'anaesthesia'
+  anaesthesia_type_filter VARCHAR(20), -- 'Local' | 'General' | 'Topical' | NULL
+  admission_type_filter VARCHAR(20);   -- 'DayCare' | 'IPD' | 'Emergency' | NULL
+
+-- Timestamps (new columns on patient_journey — no state change)
+ALTER TABLE patient_journey ADD COLUMN IF NOT EXISTS
+  ward_check_in_at TIMESTAMPTZ,
+  informed_ot_team_at TIMESTAMPTZ;  -- Ward item #17
+```
+
+**Seed Form 2 items** (all `form_code = 'WARD_CHECKLIST'`, `form_context = 'ward'`):
+
+| # | item_key | is_blocking | Notes |
+|---|---|---|---|
+| 1 | patient_identity_confirmed | false | |
+| 2 | bill_payment_confirmed | false | Auto-pull from `financial_state`; manual override allowed |
+| 3 | ward_check_in_time | false | Sets `ward_check_in_at` |
+| 4 | investigation_reports_available | false | Future: auto from LIS |
+| 5 | ascan_done | false | Auto-pull from optometry if available |
+| 6 | toric_iol_icl_marking | false | Filter: toric/ICL surgeries |
+| 7 | operation_site_marked | false | |
+| 8 | consent_patient_signed | true | |
+| 9 | consent_witness_signed | false | Optional per your answer |
+| 10 | consent_surgeon_signed | false | |
+| 11 | vitals_checked | false | Link to `vital_sign` |
+| 12 | known_allergies_documented | false | |
+| 13 | preop_medication_given | false | Links to med log (Phase 2) |
+| 14 | preop_slit_lamp_done | false | |
+| 15 | pac_done_documented | false | Links to PAC form (Phase 4) |
+| 16 | dilatation_done | false | Already in migration 93 |
+| 17 | informed_surgeon_anaesthesia_ot | false | Sets `informed_ot_team_at`, sends notification |
+
+**BE:**
+- Reuse `PreOpClearanceService` completions; filter by `form_code = 'WARD_CHECKLIST'`
+- `approvePreOpClearance` / `admitPatient`: **no new blocking** from Form 2
+- Add `GET /journeys/{id}/checklists/ward` for Form 2-only view
+
+**FE:**
+- Ward Expected modal: tabbed UI — **"Ward Checklist"** (Form 2 layout) + existing PreOpTab
+- Counsellor Desk (later in P0): same items, `form_context = 'counsellor'`, read/write against `counseling_session_id` pre-journey
+
+**Roles:** Nurse (primary), Junior Doctor, OT staff can complete fellow-work-up-like items
+
+---
+
+### Phase 2 — Form 4: Pre-op Medication Log + Post-op Ward Checklist
+
+**DB additions:**
+
+```sql
+CREATE TABLE pre_op_medication_log (
+  id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL,
+  patient_journey_id UUID NOT NULL REFERENCES patient_journey(id),
+  medicine_name VARCHAR(200) NOT NULL,
+  dose_number INT NOT NULL,
+  administered_at TIMESTAMPTZ,
+  administered_by_user_id UUID,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (patient_journey_id, medicine_name, dose_number)
+);
+
+ALTER TABLE patient_journey ADD COLUMN IF NOT EXISTS
+  xylocaine_sensitivity_result VARCHAR(10),  -- '+ve' | '-ve' | 'NA'
+  anaesthesia_type_planned VARCHAR(20
+
+=== LINE 40 [pac_assessment] ===
+
+**DB:**
+
+```sql
+CREATE TABLE pac_assessment (
+  id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL,
+  patient_journey_id UUID NOT NULL UNIQUE REFERENCES patient_journey(id),
+  -- Form 3 fields (vitals, investigations, systemic review JSONB, airway exam, plan, medications)
+  bp VARCHAR(20), hr INT, physical_status_asa INT,
+  investigations JSONB,
+  systemic_review JSONB,
+  airway_exam JSONB,
+  anaesthesia_plan VARCHAR(20),  -- Regional | TA | LA | GA
+  consent_type VARCHAR(20),      -- Standard | HighRisk
+  current_medications JSONB,
+  pre_op_consultations TEXT,
+  investigations_advised TEXT,
+  status VARCHAR(20) DEFAULT 'Draft',  -- Draft | Completed
+  completed_by_user_id UUID,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE anaesthesia_monitoring (
+  id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL,
+  patient_journey_id UUID NOT NULL UNIQUE REFERENCES patient_journey(id),
+  -- Immediate pre-op PAC review (Form 5 top)
+  pre_op_pulse INT, pre_op_bp VARCHAR(20), pre_op_spo2 INT,
+  pre_op_consent_confirmed BOOLEAN,
+  pre_op_review_at TIMESTAMPTZ,
+  -- Intra-op readings (unlimited rows beyond 20 min)
+  monitoring_readings JSONB,  -- [{elapsed_min: 5, pulse: 72, spo2: 98}, ...]
+  -- Discharge clearance (Form 5 bottom)
+  discharge_pr INT, discharge_bp VARCHAR(20),
+  general_condition_normal BOOLEAN,
+  discharge_remarks TEXT,
+  discharge_cleared_by UUID,
+  discharge_cleared_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Integration with Ward Checklist #15:** `pac_done_documented` auto-ticks when `pac_assessment.status = 'Completed'`.
+
+**Gates (soft/optional on existing transitions):**
+
+| Transition | PAC gate | Monitoring gate |
+|---|---|---|
+| `ReadyForSurgery` | Soft warning if PAC not completed | — |
+| `startSurgery` | — | Pre-op review on monitoring record recommended |
+| `Discharged` | — | Soft warning if anaesthesia discharge clearance missing |
+
+**FE:**
+- Journey detail / Ward: **PAC tab** (Form 3 full layout) — Anaesthetist + Junior Doctor
+- OT page during `InOT`: monitoring table with **"Add reading"** button (not fixed to 20 min)
+- ReadyForDischarge: anaesthesia discharge clearance panel (Form 5 bottom)
+
+---
+
+### Phase 0 (Parallel) — Outpatient Checklist at Counsellor Desk
+
+Runs alongside Phase 1; not in build priority but architected now.
+
+| Aspect | Rule |
+|---|---|
+| Storage | Same `pre_op_section_items` with `form_code = 'OUTPATIENT_SAFETY'`, `form_context = 'counsellor'` |
+| Linked to | `counseling_session_id` (pre-journey) AND copied/synced to journey on creation |
+| Blocks OT finalize? | **No** |
+| Blocks journey creation? | **No** |
+| Blocks ward admission? | **No** |
+| UI | Counsellor session page: Outpatient Safety section; Ward Expected: same items read-only + editable |
+
+**Counsellor Desk items (Form 1 top section):** All 12 outpatient items seeded with `is_blocking = false`.
+
+---
+
+## 5. IOL Power Sticker — Three Optional Checks
+
+| Check | Source | Column / entity |
+|---|---|---|
+| 1. Physical sticker scanned | Barcode scanner | Reuse `verifyIolBarcode` + `iol_barcode_verified` |
+| 2. Manual "sticker in file" | Nurse checkbox | `iol_sticker_in_file_confirmed` on journey or post-op response |
+| 3. IOL inventory match | Inventory service | `iol_inventory_confirmed` — cross-ref `iol_catalog` / inventory stock |
+
+All three: `is_blocking = false`. Post-op item #2 shows three sub-checkboxes.
+
+---
+
+## 6. Billing Gate Logic (Existing Financial State)
+
+```
+OT Before Anaesthesia → billing_verified =
+  financial_state IN (Confirmed, PartiallyPaid, Paid, Settled)
+  OR emergency_fc_applied = true
+  OR manual_override_by_ot_nurse = true (audit logged)
+```
+
+No change to `financial_state` machine. Gate is a **read-only check** at OT safety checklist save/accept.
+
+---
+
+## 7. Role Access Matrix (Final)
+
+| Screen | Roles |
+|---|---|
+| Ward Checklist (Form 2) | Nurse, Junior Doctor |
+| Outpatient Safety (Form 1 top) | Counsellor, Nurse, Junior Doctor |
+| Pre-op Med Log (Form 4) | Nurse |
+| OT Safety (Form 1 OT) 
+
+=== LINE 40 [anaesthesia_monitoring] ===
+EFAULT NOW()
+);
+
+CREATE TABLE anaesthesia_monitoring (
+  id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL,
+  patient_journey_id UUID NOT NULL UNIQUE REFERENCES patient_journey(id),
+  -- Immediate pre-op PAC review (Form 5 top)
+  pre_op_pulse INT, pre_op_bp VARCHAR(20), pre_op_spo2 INT,
+  pre_op_consent_confirmed BOOLEAN,
+  pre_op_review_at TIMESTAMPTZ,
+  -- Intra-op readings (unlimited rows beyond 20 min)
+  monitoring_readings JSONB,  -- [{elapsed_min: 5, pulse: 72, spo2: 98}, ...]
+  -- Discharge clearance (Form 5 bottom)
+  discharge_pr INT, discharge_bp VARCHAR(20),
+  general_condition_normal BOOLEAN,
+  discharge_remarks TEXT,
+  discharge_cleared_by UUID,
+  discharge_cleared_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Integration with Ward Checklist #15:** `pac_done_documented` auto-ticks when `pac_assessment.status = 'Completed'`.
+
+**Gates (soft/optional on existing transitions):**
+
+| Transition | PAC gate | Monitoring gate |
+|---|---|---|
+| `ReadyForSurgery` | Soft warning if PAC not completed | — |
+| `startSurgery` | — | Pre-op review on monitoring record recommended |
+| `Discharged` | — | Soft warning if anaesthesia discharge clearance missing |
+
+**FE:**
+- Journey detail / Ward: **PAC tab** (Form 3 full layout) — Anaesthetist + Junior Doctor
+- OT page during `InOT`: monitoring table with **"Add reading"** button (not fixed to 20 min)
+- ReadyForDischarge: anaesthesia discharge clearance panel (Form 5 bottom)
+
+---
+
+### Phase 0 (Parallel) — Outpatient Checklist at Counsellor Desk
+
+Runs alongside Phase 1; not in build priority but architected now.
+
+| Aspect | Rule |
+|---|---|
+| Storage | Same `pre_op_section_items` with `form_code = 'OUTPATIENT_SAFETY'`, `form_context = 'counsellor'` |
+| Linked to | `counseling_session_id` (pre-journey) AND copied/synced to journey on creation |
+| Blocks OT finalize? | **No** |
+| Blocks journey creation? | **No** |
+| Blocks ward admission? | **No** |
+| UI | Counsellor session page: Outpatient Safety section; Ward Expected: same items read-only + editable |
+
+**Counsellor Desk items (Form 1 top section):** All 12 outpatient items seeded with `is_blocking = false`.
+
+---
+
+## 5. IOL Power Sticker — Three Optional Checks
+
+| Check | Source | Column / entity |
+|---|---|---|
+| 1. Physical sticker scanned | Barcode scanner | Reuse `verifyIolBarcode` + `iol_barcode_verified` |
+| 2. Manual "sticker in file" | Nurse checkbox | `iol_sticker_in_file_confirmed` on journey or post-op response |
+| 3. IOL inventory match | Inventory service | `iol_inventory_confirmed` — cross-ref `iol_catalog` / inventory stock |
+
+All three: `is_blocking = false`. Post-op item #2 shows three sub-checkboxes.
+
+---
+
+## 6. Billing Gate Logic (Existing Financial State)
+
+```
+OT Before Anaesthesia → billing_verified =
+  financial_state IN (Confirmed, PartiallyPaid, Paid, Settled)
+  OR emergency_fc_applied = true
+  OR manual_override_by_ot_nurse = true (audit logged)
+```
+
+No change to `financial_state` machine. Gate is a **read-only check** at OT safety checklist save/accept.
+
+---
+
+## 7. Role Access Matrix (Final)
+
+| Screen | Roles |
+|---|---|
+| Ward Checklist (Form 2) | Nurse, Junior Doctor |
+| Outpatient Safety (Form 1 top) | Counsellor, Nurse, Junior Doctor |
+| Pre-op Med Log (Form 4) | Nurse |
+| OT Safety (Form 1 OT) | OT Nurse, Surgeon |
+| WHO Timeout | Surgeon + OT Nurse (dual) |
+| PAC Form (Form 3) | Anaesthetist, Junior Doctor |
+| Anaesthesia Monitoring (Form 5) | Anaesthetist |
+| Post-op Ward (Form 4) | Nurse |
+| Return from OT | OT Nurse, Anaesthetist, Surgeon |
+| IP Management / Billing | Billing, Admin |
+| Emergency FC override | Billing Manager, Admin (existing `applyEmergencyFc`) |
+
+---
+
+## 8. Build Schedule (4 Phases per Your Priority)
+
+| Sprint | Deliverable | FE | BE | DB |
+|---|---|---|---|---|
+| **Sprint 1** | Form 2 Ward Checklist | Ward modal tab, 17 items | Filter by `form_code`, non-blocking admit | Seed items, `form_code` columns, timestamps |
+| **Sprint 2** | Form 4 Med log + Post-op | Med dose table, 7 post-op items, xyl
+
+=== LINE 40 [Sprint 4] ===
+safety_checklist` table |
+| **Sprint 4** | Form 3 PAC + Form 5 Monitoring | PAC form tab, monitoring grid with add-row | `PacAssessmentService`, `AnaesthesiaMonitoringService` | `pac_assessment`, `anaesthesia_monitoring` |
+| **Sprint 5** (parallel) | Outpatient at Counsellor | Counsellor session section | Sync to journey on create | Counsellor-linked completions |
+
+---
+
+## 9. Remaining Questions (3 only)
+
+1. **Outpatient checklist at Counsellor Desk** — When OT finalize creates the journey, should counsellor completions **auto-copy** to the ward copy, or should ward staff re-confirm each item?
+
+2. **Pre-op medication log** — Is Moxifloxacin always the first row, or should nurses pick from a medication dropdown (supporting multiple drugs)?
+
+3. **Discharge summary** — Form 4 item #5 says "Discharge summary issued." Should that auto-tick when `discharge_summary.summary_status = 'Final'`, or remain a separate nurse confirmation?
+
+---
+
+## 10. Summary
+
+Your constraints are fully respected:
+
+- **State machine:** unchanged — 9 clinical states, same transition APIs
+- **Checklists:** parallel layers with `form_code`, optional `is_blocking`, admission/anaesthesia filters
+- **Gates:** soft warnings by default; hard gate only for billing at OT (with Emergency FC override)
+- **Build order:** Form 2 → Form 4 → Form 1 OT → Form 3/5, with Counsellor outpatient in parallel
+- **Roles:** no fellow role; junior doctor / OT / nurse share fellow-type items
+
+Answer the 3 remaining questions above and we can produce the final sprint tickets (migration SQL, API contracts, UI wireframes per screen). Switch to **Agent mode** when you want Sprint 1 (Form 2 Ward Checklist) implemented.
+
+[REDACTED]
+
+=== LINE 46 [Form 3] ===
+Form 2 → Form 4 → Form 1 OT → Form 3/5 (+ Counsellor P0 in parallel) |
+
+---
+
+## 1. Master checklist registry (all 5 images → system)
+
+Every item from the hospital forms maps to a `form_code`, storage entity, and integration source.
+
+### Form 1 — Surgical Safety Checklist
+
+#### Outpatient section (`OUTPATIENT_SAFETY` / context: `counsellor` + `ward`)
+
+| Item | item_key | Auto-source module | Blocks? |
+|---|---|---|---|
+| Medical officer advice confirmed | `mo_advice_confirmed` | Doctors Desk | No |
+| Informed consent | `informed_consent` | Counsellor session | No |
+| Serology / blood tests (HIV, HBsAg, RBS, creatinine/urea) | `serology_blood_tests` | Laboratory | No |
+| Physician opinion / fitness / cardiac fit | `physician_cardiac_fitness` | Doctors Desk / manual | No |
+| A-Scan | `ascan_done` | Optometry / Diagnostic Imaging | No |
+| Fellow work-up (evening before surgery) | `fellow_workup_done` | Manual (Junior Dr / OT / Nurse) | No |
+| Other eye fundus seen | `other_eye_fundus_seen` | Optometry / Fundus imaging | No |
+| Eye congestion / conjunctival culture | `conj_culture_done` | Lab / manual | No |
+| One eye culture | `one_eye_culture` | Lab / manual | No |
+| Shaving / bathing / nail / jewellery instructions | `preop_hygiene_instructions` | Manual | No |
+| Anticoagulant stopped (post physician opinion) | `anticoagulant_stopped` | Doctors Desk / manual | No |
+| Labelled: systemic condition / allergy / one-eyed | `patient_risk_labels` | Patient master + allergies | No |
+
+#### Ward — Investigation Pre-op (`WARD_INVESTIGATION_PREOP`)
+
+| Item | item_key | Auto-source |
+|---|---|---|
+| Blood sugar | `blood_sugar` | Lab |
+| BP | `bp_checked` | Vitals |
+| HIV | `hiv_done` | Lab |
+| Blood urea | `blood_urea` | Lab |
+| Serum creatinine | `serum_creatinine` | Lab |
+| HbA1C | `hba1c_done` | Lab |
+| A-scan | `ascan_done` | Optometry |
+| B-scan | `bscan_done` | Imaging |
+| X-ray (GA cases) | `xray_ga_cases` | Imaging — filter: `anaesthesia_type = General` |
+| Physician fitness | `physician_fitness` | PAC / manual |
+| Duct | `duct_assessed` | Manual |
+| Dilatation | `dilatation_done` | Pharmacy / ward |
+| Consent | `consent_confirmed` | Consent module |
+
+#### Ward — Post-op (`WARD_POSTOP_SAFETY`)
+
+| Item | item_key | Nurse confirm |
+|---|---|---|
+| Medication | `postop_medication_confirmed` | Yes |
+| Position | `postop_position_confirmed` | Yes |
+
+#### OT — Before Anaesthesia (`OT_BEFORE_ANAESTHESIA`)
+
+| Item | item_key | Integration |
+|---|---|---|
+| Patient identity (name & address) | `ot_identity_confirmed` | Patient master |
+| Eye RE / LE | `ot_eye_confirmed` | Journey `eye_operated` |
+| Topical antibiotics used | `ot_topical_antibiotics` | Med log |
+| Surgery type (Cataract / Other) | `ot_surgery_type` | Journey `procedure_name` |
+| Billing details verified | `ot_billing_verified` | IP Management `financial_state` — **gate** unless Emergency FC |
+| A-scan verified | `ot_ascan_verified` | Optometry |
+| Known allergy | `ot_allergy_checked` | Patient allergies |
+| Consent form | `ot_consent_form` | Consent module |
+| Fitness | `ot_fitness_confirmed` | PAC assessment |
+
+#### OT — Before Incision / WHO (`OT_WHO_TIMEOUT`)
+
+| Item | item_key | Dual sign-off |
+|---|---|---|
+| Correct patient identity | `who_patient_identity` | Surgeon + OT Nurse |
+| Correct eye | `who_correct_eye` | Surgeon + OT Nurse |
+| Correct procedure | `who_correct_procedure` | Surgeon + OT Nurse |
+| Consent | `who_consent` | Surgeon + OT Nurse |
+
+#### OT — After Surgery (`OT_AFTER_SURGERY`)
+
+| Item | item_key |
+|---|---|
+| Procedure name recorded | `post_surgery_procedure_recorded` |
+| Post-op instructions — Medication | `post_surgery_medication_instructed` |
+| Post-op instructions — Position | `post_surgery_position_instructed` |
+
+---
+
+### Form 2 — Ward Checklist (`WARD_CHECKLIST` / context: `ward`)
+
+All 17 items as previously specified. Counsellor copies auto-populate the overlapping subset (identity, A-scan, consent, investigations, etc.).
+
+---
+
+### Form 3 — PAC (`PAC_ASSESSMENT` — structured
+
+=== LINE 46 [Form 5] ===
+_blocking = false`.
+
+---
+
+### Form 5 — Anaesthesia Monitoring (`ANAESTHESIA_MONITORING`)
+
+| Section | Storage |
+|---|---|
+| Immediate pre-op PAC review | pulse, BP, SpO₂, consent confirmed + timestamp |
+| Intra-op monitoring | `monitoring_readings` JSONB array — **unlimited rows** beyond 20 min |
+| Vitals at discharge | PR, BP, general condition normal Y/N, remarks |
+| Anaesthetist clearance | `discharge_cleared_at` + user — optional gate before `Discharged` |
+
+---
+
+## 2. Integration map — internal modules × checklists
+
+```mermaid
+flowchart TB
+    subgraph counsellor [Counsellor Desk - auth-service]
+        CS[Counseling Session]
+        OTFin[OT Finalize → OTPrepared]
+        P0[Outpatient Safety P0]
+    end
+
+    subgraph trigger [DB Trigger migration 88]
+        PJ[patient_journey Expected]
+        COPY[Auto-copy P0 completions]
+    end
+
+    subgraph ward [Ward - ip-management FE/BE]
+        P1[Form 2 Ward Checklist]
+        P2[Ward Investigation Pre-op]
+        P3[Med Log Form 4]
+        P8[Post-op Form 4 + Form 1 Ward]
+    end
+
+    subgraph ot [Operation Theatre]
+        P4[Before Anaesthesia]
+        P5[WHO Timeout]
+        P6[Intra-op Monitoring]
+        P7[After Surgery]
+    end
+
+    subgraph pac [PAC / Anaesthesia]
+        P9[Form 3 PAC]
+        P10[Form 5 Discharge Clearance]
+    end
+
+    subgraph modules [Internal Modules]
+        OPT[Optometry / A-Scan / Fundus]
+        LAB[Laboratory / LIS]
+        IMG[Imaging / B-scan / X-ray]
+        BILL[IP Management / financial_state]
+        INV[IOL Inventory / barcode]
+        CONS[Consent documents]
+        RX[Prescriptions / Pharmacy]
+        CCMS[CCMS pre-auth]
+        PAT[Patient master / allergies]
+    end
+
+    CS --> P0
+    P0 --> OTFin
+    OTFin --> PJ
+    PJ --> COPY
+    COPY --> P1
+
+    OPT -.-> P1 & P2 & P4
+    LAB -.-> P0 & P2 & P9
+    IMG -.-> P2 & P9
+    BILL -.-> P1 & P4
+    INV -.-> P8
+    CONS -.-> P1 & P4 & P5
+    RX -.-> P3 & P8
+    CCMS -.-> BILL
+    PAT -.-> P0 & P1 & P4
+
+    P1 -->|approvePreOp no new block| Admitted[Admitted]
+    P3 --> SentToOT[SentToOT]
+    P4 -->|billing gate| AcceptOT[acceptInOT]
+    P5 --> StartSurg[startSurgery]
+    P6 --> InOT[InOT]
+    P7 --> SurgeryDone[SurgeryCompleted]
+    P8 --> PostOp[PostOp]
+    P9 --> ReadyDC[ReadyForDischarge]
+    P10 --> Discharged[Discharged]
+```
+
+### Per-module integration detail
+
+| Module | What it feeds | How |
+|---|---|---|
+| **Counsellor Desk** | P0 Outpatient Safety | New section on session page; stores against `counseling_session_id` |
+| **OT Finalize** | Journey creation | Existing trigger; **extend** to call copy function |
+| **Optometry** | A-Scan, biometry, fundus, dilatation status | Read-only badges on checklist items; nurse can override |
+| **Laboratory** | Serology, FBS, HbA1c, cultures, Hb | LIS result → auto-suggest complete; manual fallback |
+| **Imaging** | B-scan, X-ray, ECG, 2D Echo | Imaging orders module → auto-suggest |
+| **IP Management** | Bill payment (#2), OT billing verified | Read `financial_state`, `balance_due`, `emergency_fc_applied` |
+| **CCMS** | Insurance pre-auth | Existing `validate-admission`; feeds Financial items |
+| **IOL Inventory** | Sticker scan, stock confirmation | Existing `verifyIolBarcode` + inventory lookup |
+| **Consent module** | Patient / witness / surgeon consent | Document upload + status flags |
+| **Prescriptions** | Post-op medication prescribed | Soft link — show Rx status, nurse still confirms |
+| **Pharmacy master** | Med log dropdown | `GET /ip-management/master/medications` (exists) |
+| **Patient master** | Identity, allergies, one-eyed status | Auto-populate read-only fields |
+| **Doctors Desk** | Physician fitness, MO advice, slit lamp | Manual or future exam link |
+
+---
+
+## 3. Counsellor → Ward auto-copy mechanism
+
+**On journey creation** (extend trigger in migration 88 or post-insert hook in `PreOpClearanceService.GetOrInitClearanceAsync`):
+
+```
+1. Journey created with counseling_session_id
+2. Load counsellor completions WHERE session_id = X AND form_code = 'OUTPATI
+
+=== LINE 46 [pac_assessment] ===
+, not flat ticks)
+
+Stored in `pac_assessment` table (not `pre_op_completions`):
+
+| Section | Fields |
+|---|---|
+| Header | Date, time, MR No, name, age, gender, proposed operation, pre-op diagnosis |
+| Vitals | BP, HR, ASA physical status 1–5 |
+| Investigations | Hgb, FBS/RBS, S. Creatinine, HIV, HBsAg, HCV, X-ray, ECG, 2D Echo, blood group, others |
+| Allergies | Free text |
+| Systemic review | CVS, respiratory, renal, hepatic/GI, diabetes, CNS, others |
+| Past anaesthetic history | Free text |
+| Airway exam | Mallampati 1–4, mouth opening, mentohyoid, neck, teeth, lungs, heart, venous access |
+| Anaesthesia plan | Regional / T.A. / L.A. / G.A. |
+| Peri-op explained | Yes/No |
+| Consent type | Standard / High-risk |
+| Current medications | Multi-line (up to 7+) |
+| Pre-op consultations | Free text |
+| Medications advised | Free text |
+| Investigations advised | Free text |
+| Completed by + designation | User reference |
+
+Links to Ward Checklist #15 (`pac_done_documented`) when `status = Completed`.
+
+---
+
+### Form 4 — Pre-op Medication + Post-op (`MEDICATION_LOG` + `WARD_POSTOP`)
+
+#### Pre-op medication log (`pre_op_medication_log`)
+
+| Feature | Implementation |
+|---|---|
+| Drug selection | Dropdown from `ophth_medication` master (+ free-text for non-catalog) |
+| Multiple drugs | One row per drug; expandable dose grid |
+| Doses per drug | dose_number 1..N with `administered_at` + `administered_by` |
+| Xylocaine sensitivity | `xylocaine_sensitivity_result` on journey — shown when `anaesthesia_type_planned = Local`, optional |
+| Anaesthesia type | Topical / Local / General on journey |
+| Patient sent to OT | Auto `sent_to_ot_at` on `SentToOT` transition |
+| Surgery notes | Free text field on this section |
+
+#### Post-op 7 items (`WARD_POSTOP`)
+
+| # | item_key | Separate from summary? |
+|---|---|---|
+| 1 | `patient_received_from_ot` | Auto `received_from_ot_at` on `PostOp` transition |
+| 2 | `iol_power_sticker` | 3 sub-checks (scan / in-file / inventory) — all optional |
+| 3 | `postop_medication_prescribed` | Links to prescriptions module (soft) |
+| 4 | `treatment_plan_explained` | Nurse manual |
+| 5 | `discharge_summary_issued` | **Separate nurse checkbox** (not tied to finalize API) |
+| 6 | `emergency_plan_informed` | Nurse manual |
+| 7 | `ward_checkout_time` | Auto `ward_checkout_at` on `Discharged` |
+
+DayCare: all 7 items `is_blocking = false`.
+
+---
+
+### Form 5 — Anaesthesia Monitoring (`ANAESTHESIA_MONITORING`)
+
+| Section | Storage |
+|---|---|
+| Immediate pre-op PAC review | pulse, BP, SpO₂, consent confirmed + timestamp |
+| Intra-op monitoring | `monitoring_readings` JSONB array — **unlimited rows** beyond 20 min |
+| Vitals at discharge | PR, BP, general condition normal Y/N, remarks |
+| Anaesthetist clearance | `discharge_cleared_at` + user — optional gate before `Discharged` |
+
+---
+
+## 2. Integration map — internal modules × checklists
+
+```mermaid
+flowchart TB
+    subgraph counsellor [Counsellor Desk - auth-service]
+        CS[Counseling Session]
+        OTFin[OT Finalize → OTPrepared]
+        P0[Outpatient Safety P0]
+    end
+
+    subgraph trigger [DB Trigger migration 88]
+        PJ[patient_journey Expected]
+        COPY[Auto-copy P0 completions]
+    end
+
+    subgraph ward [Ward - ip-management FE/BE]
+        P1[Form 2 Ward Checklist]
+        P2[Ward Investigation Pre-op]
+        P3[Med Log Form 4]
+        P8[Post-op Form 4 + Form 1 Ward]
+    end
+
+    subgraph ot [Operation Theatre]
+        P4[Before Anaesthesia]
+        P5[WHO Timeout]
+        P6[Intra-op Monitoring]
+        P7[After Surgery]
+    end
+
+    subgraph pac [PAC / Anaesthesia]
+        P9[Form 3 PAC]
+        P10[Form 5 Discharge Clearance]
+    end
+
+    subgraph modules [Internal Modules]
+        OPT[Optometry / A-Scan / Fundus]
+        LAB[Laboratory / LIS]
+        IMG[Imaging / B-scan / X-ray]
+        BILL[IP Management / financial_state]
+        INV[IOL Inventory / barcode]
+        CONS[Consent documents]
+        RX[Prescriptions / Pharmacy]
+        CCMS[CCMS pre-auth]
+        PAT[Patien
+
+=== LINE 46 [anaesthesia_monitoring] ===
+-series vitals.
+
+**Action:** `anaesthesia_monitoring.monitoring_readings` — separate from surgeon intra-op note.
+
+---
+
+### Gap 6 — Pre-op tests in auth-service (`PreOpTestManagementController`)
+
+Separate from ip-management pre-op clearance.
+
+**Action:** Display lab order status on investigation checklist items; don't duplicate order creation.
+
+---
+
+### Gap 7 — Role-based access missing
+
+All Ward/OT/IP routes open today.
+
+**Action:** Sprint 5 — permissions: `ward.checklist.edit`, `ot.safety.sign`, `anaesthesia.pac.edit`, `anaesthesia.monitoring.edit`.
+
+---
+
+### Gap 8 — `FinalizeOtModal` checklist vs full outpatient form
+
+4 summary cards ≠ 12 outpatient items.
+
+**Action:** Keep 4 cards as dashboard summary; drill-down opens full P0 checklist. Cards auto-rollup from item completion %.
+
+---
+
+### Gap 9 — Fellow work-up role
+
+Mapped to Junior Doctor / OT / Nurse — any can complete; audit logs `completed_by_role`.
+
+---
+
+### Gap 10 — Discharge summary dual tracking
+
+`discharge_summary.summary_status = Final` AND nurse item `discharge_summary_issued` are independent (per your answer). UI shows both statuses side by side.
+
+---
+
+## 6. Build sprints (final)
+
+| Sprint | Scope | Key deliverables |
+|---|---|---|
+| **S1 — Form 2** | Ward Checklist 17 items + counsellor copy | `form_code` columns, `counsellor_checklist_completions`, copy on journey create, Ward modal tab |
+| **S2 — Form 4** | Med log + post-op 7 items | `pre_op_medication_log`, medication dropdown, xylocaine, timestamps, IOL 3-sub-checks |
+| **S3 — Form 1 OT** | Safety 3 phases + WHO | `surgical_safety_checklist`, billing gate + Emergency FC, return reasons, dual sign-off |
+| **S4 — Form 3/5** | PAC + monitoring | `pac_assessment`, `anaesthesia_monitoring`, unlimited monitoring rows |
+| **S5 — P0 Counsellor** | Outpatient on session page | Counsellor UI, auto-copy, FinalizeOtModal rollup |
+| **S6 — Integrations** | Lab/optometry/billing auto-suggest | Read-only badges, soft auto-complete |
+| **S7 — RBAC** | Role gates | Permissions per screen |
+
+---
+
+## 7. Complete form coverage checklist
+
+| Form / section | Items | In spec? | Sprint |
+|---|---|---|---|
+| Form 1 Outpatient (12) | 12 | ✅ | S5 + S1 |
+| Form 1 Ward Pre-op (13) | 13 | ✅ | S1 |
+| Form 1 Ward Post-op (2) | 2 | ✅ | S2 |
+| Form 1 OT Before Anaesthesia (9) | 9 | ✅ | S3 |
+| Form 1 WHO Before Incision (4) | 4 | ✅ | S3 |
+| Form 1 OT After Surgery (3) | 3 | ✅ | S3 |
+| Form 2 Ward Checklist (17) | 17 | ✅ | S1 |
+| Form 3 PAC (full form) | ~25 fields | ✅ | S4 |
+| Form 4 Pre-op med log | Multi-drug | ✅ | S2 |
+| Form 4 Post-op (7) | 7 | ✅ | S2 |
+| Form 5 Pre-op review | 4 vitals | ✅ | S4 |
+| Form 5 Intra-op monitoring | Unlimited rows | ✅ | S4 |
+| Form 5 Discharge clearance | 4 fields | ✅ | S4 |
+
+**Total: 100% of image content mapped.**
+
+---
+
+## 8. Two remaining questions
+
+1. **`pre_admission_checklist` (migration 66)** — It is tied to `ot_booking_schedule`, not your live `ot_finalize_schedule` path. Should we **deprecate** it in favour of the new counsellor + ip-management catalog, or **bridge** it so existing data migrates?
+
+2. **FinalizeOtModal 4-card summary** — Should "Investigations / Payment / Consent / Pre-Auth" remain as the counsellor's only view until drill-down, or should the full 12-item outpatient form be visible directly on the OT finalize screen?
+
+---
+
+## 9. Summary
+
+All five Saijyothi forms are fully mapped into the existing Ward & Inpatient state machine as **parallel checklist layers** — no clinical state changes. Your latest answers lock in auto-copy from counsellor to ward, multi-drug medication logs, and independent nurse discharge-summary confirmation.
+
+The main structural work is **consolidating three existing checklist systems** into one catalog, then building four sprint deliverables in your priority order.
+
+Answer the two questions above when ready, then switch to **Agent mode** to start **Sprint 1 (Form 2 Ward Checklist + counsellor auto-copy architecture)**.
+
+[REDACTED]
+
+=== LINE 46 [S4] ===
+ reasons, dual sign-off |
+| **S4 — Form 3/5** | PAC + monitoring | `pac_assessment`, `anaesthesia_monitoring`, unlimited monitoring rows |
+| **S5 — P0 Counsellor** | Outpatient on session page | Counsellor UI, auto-copy, FinalizeOtModal rollup |
+| **S6 — Integrations** | Lab/optometry/billing auto-suggest | Read-only badges, soft auto-complete |
+| **S7 — RBAC** | Role gates | Permissions per screen |
+
+---
+
+## 7. Complete form coverage checklist
+
+| Form / section | Items | In spec? | Sprint |
+|---|---|---|---|
+| Form 1 Outpatient (12) | 12 | ✅ | S5 + S1 |
+| Form 1 Ward Pre-op (13) | 13 | ✅ | S1 |
+| Form 1 Ward Post-op (2) | 2 | ✅ | S2 |
+| Form 1 OT Before Anaesthesia (9) | 9 | ✅ | S3 |
+| Form 1 WHO Before Incision (4) | 4 | ✅ | S3 |
+| Form 1 OT After Surgery (3) | 3 | ✅ | S3 |
+| Form 2 Ward Checklist (17) | 17 | ✅ | S1 |
+| Form 3 PAC (full form) | ~25 fields | ✅ | S4 |
+| Form 4 Pre-op med log | Multi-drug | ✅ | S2 |
+| Form 4 Post-op (7) | 7 | ✅ | S2 |
+| Form 5 Pre-op review | 4 vitals | ✅ | S4 |
+| Form 5 Intra-op monitoring | Unlimited rows | ✅ | S4 |
+| Form 5 Discharge clearance | 4 fields | ✅ | S4 |
+
+**Total: 100% of image content mapped.**
+
+---
+
+## 8. Two remaining questions
+
+1. **`pre_admission_checklist` (migration 66)** — It is tied to `ot_booking_schedule`, not your live `ot_finalize_schedule` path. Should we **deprecate** it in favour of the new counsellor + ip-management catalog, or **bridge** it so existing data migrates?
+
+2. **FinalizeOtModal 4-card summary** — Should "Investigations / Payment / Consent / Pre-Auth" remain as the counsellor's only view until drill-down, or should the full 12-item outpatient form be visible directly on the OT finalize screen?
+
+---
+
+## 9. Summary
+
+All five Saijyothi forms are fully mapped into the existing Ward & Inpatient state machine as **parallel checklist layers** — no clinical state changes. Your latest answers lock in auto-copy from counsellor to ward, multi-drug medication logs, and independent nurse discharge-summary confirmation.
+
+The main structural work is **consolidating three existing checklist systems** into one catalog, then building four sprint deliverables in your priority order.
+
+Answer the two questions above when ready, then switch to **Agent mode** to start **Sprint 1 (Form 2 Ward Checklist + counsellor auto-copy architecture)**.
+
+[REDACTED]
+

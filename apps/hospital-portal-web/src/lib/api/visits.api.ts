@@ -5,6 +5,7 @@
  */
 
 import { getApi } from '../api';
+import { normalizeStationId } from '../frontdesk/station-ids';
 
 // ============================================================================
 // Types & Interfaces
@@ -113,6 +114,7 @@ export interface SendToRequest {
   station: string;
   assignedTo?: string;
   notes?: string;
+  reasonCode?: string;
 }
 
 export interface CompleteVisitRequest {
@@ -186,7 +188,10 @@ export const checkIn = async (request: CheckInRequest): Promise<CheckInResult> =
  */
 export const sendTo = async (request: SendToRequest): Promise<Visit> => {
   const api = getApi();
-  const response = await api.post('/visits/send-to', request);
+  const response = await api.post('/visits/send-to', {
+    ...request,
+    station: normalizeStationId(request.station),
+  });
   return response.data;
 };
 

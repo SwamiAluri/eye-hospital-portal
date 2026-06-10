@@ -31,6 +31,30 @@ public class MasterDataService
     public async Task<CcmsInsuranceProvider> CreateInsuranceProviderAsync(
         CcmsInsuranceProvider provider, CancellationToken ct = default)
     {
+        var category = string.IsNullOrWhiteSpace(provider.PayerCategory)
+            ? "insurance"
+            : provider.PayerCategory.Trim().ToLowerInvariant();
+
+        if (category == "insurance")
+        {
+            if (string.IsNullOrWhiteSpace(provider.ProviderCode))
+                throw new ArgumentException("Provider code is required for insurance payers.");
+
+            provider.ProviderCode = provider.ProviderCode.Trim().ToUpperInvariant();
+
+            if (string.IsNullOrWhiteSpace(provider.ProviderName))
+                throw new ArgumentException("Provider name is required.");
+
+            var duplicate = await _db.InsuranceProviders
+                .AnyAsync(p => p.TenantId == provider.TenantId
+                    && p.ProviderCode == provider.ProviderCode
+                    && p.DeletedAt == null, ct);
+            if (duplicate)
+                throw new InvalidOperationException(
+                    $"A payer with code '{provider.ProviderCode}' already exists for this tenant.");
+        }
+
+        provider.PayerCategory = category;
         provider.Id        = Guid.NewGuid();
         provider.CreatedAt = DateTime.UtcNow;
         provider.UpdatedAt = DateTime.UtcNow;
@@ -46,8 +70,17 @@ public class MasterDataService
             .FirstOrDefaultAsync(p => p.Id == patch.Id && p.DeletedAt == null, ct)
             ?? throw new KeyNotFoundException($"Insurance provider {patch.Id} not found.");
 
-        existing.ProviderName              = patch.ProviderName;
-        existing.ProviderCode              = patch.ProviderCode;
+        var category = string.IsNullOrWhiteSpace(existing.PayerCategory)
+            ? "insurance"
+            : existing.PayerCategory.Trim().ToLowerInvariant();
+
+        // Insurance identity (name/code) is owned by Master Data — only sync via migration/seed.
+        if (category == "other_debtor")
+        {
+            existing.ProviderName = patch.ProviderName;
+            existing.ProviderCode = patch.ProviderCode;
+        }
+
         existing.LicenseNumber             = patch.LicenseNumber;
         existing.ContactEmail              = patch.ContactEmail;
         existing.ContactPhone              = patch.ContactPhone;

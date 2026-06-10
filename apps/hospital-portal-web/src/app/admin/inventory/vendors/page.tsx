@@ -12,6 +12,12 @@ import {
   VendorDto,
   CreateVendorRequest,
 } from '@/lib/api/inventory-service.api';
+import {
+  creditDaysFromPaymentTermLabel,
+  usePaymentTerms,
+  useVendorCategories,
+  vendorCategoryMeta,
+} from '@/hooks/use-inventory-masters';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -38,9 +44,6 @@ const BANK_ACCOUNT_TYPES = [
   { value: 'od',      label: 'Overdraft' },
 ];
 
-function getCategoryMeta(value: string) {
-  return CATEGORIES.find(c => c.value === value) ?? CATEGORIES[CATEGORIES.length - 1];
-}
 
 function daysUntilExpiry(dateStr?: string | null): number | null {
   if (!dateStr) return null;
@@ -102,7 +105,8 @@ function Modal({ title, onClose, children, wide }: {
 function VendorDetailModal({ vendor, onClose, onEdit }: {
   vendor: VendorDto; onClose: () => void; onEdit: () => void;
 }) {
-  const cat = getCategoryMeta(vendor.vendorCategory);
+  const { categories } = useVendorCategories();
+  const cat = vendorCategoryMeta(vendor.vendorCategory, categories);
   const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString('en-IN') : null;
 
   // A single field: label + value. Skips null/empty. Supports link + mono variants.
@@ -426,7 +430,7 @@ function VendorFormModal({ initial, onClose, onSaved }: {
               <label className="block text-xs font-medium text-gray-600 mb-1">Category <span className="text-red-500">*</span></label>
               <select value={form.vendorCategory} onChange={e => set('vendorCategory', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
             <div>
@@ -509,6 +513,23 @@ function VendorFormModal({ initial, onClose, onSaved }: {
             {txt('IFSC Code', 'bankIfscCode')}
             {txt('SWIFT / BIC Code', 'swiftCode')}
             <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Payment Terms</label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const label = e.target.selectedOptions[0]?.text ?? '';
+                  const days = creditDaysFromPaymentTermLabel(label);
+                  if (days != null) set('creditDays', days);
+                }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Apply preset…</option>
+                {paymentTerms.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Credit Days</label>
               <input type="number" min={0} value={form.creditDays ?? 30}
                 onChange={e => set('creditDays', Number(e.target.value))}
@@ -538,6 +559,7 @@ function VendorFormModal({ initial, onClose, onSaved }: {
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function VendorsPage() {
+  const { categories } = useVendorCategories();
   const [rows, setRows] = useState<VendorDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -651,7 +673,7 @@ export default function VendorsPage() {
                  <p className="text-gray-400 text-sm">No vendors found</p>
                </td></tr>
              ) : filtered.map(r => {
-               const cat = getCategoryMeta(r.vendorCategory);
+               const cat = vendorCategoryMeta(r.vendorCategory, categories);
                return (
                  <tr key={r.id} className={`border-l-4 ${r.status === 'active' ? 'border-l-green-400' : 'border-l-gray-200'} hover:bg-gray-50 transition-colors`}>
                    <td className="px-4 py-3">

@@ -38,6 +38,9 @@ public class PostOpFunctions
         _jwt        = jwt;
     }
 
+    private void RequireWardEdit(HttpRequestData req) =>
+        IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermWardEdit);
+
     // ── Nurse Checklist ────────────────────────────────────────────────────────
 
     [Function("GetNurseChecklist")]
@@ -146,6 +149,7 @@ public class PostOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid = _jwt.ExtractTenantId(req, tenantId);
             var qs  = ParseQs(req.Url.Query);
@@ -243,6 +247,7 @@ public class PostOpFunctions
     {
         try
         {
+            RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid    = _jwt.ExtractTenantId(req, tenantId);
             var result = await _postOpSvc.FinalizeSummaryAsync(id, tid, userId);

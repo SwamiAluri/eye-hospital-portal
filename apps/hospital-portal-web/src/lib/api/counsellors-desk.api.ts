@@ -1,4 +1,9 @@
 import { getApi } from '../api';
+import { serviceCatalogApi } from './service-catalog.api';
+import { buildInvestigationCatalogFromServiceCatalog } from '@/lib/counsellors-desk/investigation-catalog';
+import { sessionTypeApiToCode } from '@/lib/counsellors-desk/counsellor-master-maps';
+import { parseEstimateFromBlob } from '@/lib/counsellors-desk/package-addons-blob';
+import type { CounsellingPackageAddonsBlob } from '@/types/counselling-estimate';
 import type {
   WaitingListPatient,
   CounsellingSession,
@@ -214,30 +219,12 @@ export const counsellorsDeskApi = {
       // handleSave() writes this on every save so we can restore all UI-level fields
       // (selectedSurgeryId, packageName, decision, paymentType, schedule, etc.) that
       // have no dedicated column in the auth-service session schema.
-      let cd: {
-        selectedSurgeryId?: string;
-        packageName?: string;
-        variantId?: string;
-        eye?: string;
-        decision?: string;
-        paymentType?: string;
-        insuranceCompany?: string;
-        followUpDate?: string;
-        schedule?: ScheduleData | string;
-        patientRemarks?: string;
-        doctorNotes?: string;
-        rate?: number | string;
-        wantToSeeDoctor?: boolean;
-        interestedToUpgrade?: boolean;
-        notRequiredPreAuth?: boolean;
-        ccmsCoverageCaseId?: string;
-        ccmsCaseNumber?: string;
-        ccmsCurrentState?: string;
-        ccmsLastEvent?: string;
-      } = {};
+      let cd: CounsellingPackageAddonsBlob = {};
       if (raw.packageAddonsJson) {
-        try { cd = JSON.parse(raw.packageAddonsJson); } catch { /* ignore invalid JSON */ }
+        try { cd = JSON.parse(raw.packageAddonsJson) as CounsellingPackageAddonsBlob; } catch { /* ignore invalid JSON */ }
       }
+
+      const estimate = parseEstimateFromBlob(cd);
 
       // Derive decision: blob → boolean fallback (patientAgreedToSurgery / pendingDecision)
       const restoredDecision: string =
@@ -320,6 +307,7 @@ export const counsellorsDeskApi = {
         ccmsCaseNumber: cd.ccmsCaseNumber,
         ccmsCurrentState: cd.ccmsCurrentState,
         isFollowUpRequired: raw.pendingDecision ?? false,
+        sessionTypeCode: sessionTypeApiToCode(raw.sessionType as string | undefined, []),
         status,
         followUpReason: raw.reasonsForDelay ?? '',
         followUpDate: cd.followUpDate ?? (raw.decisionDate ? (raw.decisionDate as string).split('T')[0] : ''),
@@ -353,6 +341,15 @@ export const counsellorsDeskApi = {
               price: t.price,
             }))
           : [],
+        estimateMode: estimate.estimateMode,
+        packageTemplateId: estimate.packageTemplateId,
+        discountType: estimate.discountType,
+        discountValue: estimate.discountValue,
+        discountReason: estimate.discountReason,
+        discountAmount: estimate.discountAmount,
+        itemizedSubtotal: estimate.itemizedSubtotal,
+        bundleSavings: estimate.bundleSavings,
+        finalPayableAmount: estimate.finalPayableAmount,
       };
     } catch (err) {
       throw err;
@@ -363,9 +360,9 @@ export const counsellorsDeskApi = {
     await getApi().put(`/Counseling/sessions/${id}`, data);
   },
 
-  async startSession(id: string): Promise<void> {
+  async startSession(id: string, sessionType?: string): Promise<void> {
     try {
-      await getApi().post(`/Counseling/sessions/${id}/start`);
+      await getApi().post(`/Counseling/sessions/${id}/start`, sessionType ? { sessionType } : {});
     } catch {
       // fire-and-forget — silent
     }
@@ -512,15 +509,7 @@ export const counsellorsDeskApi = {
       startTime:    toHHMM(r.startTime),
       endTime:      toHHMM(r.endTime),
       reportingTime: toHHMM(r.reportingTime),
-      // Map checklist key name
-      checklistItems: r.checklist
-        ? {
-            investigationsStatus: r.checklist.investigationsStatus ?? 'Pending',
-            paymentStatus:        r.checklist.paymentStatus        ?? 'Pending',
-            consentStatus:        r.checklist.consentStatus        ?? 'Pending',
-            preAuthStatus:        r.checklist.preAuthStatus        ?? 'NotRequired',
-          }
-        : undefined,
+      counsellingSessionId: r.counsellingSessionId ?? r.CounsellingSessionId,
       // Patient demographics (backend field names → frontend type names)
       contactNumber:                r.contactNumber,
       bloodGroup:                   r.bloodGroup,
@@ -600,62 +589,10 @@ export const counsellorsDeskApi = {
     await getApi().patch(`/CounsellorDesk/finalize/${id}/status`, { status });
   },
 
+  /** Investigations for counsellor desk — sourced from Service Catalog only (B2). */
   async getMasterCatalog(): Promise<{ imaging: MasterCatalogItem[]; scan: MasterCatalogItem[]; lab: MasterCatalogItem[] }> {
-    // Fetch legacy master-catalog (lab/scan) and new service catalog (imaging/DIAGNOSTICS) in parallel
-    const [legacyResult, catalogResult] = await Promise.allSettled([
-      getApi().get('/Counseling/master-catalog'),
-      getApi().get('/servicecatalog/full'),
-    ]);
-
-    // --- Lab / Scan from legacy endpoint ---
-    const mapLegacyItem = (t: { id: string; name: string; code?: string; category?: string; testType: string; price: number }): MasterCatalogItem => ({
-      id: t.id,
-      name: t.name,
-      code: t.code,
-      category: t.category,
-      testType: (t.testType ?? 'Lab') as 'Lab' | 'Imaging' | 'Scan',
-      price: t.price,
-    });
-
-    let lab: MasterCatalogItem[] = [];
-    let scan: MasterCatalogItem[] = [];
-    if (legacyResult.status === 'fulfilled') {
-      const data = legacyResult.value.data;
-      lab = Array.isArray(data.lab) ? data.lab.map(mapLegacyItem) : [];
-      scan = Array.isArray(data.scan) ? data.scan.map(mapLegacyItem) : [];
-    }
-
-    // --- Imaging from new service catalog DIAGNOSTICS category ---
-    let imaging: MasterCatalogItem[] = [];
-    if (catalogResult.status === 'fulfilled') {
-      const fullCatalog = catalogResult.value.data as {
-        categories: Array<{
-          id: string;
-          code: string;
-          name: string;
-          services: Array<{
-            id: string;
-            name: string;
-            variants: Array<{ id: string; name: string; code?: string; price: number }>;
-          }>;
-        }>;
-      };
-      const diagCat = fullCatalog.categories?.find((c) => c.code === 'DIAGNOSTICS');
-      if (diagCat) {
-        imaging = diagCat.services.flatMap((svc) =>
-          svc.variants.map((v) => ({
-            id: v.id,
-            name: v.name,
-            code: v.code,
-            category: svc.name,   // Group by service name (e.g. RADIOLOGY, TONOMETRY)
-            testType: 'Imaging' as const,
-            price: v.price,
-          }))
-        );
-      }
-    }
-
-    return { imaging, scan, lab };
+    const fullCatalog = await serviceCatalogApi.getFullCatalog();
+    return buildInvestigationCatalogFromServiceCatalog(fullCatalog);
   },
 
   async saveInvestigations(sessionId: string, investigations: InvestigationItem[]): Promise<void> {

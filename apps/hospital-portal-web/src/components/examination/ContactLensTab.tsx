@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { ExamCard, ExamInput, ExamSelect, StatusBadge, ActionButton } from './ExamCard';
+import { ExamSpectacleSection } from './ExamSpectacleSection';
+import type { SpectacleDispensingDraft } from '@/lib/optometry/optometry-persistence';
+import type { PriorVisitSnapshot } from '@/lib/optometry/optometry-exam-types';
 import { Printer, Send, CheckCircle2 } from 'lucide-react';
 
 // Type definitions for Contact Lens
@@ -77,8 +80,13 @@ interface ContactLensTabProps {
   fittingData: ContactLensFittingData | null;
   cornealHealthData: CornealHealthData | null;
   instructionsData: PatientInstructionsData | null;
+  spectacleData?: SpectacleDispensingDraft | null;
+  priorVisit?: PriorVisitSnapshot | null;
   keratometryData?: any; // For auto-filling corneal curvature
   canEdit: boolean;
+  onSpectacleChange?: (data: SpectacleDispensingDraft) => void;
+  onPrefillSpectacleFromRefraction?: () => void;
+  onSaveSpectacleBundle?: () => void;
   onSaveAssessment: (data: ContactLensAssessmentData) => void;
   onSavePrescription: (data: ContactLensPrescriptionData) => void;
   onSaveFitting: (data: ContactLensFittingData) => void;
@@ -94,8 +102,13 @@ export default function ContactLensTab({
   fittingData,
   cornealHealthData,
   instructionsData,
+  spectacleData,
+  priorVisit,
   keratometryData,
   canEdit,
+  onSpectacleChange,
+  onPrefillSpectacleFromRefraction,
+  onSaveSpectacleBundle,
   onSaveAssessment,
   onSavePrescription,
   onSaveFitting,
@@ -104,9 +117,6 @@ export default function ContactLensTab({
   onPrintPrescription,
   onEmailPrescription,
 }: ContactLensTabProps) {
-  // ========== OPTICAL PRESCRIPTION TYPE ==========
-  const [opticalType, setOpticalType] = useState<'contact-lens' | 'spectacle'>('contact-lens');
-  
   // ========== STATE ==========
   const [assessment, setAssessment] = useState<ContactLensAssessmentData>({
     isCurrentWearer: false,
@@ -213,44 +223,34 @@ export default function ContactLensTab({
   // ========== RENDER ==========
   return (
     <div className="space-y-4">
-      {/* ========== OPTICAL PRESCRIPTION TYPE SWITCHER ========== */}
-      <div className="bg-white border-2 border-gray-200 rounded-lg p-1 inline-flex gap-1">
-        <button
-          type="button"
-          onClick={() => setOpticalType('contact-lens')}
-          className={`px-6 py-2.5 rounded-md text-sm font-semibold transition-all ${
-            opticalType === 'contact-lens'
-              ? 'bg-emerald-600 text-white shadow-md'
-              : 'bg-transparent text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <span className="w-4 h-4">●</span>
-            <span>Contact Lens</span>
-          </div>
-        </button>
-        <button
-          type="button"
-          onClick={() => setOpticalType('spectacle')}
-          className={`px-6 py-2.5 rounded-md text-sm font-semibold transition-all ${
-            opticalType === 'spectacle'
-              ? 'bg-emerald-600 text-white shadow-md'
-              : 'bg-transparent text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            <span>Spectacle Dispensing</span>
-          </div>
-        </button>
-      </div>
+      {onSpectacleChange && (
+        <ExamSpectacleSection
+          data={spectacleData ?? null}
+          priorVisit={priorVisit}
+          canEdit={canEdit}
+          onChange={onSpectacleChange}
+          onPrefillFromRefraction={onPrefillSpectacleFromRefraction}
+          onSaveToBundle={onSaveSpectacleBundle}
+        />
+      )}
 
-      {/* ========== CONTACT LENS SECTION ========== */}
-      {opticalType === 'contact-lens' && (
-        <>
+      <ExamCard title="Print & Actions" icon={<Printer className="w-5 h-5" />}>
+        <div className="flex flex-wrap items-center gap-3">
+          <ActionButton variant="primary" size="lg" onClick={onPrintPrescription} icon={<Printer className="w-4 h-4" />}>
+            Print Spectacle Prescription
+          </ActionButton>
+          <ActionButton variant="secondary" onClick={onEmailPrescription} icon={<Send className="w-4 h-4" />}>
+            Email to Patient
+          </ActionButton>
+        </div>
+      </ExamCard>
+
+      <details className="rounded-lg border border-slate-200 bg-white group">
+        <summary className="px-4 py-3 cursor-pointer text-sm font-semibold text-slate-800 list-none flex items-center justify-between">
+          <span>Contact lens — advanced / optional</span>
+          <span className="text-xs font-normal text-slate-500">Expand if fitting CL</span>
+        </summary>
+        <div className="px-4 pb-4 space-y-4 border-t border-slate-100">
       {/* ========== SECTION 1: CONTACT LENS ASSESSMENT ========== */}
       <ExamCard
         title="Contact Lens Assessment"
@@ -1273,170 +1273,8 @@ export default function ContactLensTab({
           </ActionButton>
         </div>
       </ExamCard>
-      </>
-      )}
-
-      {/* ========== SPECTACLE DISPENSING SECTION ========== */}
-      {opticalType === 'spectacle' && (
-        <>
-          <ExamCard
-            title="Spectacle Prescription"
-            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>}
-          >
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
-                <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                    <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                  </svg>
-                  Right Eye (OD) - Distance Vision
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <ExamInput label="Sphere (SPH)" placeholder="+2.00" disabled={!canEdit} />
-                  <ExamInput label="Cylinder (CYL)" placeholder="-1.50" disabled={!canEdit} />
-                  <ExamInput label="Axis" placeholder="90°" disabled={!canEdit} />
-                  <ExamInput label="Add Power" placeholder="+2.50" disabled={!canEdit} />
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-6 border border-purple-200">
-                <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                    <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                  </svg>
-                  Left Eye (OS) - Distance Vision
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <ExamInput label="Sphere (SPH)" placeholder="+1.75" disabled={!canEdit} />
-                  <ExamInput label="Cylinder (CYL)" placeholder="-1.25" disabled={!canEdit} />
-                  <ExamInput label="Axis" placeholder="85°" disabled={!canEdit} />
-                  <ExamInput label="Add Power" placeholder="+2.50" disabled={!canEdit} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ExamInput label="Pupillary Distance (PD)" placeholder="62 mm" disabled={!canEdit} />
-                <ExamSelect
-                  label="Lens Type"
-                  disabled={!canEdit}
-                >
-                  <option value="">Select lens type</option>
-                  <option value="Single Vision">Single Vision</option>
-                  <option value="Bifocal">Bifocal</option>
-                  <option value="Progressive">Progressive</option>
-                  <option value="Reading Only">Reading Only</option>
-                </ExamSelect>
-              </div>
-            </div>
-          </ExamCard>
-
-          <ExamCard
-            title="Lens Specifications"
-            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>}
-          >
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ExamSelect
-                  label="Lens Material"
-                  disabled={!canEdit}
-                >
-                  <option value="">Select material</option>
-                  <option value="CR-39 (Standard)">CR-39 (Standard)</option>
-                  <option value="Polycarbonate">Polycarbonate</option>
-                  <option value="High-Index 1.67">High-Index 1.67</option>
-                  <option value="High-Index 1.74">High-Index 1.74</option>
-                  <option value="Trivex">Trivex</option>
-                </ExamSelect>
-                <ExamSelect
-                  label="Lens Coating"
-                  disabled={!canEdit}
-                >
-                  <option value="">Select coating</option>
-                  <option value="Anti-Reflective">Anti-Reflective</option>
-                  <option value="UV Protection">UV Protection</option>
-                  <option value="Blue Light Filter">Blue Light Filter</option>
-                  <option value="Photochromic (Transition)">Photochromic (Transition)</option>
-                  <option value="Scratch-Resistant">Scratch-Resistant</option>
-                  <option value="All Coatings">All Coatings</option>
-                </ExamSelect>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ExamSelect
-                  label="Frame Type"
-                  disabled={!canEdit}
-                >
-                  <option value="">Select frame type</option>
-                  <option value="Full Rim">Full Rim</option>
-                  <option value="Semi-Rimless">Semi-Rimless</option>
-                  <option value="Rimless">Rimless</option>
-                  <option value="Sport Frame">Sport Frame</option>
-                  <option value="Fashion Frame">Fashion Frame</option>
-                </ExamSelect>
-                <ExamInput label="Frame Size" placeholder="52-18-140" disabled={!canEdit} />
-              </div>
-            </div>
-          </ExamCard>
-
-          <ExamCard
-            title="Dispensing Instructions"
-          >
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Wearing Instructions</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {['Full-time wear', 'Distance only', 'Reading only', 'Computer/Intermediate use', 'Driving only'].map((instruction) => (
-                    <label key={instruction} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                      <input type="checkbox" className="rounded text-emerald-600 focus:ring-emerald-500" disabled={!canEdit} />
-                      {instruction}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <ExamInput label="Special Instructions" placeholder="E.g., Use for computer work only" disabled={!canEdit} />
-              <ExamInput label="Follow-up Date" type="date" disabled={!canEdit} />
-            </div>
-          </ExamCard>
-
-          <ExamCard
-            title="Print & Actions"
-            icon={<Printer className="w-5 h-5" />}
-          >
-            <div className="flex flex-wrap items-center gap-3">
-              <ActionButton
-                variant="primary"
-                size="lg"
-                onClick={onPrintPrescription}
-                icon={<Printer className="w-4 h-4" />}
-              >
-                Print Spectacle Prescription
-              </ActionButton>
-              <ActionButton
-                variant="secondary"
-                onClick={onEmailPrescription}
-                icon={<Send className="w-4 h-4" />}
-              >
-                Email to Patient
-              </ActionButton>
-              <ActionButton
-                variant="secondary"
-                onClick={() => {
-                  alert('Optical shop referral coming soon');
-                }}
-                icon={<CheckCircle2 className="w-4 h-4" />}
-              >
-                Refer to Optical Shop
-              </ActionButton>
-            </div>
-          </ExamCard>
-        </>
-      )}
+        </div>
+      </details>
     </div>
   );
 }

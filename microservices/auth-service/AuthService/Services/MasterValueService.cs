@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace AuthService.Services
@@ -81,6 +82,41 @@ namespace AuthService.Services
             };
         }
 
+        public async Task<MasterLookupResponse> GetLookupAsync(Guid tenantId, string entityType)
+        {
+            var rows = await _context.MasterValues
+                .Where(v => v.TenantId == tenantId
+                         && v.EntityType == entityType
+                         && v.IsActive
+                         && v.DeletedAt == null)
+                .OrderBy(v => v.SortOrder)
+                .ThenBy(v => v.Label)
+                .Take(500)
+                .ToListAsync();
+
+            var items = rows.Select(v =>
+            {
+                object? metadataObj = null;
+                if (!string.IsNullOrWhiteSpace(v.Metadata) && v.Metadata != "{}")
+                {
+                    try { metadataObj = JsonSerializer.Deserialize<object>(v.Metadata); } catch { }
+                }
+                return new MasterLookupOptionDto
+                {
+                    Code = v.Code,
+                    Label = v.Label,
+                    SortOrder = v.SortOrder,
+                    Metadata = metadataObj
+                };
+            }).ToList();
+
+            return new MasterLookupResponse
+            {
+                EntityType = entityType,
+                Items = items
+            };
+        }
+
         public async Task<MasterValueDto?> GetByIdAsync(Guid tenantId, Guid id)
         {
             var value = await _context.MasterValues
@@ -138,9 +174,10 @@ namespace AuthService.Services
 
             value.Label = request.Label.Trim();
             value.Description = request.Description?.Trim();
-            if (!string.IsNullOrWhiteSpace(request.Metadata))
+            if (!IsCatalogSynced(value.Metadata) && !string.IsNullOrWhiteSpace(request.Metadata))
                 value.Metadata = request.Metadata;
-            value.SortOrder = request.SortOrder;
+            if (!IsCatalogSynced(value.Metadata))
+                value.SortOrder = request.SortOrder;
             value.UpdatedAt = DateTime.UtcNow;
             value.UpdatedByUserId = updatedByUserId;
 
@@ -156,6 +193,9 @@ namespace AuthService.Services
                 .FirstOrDefaultAsync(v => v.TenantId == tenantId && v.Id == id)
                 ?? throw new KeyNotFoundException($"Master value {id} not found.");
 
+            if (IsCatalogSynced(value.Metadata))
+                throw new InvalidOperationException("Catalog-synced values are enabled or disabled by the Service Catalog sync.");
+
             value.IsActive = true;
             value.DisabledAt = null;
             value.DisabledByUserId = null;
@@ -170,6 +210,9 @@ namespace AuthService.Services
             var value = await _context.MasterValues
                 .FirstOrDefaultAsync(v => v.TenantId == tenantId && v.Id == id)
                 ?? throw new KeyNotFoundException($"Master value {id} not found.");
+
+            if (IsCatalogSynced(value.Metadata))
+                throw new InvalidOperationException("Catalog-synced values are enabled or disabled by the Service Catalog sync.");
 
             value.IsActive = false;
             value.DisabledAt = DateTime.UtcNow;
@@ -233,7 +276,7 @@ namespace AuthService.Services
 
         public async Task<List<MasterEntityTypeStatsDto>> GetGroupStatsAsync(Guid tenantId, string groupKey)
         {
-            var stats = await _context.MasterValues
+            var valueStats = await _context.MasterValues
                 .Where(v => v.TenantId == tenantId && v.GroupKey == groupKey)
                 .GroupBy(v => v.EntityType)
                 .Select(g => new
@@ -246,19 +289,26 @@ namespace AuthService.Services
                 })
                 .ToListAsync();
 
-            // Join with registry for display names
+            var statsByType = valueStats.ToDictionary(s => s.EntityType, s => s);
+
+            // Include all registry types (zero counts when not yet seeded)
             var registry = await _context.EntityTypeRegistries
                 .Where(r => r.GroupKey == groupKey)
+                .OrderBy(r => r.SortOrder)
                 .ToListAsync();
 
-            return stats.Select(s => new MasterEntityTypeStatsDto
+            return registry.Select(r =>
             {
-                EntityType = s.EntityType,
-                DisplayName = registry.FirstOrDefault(r => r.EntityType == s.EntityType)?.DisplayName ?? s.EntityType,
-                Total = s.Total,
-                Active = s.Active,
-                Disabled = s.Disabled,
-                SystemLocked = s.SystemLocked
+                statsByType.TryGetValue(r.EntityType, out var s);
+                return new MasterEntityTypeStatsDto
+                {
+                    EntityType = r.EntityType,
+                    DisplayName = r.DisplayName,
+                    Total = s?.Total ?? 0,
+                    Active = s?.Active ?? 0,
+                    Disabled = s?.Disabled ?? 0,
+                    SystemLocked = s?.SystemLocked ?? 0
+                };
             }).ToList();
         }
 
@@ -289,6 +339,19 @@ namespace AuthService.Services
             };
         }
 
+        private static bool IsCatalogSynced(string metadataJson)
+        {
+            try
+            {
+                var node = JsonNode.Parse(metadataJson);
+                return node?["syncedFromCatalog"]?.GetValue<bool>() == true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static string GroupDisplayName(string groupKey) => groupKey switch
         {
             "patient_setup"    => "Patient Setup",
@@ -303,12 +366,15 @@ namespace AuthService.Services
             "ward_ip"          => "Ward & IP",
             "hr_staff"         => "HR & Staff",
             "system"           => "System",
+            "operations"       => "Operations",
             _                  => groupKey
         };
 
         private static List<MasterValue> GetDefaultSeedValues(Guid tenantId, Guid createdByUserId)
         {
             var now = DateTime.UtcNow;
+            const string EyeMeta = "{\"isEyeRelevant\":true}";
+
             MasterValue Make(string group, string type, string code, string label,
                 int sort = 0, bool locked = false, string metadata = "{}") =>
                 new MasterValue
@@ -350,17 +416,17 @@ namespace AuthService.Services
                 Make("patient_setup","patient.blood_group","O_NEG","O-",8,true),
                 Make("patient_setup","patient.blood_group","UNKNOWN","Unknown",9,true),
 
-                Make("patient_setup","patient.patient_type","CASH","Cash",1),
-                Make("patient_setup","patient.patient_type","INSURANCE","Insurance",2),
-                Make("patient_setup","patient.patient_type","COPAY","Co-Pay",3),
-                Make("patient_setup","patient.patient_type","ESH","ESH",4),
-                Make("patient_setup","patient.patient_type","CGHS","CGHS",5),
-                Make("patient_setup","patient.patient_type","AROGYASHREE","Arogyashree",6),
-                Make("patient_setup","patient.patient_type","SGHS","SGHS",7),
-                Make("patient_setup","patient.patient_type","CAMP","Camp",8),
-                Make("patient_setup","patient.patient_type","RAILWAY","Railway",9),
-                Make("patient_setup","patient.patient_type","FREE","Free / Charity",10),
-                Make("patient_setup","patient.patient_type","TPA","TPA",11),
+                Make("patient_setup","patient.patient_type","CASH","Cash",1,false,@"{""legacyPatientType"":""Cash"",""description"":""Direct payment by patient"",""category"":""direct"",""requiresAdvancePayment"":true,""advancePercentage"":50,""requiredDocuments"":[""ID Proof"",""Address Proof""]}"),
+                Make("patient_setup","patient.patient_type","INSURANCE","Insurance",2,false,@"{""legacyPatientType"":""Insurance"",""description"":""Insurance company cashless treatment"",""category"":""direct"",""requiresPreApproval"":true,""requiredDocuments"":[""Insurance Card"",""Policy Document"",""ID Proof"",""Employer Letter""],""zeroAdvancePayment"":true}"),
+                Make("patient_setup","patient.patient_type","COPAY","Co-Pay",3,false,@"{""legacyPatientType"":""CoPay"",""description"":""Insurance with patient co-payment"",""category"":""direct"",""requiresPreApproval"":true,""requiredDocuments"":[""Insurance Card"",""ID Proof""]}"),
+                Make("patient_setup","patient.patient_type","ESH","ESH",4,false,@"{""legacyPatientType"":""ESH"",""description"":""ESH government scheme"",""category"":""government"",""requiresPreApproval"":true,""requiredDocuments"":[""ESH Card"",""Employee ID"",""Salary Slip""],""zeroAdvancePayment"":true}"),
+                Make("patient_setup","patient.patient_type","CGHS","CGHS",5,false,@"{""legacyPatientType"":""CGHS"",""description"":""CGHS government scheme"",""category"":""government"",""requiresPreApproval"":true,""requiredDocuments"":[""CGHS Card"",""Referral from CGHS Dispensary""],""zeroAdvancePayment"":true}"),
+                Make("patient_setup","patient.patient_type","AROGYASHREE","Arogyashree",6,false,@"{""legacyPatientType"":""Arograshree"",""description"":""Karnataka state health scheme for BPL families"",""category"":""government"",""requiresPreApproval"":true,""requiredDocuments"":[""Income Certificate"",""Ration Card"",""ID Proof""],""zeroAdvancePayment"":true}"),
+                Make("patient_setup","patient.patient_type","SGHS","SGHS",7,false,@"{""legacyPatientType"":""SGHS"",""description"":""State government employee health scheme"",""category"":""government"",""requiresPreApproval"":true,""requiredDocuments"":[""SGHS Card"",""Employee ID""],""zeroAdvancePayment"":true}"),
+                Make("patient_setup","patient.patient_type","CAMP","Camp",8,false,@"{""legacyPatientType"":""Camp"",""description"":""Free surgery camp sponsored by NGO/CSR"",""category"":""special"",""requiredDocuments"":[""Camp Registration Form"",""Income Certificate""],""zeroAdvancePayment"":true}"),
+                Make("patient_setup","patient.patient_type","RAILWAY","Railway",9,false,@"{""legacyPatientType"":""Railway"",""description"":""Railway employee health scheme (RELHS)"",""category"":""government"",""zeroAdvancePayment"":true,""requiredDocuments"":[]}"),
+                Make("patient_setup","patient.patient_type","FREE","Free / Charity",10,false,@"{""legacyPatientType"":""Free"",""description"":""Free treatment — charity or sponsored case"",""category"":""special"",""zeroAdvancePayment"":true,""requiredDocuments"":[]}"),
+                Make("patient_setup","patient.patient_type","TPA","TPA",11,false,@"{""legacyPatientType"":""TPA"",""description"":""Third-party administrator cashless"",""category"":""direct"",""requiresPreApproval"":true,""requiredDocuments"":[""Insurance Card"",""ID Proof""],""zeroAdvancePayment"":true}"),
 
                 Make("patient_setup","patient.gender","MALE","Male",1,true),
                 Make("patient_setup","patient.gender","FEMALE","Female",2,true),
@@ -411,22 +477,7 @@ namespace AuthService.Services
                 Make("patient_setup","patient.occupation","UNEMPLOYED","Unemployed",9),
                 Make("patient_setup","patient.occupation","OTHER","Other",10),
 
-                // ── Clinical ─────────────────────────────────────────────────────
-                Make("clinical","clinical.surgery_type","PHACO","Phacoemulsification (Phaco)",1,false,@"{""category"":""Cataract""}"),
-                Make("clinical","clinical.surgery_type","SICS","SICS",2,false,@"{""category"":""Cataract""}"),
-                Make("clinical","clinical.surgery_type","ECCE","ECCE",3,false,@"{""category"":""Cataract""}"),
-                Make("clinical","clinical.surgery_type","TRAB","Trabeculectomy",4,false,@"{""category"":""Glaucoma""}"),
-                Make("clinical","clinical.surgery_type","AHMED_VALVE","Ahmed Valve Implant",5,false,@"{""category"":""Glaucoma""}"),
-                Make("clinical","clinical.surgery_type","VITRECTOMY","Vitrectomy",6,false,@"{""category"":""Retina""}"),
-                Make("clinical","clinical.surgery_type","SCLERAL_BUCKLE","Scleral Buckling",7,false,@"{""category"":""Retina""}"),
-                Make("clinical","clinical.surgery_type","PKP","Penetrating Keratoplasty (PKP)",8,false,@"{""category"":""Cornea""}"),
-                Make("clinical","clinical.surgery_type","DSEK","DSEK",9,false,@"{""category"":""Cornea""}"),
-                Make("clinical","clinical.surgery_type","LASIK","LASIK",10,false,@"{""category"":""Refractive""}"),
-                Make("clinical","clinical.surgery_type","PRK","PRK",11,false,@"{""category"":""Refractive""}"),
-                Make("clinical","clinical.surgery_type","PTOSIS","Ptosis Correction",12,false,@"{""category"":""Oculoplasty""}"),
-                Make("clinical","clinical.surgery_type","DCR","DCR (Dacryocystorhinostomy)",13,false,@"{""category"":""Oculoplasty""}"),
-                Make("clinical","clinical.surgery_type","SQUINT","Squint Correction",14,false,@"{""category"":""Strabismus""}"),
-                Make("clinical","clinical.surgery_type","CHALAZION","Chalazion Removal",15,false,@"{""category"":""General""}"),
+                // ── Clinical (surgery_type + iol_catalog seeded via Service Catalog sync) ──
 
                 Make("clinical","clinical.anesthesia_type","TOPICAL","Topical",1,false,@"{""category"":""Topical""}"),
                 Make("clinical","clinical.anesthesia_type","LOCAL","Local Infiltration",2,false,@"{""category"":""Local""}"),
@@ -473,12 +524,6 @@ namespace AuthService.Services
                 Make("clinical","clinical.anesthesia_technique","RETROBULBAR","Retrobulbar Block",3),
                 Make("clinical","clinical.anesthesia_technique","GA","General Anesthesia",4),
                 Make("clinical","clinical.anesthesia_technique","SEDATION_TOPICAL","Sedation + Topical",5),
-
-                Make("clinical","clinical.iol_catalog","ALCON_SN60WF","Alcon AcrySof IQ SN60WF",1,false,@"{""manufacturer"":""Alcon"",""model"":""SN60WF"",""lens_type"":""spheric"",""sphere_power_min"":0,""sphere_power_max"":34}"),
-                Make("clinical","clinical.iol_catalog","ALCON_SN6AT","Alcon AcrySof Toric SN6AT",2,false,@"{""manufacturer"":""Alcon"",""model"":""SN6AT"",""lens_type"":""toric"",""sphere_power_min"":6,""sphere_power_max"":30}"),
-                Make("clinical","clinical.iol_catalog","J_AND_J_ZEISS","J&J Tecnis ZCB00",3,false,@"{""manufacturer"":""J&J"",""model"":""ZCB00"",""lens_type"":""spheric"",""sphere_power_min"":5,""sphere_power_max"":34}"),
-                Make("clinical","clinical.iol_catalog","BAUSCH_SV25T","Bausch & Lomb SofPort SV25T",4,false,@"{""manufacturer"":""Bausch & Lomb"",""model"":""SV25T"",""lens_type"":""spheric"",""sphere_power_min"":4,""sphere_power_max"":34}"),
-                Make("clinical","clinical.iol_catalog","HOYA_XY1","Hoya Vivinex XY1",5,false,@"{""manufacturer"":""Hoya"",""model"":""XY1"",""lens_type"":""spheric"",""sphere_power_min"":0,""sphere_power_max"":36}"),
 
                 Make("clinical","clinical.postop_checklist","VITALS_STABLE","Vitals Stable",1),
                 Make("clinical","clinical.postop_checklist","EYE_PADDED","Eye Padded",2),
@@ -532,6 +577,31 @@ namespace AuthService.Services
                 Make("appointments","appointment.cancel_reason","RESCHEDULED","Rescheduled",5),
                 Make("appointments","appointment.cancel_reason","OTHER","Other",6),
 
+                Make("appointments","appointment.status","scheduled","Scheduled",1,false,@"{""color"":""blue""}"),
+                Make("appointments","appointment.status","confirmed","Confirmed",2,false,@"{""color"":""green""}"),
+                Make("appointments","appointment.status","in-progress","In Progress",3,false,@"{""color"":""yellow""}"),
+                Make("appointments","appointment.status","completed","Completed",4,false,@"{""color"":""gray""}"),
+                Make("appointments","appointment.status","cancelled","Cancelled",5,false,@"{""color"":""red""}"),
+                Make("appointments","appointment.status","no-show","No Show",6,false,@"{""color"":""red""}"),
+
+                // ── Operations (OPD routing) ───────────────────────────────────
+                Make("operations","operations.routing_reason","INITIAL_REFRACTION","Initial refraction",1),
+                Make("operations","operations.routing_reason","POST_INVESTIGATION","Post-investigation",2),
+                Make("operations","operations.routing_reason","DOCTOR_REQUESTED","Doctor requested",3),
+                Make("operations","operations.routing_reason","PRE_SURGERY_MEASUREMENT","Pre-surgery measurement",4),
+                Make("operations","operations.routing_reason","COUNSELLOR_REFRACTION","Counsellor refraction",5),
+                Make("operations","operations.routing_reason","OPTICAL_DISPENSING","Optical dispensing",6),
+
+                Make("operations","operations.station","reception","Reception",1,false,@"{""routableFromFrontdesk"":false}"),
+                Make("operations","operations.station","optometrist","Optometrist",2,false,@"{""routableFromFrontdesk"":true}"),
+                Make("operations","operations.station","doctor","Doctor",3,false,@"{""routableFromFrontdesk"":true}"),
+                Make("operations","operations.station","counselor","Counsellor",4,false,@"{""routableFromFrontdesk"":true}"),
+                Make("operations","operations.station","imaging","Imaging",5,false,@"{""routableFromFrontdesk"":false}"),
+                Make("operations","operations.station","billing","Billing",6,false,@"{""routableFromFrontdesk"":false}"),
+                Make("operations","operations.station","pharmacy","Pharmacy",7,false,@"{""routableFromFrontdesk"":false}"),
+                Make("operations","operations.station","optical","Optical",8,false,@"{""routableFromFrontdesk"":false}"),
+                Make("operations","operations.station","completed","Completed",9,false,@"{""routableFromFrontdesk"":false}"),
+
                 // ── Counsellor ───────────────────────────────────────────────────
                 Make("counsellor","counsellor.session_type","INITIAL","Initial Counseling",1),
                 Make("counsellor","counsellor.session_type","FOLLOW_UP","Follow-Up",2),
@@ -563,15 +633,31 @@ namespace AuthService.Services
                 Make("counsellor","counsellor.comm_channel","EMAIL","Email",4),
                 Make("counsellor","counsellor.comm_channel","IN_PERSON","In Person",5),
 
+                Make("counsellor","counsellor.patient_intention","WillingNow","Ready Now — Schedule Today",1,false,@"{""category"":""willing""}"),
+                Make("counsellor","counsellor.patient_intention","WillingWeek","Within 1 Week",2,false,@"{""category"":""willing""}"),
+                Make("counsellor","counsellor.patient_intention","WillingTwoWeeks","Within 2 Weeks",3,false,@"{""category"":""willing""}"),
+                Make("counsellor","counsellor.patient_intention","WillingMonth","Within 1 Month",4,false,@"{""category"":""willing""}"),
+                Make("counsellor","counsellor.patient_intention","WillingQuarter","Within 3 Months",5,false,@"{""category"":""willing""}"),
+                Make("counsellor","counsellor.patient_intention","WillingSixMonths","After 6 Months",6,false,@"{""category"":""willing""}"),
+                Make("counsellor","counsellor.patient_intention","WillingCallToConfirm","Will Call to Confirm",7,false,@"{""category"":""willing""}"),
+                Make("counsellor","counsellor.patient_intention","Undecided","Undecided",8,false,@"{""category"":""not_ready""}"),
+                Make("counsellor","counsellor.patient_intention","WaitingFinancial","Financial Hold",9,false,@"{""category"":""not_ready""}"),
+                Make("counsellor","counsellor.patient_intention","WaitingFear","Fear / Hesitant",10,false,@"{""category"":""not_ready""}"),
+                Make("counsellor","counsellor.patient_intention","SecondOpinion","Second Opinion",11,false,@"{""category"":""not_ready""}"),
+                Make("counsellor","counsellor.patient_intention","Declined","Declined Surgery",12,false,@"{""category"":""not_ready""}"),
+                Make("counsellor","counsellor.patient_intention","ReferredElsewhere","Referred Elsewhere",13,false,@"{""category"":""not_ready""}"),
+
                 // ── Billing & Finance ────────────────────────────────────────────
                 Make("billing_finance","billing.payment_mode","CASH","Cash",1),
-                Make("billing_finance","billing.payment_mode","CARD","Card (Debit/Credit)",2),
-                Make("billing_finance","billing.payment_mode","UPI","UPI",3),
-                Make("billing_finance","billing.payment_mode","NEFT","NEFT/RTGS",4),
-                Make("billing_finance","billing.payment_mode","CHEQUE","Cheque",5),
-                Make("billing_finance","billing.payment_mode","INSURANCE","Insurance",6),
-                Make("billing_finance","billing.payment_mode","DD","Demand Draft",7),
-                Make("billing_finance","billing.payment_mode","ONLINE","Online Transfer",8),
+                Make("billing_finance","billing.payment_mode","CREDIT","Credit",2),
+                Make("billing_finance","billing.payment_mode","CARD","Card (Debit/Credit)",3),
+                Make("billing_finance","billing.payment_mode","UPI","UPI",4),
+                Make("billing_finance","billing.payment_mode","NEFT","NEFT",5),
+                Make("billing_finance","billing.payment_mode","RTGS","RTGS",6),
+                Make("billing_finance","billing.payment_mode","CHEQUE","Cheque",7),
+                Make("billing_finance","billing.payment_mode","INSURANCE","Insurance",8),
+                Make("billing_finance","billing.payment_mode","DD","Demand Draft",9),
+                Make("billing_finance","billing.payment_mode","ONLINE","Online Transfer",10),
 
                 Make("billing_finance","billing.bill_item_type","CONSULTATION","Consultation Fee",1),
                 Make("billing_finance","billing.bill_item_type","PROCEDURE","Procedure",2),
@@ -620,6 +706,11 @@ namespace AuthService.Services
                 Make("insurance","insurance.type","COPAY","Co-Payment",4,false,@"{""isCashless"":true}"),
                 Make("insurance","insurance.type","GOVT","Government Scheme",5,false,@"{""isCashless"":true}"),
 
+                Make("insurance","insurance.accommodation_class","general","General",1),
+                Make("insurance","insurance.accommodation_class","semi-private","Semi-Private",2),
+                Make("insurance","insurance.accommodation_class","private","Private",3),
+                Make("insurance","insurance.accommodation_class","icu","ICU",4),
+
                 // ── Inventory ─────────────────────────────────────────────────────
                 Make("inventory","inventory.item_type","MEDICINE","Medicine",1),
                 Make("inventory","inventory.item_type","SURGICAL","Surgical Supply",2),
@@ -642,12 +733,14 @@ namespace AuthService.Services
                 Make("inventory","inventory.uom","PAIR","Pair",11),
                 Make("inventory","inventory.uom","SET","Set",12),
 
-                Make("inventory","inventory.purchase_category","MEDICINE","Medicine",1),
-                Make("inventory","inventory.purchase_category","SURGICAL","Surgical",2),
-                Make("inventory","inventory.purchase_category","EQUIPMENT","Equipment",3),
-                Make("inventory","inventory.purchase_category","CONSUMABLE","Consumable",4),
-                Make("inventory","inventory.purchase_category","STATIONARY","Stationary",5),
-                Make("inventory","inventory.purchase_category","MISC","Miscellaneous",6),
+                Make("inventory","inventory.purchase_category","PHARMACY","Pharmacy",1),
+                Make("inventory","inventory.purchase_category","OT_SURGERY","OT & Surgery",2),
+                Make("inventory","inventory.purchase_category","CONSUMABLES","Consumables",3),
+                Make("inventory","inventory.purchase_category","OPTICAL","Optical",4),
+                Make("inventory","inventory.purchase_category","LABORATORY","Laboratory",5),
+                Make("inventory","inventory.purchase_category","STATIONERY","Stationery",6),
+                Make("inventory","inventory.purchase_category","EQUIPMENT","Equipment",7),
+                Make("inventory","inventory.purchase_category","GENERAL_HOSPITAL","General Hospital",8),
 
                 Make("inventory","inventory.vendor_category","PHARMA","Pharmaceutical",1),
                 Make("inventory","inventory.vendor_category","SURGICAL","Surgical Supplies",2),
@@ -792,6 +885,58 @@ namespace AuthService.Services
                 Make("hr_staff","hr.credential_type","CPR","CPR Certification",4),
                 Make("hr_staff","hr.credential_type","HOSPITAL_PRIV","Hospital Privileges",5),
                 Make("hr_staff","hr.credential_type","OTHER","Other",6),
+
+                // ── Medical history (B8) ───────────────────────────────────────────
+                Make("clinical","medical_history.chronic_condition","DM2","Diabetes Type 2",1),
+                Make("clinical","medical_history.chronic_condition","HTN","Hypertension",2),
+                Make("clinical","medical_history.chronic_condition","ASTHMA","Asthma",3),
+                Make("clinical","medical_history.chronic_condition","GLAUCOMA","Glaucoma",4,false,EyeMeta),
+                Make("clinical","medical_history.chronic_condition","CATARACT","Cataracts",5,false,EyeMeta),
+                Make("clinical","medical_history.chronic_condition","DR","Diabetic Retinopathy",6,false,EyeMeta),
+                Make("clinical","medical_history.chronic_condition","OTHER","Other",99),
+
+                Make("clinical","medical_history.medication","METFORMIN","Metformin",1),
+                Make("clinical","medical_history.medication","LISINOPRIL","Lisinopril",2),
+                Make("clinical","medical_history.medication","ATORVASTATIN","Atorvastatin",3),
+                Make("clinical","medical_history.medication","INSULIN","Insulin",4),
+                Make("clinical","medical_history.medication","OTHER","Other",99),
+
+                Make("clinical","medical_history.surgery","CATARACT","Cataract Surgery",1),
+                Make("clinical","medical_history.surgery","LASIK","LASIK",2),
+                Make("clinical","medical_history.surgery","VITRECTOMY","Vitrectomy",3),
+                Make("clinical","medical_history.surgery","OTHER","Other",99),
+
+                Make("clinical","medical_history.family_condition","DIABETES","Diabetes",1),
+                Make("clinical","medical_history.family_condition","HTN","Hypertension",2),
+                Make("clinical","medical_history.family_condition","GLAUCOMA","Glaucoma",3,false,EyeMeta),
+                Make("clinical","medical_history.family_condition","OTHER","Other",99),
+
+                Make("clinical","medical_history.immunization","COVID19","COVID-19",1),
+                Make("clinical","medical_history.immunization","INFLUENZA","Influenza",2),
+                Make("clinical","medical_history.immunization","TETANUS","Tetanus",3),
+                Make("clinical","medical_history.immunization","OTHER","Other",99),
+
+                Make("clinical","medical_history.medication_route","ORAL","Oral",1),
+                Make("clinical","medical_history.medication_route","EYE_DROPS","Eye Drops",2,false,EyeMeta),
+                Make("clinical","medical_history.medication_route","TOPICAL","Topical",3,false,EyeMeta),
+                Make("clinical","medical_history.medication_route","OTHER","Other",99),
+
+                Make("clinical","medical_history.family_relationship","MOTHER","Mother",1),
+                Make("clinical","medical_history.family_relationship","FATHER","Father",2),
+                Make("clinical","medical_history.family_relationship","SISTER","Sister",3),
+                Make("clinical","medical_history.family_relationship","BROTHER","Brother",4),
+                Make("clinical","medical_history.family_relationship","OTHER","Other",99),
+
+                Make("clinical","medical_history.smoking_status","NEVER","Never",1),
+                Make("clinical","medical_history.smoking_status","FORMER","Former",2),
+                Make("clinical","medical_history.smoking_status","CURRENT_LIGHT","Current - Light (<10/day)",3),
+                Make("clinical","medical_history.smoking_status","CURRENT_MOD","Current - Moderate (10-20/day)",4),
+                Make("clinical","medical_history.smoking_status","CURRENT_HEAVY","Current - Heavy (>20/day)",5),
+
+                Make("clinical","medical_history.alcohol_use","NONE","None",1),
+                Make("clinical","medical_history.alcohol_use","OCCASIONAL","Occasional (1-2 drinks/week)",2),
+                Make("clinical","medical_history.alcohol_use","MODERATE","Moderate (3-7 drinks/week)",3),
+                Make("clinical","medical_history.alcohol_use","HEAVY","Heavy (>7 drinks/week)",4),
 
                 // ── System ────────────────────────────────────────────────────────
                 Make("system","system.department","ADMISSIONS","Admissions",1),

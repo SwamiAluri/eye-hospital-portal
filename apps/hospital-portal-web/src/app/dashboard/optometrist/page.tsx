@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Users,
@@ -15,128 +15,227 @@ import {
   Send,
   UserCheck,
   Timer,
-  RefreshCw,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { useHasPermission } from '@/hooks/use-permissions';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { optometryQueueApi, type OptometryQueueItem, type OptometryQueueStats } from '@/lib/api/optometry.api';
+import { optometryQueueApi, type OptometryQueueItem } from '@/lib/api/optometry.api';
+import {
+  useOptometryQueueQuery,
+  useOptometryStatsQuery,
+  useOptometryServiceRoomsQuery,
+  useOptometryQueueRealtime,
+  useInvalidateOptometryQueue,
+} from '@/hooks/use-optometry-queue';
+import { useOptometryPatientSearch } from '@/hooks/use-optometry-patient-search';
+import type { DirectoryPatientRow } from '@/lib/optometry/optometry-patient-search';
 import { toast } from 'react-hot-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+
+type QueueLoadState = 'loading' | 'live' | 'error' | 'no-branch';
 
 function OptometristDashboardContent() {
   const router = useRouter();
   const { user } = useAuthStore();
   const canView = useHasPermission('CLINICAL:EXAMINATION:VIEW');
   const canEdit = useHasPermission('CLINICAL:EXAMINATION:EDIT');
+  const invalidate = useInvalidateOptometryQueue();
 
-  const [patients, setPatients] = useState<OptometryQueueItem[]>([]);
-  const [stats, setStats] = useState<OptometryQueueStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const branchId = user?.branchId ?? (typeof window !== 'undefined' ? localStorage.getItem('branchId') ?? undefined : undefined);
+
+  const { isConnected, pollInterval } = useOptometryQueueRealtime(branchId, true);
+  const queueQuery = useOptometryQueueQuery(branchId, true, { refetchInterval: pollInterval });
+  const statsQuery = useOptometryStatsQuery(branchId, { refetchInterval: pollInterval });
+  const roomsQuery = useOptometryServiceRoomsQuery(branchId);
+
+  const patients = queueQuery.data ?? [];
+  const stats = statsQuery.data ?? null;
+  const rooms = roomsQuery.data ?? [];
+  const loading = (queueQuery.isLoading || statsQuery.isLoading) && patients.length === 0;
+  const loadState: QueueLoadState = !branchId
+    ? 'no-branch'
+    : queueQuery.isError
+      ? 'error'
+      : queueQuery.isSuccess
+        ? 'live'
+        : 'loading';
+  const loadError = queueQuery.error instanceof Error ? queueQuery.error.message : null;
+  const lastUpdated = queueQuery.dataUpdatedAt ? new Date(queueQuery.dataUpdatedAt) : null;
+
+  const [selectedRoom, setSelectedRoom] = useState('OPT-1');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [urgencyFilter, setUrgencyFilter] = useState<string>('All');
   const [sourceFilter, setSourceFilter] = useState<string>('All');
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [startingVisitId, setStartingVisitId] = useState<string | null>(null);
+  const [openingPatientId, setOpeningPatientId] = useState<string | null>(null);
+  const [complaintDialogOpen, setComplaintDialogOpen] = useState(false);
+  const [complaintDraft, setComplaintDraft] = useState('');
+  const [pendingDirectoryPatient, setPendingDirectoryPatient] = useState<DirectoryPatientRow | null>(null);
 
-  const loadQueue = useCallback(async () => {
-    try {
-      setLoading(true);
-      // Try API call, fallback to mock data for development
-      let queueData: OptometryQueueItem[];
-      let statsData: OptometryQueueStats;
-      try {
-        const [q, s] = await Promise.all([
-          optometryQueueApi.getQueue(),
-          optometryQueueApi.getStats(),
-        ]);
-        queueData = q;
-        statsData = s;
-      } catch {
-        // Mock data for development
-        queueData = getMockQueueData();
-        statsData = {
-          totalWaiting: queueData.filter((p) => p.status === 'Waiting').length,
-          inProgress: queueData.filter((p) => p.status === 'In Progress').length,
-          completed: queueData.filter((p) => p.status === 'Completed').length,
-          referred: queueData.filter((p) => p.status === 'Referred').length,
-          emergencyCount: queueData.filter((p) => p.urgency === 'Emergency').length,
-          urgentCount: queueData.filter((p) => p.urgency === 'Urgent').length,
-          averageWaitTime: 18,
-        };
-      }
-      setPatients(queueData);
-      setStats(statsData);
-    } catch (error) {
-      console.error('Failed to load optometry queue:', error);
-      toast.error('Failed to load patient queue');
-    } finally {
-      setLoading(false);
+  const { directoryResults, isSearching, searchError, isActive: isSearchActive, minChars } =
+    useOptometryPatientSearch(branchId, searchTerm);
+
+  useEffect(() => {
+    if (!branchId || rooms.length === 0) return;
+    const stored = localStorage.getItem(`optometry-room-${branchId}`);
+    if (stored && rooms.some((room) => room.roomCode === stored)) {
+      setSelectedRoom(stored);
+    } else if (rooms[0]) {
+      setSelectedRoom(rooms[0].roomCode);
     }
-  }, []);
+  }, [branchId, rooms]);
 
-  useEffect(() => {
-    loadQueue();
-  }, [loadQueue]);
-
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(loadQueue, 30000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, loadQueue]);
+  const refreshQueue = () => {
+    if (branchId) invalidate(branchId);
+  };
 
   const handleCallNext = async () => {
+    if (!branchId) {
+      toast.error('Branch not configured for your user');
+      return;
+    }
     try {
-      const nextPatient = await optometryQueueApi.callNext();
-      toast.success(`Calling: ${nextPatient.patientName} (Token: ${nextPatient.tokenNumber})`);
-      loadQueue();
-    } catch {
-      // Fallback: navigate to first waiting patient
-      const nextWaiting = patients.find((p) => p.status === 'Waiting');
-      if (nextWaiting) {
-        handleStartExam(nextWaiting);
-      } else {
-        toast.error('No patients waiting in queue');
-      }
+      const nextPatient = await optometryQueueApi.callNext({
+        branchId,
+        roomCode: selectedRoom,
+        optometristName: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
+      });
+      toast.success(`Calling: ${nextPatient.patientName} (Token: ${nextPatient.tokenNumber}) → Room ${selectedRoom}`);
+      openExam(nextPatient);
+      refreshQueue();
+    } catch (error: unknown) {
+      const msg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? 'No patients waiting in queue');
     }
   };
 
+  const openExam = (patient: OptometryQueueItem) => {
+    const visitId = patient.visitId ?? patient.id;
+    const params = new URLSearchParams({
+      patientId: patient.patientId,
+      visitId,
+      tab: 'medical-history',
+    });
+    if (patient.chiefComplaint) params.set('complaint', patient.chiefComplaint);
+    router.push(`/dashboard/optometrist/exam?${params.toString()}`);
+  };
+
   const handleStartExam = (patient: OptometryQueueItem) => {
-    const complaint = patient.chiefComplaint ? `&complaint=${encodeURIComponent(patient.chiefComplaint)}` : '';
-    router.push(`/dashboard/optometrist/exam?patientId=${patient.patientId}&tab=visual-acuity${complaint}`);
+    const visitId = patient.visitId ?? patient.id;
+    openExam(patient);
+
+    if (patient.status === 'Waiting' && canEdit) {
+      setStartingVisitId(visitId);
+      void optometryQueueApi
+        .startExam(visitId, selectedRoom)
+        .then(() => {
+          if (branchId) invalidate(branchId);
+        })
+        .catch(() => {
+          // Exam already open; queue will refresh on next poll
+        })
+        .finally(() => {
+          setStartingVisitId((current) => (current === visitId ? null : current));
+        });
+    }
   };
 
   const handleSkip = async (patient: OptometryQueueItem) => {
     try {
-      await optometryQueueApi.skipPatient(patient.id, 'Patient not available');
+      await optometryQueueApi.skipPatient(patient.visitId ?? patient.id, 'Patient not available');
       toast.success(`Skipped: ${patient.patientName}`);
-      loadQueue();
+      refreshQueue();
     } catch {
       toast.error('Failed to skip patient');
     }
   };
 
   const handleReferToDoctor = (patient: OptometryQueueItem) => {
-    router.push(`/dashboard/optometrist/refer-doctor?patientId=${patient.patientId}`);
+    const visitId = patient.visitId ?? patient.id;
+    router.push(`/dashboard/optometrist/refer-doctor?patientId=${patient.patientId}&visitId=${visitId}`);
   };
 
   const handleViewEducation = (patient: OptometryQueueItem) => {
-    router.push(`/dashboard/optometrist/patient-education?patientId=${patient.patientId}`);
+    const visitId = patient.visitId ?? patient.id;
+    router.push(`/dashboard/optometrist/patient-education?patientId=${patient.patientId}&visitId=${visitId}`);
   };
 
-  // Filter patients
-  const filteredPatients = patients.filter((patient) => {
-    const matchesSearch =
-      patient.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      patient.mrn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      patient.tokenNumber.toLowerCase().includes(searchTerm.toLowerCase());
+  const handleRoomChange = (code: string) => {
+    setSelectedRoom(code);
+    if (branchId) localStorage.setItem(`optometry-room-${branchId}`, code);
+  };
+
+  const handleOpenDirectoryExamClick = (patient: DirectoryPatientRow) => {
+    if (!branchId) {
+      toast.error('Branch not configured for your user');
+      return;
+    }
+    if (!canEdit) {
+      toast.error('You do not have permission to start examinations');
+      return;
+    }
+    setPendingDirectoryPatient(patient);
+    setComplaintDraft('');
+    setComplaintDialogOpen(true);
+  };
+
+  const handleConfirmOpenDirectoryExam = async () => {
+    if (!pendingDirectoryPatient || !branchId) return;
+
+    const patient = pendingDirectoryPatient;
+    setComplaintDialogOpen(false);
+    setOpeningPatientId(patient.id);
+    try {
+      const queueItem = await optometryQueueApi.openExam({
+        branchId,
+        patientId: patient.id,
+        roomCode: selectedRoom,
+        optometristName: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
+        chiefComplaint: complaintDraft.trim() || undefined,
+      });
+      toast.success(`Opening examination for ${queueItem.patientName}`);
+      openExam(queueItem);
+      refreshQueue();
+    } catch (error: unknown) {
+      const msg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? 'Failed to open examination');
+    } finally {
+      setOpeningPatientId((current) => (current === patient.id ? null : current));
+      setPendingDirectoryPatient(null);
+      setComplaintDraft('');
+    }
+  };
+
+  const matchesStatusFilters = (patient: OptometryQueueItem) => {
     const matchesStatus = statusFilter === 'All' || patient.status === statusFilter;
     const matchesUrgency = urgencyFilter === 'All' || patient.urgency === urgencyFilter;
     const matchesSource = sourceFilter === 'All' || patient.source === sourceFilter;
-    return matchesSearch && matchesStatus && matchesUrgency && matchesSource;
-  });
+    return matchesStatus && matchesUrgency && matchesSource;
+  };
 
-  // Sort: Emergency first, then Urgent, then by token number
+  const matchesSearchTerm = (patient: OptometryQueueItem) => {
+    if (!isSearchActive) return true;
+    const q = searchTerm.trim().toLowerCase();
+    return (
+      patient.patientName.toLowerCase().includes(q) ||
+      patient.mrn.toLowerCase().includes(q) ||
+      patient.tokenNumber.toLowerCase().includes(q)
+    );
+  };
+
+  const filteredPatients = patients.filter(
+    (patient) => matchesSearchTerm(patient) && matchesStatusFilters(patient),
+  );
+
   const sortedPatients = [...filteredPatients].sort((a, b) => {
     const statusOrder: Record<string, number> = { 'In Progress': 0, Waiting: 1, Completed: 2, Referred: 3, Skipped: 4 };
     const urgencyOrder: Record<string, number> = { Emergency: 0, Urgent: 1, Routine: 2 };
@@ -145,14 +244,15 @@ function OptometristDashboardContent() {
     return 0;
   });
 
-  // Handle stat card click to filter patients
+  const allQueuePatientIds = new Set(patients.map((p) => p.patientId));
+  const directoryOnlyPatients = isSearchActive
+    ? directoryResults.filter((p) => !allQueuePatientIds.has(p.id))
+    : [];
   const handleStatClick = (type: string) => {
     if (type === 'Emergency') {
-      // Emergency is urgency-based
       setStatusFilter('All');
       setUrgencyFilter(urgencyFilter === 'Emergency' ? 'All' : 'Emergency');
     } else {
-      // Waiting, In Progress, Completed, Referred are status-based
       setUrgencyFilter('All');
       setStatusFilter(statusFilter === type ? 'All' : type);
     }
@@ -193,7 +293,7 @@ function OptometristDashboardContent() {
     }
   };
 
-  if (loading) {
+  if (loading && patients.length === 0 && loadState === 'loading') {
     return (
       <div className="flex items-center justify-center h-full min-h-[400px]">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
@@ -201,8 +301,62 @@ function OptometristDashboardContent() {
     );
   }
 
+  if (loadState === 'no-branch') {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[400px] px-6">
+        <div className="text-center max-w-md">
+          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+          <p className="text-gray-800 font-semibold">Branch not configured</p>
+          <p className="text-gray-500 text-sm mt-1">Your user profile needs a branch assignment to load the live optometry queue.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col bg-white">
+      {/* Data source indicator */}
+      <div className={`px-6 py-2 text-xs flex items-center justify-between border-b ${
+        loadState === 'live' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+        loadState === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+        'bg-gray-50 border-gray-200 text-gray-600'
+      }`}>
+        <div className="flex items-center gap-2">
+          <span className={`inline-block w-2 h-2 rounded-full ${
+            loadState === 'live' ? 'bg-emerald-500 animate-pulse' : loadState === 'error' ? 'bg-red-500' : 'bg-gray-400'
+          }`} />
+          {loadState === 'live' && (
+            <span>
+              <strong>Live queue</strong>
+              {isConnected ? ' · Real-time' : pollInterval ? ' · Polling' : ''}
+              {lastUpdated && ` · Updated ${lastUpdated.toLocaleTimeString()}`}
+              {` · ${patients.length} patient${patients.length !== 1 ? 's' : ''}`}
+            </span>
+          )}
+          {loadState === 'error' && (
+            <span><strong>Queue unavailable</strong>{loadError ? ` — ${loadError}` : ''}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {rooms.length > 0 && (
+            <label className="flex items-center gap-1.5">
+              <span className="font-medium">Room:</span>
+              <select
+                value={selectedRoom}
+                onChange={(e) => handleRoomChange(e.target.value)}
+                className="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+              >
+                {rooms.map((r) => (
+                  <option key={r.roomCode} value={r.roomCode}>{r.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {loadState === 'error' && (
+            <button type="button" onClick={refreshQueue} className="underline font-medium">Retry</button>
+          )}
+        </div>
+      </div>
       {/* Top Stats Bar — flush to top, no gaps */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
@@ -249,7 +403,7 @@ function OptometristDashboardContent() {
             >
               <CheckCircle2 className="w-5 h-5 text-emerald-500" />
               <div>
-                <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wide">Completed</p>
+                <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wide">Completed Today</p>
                 <p className="text-2xl font-bold text-emerald-900">{stats?.completed ?? 0}</p>
               </div>
             </div>
@@ -293,16 +447,7 @@ function OptometristDashboardContent() {
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-3 ml-5">
-            <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors border ${
-                autoRefresh ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-500 border-gray-200'
-              }`}
-            >
-              <RefreshCw className={`w-4 h-4 ${autoRefresh ? 'animate-spin' : ''}`} style={autoRefresh ? { animationDuration: '3s' } : {}} />
-              {autoRefresh ? 'Live' : 'Paused'}
-            </button>
+          <div className="shrink-0 ml-4">
             <button
               onClick={handleCallNext}
               className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 text-sm font-bold transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
@@ -323,18 +468,30 @@ function OptometristDashboardContent() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by name, MRN, or token..."
+              placeholder="Search by name, MRN, token, or phone (min 3 chars)..."
               className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
           
           {/* Results Counter */}
           <div className="bg-white border border-gray-300 rounded-md px-4 py-2">
-            <p className="text-sm font-semibold text-gray-700">
-              <span className="text-blue-600">{sortedPatients.length}</span> 
-              <span className="text-gray-500 mx-1">/</span> 
-              <span className="text-gray-600">{patients.length}</span>
-              <span className="text-gray-500 ml-1 font-normal">patients</span>
+            <p className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+              {isSearchActive ? (
+                <>
+                  <span className="text-blue-600">{sortedPatients.length}</span>
+                  <span className="text-gray-500 mx-1">in queue</span>
+                  <span className="text-gray-400 mx-1">·</span>
+                  <span className="text-violet-600">{directoryOnlyPatients.length}</span>
+                  <span className="text-gray-500 ml-1 font-normal">other</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-blue-600">{sortedPatients.length}</span>
+                  <span className="text-gray-500 mx-1">/</span>
+                  <span className="text-gray-600">{patients.length}</span>
+                  <span className="text-gray-500 ml-1 font-normal">patients</span>
+                </>
+              )}
             </p>
           </div>
           
@@ -370,20 +527,51 @@ function OptometristDashboardContent() {
             <option value="Post-Op">Post-Op</option>
             <option value="Follow-up">Follow-up</option>
           </select>
-          <span className="text-xs text-gray-500 whitespace-nowrap">{sortedPatients.length} patient{sortedPatients.length !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-gray-500 whitespace-nowrap">
+            {isSearching
+              ? 'Searching…'
+              : searchTerm.trim().length > 0 && searchTerm.trim().length < minChars
+                ? `Type ${minChars}+ characters`
+                : `${sortedPatients.length + directoryOnlyPatients.length} result${sortedPatients.length + directoryOnlyPatients.length !== 1 ? 's' : ''}`}
+          </span>
         </div>
+        {searchError && (
+          <p className="text-xs text-red-600 mt-1.5">{searchError}</p>
+        )}
       </div>
 
       {/* Patient Queue List — scrollable area */}
       <div className="flex-1 overflow-auto px-5 py-3 space-y-2.5 bg-gray-50">
-        {sortedPatients.length === 0 ? (
+        {sortedPatients.length === 0 && directoryOnlyPatients.length === 0 && (
           <div className="bg-white border border-gray-200 rounded-lg p-12 text-center mt-6">
             <Users className="w-14 h-14 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-base font-medium">No patients in queue</p>
-            <p className="text-gray-400 text-sm mt-1">Patients will appear here after OPD check-in</p>
+            {isSearchActive ? (
+              <>
+                <p className="text-gray-500 text-base font-medium">No patients found</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  No queue or directory matches for &ldquo;{searchTerm.trim()}&rdquo;
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-500 text-base font-medium">No patients in queue</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  {loadState === 'live'
+                    ? 'Patients appear here after front desk sends them to optometry'
+                    : 'POST /api/seed/optometry-queue?reset=true to load demo queue data'}
+                </p>
+              </>
+            )}
           </div>
-        ) : (
-          sortedPatients.map((patient) => (
+        )}
+
+        {isSearchActive && sortedPatients.length > 0 && (
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 pt-1">
+            In queue ({sortedPatients.length})
+          </p>
+        )}
+
+        {sortedPatients.map((patient) => (
             <div
               key={patient.id}
               className={`bg-white border rounded-lg p-4 transition-all ${
@@ -443,6 +631,12 @@ function OptometristDashboardContent() {
                 <p className="text-xs text-gray-700">
                   <span className="font-semibold text-gray-800">Complaint:</span> {patient.chiefComplaint}
                 </p>
+                {patient.isReturnVisit && (
+                  <p className="text-[10px] mt-1 text-teal-700 font-semibold">
+                    Return visit · Pass {patient.passNumber ?? 2}
+                    {patient.reasonLabel ? ` · ${patient.reasonLabel}` : ''}
+                  </p>
+                )}
               </div>
 
               {/* Red Flags */}
@@ -512,10 +706,11 @@ function OptometristDashboardContent() {
                   <>
                     <button
                       onClick={() => handleStartExam(patient)}
-                      className="flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition-colors"
+                      disabled={startingVisitId === (patient.visitId ?? patient.id)}
+                      className="flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-wait"
                     >
                       <PlayCircle className="w-3.5 h-3.5 mr-1" />
-                      Start Examination
+                      {startingVisitId === (patient.visitId ?? patient.id) ? 'Opening…' : 'Start Examination'}
                     </button>
                     <button
                       onClick={() => handleSkip(patient)}
@@ -530,10 +725,11 @@ function OptometristDashboardContent() {
                   <>
                     <button
                       onClick={() => handleStartExam(patient)}
-                      className="flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition-colors"
+                      disabled={startingVisitId === (patient.visitId ?? patient.id)}
+                      className="flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-wait"
                     >
                       <Eye className="w-3.5 h-3.5 mr-1" />
-                      Continue Exam
+                      {startingVisitId === (patient.visitId ?? patient.id) ? 'Opening…' : 'Continue Exam'}
                     </button>
                     <button
                       onClick={() => handleViewEducation(patient)}
@@ -572,155 +768,103 @@ function OptometristDashboardContent() {
                 )}
               </div>
             </div>
-          ))
+          ))}
+
+        {isSearchActive && directoryOnlyPatients.length > 0 && (
+          <>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 pt-4">
+              Other patients ({directoryOnlyPatients.length})
+            </p>
+            {directoryOnlyPatients.map((patient) => (
+              <div
+                key={patient.id}
+                className="bg-white border border-violet-200 rounded-lg p-4 hover:border-violet-300 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-violet-50 border border-violet-200 rounded-full flex items-center justify-center shrink-0">
+                      <span className="text-violet-700 font-semibold text-sm">
+                        {patient.patientName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-gray-900 truncate">{patient.patientName}</h3>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mt-0.5">
+                        <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{patient.mrn || '—'}</span>
+                        {patient.gender && <span>{patient.gender}</span>}
+                        {patient.phone && <span>{patient.phone}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="shrink-0 px-2 py-0.5 rounded text-[11px] font-semibold border bg-slate-50 text-slate-600 border-slate-200">
+                    Not in queue
+                  </span>
+                </div>
+                <div className="flex items-center justify-end pt-3 mt-2 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDirectoryExamClick(patient)}
+                    disabled={openingPatientId === patient.id}
+                    className="flex items-center px-3 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded hover:bg-violet-700 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                  >
+                    <PlayCircle className="w-3.5 h-3.5 mr-1" />
+                    {openingPatientId === patient.id ? 'Opening…' : 'Open Examination'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </>
         )}
       </div>
+
+      <Dialog open={complaintDialogOpen} onOpenChange={setComplaintDialogOpen}>
+        <DialogContent size="md">
+          <DialogHeader>
+            <DialogTitle>Open examination</DialogTitle>
+            <DialogDescription>
+              {pendingDirectoryPatient
+                ? `Start optometry examination for ${pendingDirectoryPatient.patientName}. A visit will be created if needed.`
+                : 'Enter the chief complaint for this examination.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <label htmlFor="optometry-chief-complaint" className="block text-sm font-medium text-gray-700 mb-1.5">
+              Chief complaint
+            </label>
+            <textarea
+              id="optometry-chief-complaint"
+              value={complaintDraft}
+              onChange={(e) => setComplaintDraft(e.target.value)}
+              placeholder="e.g. Blurred vision, routine eye check-up"
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setComplaintDialogOpen(false);
+                setPendingDirectoryPatient(null);
+                setComplaintDraft('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleConfirmOpenDirectoryExam()}
+              disabled={!!openingPatientId}
+            >
+              {openingPatientId ? 'Opening…' : 'Open Examination'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-}
-
-// ==========================================
-// Mock Data for Development
-// ==========================================
-function getMockQueueData(): OptometryQueueItem[] {
-  // Using UUID format for mock patient IDs to match backend expectations
-  return [
-    {
-      id: '1',
-      patientId: '550e8400-e29b-41d4-a716-446655440001',
-      patientName: 'Ramesh Kumar',
-      mrn: 'MRN001234',
-      age: 65,
-      gender: 'Male',
-      tokenNumber: 'OPT-001',
-      appointmentTime: '09:00 AM',
-      chiefComplaint: 'Blurred vision, difficulty reading',
-      source: 'OPD',
-      status: 'In Progress',
-      urgency: 'Routine',
-      assignedOptometrist: 'Dr. Priya Sharma',
-      waitingSince: '08:45 AM',
-      completedExams: ['Visual Acuity', 'Auto-Refraction', 'Retinoscopy'],
-      hasRedFlags: false,
-      visualAcuityOD: '6/36',
-      visualAcuityOS: '6/24',
-      iopOD: 16,
-      iopOS: 15,
-      refractionCompleted: false,
-    },
-    {
-      id: '2',
-      patientId: '550e8400-e29b-41d4-a716-446655440002',
-      patientName: 'Lakshmi Devi',
-      mrn: 'MRN005678',
-      age: 58,
-      gender: 'Female',
-      tokenNumber: 'OPT-002',
-      appointmentTime: '09:15 AM',
-      chiefComplaint: 'Sudden vision loss in left eye, floaters',
-      source: 'OPD',
-      status: 'Waiting',
-      urgency: 'Emergency',
-      waitingSince: '09:00 AM',
-      completedExams: [],
-      hasRedFlags: true,
-      redFlags: ['Sudden vision loss', 'Floaters', 'Possible retinal detachment'],
-    },
-    {
-      id: '3',
-      patientId: '550e8400-e29b-41d4-a716-446655440003',
-      patientName: 'Suresh Babu',
-      mrn: 'MRN009012',
-      age: 72,
-      gender: 'Male',
-      tokenNumber: 'OPT-003',
-      appointmentTime: '09:30 AM',
-      chiefComplaint: 'Eye pain, headache, halos around lights',
-      source: 'OPD',
-      status: 'Waiting',
-      urgency: 'Urgent',
-      waitingSince: '09:10 AM',
-      completedExams: [],
-      hasRedFlags: true,
-      redFlags: ['Eye pain with headache', 'Halos - acute glaucoma suspect'],
-    },
-    {
-      id: '4',
-      patientId: '550e8400-e29b-41d4-a716-446655440004',
-      patientName: 'Priya Sharma',
-      mrn: 'MRN001122',
-      age: 45,
-      gender: 'Female',
-      tokenNumber: 'OPT-004',
-      appointmentTime: '09:45 AM',
-      chiefComplaint: 'Routine checkup, diabetic patient',
-      source: 'Follow-up',
-      status: 'Waiting',
-      urgency: 'Routine',
-      waitingSince: '09:30 AM',
-      completedExams: [],
-      hasRedFlags: false,
-    },
-    {
-      id: '5',
-      patientId: '550e8400-e29b-41d4-a716-446655440005',
-      patientName: 'Arun Nair',
-      mrn: 'MRN003344',
-      age: 8,
-      gender: 'Male',
-      tokenNumber: 'OPT-005',
-      appointmentTime: '10:00 AM',
-      chiefComplaint: 'Squint, head tilt',
-      source: 'OPD',
-      status: 'Waiting',
-      urgency: 'Routine',
-      waitingSince: '09:45 AM',
-      completedExams: [],
-      hasRedFlags: false,
-    },
-    {
-      id: '6',
-      patientId: '550e8400-e29b-41d4-a716-446655440006',
-      patientName: 'Kavitha Menon',
-      mrn: 'MRN007788',
-      age: 55,
-      gender: 'Female',
-      tokenNumber: 'OPT-006',
-      appointmentTime: '10:15 AM',
-      chiefComplaint: 'Post-cataract surgery vision check',
-      source: 'Post-Op',
-      status: 'Completed',
-      urgency: 'Routine',
-      completedExams: ['Visual Acuity', 'Refraction', 'Tonometry', 'Keratometry'],
-      hasRedFlags: false,
-      visualAcuityOD: '6/6',
-      visualAcuityOS: '6/9',
-      iopOD: 14,
-      iopOS: 13,
-      refractionCompleted: true,
-    },
-    {
-      id: '7',
-      patientId: '550e8400-e29b-41d4-a716-446655440007',
-      patientName: 'Mohan Das',
-      mrn: 'MRN004455',
-      age: 38,
-      gender: 'Male',
-      tokenNumber: 'OPT-007',
-      appointmentTime: '08:30 AM',
-      chiefComplaint: 'Contact lens fitting required',
-      source: 'Walk-in',
-      status: 'Referred',
-      urgency: 'Routine',
-      completedExams: ['Visual Acuity', 'Refraction', 'Keratometry', 'Tonometry', 'Contact Lens Trial'],
-      hasRedFlags: false,
-      visualAcuityOD: '6/12',
-      visualAcuityOS: '6/9',
-      iopOD: 15,
-      iopOS: 14,
-      refractionCompleted: true,
-    },
-  ];
 }
 
 export default function OptometristDashboardPage() {

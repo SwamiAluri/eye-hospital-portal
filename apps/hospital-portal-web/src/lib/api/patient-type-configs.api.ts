@@ -31,6 +31,7 @@ export interface PatientTypeConfigData {
   paymentNotes?: string;
   icon?: string; // Icon name for UI display
   color?: string; // Color scheme for UI display
+  category?: 'direct' | 'government' | 'special' | string;
 }
 
 // ============================================================================

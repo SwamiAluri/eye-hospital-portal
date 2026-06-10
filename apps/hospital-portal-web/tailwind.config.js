@@ -8,6 +8,27 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // OphthalmoCare auth pages (MD3) — scoped via oc-* classes
+        oc: {
+          primary: '#00478d',
+          'primary-container': '#005eb8',
+          'on-primary-container': '#c8daff',
+          'on-primary': '#ffffff',
+          secondary: '#00658d',
+          'on-secondary': '#ffffff',
+          tertiary: '#244879',
+          background: '#f8f9ff',
+          'on-background': '#0b1c30',
+          surface: '#f8f9ff',
+          'surface-container-low': '#eff4ff',
+          'surface-container': '#e5eeff',
+          'on-surface': '#0b1c30',
+          'on-surface-variant': '#424752',
+          outline: '#727783',
+          'outline-variant': '#c2c6d4',
+          error: '#ba1a1a',
+          'error-container': '#ffdad6',
+        },
         // Navy blue — sidebar and structural UI
         navy: {
           50:  '#f0f4ff',
@@ -41,6 +62,56 @@ module.exports = {
           warning: '#f59e0b',
           info:     '#3b82f6',
           success:  '#10b981',
+        },
+        /** shadcn semantic tokens — use inside `.counselling-session` (vars aliased in theme CSS) */
+        background: 'hsl(var(--background) / <alpha-value>)',
+        foreground: 'hsl(var(--foreground) / <alpha-value>)',
+        border: 'hsl(var(--border) / <alpha-value>)',
+        input: 'hsl(var(--input) / <alpha-value>)',
+        ring: 'hsl(var(--ring) / <alpha-value>)',
+        muted: {
+          DEFAULT: 'hsl(var(--muted) / <alpha-value>)',
+          foreground: 'hsl(var(--muted-foreground) / <alpha-value>)',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card) / <alpha-value>)',
+          foreground: 'hsl(var(--card-foreground) / <alpha-value>)',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent) / <alpha-value>)',
+          foreground: 'hsl(var(--accent-foreground) / <alpha-value>)',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
+          foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
+        },
+        /** Scoped counselling session semantics — use inside `.counselling-session` */
+        counselling: {
+          background: 'hsl(var(--counselling-background) / <alpha-value>)',
+          foreground: 'hsl(var(--counselling-foreground) / <alpha-value>)',
+          border: 'hsl(var(--counselling-border) / <alpha-value>)',
+          input: 'hsl(var(--counselling-input) / <alpha-value>)',
+          ring: 'hsl(var(--counselling-ring) / <alpha-value>)',
+          primary: {
+            DEFAULT: 'hsl(var(--counselling-primary) / <alpha-value>)',
+            foreground: 'hsl(var(--counselling-primary-foreground) / <alpha-value>)',
+          },
+          muted: {
+            DEFAULT: 'hsl(var(--counselling-muted) / <alpha-value>)',
+            foreground: 'hsl(var(--counselling-muted-foreground) / <alpha-value>)',
+          },
+          card: {
+            DEFAULT: 'hsl(var(--counselling-card) / <alpha-value>)',
+            foreground: 'hsl(var(--counselling-card-foreground) / <alpha-value>)',
+          },
+          accent: {
+            DEFAULT: 'hsl(var(--counselling-accent) / <alpha-value>)',
+            foreground: 'hsl(var(--counselling-accent-foreground) / <alpha-value>)',
+          },
+          destructive: {
+            DEFAULT: 'hsl(var(--counselling-destructive) / <alpha-value>)',
+            foreground: 'hsl(var(--counselling-destructive-foreground) / <alpha-value>)',
+          },
         },
       },
       fontFamily: {

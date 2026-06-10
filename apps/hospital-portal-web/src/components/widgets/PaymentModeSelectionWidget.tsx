@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
-import { usePatientTypeConfigs } from '@/hooks/use-patient-type-configs';
+import { usePatientTypeMaster } from '@/hooks/use-patient-type-master';
 import { useCounselingSession, useUpdateCounselingSession } from '@/hooks/use-counseling-sessions';
 import { toast } from 'sonner';
 import { CustomDocumentModal } from '@/components/widgets/CustomDocumentModal';
@@ -140,28 +140,6 @@ const categoryMeta: Record<string, { label: string; description: string; headerC
   },
 };
 
-// ── Fallback configs for Railway + Free if DB hasn't seeded them yet ─────────
-const FALLBACK_EXTRA_CONFIGS = [
-  {
-    id: 'railway-fallback',
-    patientType: 'Railway',
-    displayName: 'Railway Patient',
-    description: 'Railway employee health scheme (RELHS)',
-    configuration: { requiresAdvancePayment: false, advancePercentage: 0, requiredDocuments: [], zeroAdvancePayment: true },
-    isActive: true,
-    displayOrder: 9,
-  },
-  {
-    id: 'free-fallback',
-    patientType: 'Free',
-    displayName: 'Free / Charity',
-    description: 'Free treatment — charity or sponsored case',
-    configuration: { requiresAdvancePayment: false, advancePercentage: 0, requiredDocuments: [], zeroAdvancePayment: true },
-    isActive: true,
-    displayOrder: 10,
-  },
-] as const;
-
 const PaymentModeSelectionWidget = memo(function PaymentModeSelectionWidget({
   widgetId,
   patientId,
@@ -172,15 +150,7 @@ const PaymentModeSelectionWidget = memo(function PaymentModeSelectionWidget({
   onAction,
   onDataChange,
 }: WidgetProps) {
-  // Fetch patient type configurations
-  const { data: configs, isLoading: configsLoading, error: configsError } = usePatientTypeConfigs();
-  
-  // Log errors if any
-  useEffect(() => {
-    if (configsError) {
-      console.error('❌ Payment Mode Widget - Failed to fetch configs:', configsError);
-    }
-  }, [configsError]);
+  const { configs, loading: configsLoading, error: configsError } = usePatientTypeMaster();
   
   // Fetch current session to check if patient type is locked
   const { data: session, isLoading: sessionLoading } = useCounselingSession(sessionId || '', {
@@ -207,13 +177,10 @@ const PaymentModeSelectionWidget = memo(function PaymentModeSelectionWidget({
   const currentStage = session?.currentStage || 'Initial';
   const isLocked = useMemo(() => lockStages.includes(currentStage), [currentStage]);
 
-  // Merge API configs with fallback types (Railway, Free) if not returned by DB
-  const mergedConfigs = useMemo(() => {
-    if (!configs) return configs;
-    const existingTypes = new Set(configs.map((c) => c.patientType));
-    const extras = FALLBACK_EXTRA_CONFIGS.filter((c) => !existingTypes.has(c.patientType));
-    return [...configs, ...extras].sort((a, b) => a.displayOrder - b.displayOrder);
-  }, [configs]);
+  const mergedConfigs = useMemo(
+    () => (configs.length ? [...configs].sort((a, b) => a.displayOrder - b.displayOrder) : undefined),
+    [configs],
+  );
 
   // Sync with session data but DON'T auto-confirm in counselor workflow
   useEffect(() => {
@@ -236,7 +203,7 @@ const PaymentModeSelectionWidget = memo(function PaymentModeSelectionWidget({
       configsLoading,
       hasError: !!configsError,
       errorMessage: configsError ? String(configsError) : null,
-      configsCount: configs?.length || 0,
+      configsCount: configs.length || 0,
       selectedPatientType,
       isConfirmed,
       isLocked,
@@ -244,7 +211,7 @@ const PaymentModeSelectionWidget = memo(function PaymentModeSelectionWidget({
       sessionPatientType: session?.patientType,
       showDocumentModal,
     });
-  }, [configsLoading, configsError, configs?.length, selectedPatientType, isConfirmed, isLocked, currentStage, session?.patientType, showDocumentModal]);
+  }, [configsLoading, configsError, configs.length, selectedPatientType, isConfirmed, isLocked, currentStage, session?.patientType, showDocumentModal]);
 
   const handleCardClick = (patientType: string) => {
     if (isLocked) {

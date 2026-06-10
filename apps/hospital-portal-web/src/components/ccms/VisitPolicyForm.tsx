@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { X, Shield, Save } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import {
   createPolicy, updatePolicy,
   type VisitPolicy, type CreateVisitPolicyRequest,
 } from '@/lib/api/ccms/visit-policies.api';
+import { useTpaProviderMaster } from '@/hooks/use-insurance-masters';
+import { MasterValuesSelect } from '@/components/master-data/MasterValuesSelect';
+import { relationshipApiValue, relationshipMasterCode } from '@/lib/ccms/relationship-api-map';
 
 interface Props {
   caseId: string;
@@ -14,21 +17,6 @@ interface Props {
   onClose: () => void;
   onSaved: () => void;
 }
-
-const ROOM_CLASS_OPTIONS = [
-  { value: 'general',      label: 'General' },
-  { value: 'semi-private', label: 'Semi-Private' },
-  { value: 'private',      label: 'Private' },
-  { value: 'icu',          label: 'ICU' },
-];
-
-const RELATIONSHIP_OPTIONS = [
-  { value: 'self',    label: 'Self' },
-  { value: 'spouse',  label: 'Spouse' },
-  { value: 'child',   label: 'Child' },
-  { value: 'parent',  label: 'Parent' },
-  { value: 'other',   label: 'Other' },
-];
 
 function Field({
   label, children, required,
@@ -50,13 +38,18 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
   const [cardNumber,            setCardNumber]            = useState(existing?.cardNumber ?? '');
   const [membershipNumber,      setMembershipNumber]      = useState(existing?.membershipNumber ?? '');
   const [insuredName,           setInsuredName]           = useState(existing?.insuredName ?? '');
-  const [relationship,          setRelationship]          = useState(existing?.relationshipToInsured ?? 'self');
+  const [relationship,          setRelationship]          = useState(
+    relationshipMasterCode(existing?.relationshipToInsured ?? 'self'),
+  );
   const [companyName,           setCompanyName]           = useState(existing?.companyName ?? '');
   const [contactNumber,         setContactNumber]         = useState(existing?.contactNumber ?? '');
   const [accommodationClass,    setAccommodationClass]    = useState(existing?.accommodationClass ?? '');
   const [tpaCoordinatorName,    setTpaCoordinatorName]    = useState(existing?.tpaCoordinatorName ?? '');
   const [serviceTaxApplicable,  setServiceTaxApplicable]  = useState(existing?.serviceTaxApplicable ?? false);
   const [isPrimary,             setIsPrimary]             = useState(existing?.isPrimary ?? false);
+
+  const { options: tpaOptions } = useTpaProviderMaster();
+  const tpaNames = useMemo(() => tpaOptions.map((o) => o.label), [tpaOptions]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,7 +63,7 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
         cardNumber:           cardNumber || undefined,
         membershipNumber:     membershipNumber || undefined,
         insuredName:          insuredName || undefined,
-        relationshipToInsured: relationship as any,
+        relationshipToInsured: relationshipApiValue(relationship),
         companyName:          companyName || undefined,
         contactNumber:        contactNumber || undefined,
         accommodationClass:   (accommodationClass || undefined) as any,
@@ -143,22 +136,35 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
                 className={inp} placeholder="Name on policy" />
             </Field>
             <Field label="Relationship">
-              <select value={relationship} onChange={e => setRelationship(e.target.value)} className={sel}>
-                {RELATIONSHIP_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <MasterValuesSelect
+                entityType="patient.relationship"
+                value={relationship}
+                onChange={setRelationship}
+                className={sel}
+                placeholder="— Select —"
+              />
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Company / Employer">
               <input value={companyName} onChange={e => setCompanyName(e.target.value)}
-                className={inp} placeholder="Employer name" />
+                list="visit-policy-tpa-suggestions"
+                className={inp} placeholder="Employer or TPA name" />
+              {tpaNames.length > 0 && (
+                <datalist id="visit-policy-tpa-suggestions">
+                  {tpaNames.map((n) => <option key={n} value={n} />)}
+                </datalist>
+              )}
             </Field>
             <Field label="Room Class">
-              <select value={accommodationClass} onChange={e => setAccommodationClass(e.target.value)} className={sel}>
-                <option value="">— Select —</option>
-                {ROOM_CLASS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <MasterValuesSelect
+                entityType="insurance.accommodation_class"
+                value={accommodationClass}
+                onChange={setAccommodationClass}
+                className={sel}
+                placeholder="— Select —"
+              />
             </Field>
           </div>
 

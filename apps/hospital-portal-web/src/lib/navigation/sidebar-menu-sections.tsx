@@ -35,7 +35,6 @@ import {
   FolderOpen,
   Upload,
   Activity,
-  LogOut,
   LogIn,
   Menu,
   Eye,
@@ -66,6 +65,7 @@ import {
   PhoneCall,
   RotateCcw,
   Database,
+  MapPin,
 } from 'lucide-react';
 
 interface MenuItem {
@@ -121,6 +121,12 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           href: '/dashboard/frontdesk/queue',
           icon: <ClipboardList className="h-4 w-4" strokeWidth={2.5} />,
           requiredPermission: 'queue_management.view',
+        },
+        {
+          label: 'Queue TV Display',
+          href: '/dashboard/frontdesk/queue-display?mode=branch&interval=10',
+          icon: <Monitor className="h-4 w-4" strokeWidth={2.5} />,
+          requiredPermission: null,
         },
         {
           label: 'Appointments',
@@ -304,38 +310,20 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           label: 'Ward',
           href: '/dashboard/ip-management/ward',
           icon: <Tent className="h-4 w-4" strokeWidth={2.5} />,
-          requiredPermission: null,
+          requiredPermission: 'ward.checklist.edit',
         },
         {
           label: 'IP Management',
           href: '/dashboard/ip-management',
           icon: <CreditCard className="h-4 w-4" strokeWidth={2.5} />,
-          requiredPermission: null,
+          requiredPermission: 'ip_management.view',
           exact: true,
         },
         {
           label: 'Operation Theatre',
           href: '/dashboard/ip-management/operation-theatre',
           icon: <Activity className="h-4 w-4" strokeWidth={2.5} />,
-          requiredPermission: null,
-        },
-        {
-          label: 'IPD Management',
-          href: '/dashboard/operations/ot/schedule',
-          icon: <Building2 className="h-4 w-4" strokeWidth={2.5} />,
-          requiredPermission: 'OPERATIONS:OT:VIEW',
-        },
-        {
-          label: 'Bed Management',
-          href: '/dashboard/operations/stores',
-          icon: <Layers className="h-4 w-4" strokeWidth={2.5} />,
-          requiredPermission: 'OPERATIONS:STORES:VIEW',
-        },
-        {
-          label: 'Discharge Management',
-          href: '/dashboard/emergency',
-          icon: <LogOut className="h-4 w-4" strokeWidth={2.5} />,
-          requiredPermission: 'emergency.view',
+          requiredPermission: 'ot.safety.sign',
         },
       ],
     },
@@ -715,6 +703,12 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
       icon: <Database className="h-5 w-5" strokeWidth={2.5} />,
       items: [
         {
+          label: 'Overview',
+          href: '/dashboard/master-data',
+          icon: <LayoutDashboard className="h-4 w-4" strokeWidth={2.5} />,
+          requiredPermission: 'master_data.view',
+        },
+        {
           label: 'Patient Setup',
           href: '/dashboard/master-data/patient_setup',
           icon: <Users className="h-4 w-4" strokeWidth={2.5} />,
@@ -724,6 +718,12 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           label: 'Clinical',
           href: '/dashboard/master-data/clinical',
           icon: <Stethoscope className="h-4 w-4" strokeWidth={2.5} />,
+          requiredPermission: 'master_data.view',
+        },
+        {
+          label: 'Service Catalog',
+          href: '/dashboard/master-data/service-catalog',
+          icon: <Layers className="h-4 w-4" strokeWidth={2.5} />,
           requiredPermission: 'master_data.view',
         },
         {
@@ -784,6 +784,12 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           label: 'System',
           href: '/dashboard/master-data/system',
           icon: <Settings className="h-4 w-4" strokeWidth={2.5} />,
+          requiredPermission: 'master_data.view',
+        },
+        {
+          label: 'Operations',
+          href: '/dashboard/master-data/operations',
+          icon: <MapPin className="h-4 w-4" strokeWidth={2.5} />,
           requiredPermission: 'master_data.view',
         },
       ],

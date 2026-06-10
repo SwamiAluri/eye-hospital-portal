@@ -39,6 +39,17 @@ var host = new HostBuilder()
         services.AddScoped<IIolCatalogService, IolCatalogService>();
         services.AddScoped<PostOpWorkflowService>();
         services.AddScoped<VitalSignService>();
+        services.AddScoped<ChecklistPhaseStatusService>();
+        services.AddScoped<CounsellorChecklistService>();
+        services.AddScoped<WardChecklistService>();
+        services.AddScoped<WardInvestigationChecklistService>();
+        services.AddScoped<ChecklistGateService>();
+        services.AddScoped<ChecklistIntegrationService>();
+        services.AddScoped<MedicationLogService>();
+        services.AddScoped<WardPostOpChecklistService>();
+        services.AddScoped<SurgicalSafetyService>();
+        services.AddScoped<PacAssessmentService>();
+        services.AddScoped<AnaesthesiaMonitoringService>();
         services.AddScoped<PreOpClearanceService>();
         services.AddSingleton<IAzureBlobStorageService, AzureBlobStorageService>();
         // Cross-service notification client → calls auth service /api/notifications/internal/*

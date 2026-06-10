@@ -23,6 +23,9 @@ public class ExaminationDraft
     [Column("tenant_id")]
     public Guid TenantId { get; set; }
 
+    [Column("visit_id")]
+    public Guid? VisitId { get; set; }
+
     [Required]
     [Column("timestamp")]
     public DateTime Timestamp { get; set; }
@@ -60,4 +63,7 @@ public class ExaminationDraft
 
     [ForeignKey("TenantId")]
     public virtual Tenant? Tenant { get; set; }
+
+    [ForeignKey("VisitId")]
+    public virtual Visit? Visit { get; set; }
 }

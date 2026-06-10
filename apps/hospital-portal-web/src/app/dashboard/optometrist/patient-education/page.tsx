@@ -31,6 +31,7 @@ function PatientEducationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const patientId = searchParams.get('patientId');
+  const visitId = searchParams.get('visitId');
 
   const { currentPatient } = useClinicalStore();
   const { user } = useAuthStore();
@@ -118,6 +119,7 @@ function PatientEducationContent() {
       setSaving(true);
       const record: PatientEducationRecord = {
         patientId,
+        visitId: visitId ?? undefined,
         spectacleRecommendation: {
           wearType: wearType as any,
           lensType: lensType as any,

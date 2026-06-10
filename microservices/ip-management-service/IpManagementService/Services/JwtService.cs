@@ -29,6 +29,23 @@ public class JwtService
     /// </summary>
     public (Guid UserId, Guid TenantId) ValidateAndExtract(HttpRequestData request)
     {
+        var principal = ValidatePrincipal(request);
+
+        var userIdStr  = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                       ?? principal.FindFirst("sub")?.Value
+                       ?? throw new UnauthorizedAccessException("Token missing user ID claim.");
+
+        var tenantIdStr = principal.FindFirst("tenant_id")?.Value
+                        ?? throw new UnauthorizedAccessException("Token missing tenant_id claim.");
+
+        if (!Guid.TryParse(userIdStr, out var userId) || !Guid.TryParse(tenantIdStr, out var tenantId))
+            throw new UnauthorizedAccessException("Token claims contain invalid GUIDs.");
+
+        return (userId, tenantId);
+    }
+
+    public ClaimsPrincipal ValidatePrincipal(HttpRequestData request)
+    {
         var authHeader = request.Headers
             .TryGetValues("Authorization", out var vals)
                 ? vals.FirstOrDefault()
@@ -57,28 +74,24 @@ public class JwtService
             ClockSkew                = TimeSpan.FromMinutes(5),
         };
 
-        ClaimsPrincipal principal;
         try
         {
-            principal = handler.ValidateToken(token, parameters, out _);
+            return handler.ValidateToken(token, parameters, out _);
         }
         catch (Exception ex)
         {
             throw new UnauthorizedAccessException($"Invalid token: {ex.Message}");
         }
-
-        var userIdStr  = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                       ?? principal.FindFirst("sub")?.Value
-                       ?? throw new UnauthorizedAccessException("Token missing user ID claim.");
-
-        var tenantIdStr = principal.FindFirst("tenant_id")?.Value
-                        ?? throw new UnauthorizedAccessException("Token missing tenant_id claim.");
-
-        if (!Guid.TryParse(userIdStr, out var userId) || !Guid.TryParse(tenantIdStr, out var tenantId))
-            throw new UnauthorizedAccessException("Token claims contain invalid GUIDs.");
-
-        return (userId, tenantId);
     }
+
+    public IReadOnlyList<string> ExtractRoles(HttpRequestData request)
+        => IpChecklistAuth.ExtractRoles(ValidatePrincipal(request));
+
+    public IReadOnlyList<string> ExtractPermissions(HttpRequestData request)
+        => IpChecklistAuth.ExtractPermissions(ValidatePrincipal(request));
+
+    public string? PrimaryRole(HttpRequestData request)
+        => ExtractRoles(request).FirstOrDefault();
 
     /// <summary>
     /// Extracts tenant-id from X-Tenant-ID header (used alongside JWT for multi-tenancy).

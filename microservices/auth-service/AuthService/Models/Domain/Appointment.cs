@@ -33,6 +33,10 @@ public class Appointment
     [StringLength(50)]
     public required string AppointmentType { get; set; }
 
+    [Column("consultation_type")]
+    [StringLength(50)]
+    public string? ConsultationType { get; set; }
+
     [Column("duration_minutes")]
     public required int DurationMinutes { get; set; }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { listCoverageCases, type CoverageCase } from '@/lib/api/ccms/ccms-coverage-cases.api';
 import { PreAuthStatusBadge } from '@/components/ccms/PreAuthStatusBadge';
@@ -8,6 +8,7 @@ import {
   Search, RefreshCw, AlertCircle, Building2, User,
   ChevronRight, Plus, Filter, Folder,
 } from 'lucide-react';
+import { useInsuranceTypeMaster } from '@/hooks/use-insurance-masters';
 
 const PAGE_SIZE = 25;
 
@@ -69,7 +70,15 @@ const STATES = [
   { value: 'REJECTED',                label: 'Rejected' },
 ];
 
-const PAYER_TYPES = [
+const PAYER_FILTER_BY_INSURANCE_CODE: Record<string, string> = {
+  MEDICLAIM: 'insurance',
+  CASHLESS: 'cashless',
+  REIMBURSEMENT: 'insurance',
+  COPAY: 'copay',
+  GOVT: 'govt',
+};
+
+const FALLBACK_PAYER_TYPES = [
   { value: '',          label: 'All Payer Types' },
   { value: 'insurance', label: 'Insurance' },
   { value: 'tpa',       label: 'TPA' },
@@ -95,6 +104,18 @@ function SkeletonRow() {
 }
 
 export default function CcmsCasesPage() {
+  const { options: insuranceTypeOptions } = useInsuranceTypeMaster();
+  const payerTypes = useMemo(() => {
+    if (insuranceTypeOptions.length === 0) return FALLBACK_PAYER_TYPES;
+    return [
+      { value: '', label: 'All Payer Types' },
+      ...insuranceTypeOptions.map((o) => ({
+        value: PAYER_FILTER_BY_INSURANCE_CODE[o.value] ?? o.value.toLowerCase(),
+        label: o.label,
+      })),
+    ];
+  }, [insuranceTypeOptions]);
+
   const [cases,   setCases]   = useState<CoverageCase[]>([]);
   const [total,   setTotal]   = useState(0);
   const [page,    setPage]    = useState(1);
@@ -195,7 +216,7 @@ export default function CcmsCasesPage() {
             onChange={e => { setPayerType(e.target.value); setPage(1); }}
             className="text-xs bg-transparent focus:outline-none text-gray-700 cursor-pointer pr-1"
           >
-            {PAYER_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            {payerTypes.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </div>
 

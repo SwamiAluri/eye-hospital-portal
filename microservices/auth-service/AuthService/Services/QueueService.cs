@@ -4,6 +4,7 @@ using AuthService.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using AuthService.Hubs;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AuthService.Services
 {
@@ -12,12 +13,18 @@ namespace AuthService.Services
         private readonly AppDbContext _context;
         private readonly ILogger<QueueService> _logger;
         private readonly IHubContext<QueueHub> _hubContext;
+        private readonly IServiceProvider _serviceProvider;
 
-        public QueueService(AppDbContext context, ILogger<QueueService> logger, IHubContext<QueueHub> hubContext)
+        public QueueService(
+            AppDbContext context,
+            ILogger<QueueService> logger,
+            IHubContext<QueueHub> hubContext,
+            IServiceProvider serviceProvider)
         {
             _context = context;
             _logger = logger;
             _hubContext = hubContext;
+            _serviceProvider = serviceProvider;
         }
 
         public async Task<Dictionary<string, object>> GetAllQueuesAsync(Guid branchId)
@@ -73,40 +80,46 @@ namespace AuthService.Services
 
         public async Task<QueueDisplayData?> GetQueueDisplayDataAsync(Guid? branchId, Guid? departmentId, string queueType)
         {
-            var query = _context.QueueItems
-                .Where(q => q.QueueType == queueType && q.Status == "waiting")
-                .OrderBy(q => q.CheckedInAt)
-                .AsQueryable();
-
-            if (branchId.HasValue)
-                query = query.Where(q => q.BranchId == branchId.Value);
-
-            if (departmentId.HasValue)
-                query = query.Where(q => q.DepartmentId == departmentId.Value);
-
-            var queueItems = await query
-                .Include(q => q.Patient)
-                .Include(q => q.Appointment)
-                .Take(6)
-                .ToListAsync();
-
-            if (!queueItems.Any())
-                return null;
-
-            var current = queueItems.First();
-            var next = queueItems.Skip(1).Take(5).Select(q => q.TokenNumber).ToList();
-
-            return new QueueDisplayData
+            if (!branchId.HasValue || string.IsNullOrWhiteSpace(queueType))
             {
-                CurrentToken = current.TokenNumber ?? "NONE",
-                NextTokens = next,
-                DoctorName = current.DoctorName ?? "N/A",
-                RoomNumber = current.RoomNumber ?? "N/A",
-                DepartmentName = current.Department?.Name ?? "N/A",
-                QueueType = queueType,
-                Timestamp = DateTime.UtcNow
-            };
+                return null;
+            }
+
+            var branch = await _context.Branches.AsNoTracking()
+                .FirstOrDefaultAsync(b => b.Id == branchId.Value);
+            if (branch == null)
+            {
+                return null;
+            }
+
+            var displayService = _serviceProvider.GetRequiredService<IQueueDisplayService>();
+            var station = MapQueueTypeToStation(queueType);
+            var payload = await displayService.GetBranchDisplayAsync(
+                branch.TenantId,
+                branchId.Value,
+                mode: "station",
+                station: station,
+                roomCode: null,
+                rotationSeconds: 10);
+
+            var slide = payload.Slides.FirstOrDefault();
+            if (slide == null)
+            {
+                return null;
+            }
+
+            return QueueDisplayMapper.ToLegacyDisplayData(slide, queueType);
         }
+
+        private static string MapQueueTypeToStation(string queueType) => queueType.ToLowerInvariant() switch
+        {
+            "optometry" => "optometrist",
+            "doctor" => "doctor",
+            "imaging" => "imaging",
+            "billing" => "billing",
+            "counseling" or "counsellor" => "counselor",
+            _ => queueType.ToLowerInvariant(),
+        };
 
         public async Task<QueueItem?> CallPatientAsync(Guid queueItemId, string? roomNumber, string? doctorName)
         {
@@ -125,19 +138,31 @@ namespace AuthService.Services
             // Emit SignalR event for real-time TV display update
             try
             {
-                // Send to specific queue group
+                var display = await GetQueueDisplayDataAsync(
+                    queueItem.BranchId,
+                    queueItem.DepartmentId,
+                    queueItem.QueueType);
+
                 var groupName = $"Queue-{queueItem.TenantId}-{queueItem.BranchId}-{queueItem.DepartmentId}-{queueItem.QueueType}";
                 await _hubContext.Clients.Group(groupName).SendAsync("TokenCalled", new
                 {
                     queueItem.Id,
                     queueItem.TokenNumber,
+                    PatientName = display?.CurrentPatientName,
+                    Gender = display?.CurrentGender,
+                    AgeCategory = display?.CurrentAgeCategory,
+                    Urgency = display?.CurrentUrgency,
+                    IsReturnVisit = display?.CurrentIsReturnVisit ?? false,
+                    PassNumber = display?.CurrentPassNumber ?? 1,
+                    ReasonLabel = display?.CurrentReasonLabel,
                     queueItem.RoomNumber,
                     queueItem.DoctorName,
                     queueItem.QueueType,
-                    queueItem.CalledAt
+                    queueItem.CalledAt,
+                    NextTokens = display?.NextTokens ?? new List<string>(),
+                    NextPatients = display?.NextPatients ?? new List<QueueDisplayPatientEntry>(),
                 });
 
-                // Also send to branch group for dashboard updates
                 var branchGroup = $"Branch-{queueItem.TenantId}-{queueItem.BranchId}";
                 await _hubContext.Clients.Group(branchGroup).SendAsync("QueueUpdate", new
                 {
@@ -147,6 +172,9 @@ namespace AuthService.Services
                     queueItem.QueueType,
                     Action = "called"
                 });
+
+                var notifier = _serviceProvider.GetRequiredService<IQueueDisplayNotifier>();
+                await notifier.NotifyBranchDisplayUpdatedAsync(queueItem.TenantId, queueItem.BranchId);
 
                 _logger.LogInformation("SignalR event emitted for token {TokenNumber}", queueItem.TokenNumber);
             }

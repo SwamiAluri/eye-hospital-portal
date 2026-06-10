@@ -18,6 +18,9 @@ public class CreateAppointmentRequest
     [StringLength(50)]
     public string AppointmentType { get; set; } = null!;
 
+    [StringLength(50)]
+    public string? ConsultationType { get; set; }
+
     [Required]
     [Range(15, 480)] // 15 minutes to 8 hours
     public int DurationMinutes { get; set; }
@@ -36,6 +39,9 @@ public class UpdateAppointmentRequest
     [Required]
     [StringLength(50)]
     public string AppointmentType { get; set; } = null!;
+
+    [StringLength(50)]
+    public string? ConsultationType { get; set; }
 
     [Required]
     [Range(15, 480)]
@@ -64,6 +70,7 @@ public class AppointmentResponse
     public string? StartTime { get; set; }
     public string? EndTime { get; set; }
     public string AppointmentType { get; set; } = null!;
+    public string? ConsultationType { get; set; }
     public int DurationMinutes { get; set; }
     public string? Priority { get; set; }
     public string Status { get; set; } = null!;

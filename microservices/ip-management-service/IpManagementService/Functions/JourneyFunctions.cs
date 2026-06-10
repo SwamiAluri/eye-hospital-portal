@@ -67,13 +67,20 @@ public class JourneyFunctions
     {
         try
         {
-            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid   = _jwt.ExtractTenantId(req, tenantId);
             var qs    = ParseQs(req.Url.Query);
             if (!qs.TryGetValue("branchId", out var branchStr) || !Guid.TryParse(branchStr, out var branchId))
                 return await BadRequest(req, "branchId is required.");
             qs.TryGetValue("clinicalState", out var clinicalState);
             qs.TryGetValue("wardId", out var wardId);
+
+            if (string.IsNullOrWhiteSpace(clinicalState)
+                || string.Equals(clinicalState, "Expected", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(clinicalState, "All", StringComparison.OrdinalIgnoreCase))
+            {
+                await _journeySvc.OnboardExpectedJourneysAsync(tid, branchId, userId);
+            }
 
             var rows = await _journeySvc.ListAsync(tid, branchId, clinicalState, wardId);
             return await Ok(req, rows);
@@ -91,13 +98,50 @@ public class JourneyFunctions
     {
         try
         {
-            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid = _jwt.ExtractTenantId(req, tenantId);
-            var detail = await _journeySvc.GetDetailAsync(id, tid);
+            var detail = await _journeySvc.GetDetailAsync(id, tid, userId);
             if (detail is null) return await NotFound(req, "Journey not found.");
             return await Ok(req, detail);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("OnboardExpectedJourneys")]
+    public async Task<HttpResponseData> OnboardExpectedJourneys(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "ip-management/journeys/onboard-expected")]
+        HttpRequestData req)
+    {
+        try
+        {
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var qs  = ParseQs(req.Url.Query);
+            if (!qs.TryGetValue("branchId", out var branchStr) || !Guid.TryParse(branchStr, out var branchId))
+                return await BadRequest(req, "branchId is required.");
+
+            await _journeySvc.OnboardExpectedJourneysAsync(tid, branchId, userId);
+            return await Ok(req, new { message = "Expected journeys onboarded." });
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("OnboardJourneyChecklist")]
+    public async Task<HttpResponseData> OnboardJourneyChecklist(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "ip-management/journeys/{id:guid}/onboard-checklist")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            await _journeySvc.EnsureJourneyOnboardedAsync(id, tid, userId);
+            return await Ok(req, new { message = "Journey checklist onboarded." });
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
         catch (Exception ex) { return await InternalError(req, ex.Message); }
     }
 
@@ -110,6 +154,7 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<AdmitPatientRequest>(req.Body, Json)
@@ -180,11 +225,13 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<TransitionRequest>(req.Body, Json)
                        ?? throw new ArgumentException("Body required.");
-            var result = await _journeySvc.TransitionClinicalAsync(id, tid, userId, body);
+            var roles  = _jwt.ExtractRoles(req);
+            var result = await _journeySvc.TransitionClinicalAsync(id, tid, userId, body, roles);
             return await Ok(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
@@ -228,9 +275,13 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermOtSign);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid = _jwt.ExtractTenantId(req, tenantId);
-            var result = await _journeySvc.AcceptInOtAsync(id, tid, userId);
+            var qs  = ParseQs(req.Url.Query);
+            var acknowledge = qs.TryGetValue("acknowledgeWarnings", out var aw)
+                              && bool.TryParse(aw, out var b) && b;
+            var result = await _journeySvc.AcceptInOtAsync(id, tid, userId, acknowledge);
             return await Ok(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
@@ -249,9 +300,13 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermOtSign);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid = _jwt.ExtractTenantId(req, tenantId);
-            var result = await _journeySvc.StartSurgeryAsync(id, tid, userId);
+            var qs  = ParseQs(req.Url.Query);
+            var acknowledge = qs.TryGetValue("acknowledgeWhoWarning", out var aw)
+                              && bool.TryParse(aw, out var b) && b;
+            var result = await _journeySvc.StartSurgeryAsync(id, tid, userId, acknowledge);
             return await Ok(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
@@ -270,6 +325,7 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermOtSign);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<EmergencyFcRequest>(req.Body, Json)

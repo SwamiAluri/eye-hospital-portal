@@ -1,14 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Calendar, User, Phone, Activity } from 'lucide-react';
 
 interface WalkInBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
+  prefill?: {
+    patientName?: string;
+    phoneNumber?: string;
+  };
 }
 
-export default function WalkInBookingModal({ isOpen, onClose }: WalkInBookingModalProps) {
+export default function WalkInBookingModal({ isOpen, onClose, prefill }: WalkInBookingModalProps) {
   const [formData, setFormData] = useState({
     patientName: '',
     phoneNumber: '',
@@ -18,6 +22,16 @@ export default function WalkInBookingModal({ isOpen, onClose }: WalkInBookingMod
     appointmentType: 'consultation',
     notes: '',
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!prefill) return;
+    setFormData((prev) => ({
+      ...prev,
+      patientName: prefill.patientName ?? prev.patientName,
+      phoneNumber: prefill.phoneNumber ?? prev.phoneNumber,
+    }));
+  }, [isOpen, prefill?.patientName, prefill?.phoneNumber]);
 
   if (!isOpen) return null;
 

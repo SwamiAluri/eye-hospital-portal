@@ -1,6 +1,12 @@
 'use client';
 
+import { useMemo } from 'react';
 import { CheckCircle2 } from 'lucide-react';
+import { useMasterValues } from '@/hooks/use-master-values';
+import {
+  isWillingIntention,
+  resolvePatientIntentionOptions,
+} from '@/lib/counsellors-desk/patient-intention-defaults';
 
 interface PatientDecisionWidgetProps {
   widgetId: string;
@@ -17,37 +23,32 @@ interface PatientDecisionWidgetProps {
   onAction?: (action: { type: string; payload?: any; timestamp: Date }) => void;
 }
 
-const WILLING_OPTIONS = [
-  { value: 'WillingNow',           label: 'Ready Now — Schedule Today' },
-  { value: 'WillingWeek',          label: 'Within 1 Week' },
-  { value: 'WillingTwoWeeks',      label: 'Within 2 Weeks' },
-  { value: 'WillingMonth',         label: 'Within 1 Month' },
-  { value: 'WillingQuarter',       label: 'Within 3 Months' },
-  { value: 'WillingSixMonths',     label: 'After 6 Months' },
-  { value: 'WillingCallToConfirm', label: 'Will Call to Confirm' },
-];
-
-const NOT_READY_OPTIONS = [
-  { value: 'Undecided',          label: 'Undecided' },
-  { value: 'WaitingFinancial',   label: 'Financial Hold' },
-  { value: 'WaitingFear',        label: 'Fear / Hesitant' },
-  { value: 'SecondOpinion',      label: 'Second Opinion' },
-  { value: 'Declined',           label: 'Declined Surgery' },
-  { value: 'ReferredElsewhere',  label: 'Referred Elsewhere' },
-];
-
 export default function PatientDecisionWidget({
   data,
   onDataChange,
 }: PatientDecisionWidgetProps) {
+  const { options: intentionMaster } = useMasterValues('counsellor.patient_intention');
+  const intentionOptions = useMemo(
+    () => resolvePatientIntentionOptions(intentionMaster),
+    [intentionMaster],
+  );
+  const willingOptions = useMemo(
+    () => intentionOptions.filter((o) => o.metadata?.category === 'willing'),
+    [intentionOptions],
+  );
+  const notReadyOptions = useMemo(
+    () => intentionOptions.filter((o) => o.metadata?.category === 'not_ready'),
+    [intentionOptions],
+  );
+
   const selected = (data as any)?.patientIntention as string | undefined;
 
   const handleSelect = (value: string) => {
     onDataChange?.({ patientIntention: value, confirmed: true });
   };
 
-  const isWilling = WILLING_OPTIONS.some(o => o.value === selected);
-  const selectedLabel = [...WILLING_OPTIONS, ...NOT_READY_OPTIONS].find(o => o.value === selected)?.label;
+  const isWilling = isWillingIntention(selected, intentionOptions);
+  const selectedLabel = intentionOptions.find((o) => o.value === selected)?.label;
 
   return (
     <div className="flex flex-col h-full">
@@ -79,7 +80,7 @@ export default function PatientDecisionWidget({
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Willing to Proceed</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {WILLING_OPTIONS.map(opt => (
+            {willingOptions.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
@@ -103,7 +104,7 @@ export default function PatientDecisionWidget({
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Not Ready Yet</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {NOT_READY_OPTIONS.map(opt => (
+            {notReadyOptions.map((opt) => (
               <button
                 key={opt.value}
                 type="button"

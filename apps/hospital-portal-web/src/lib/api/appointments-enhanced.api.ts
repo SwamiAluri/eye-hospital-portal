@@ -50,7 +50,7 @@ export interface CreateAppointmentDto {
   appointmentType: string;
   reasonForVisit?: string;
   notes?: string;
-  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  priority?: string;
   isRecurring?: boolean;
   recurringPattern?: string;
 }

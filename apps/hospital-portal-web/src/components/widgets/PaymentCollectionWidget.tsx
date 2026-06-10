@@ -5,13 +5,35 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { DollarSign, X as CreditCard, Phone as Smartphone, DollarSign as Banknote, CheckCircle2 as Check, Printer, Activity as RefreshCw, Activity } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  DollarSign,
+  CreditCard,
+  Smartphone,
+  Banknote,
+  CheckCircle2 as Check,
+  Printer,
+  Activity as RefreshCw,
+  Activity,
+  Building2,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { widgetsApi } from '@/lib/api/widgets.api';
+import type { PaymentMode } from '@/lib/api/opd-billing.api';
+import { usePaymentModes } from '@/hooks/use-payment-modes';
+import { useTransactionTypes } from '@/hooks/use-billing-masters';
 
-type PaymentMode = 'cash' | 'card' | 'upi' | 'netbanking';
+const WIDGET_PAYMENT_ICONS: Partial<Record<PaymentMode, LucideIcon>> = {
+  cash: Banknote,
+  card: CreditCard,
+  upi: Smartphone,
+  net_banking: Building2,
+  cheque: Building2,
+  insurance: CreditCard,
+  wallet: Smartphone,
+};
 
 interface PaymentLink {
   url: string;
@@ -30,6 +52,11 @@ export default function PaymentCollectionWidget({
   onDataChange,
 }: WidgetProps) {
   const [amount, setAmount] = useState<string>((data as any)?.amount || '');
+  const { modes: paymentModeChoices, loading: paymentModesLoading } = usePaymentModes();
+  const { types: transactionTypes } = useTransactionTypes();
+  const [transactionType, setTransactionType] = useState<string>(
+    (data as any)?.transactionType || 'PAYMENT',
+  );
   const [selectedMode, setSelectedMode] = useState<PaymentMode>((data as any)?.paymentMode || 'cash');
   const [transactionRef, setTransactionRef] = useState<string>((data as any)?.transactionRef || '');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -58,12 +85,27 @@ export default function PaymentCollectionWidget({
 
   const quickAmounts = [5000, 10000, 20000, balanceDue];
 
-  const paymentModes = [
-    { id: 'cash' as const, label: 'Cash', icon: Banknote, color: 'green' },
-    { id: 'card' as const, label: 'Card', icon: CreditCard, color: 'blue' },
-    { id: 'upi' as const, label: 'UPI', icon: Smartphone, color: 'purple' },
-    { id: 'netbanking' as const, label: 'Net Banking', icon: CreditCard, color: 'orange' },
-  ];
+  const paymentModes = useMemo(
+    () =>
+      paymentModeChoices.map((m) => ({
+        id: m.apiMode,
+        label: m.label,
+        icon: WIDGET_PAYMENT_ICONS[m.apiMode] ?? Banknote,
+      })),
+    [paymentModeChoices],
+  );
+
+  useEffect(() => {
+    if (paymentModeChoices.length === 0) return;
+    const valid = paymentModeChoices.some((m) => m.apiMode === selectedMode);
+    if (!valid) setSelectedMode(paymentModeChoices[0].apiMode);
+  }, [paymentModeChoices, selectedMode]);
+
+  useEffect(() => {
+    if (transactionTypes.length === 0) return;
+    const valid = transactionTypes.some((t) => t.value === transactionType);
+    if (!valid) setTransactionType(transactionTypes[0].value);
+  }, [transactionTypes, transactionType]);
 
   const handleGeneratePaymentLink = () => {
     // Mock payment link generation
@@ -207,6 +249,31 @@ export default function PaymentCollectionWidget({
         </div>
       </div>
 
+      {/* Transaction Type */}
+      <div className="border border-gray-200 rounded-lg p-3">
+        <label className="block text-sm font-semibold text-gray-900 mb-2">Transaction Type</label>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {transactionTypes.map((t) => {
+            const isSelected = transactionType === t.value;
+            return (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setTransactionType(t.value)}
+                className={cn(
+                  'py-2 px-3 text-xs font-medium rounded-lg border transition-all',
+                  isSelected
+                    ? 'border-blue-500 bg-blue-50 text-blue-900 ring-2 ring-blue-200'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
+                )}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Amount Entry */}
       <div className="border border-gray-200 rounded-lg p-3">
         <label className="block text-sm font-semibold text-gray-900 mb-2">Enter Amount</label>
@@ -238,30 +305,35 @@ export default function PaymentCollectionWidget({
       {/* Payment Mode Selection */}
       <div className="border border-gray-200 rounded-lg p-3">
         <label className="block text-sm font-semibold text-gray-900 mb-3">Payment Mode</label>
-        <div className="grid grid-cols-2 gap-2">
-          {paymentModes.map((mode) => {
-            const Icon = mode.icon;
-            const isSelected = selectedMode === mode.id;
-            return (
-              <button
-                key={mode.id}
-                onClick={() => setSelectedMode(mode.id)}
-                className={cn(
-                  'flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all',
-                  isSelected
-                    ? `border-${mode.color}-500 bg-${mode.color}-50 ring-2 ring-${mode.color}-200`
-                    : 'border-gray-200 bg-white hover:border-gray-300'
-                )}
-              >
-                <Icon className={cn('h-6 w-6', isSelected ? `text-${mode.color}-600` : 'text-gray-600')} />
-                <span className={cn('text-sm font-medium', isSelected ? 'text-gray-900' : 'text-gray-600')}>
-                  {mode.label}
-                </span>
-                {isSelected && <Check className="h-4 w-4 text-green-600" />}
-              </button>
-            );
-          })}
-        </div>
+        {paymentModesLoading ? (
+          <p className="text-xs text-gray-500">Loading payment modes…</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {paymentModes.map((mode) => {
+              const Icon = mode.icon;
+              const isSelected = selectedMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setSelectedMode(mode.id)}
+                  className={cn(
+                    'flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all',
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-gray-200 bg-white hover:border-gray-300',
+                  )}
+                >
+                  <Icon className={cn('h-6 w-6', isSelected ? 'text-blue-600' : 'text-gray-600')} />
+                  <span className={cn('text-sm font-medium', isSelected ? 'text-gray-900' : 'text-gray-600')}>
+                    {mode.label}
+                  </span>
+                  {isSelected && <Check className="h-4 w-4 text-green-600" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Transaction Reference (for card/UPI/netbanking) */}

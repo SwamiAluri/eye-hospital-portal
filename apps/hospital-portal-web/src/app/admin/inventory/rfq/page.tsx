@@ -17,6 +17,7 @@ import {
   RfqHeader,
 } from '@/lib/api/inventory-service.api';
 import { useVendors, useBranches, useInventoryItems } from '@/hooks/useInventoryReferenceData';
+import { usePaymentTerms } from '@/hooks/use-inventory-masters';
 
 const STATUS_TABS = [
   { key: 'All',                    label: 'All',               dot: 'bg-slate-400',   activeClass: 'bg-slate-600 border-slate-600 text-white' },
@@ -519,6 +520,7 @@ function CreatePoFromRfqModal({ rfq, vendorMap, onClose, onDone }: { rfq: any; v
   const [quoteRef, setQuoteRef] = useState('');
   const [resolvedVendorName, setResolvedVendorName] = useState<string>('');
   const [expectedDelivery, setExpectedDelivery] = useState('');
+  const { terms: paymentTerms } = usePaymentTerms();
   const [terms, setTerms] = useState('');
   const [notes, setNotes] = useState('');
   const [isEmergency, setIsEmergency] = useState(false);
@@ -713,8 +715,16 @@ function CreatePoFromRfqModal({ rfq, vendorMap, onClose, onDone }: { rfq: any; v
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-                <input value={terms} onChange={e => setTerms(e.target.value)} placeholder="e.g. Net 30 days, Payment on delivery…"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <select
+                  value={terms}
+                  onChange={(e) => setTerms(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select payment terms…</option>
+                  {paymentTerms.map((t) => (
+                    <option key={t.value} value={t.label}>{t.label}</option>
+                  ))}
+                </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>

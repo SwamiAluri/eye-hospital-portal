@@ -1,23 +1,26 @@
 import * as React from "react"
+import { cn } from "@/lib/utils"
+
+type AlertVariant = 'default' | 'destructive' | 'warning' | 'info'
+
+const alertVariants: Record<AlertVariant, string> = {
+  default: 'bg-emerald-50 text-emerald-900 border-emerald-200',
+  destructive: 'bg-red-50 text-red-900 border-red-200',
+  warning: 'bg-amber-50 text-amber-900 border-amber-200',
+  info: 'bg-sky-50 text-sky-900 border-sky-200',
+}
 
 const Alert = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { variant?: 'default' | 'destructive' }
->(({ className, variant = 'default', ...props }, ref) => {
-  const variantStyles = {
-    default: 'bg-emerald-50 text-emerald-900 border-emerald-200',
-    destructive: 'bg-red-50 text-red-900 border-red-200'
-  }
-  
-  return (
-    <div
-      ref={ref}
-      role="alert"
-      className={`relative w-full rounded-lg border p-4 ${variantStyles[variant]} ${className}`}
-      {...props}
-    />
-  )
-})
+  React.HTMLAttributes<HTMLDivElement> & { variant?: AlertVariant }
+>(({ className, variant = 'default', ...props }, ref) => (
+  <div
+    ref={ref}
+    role="alert"
+    className={cn('relative w-full rounded-xl border p-4', alertVariants[variant], className)}
+    {...props}
+  />
+))
 Alert.displayName = "Alert"
 
 const AlertTitle = React.forwardRef<

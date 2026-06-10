@@ -53,7 +53,9 @@ public record PreOpCompletionDto(
     Guid?    DocumentId,
     Guid?    CompletedByUserId,
     DateTime? CompletedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    string?  FormCode,
+    string?  Source
 );
 
 // ─── Pre-Op Document ──────────────────────────────────────────────────────────

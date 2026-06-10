@@ -50,6 +50,7 @@ export function mapDecision(decision: string): string {
 
 export interface PriceOverrideRecord {
   id: string;
+  variantId: string;
   variantName: string;
   basePrice: number;
   overriddenPrice: number;

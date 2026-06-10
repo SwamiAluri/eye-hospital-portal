@@ -278,14 +278,14 @@ namespace AuthService.Controllers
 
         [HttpPost("sessions/{id}/start")]
         [RequirePermission("counseling_sessions.update")]
-        public async Task<IActionResult> StartSession(Guid id)
+        public async Task<IActionResult> StartSession(Guid id, [FromBody] StartCounselingSessionRequest? request)
         {
             try
             {
                 var tenantId = GetTenantId();
                 var currentUserId = GetCurrentUserId();
                 
-                var result = await _counselingService.StartSessionAsync(tenantId, id, currentUserId);
+                var result = await _counselingService.StartSessionAsync(tenantId, id, currentUserId, request?.SessionType);
                 return result.Success ? Ok(result) : BadRequest(result);
             }
             catch (Exception ex)
@@ -1483,6 +1483,9 @@ namespace AuthService.Controllers
                 if (!string.IsNullOrEmpty(request.NewIntention))
                     session.PatientIntention = request.NewIntention;
 
+                if (!string.IsNullOrWhiteSpace(request.SessionType))
+                    session.SessionType = request.SessionType.Trim();
+
                 // Determine next queue position
                 var maxPosition = await _context.CounselorQueue
                     .Where(q => q.TenantId == tenantId
@@ -1786,31 +1789,22 @@ namespace AuthService.Controllers
         // MASTER CATALOG & INVESTIGATIONS
         // ============================================================================
 
-        /// <summary>Returns the lab test master catalog grouped by testType (Lab, Imaging, Scan).</summary>
+        /// <summary>
+        /// Deprecated (F0.5 / B2) — use GET /api/servicecatalog/full and investigation-catalog mapping.
+        /// </summary>
         [HttpGet("master-catalog")]
         [RequirePermission("counseling_sessions.view")]
-        public async Task<IActionResult> GetMasterCatalog([FromQuery] string? testType = null)
+        public IActionResult GetMasterCatalog([FromQuery] string? testType = null)
         {
-            try
+            _logger.LogWarning(
+                "Deprecated endpoint GET /api/Counseling/master-catalog called (testType={TestType}). Use /api/servicecatalog/full.",
+                testType);
+            return StatusCode(410, new
             {
-                var tenantId = GetTenantId();
-                var items = await _counselingService.GetMasterCatalogAsync(tenantId, testType);
-
-                if (testType != null)
-                    return Ok(items);
-
-                return Ok(new
-                {
-                    imaging  = items.Where(i => i.TestType == "Imaging").ToList(),
-                    scan     = items.Where(i => i.TestType == "Scan").ToList(),
-                    lab      = items.Where(i => i.TestType == "Lab").ToList(),
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching master catalog");
-                return StatusCode(500, new { message = "Error fetching master catalog", error = ex.Message });
-            }
+                message = "This endpoint is retired. Use GET /api/servicecatalog/full for investigations and procedures.",
+                replacement = "/api/servicecatalog/full",
+                migration = "B2 — counsellor investigations sourced from Service Catalog DIAGNOSTICS + INVESTIGATIONS categories",
+            });
         }
 
         /// <summary>Save (replace) pre-op investigation orders for a counseling session.</summary>

@@ -49,6 +49,16 @@ public class PatientJourney
     public string?  AttendantPhone           { get; set; }
     public string?  AttendantRelationship    { get; set; }
     public DateTime? AdmittedAt             { get; set; }
+    public DateTime? WardCheckInAt          { get; set; }
+    public DateTime? InformedOtTeamAt       { get; set; }
+
+    // Form 4 — medication log / post-op timestamps
+    public string?   XylocaineSensitivityResult { get; set; }
+    public string?   MedicationLogSurgeryNotes    { get; set; }
+    public string?   WardPostopIolChecks          { get; set; }
+    public DateTime? SentToOtAt                   { get; set; }
+    public DateTime? ReceivedFromOtAt             { get; set; }
+    public DateTime? WardCheckoutAt               { get; set; }
 
     // Timestamps
     public DateTime? SurgeryStartedAt       { get; set; }
@@ -75,6 +85,14 @@ public class PatientJourney
 
     // OT return tracking
     public string?  OtReturnReason           { get; set; }
+
+    // Parallel checklist phase rollup (JSONB)
+    public string?  ChecklistPhaseStatus     { get; set; }
+
+    // WHO supervisor override before start surgery
+    public bool     WhoSupervisorOverrideApplied { get; set; }
+    public Guid?    WhoSupervisorOverrideBy        { get; set; }
+    public DateTime? WhoSupervisorOverrideAt       { get; set; }
 
     // Financial snapshot (nullable — may not be set at time of journey creation)
     public decimal?  PackageAmount            { get; set; }

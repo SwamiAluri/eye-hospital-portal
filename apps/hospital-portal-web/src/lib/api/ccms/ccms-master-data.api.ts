@@ -6,6 +6,8 @@ export type PayerCategory = 'insurance' | 'other_debtor';
 export interface InsurancePayer {
   id: string;
   name: string;
+  /** Master `insurance.provider` code — matches CCMS `provider_code` */
+  providerCode?: string;
   shortCode?: string;
   tpaId?: string;
   contactEmail?: string;
@@ -59,6 +61,8 @@ export interface CoveragePackage {
 
 export interface CreatePayerRequest {
   name: string;
+  /** Required for insurance payers — must match a master `insurance.provider` code */
+  providerCode?: string;
   shortCode?: string;
   tpaId?: string;
   contactEmail?: string;
@@ -79,27 +83,68 @@ export interface CreatePayerRequest {
 
 export type UpdatePayerRequest = Partial<CreatePayerRequest>;
 
+function mapInsurancePayer(p: Record<string, unknown>): InsurancePayer {
+  const code = (p.providerCode ?? p.shortCode) as string | undefined;
+  return {
+    id: p.id as string,
+    name: (p.providerName ?? p.name ?? '') as string,
+    providerCode: code,
+    shortCode: code,
+    tpaId: p.tpaId as string | undefined,
+    contactEmail: p.contactEmail as string | undefined,
+    contactPhone: p.contactPhone as string | undefined,
+    portalUrl: p.portalUrl as string | undefined,
+    status: (p.status as string) ?? 'active',
+    payerCategory: p.payerCategory as PayerCategory | undefined,
+    debtorSubtype: p.debtorSubtype as string | undefined,
+    creditLimit: p.creditLimit as number | undefined,
+    exportCode: p.exportCode as string | undefined,
+    hospitalIdentifier: p.hospitalIdentifier as string | undefined,
+    serviceTaxApplicable: p.serviceTaxApplicable as boolean | undefined,
+    defaultServiceTaxPercent: p.defaultServiceTaxPercent as number | undefined,
+    tdsMandatory: p.tdsMandatory as boolean | undefined,
+    validFrom: p.validFrom as string | undefined,
+    validTo: p.validTo as string | undefined,
+    formatCode: p.formatCode as string | undefined,
+  };
+}
+
+function toCreatePayerPayload(req: CreatePayerRequest): Record<string, unknown> {
+  const code = req.providerCode ?? req.shortCode;
+  return {
+    providerName: req.name,
+    providerCode: code,
+    contactEmail: req.contactEmail,
+    contactPhone: req.contactPhone,
+    portalUrl: req.portalUrl,
+    payerCategory: req.payerCategory ?? 'insurance',
+    debtorSubtype: req.debtorSubtype,
+    creditLimit: req.creditLimit,
+    exportCode: req.exportCode,
+    hospitalIdentifier: req.hospitalIdentifier,
+    serviceTaxApplicable: req.serviceTaxApplicable,
+    defaultServiceTaxPercent: req.defaultServiceTaxPercent,
+    tdsMandatory: req.tdsMandatory,
+    validFrom: req.validFrom,
+    validTo: req.validTo,
+    formatCode: req.formatCode,
+  };
+}
+
 export async function listInsurancePayers(): Promise<InsurancePayer[]> {
   const { data } = await getCcmsApi().get('/ccms/master/insurance-providers');
-  const items: any[] = Array.isArray(data) ? data : (data?.items ?? []);
-  return items.map(p => ({
-    id: p.id,
-    name: p.providerName ?? p.name ?? '',
-    shortCode: p.providerCode ?? p.shortCode,
-    contactEmail: p.contactEmail,
-    contactPhone: p.contactPhone,
-    status: p.status ?? 'active',
-  }));
+  const items: Record<string, unknown>[] = Array.isArray(data) ? data : (data?.items ?? []);
+  return items.map(mapInsurancePayer);
 }
 
 export async function createInsurancePayer(req: CreatePayerRequest): Promise<InsurancePayer> {
-  const { data } = await getCcmsApi().post('/ccms/master/insurance-providers', req);
-  return data;
+  const { data } = await getCcmsApi().post('/ccms/master/insurance-providers', toCreatePayerPayload(req));
+  return mapInsurancePayer(data as Record<string, unknown>);
 }
 
 export async function updateInsurancePayer(id: string, req: UpdatePayerRequest): Promise<InsurancePayer> {
-  const { data } = await getCcmsApi().put(`/ccms/master/insurance-providers/${id}`, req);
-  return data;
+  const { data } = await getCcmsApi().put(`/ccms/master/insurance-providers/${id}`, toCreatePayerPayload(req as CreatePayerRequest));
+  return mapInsurancePayer(data as Record<string, unknown>);
 }
 
 export async function deleteInsurancePayer(id: string): Promise<void> {

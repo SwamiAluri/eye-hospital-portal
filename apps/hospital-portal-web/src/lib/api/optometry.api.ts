@@ -6,6 +6,7 @@ import { getApi } from '../api';
 
 export interface OptometryQueueItem {
   id: string;
+  visitId?: string;
   patientId: string;
   patientName: string;
   mrn: string;
@@ -28,6 +29,42 @@ export interface OptometryQueueItem {
   iopOD?: number;
   iopOS?: number;
   refractionCompleted?: boolean;
+  passNumber?: number;
+  reasonCode?: string;
+  reasonLabel?: string;
+  isReturnVisit?: boolean;
+  roomCode?: string;
+}
+
+export interface ServiceRoom {
+  code: string;
+  label: string;
+  roomCode: string;
+  branchId?: string;
+  station?: string;
+}
+
+export interface OptometryCallNextRequest {
+  branchId: string;
+  roomCode: string;
+  optometristName?: string;
+}
+
+export interface OptometryOpenExamRequest {
+  branchId: string;
+  patientId: string;
+  roomCode?: string;
+  optometristName?: string;
+  chiefComplaint?: string;
+}
+
+export interface OptometryPatientSearchRow {
+  id: string;
+  patientName: string;
+  mrn: string;
+  phone?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
 }
 
 export interface OptometryQueueStats {
@@ -145,32 +182,145 @@ export interface OptometryCompleteSummary {
 }
 
 // ==========================================
-// Queue Management API
+// Queue Management API (live visit-based queue)
 // ==========================================
+function mapQueueItem(raw: Record<string, unknown>): OptometryQueueItem {
+  return {
+    id: String(raw.id ?? raw.visitId ?? ''),
+    visitId: raw.visitId ? String(raw.visitId) : String(raw.id ?? ''),
+    patientId: String(raw.patientId ?? ''),
+    patientName: String(raw.patientName ?? 'Unknown'),
+    mrn: String(raw.mrn ?? raw.Mrn ?? ''),
+    age: Number(raw.age ?? raw.Age ?? 0),
+    gender: String(raw.gender ?? raw.Gender ?? ''),
+    tokenNumber: String(raw.tokenNumber ?? raw.TokenNumber ?? ''),
+    appointmentTime: String(raw.appointmentTime ?? raw.AppointmentTime ?? ''),
+    chiefComplaint: String(raw.chiefComplaint ?? raw.ChiefComplaint ?? ''),
+    source: (raw.source ?? raw.Source ?? 'OPD') as OptometryQueueItem['source'],
+    status: (raw.status ?? raw.Status ?? 'Waiting') as OptometryQueueItem['status'],
+    urgency: (raw.urgency ?? raw.Urgency ?? 'Routine') as OptometryQueueItem['urgency'],
+    assignedOptometrist: raw.assignedOptometrist as string | undefined,
+    waitingSince: raw.waitingSince as string | undefined,
+    completedExams: (raw.completedExams as string[]) ?? [],
+    hasRedFlags: Boolean(raw.hasRedFlags),
+    redFlags: (raw.redFlags as string[]) ?? [],
+    visualAcuityOD: raw.visualAcuityOD as string | undefined,
+    visualAcuityOS: raw.visualAcuityOS as string | undefined,
+    iopOD: raw.iopOD as number | undefined,
+    iopOS: raw.iopOS as number | undefined,
+    refractionCompleted: Boolean(raw.refractionCompleted),
+    passNumber: raw.passNumber as number | undefined,
+    reasonCode: raw.reasonCode as string | undefined,
+    reasonLabel: raw.reasonLabel as string | undefined,
+    isReturnVisit: Boolean(raw.isReturnVisit),
+    roomCode: raw.roomCode as string | undefined,
+  };
+}
+
+function mapStats(raw: Record<string, unknown>): OptometryQueueStats {
+  return {
+    totalWaiting: Number(raw.totalWaiting ?? raw.TotalWaiting ?? 0),
+    inProgress: Number(raw.inProgress ?? raw.InProgress ?? 0),
+    completed: Number(raw.completed ?? raw.Completed ?? 0),
+    referred: Number(raw.referred ?? raw.Referred ?? 0),
+    emergencyCount: Number(raw.emergencyCount ?? raw.EmergencyCount ?? 0),
+    urgentCount: Number(raw.urgentCount ?? raw.UrgentCount ?? 0),
+    averageWaitTime: Number(raw.averageWaitTime ?? raw.AverageWaitTime ?? 0),
+  };
+}
+
 export const optometryQueueApi = {
-  getQueue: async (params?: { status?: string; urgency?: string; date?: string }) => {
-    const response = await getApi().get('/Queue', { params: { ...params, department: 'optometry' } });
-    return response.data;
+  getQueue: async (branchId: string, includeCompletedToday = true): Promise<OptometryQueueItem[]> => {
+    const response = await getApi().get('/visits/queue/optometrist', {
+      params: { branchId, includeCompletedToday },
+    });
+    const rows = Array.isArray(response.data) ? response.data : [];
+    return rows.map((row: Record<string, unknown>) => mapQueueItem(row));
   },
 
-  getStats: async () => {
-    const response = await getApi().get('/Queue/statistics', { params: { department: 'optometry' } });
-    return response.data;
+  getStats: async (branchId: string): Promise<OptometryQueueStats> => {
+    const response = await getApi().get('/visits/queue/optometrist/stats', {
+      params: { branchId },
+    });
+    return mapStats(response.data ?? {});
   },
 
-  callNext: async () => {
-    const response = await getApi().post('/Queue/call-next', { department: 'optometry' });
-    return response.data;
+  callNext: async (request: OptometryCallNextRequest): Promise<OptometryQueueItem> => {
+    const response = await getApi().post('/visits/queue/optometrist/call-next', request);
+    return mapQueueItem(response.data);
   },
 
-  updateStatus: async (queueItemId: string, status: string) => {
-    const response = await getApi().put(`/Queue/${queueItemId}/status`, { status });
-    return response.data;
+  openExam: async (request: OptometryOpenExamRequest): Promise<OptometryQueueItem> => {
+    const response = await getApi().post('/visits/queue/optometrist/open-exam', request);
+    return mapQueueItem(response.data);
   },
 
-  skipPatient: async (queueItemId: string, reason: string) => {
-    const response = await getApi().post(`/Queue/${queueItemId}/skip`, { reason });
-    return response.data;
+  searchPatients: async (branchId: string, q: string, limit = 20): Promise<OptometryPatientSearchRow[]> => {
+    const response = await getApi().get<OptometryPatientSearchRow[]>(
+      '/visits/queue/optometrist/patients/search',
+      { params: { branchId, q, limit } },
+    );
+    const rows = response.data ?? [];
+    return rows.map((row) => ({
+      id: String((row as { id?: string; Id?: string }).id ?? (row as { Id?: string }).Id ?? ''),
+      patientName: row.patientName ?? (row as { PatientName?: string }).PatientName ?? '',
+      mrn: row.mrn ?? (row as { Mrn?: string }).Mrn ?? '',
+      phone: row.phone ?? (row as { Phone?: string | null }).Phone ?? null,
+      gender: row.gender ?? (row as { Gender?: string | null }).Gender ?? null,
+      dateOfBirth: row.dateOfBirth ?? (row as { DateOfBirth?: string | null }).DateOfBirth ?? null,
+    }));
+  },
+
+  startExam: async (visitId: string, roomCode?: string): Promise<OptometryQueueItem> => {
+    const response = await getApi().post(
+      `/visits/queue/optometrist/${visitId}/start`,
+      null,
+      { params: roomCode ? { roomCode } : undefined },
+    );
+    return mapQueueItem(response.data);
+  },
+
+  skipPatient: async (visitId: string, reason: string) => {
+    const response = await getApi().post(`/visits/queue/optometrist/${visitId}/skip`, { reason });
+    return mapQueueItem(response.data);
+  },
+
+  referPatient: async (visitId: string, reason: string) => {
+    const response = await getApi().post(`/visits/queue/optometrist/${visitId}/refer`, { reason });
+    return mapQueueItem(response.data);
+  },
+
+  completeLeg: async (visitId: string, nextStation?: string) => {
+    const response = await getApi().post(`/visits/queue/optometrist/${visitId}/complete`, {
+      nextStation,
+    });
+    return mapQueueItem(response.data);
+  },
+
+  getServiceRooms: async (branchId: string): Promise<ServiceRoom[]> => {
+    try {
+      const response = await getApi().get('/master-values/lookup/operations.service_room');
+      const items = response.data?.items ?? response.data?.Items ?? [];
+      return (items as Array<{ code: string; label: string; metadata?: string | Record<string, unknown> }>)
+        .map((item) => {
+          let meta: Record<string, unknown> = {};
+          try {
+            meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : (item.metadata ?? {});
+          } catch {
+            meta = {};
+          }
+          return {
+            code: item.code,
+            label: item.label,
+            roomCode: String(meta.roomCode ?? item.code),
+            branchId: meta.branchId ? String(meta.branchId) : undefined,
+            station: meta.station ? String(meta.station) : undefined,
+          };
+        })
+        .filter((r) => r.station === 'optometrist' && (!r.branchId || r.branchId === branchId));
+    } catch {
+      return [];
+    }
   },
 };
 

@@ -70,6 +70,15 @@ const SelectContent = React.forwardRef<
 ))
 SelectContent.displayName = SelectPrimitive.Content.displayName
 
+/** Select dropdown for use inside modals / bottom sheets (above z-[80] overlays). */
+const ModalSelectContent = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
+>(({ className, ...props }, ref) => (
+  <SelectContent ref={ref} className={cn('z-[100]', className)} {...props} />
+))
+ModalSelectContent.displayName = 'ModalSelectContent'
+
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
@@ -114,6 +123,7 @@ export {
   SelectValue,
   SelectTrigger,
   SelectContent,
+  ModalSelectContent,
   SelectItem,
   SelectLabel,
 }

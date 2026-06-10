@@ -1576,6 +1576,11 @@ namespace AuthService.Migrations
                         .HasColumnType("text")
                         .HasColumnName("cancellation_reason");
 
+                    b.Property<string>("ConsultationType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("consultation_type");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -3709,6 +3714,11 @@ namespace AuthService.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("selected_package_id");
 
+                    b.Property<string>("SessionCategory")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("session_category");
+
                     b.Property<DateTime>("SessionDate")
                         .HasColumnType("date")
                         .HasColumnName("session_date");
@@ -4400,6 +4410,11 @@ namespace AuthService.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
+
+                    b.Property<string>("Eye")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("eye");
 
                     b.Property<Guid?>("LabTestCatalogId")
                         .HasColumnType("uuid")
@@ -5598,6 +5613,58 @@ namespace AuthService.Migrations
                     b.ToTable("diagnosis_code");
                 });
 
+            modelBuilder.Entity("AuthService.Models.Domain.DischargeSummaryReadOnly", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ConditionAtDischarge")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("condition_at_discharge");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<DateTime?>("DischargeDate")
+                        .HasColumnType("date")
+                        .HasColumnName("discharge_date");
+
+                    b.Property<decimal?>("FinalBillAmount")
+                        .HasColumnType("decimal(12,2)")
+                        .HasColumnName("final_bill_amount");
+
+                    b.Property<DateTime?>("FinalizedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finalized_at");
+
+                    b.Property<Guid>("PatientJourneyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_journey_id");
+
+                    b.Property<string>("ProceduresPerformed")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("procedures_performed");
+
+                    b.Property<string>("SummaryStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("summary_status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientJourneyId");
+
+                    b.ToTable("discharge_summary", (string)null);
+                });
+
             modelBuilder.Entity("AuthService.Models.Domain.DoctorAvailability", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6374,6 +6441,10 @@ namespace AuthService.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by_user_id");
 
+                    b.Property<Guid?>("VisitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visit_id");
+
                     b.HasKey("Id");
 
                     b.HasIndex("DoctorId");
@@ -6381,6 +6452,8 @@ namespace AuthService.Migrations
                     b.HasIndex("PatientId");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("VisitId");
 
                     b.ToTable("examination_drafts");
                 });
@@ -9540,6 +9613,110 @@ namespace AuthService.Migrations
                     b.ToTable("optical_orders", (string)null);
                 });
 
+            modelBuilder.Entity("AuthService.Models.Domain.OptometrySegmentExam", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Data")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("data");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("SegmentKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("segment_key");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("VisitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visit_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "VisitId");
+
+                    b.HasIndex("VisitId", "SegmentKey")
+                        .IsUnique();
+
+                    b.HasIndex("PatientId", "TenantId", "UpdatedAt");
+
+                    b.ToTable("optometry_segment_exams", (string)null);
+                });
+
+            modelBuilder.Entity("AuthService.Models.Domain.OptometryVisitExam", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid?>("CompletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("completed_by");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("snapshot_json");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("VisitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visit_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VisitId")
+                        .IsUnique();
+
+                    b.HasIndex("PatientId", "TenantId", "UpdatedAt");
+
+                    b.ToTable("optometry_visit_exams", (string)null);
+                });
+
             modelBuilder.Entity("AuthService.Models.Domain.Organization", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9797,6 +9974,228 @@ namespace AuthService.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ot_admission_checklist_completions");
+                });
+
+            modelBuilder.Entity("AuthService.Models.Domain.OtFinalizeAuditLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at");
+
+                    b.Property<string>("ChangedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("changed_by");
+
+                    b.Property<Guid?>("ChangedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("changed_by_id");
+
+                    b.Property<string>("NewStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("new_status");
+
+                    b.Property<string>("NewValue")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("new_value");
+
+                    b.Property<string>("OldStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("old_status");
+
+                    b.Property<string>("OldValue")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("old_value");
+
+                    b.Property<Guid>("ScheduleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("schedule_id");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ot_finalize_audit_log");
+                });
+
+            modelBuilder.Entity("AuthService.Models.Domain.OtFinalizeSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AnesthesiaType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("anesthesia_type");
+
+                    b.Property<string>("AnesthetistName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("anesthetist_name");
+
+                    b.Property<Guid?>("BranchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("branch_id");
+
+                    b.Property<string>("CancelReason")
+                        .HasColumnType("text")
+                        .HasColumnName("cancel_reason");
+
+                    b.Property<Guid?>("CounsellingSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("counselling_session_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DoctorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("doctor_id");
+
+                    b.Property<string>("DoctorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("doctor_name");
+
+                    b.Property<DateTime?>("EndTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("end_time");
+
+                    b.Property<string>("Eye")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("eye");
+
+                    b.Property<string>("IolPower")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("iol_power");
+
+                    b.Property<bool>("IsLocked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_locked");
+
+                    b.Property<string>("PackageName")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("package_name");
+
+                    b.Property<decimal?>("PackageRate")
+                        .HasColumnType("numeric")
+                        .HasColumnName("package_rate");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("PatientName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("patient_name");
+
+                    b.Property<string>("PatientType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("patient_type");
+
+                    b.Property<string>("PaymentMode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("payment_mode");
+
+                    b.Property<DateTime?>("PreparedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("prepared_at");
+
+                    b.Property<string>("PreparedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("prepared_by");
+
+                    b.Property<string>("Remarks")
+                        .HasColumnType("text")
+                        .HasColumnName("remarks");
+
+                    b.Property<TimeSpan?>("ReportingTime")
+                        .HasColumnType("interval")
+                        .HasColumnName("reporting_time");
+
+                    b.Property<int?>("SequenceNo")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence_no");
+
+                    b.Property<DateTime?>("StartTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("start_time");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("SurgeryName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("surgery_name");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid?>("TheatreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("theatre_id");
+
+                    b.Property<string>("TheatreName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("theatre_name");
+
+                    b.Property<string>("Uhid")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("uhid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ot_finalize_schedule");
                 });
 
             modelBuilder.Entity("AuthService.Models.Domain.PackageDiscountApproval", b =>
@@ -11138,6 +11537,72 @@ namespace AuthService.Migrations
                     b.HasIndex("TenantId", "PatientId");
 
                     b.ToTable("patient_insurance", (string)null);
+                });
+
+            modelBuilder.Entity("AuthService.Models.Domain.PatientJourneyReadOnly", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("BranchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("branch_id");
+
+                    b.Property<string>("ClinicalState")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("clinical_state");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<DateTime?>("DischargedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("discharged_at");
+
+                    b.Property<bool>("IsDischarged")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_discharged");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid?>("PrimarySurgeonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("primary_surgeon_id");
+
+                    b.Property<string>("ProcedureName")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("procedure_name");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Uhid")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uhid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDischarged");
+
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("patient_journey", (string)null);
                 });
 
             modelBuilder.Entity("AuthService.Models.Domain.PatientMedicalHistory", b =>
@@ -14827,6 +15292,11 @@ namespace AuthService.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ActiveRoomCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("active_room_code");
+
                     b.Property<Guid>("AppointmentId")
                         .HasColumnType("uuid")
                         .HasColumnName("appointment_id");
@@ -14905,6 +15375,12 @@ namespace AuthService.Migrations
                     b.Property<Guid?>("OpdBillId")
                         .HasColumnType("uuid")
                         .HasColumnName("opd_bill_id");
+
+                    b.Property<int>("OptometryPassCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("optometry_pass_count");
 
                     b.Property<string>("Outcome")
                         .HasMaxLength(50)
@@ -15014,6 +15490,95 @@ namespace AuthService.Migrations
                     b.HasIndex("BranchId", "TokenSequence", "CreatedAt");
 
                     b.ToTable("visits", (string)null);
+                });
+
+            modelBuilder.Entity("AuthService.Models.Domain.VisitStationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AssignedToUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_to_user_id");
+
+                    b.Property<Guid>("BranchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("branch_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("event_type");
+
+                    b.Property<string>("Metadata")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata");
+
+                    b.Property<int>("PassNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("pass_number");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid?>("QueueItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("queue_item_id");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("reason_code");
+
+                    b.Property<string>("ReasonNotes")
+                        .HasColumnType("text")
+                        .HasColumnName("reason_notes");
+
+                    b.Property<string>("RoomCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("room_code");
+
+                    b.Property<string>("Station")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("station");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("VisitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visit_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedToUserId");
+
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("BranchId", "Station", "CreatedAt");
+
+                    b.HasIndex("VisitId", "Station", "CreatedAt");
+
+                    b.ToTable("visit_station_events", (string)null);
                 });
 
             modelBuilder.Entity("AuthService.Models.Domain.VisitorLog", b =>
@@ -16183,6 +16748,163 @@ namespace AuthService.Migrations
                     b.ToTable("app_user_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("AuthService.Models.MasterData.EntityTypeRegistry", b =>
+                {
+                    b.Property<string>("EntityType")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("entity_type");
+
+                    b.Property<bool>("AllowCustomFields")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("allow_custom_fields");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("GroupKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("group_key");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("TabLabel")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tab_label");
+
+                    b.HasKey("EntityType");
+
+                    b.ToTable("entity_type_registry", "master");
+                });
+
+            modelBuilder.Entity("AuthService.Models.MasterData.MasterValue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<DateTime?>("DisabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at");
+
+                    b.Property<Guid?>("DisabledByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("disabled_by_user_id");
+
+                    b.Property<string>("DisabledReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("disabled_reason");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("entity_type");
+
+                    b.Property<string>("GroupKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("group_key");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsSystemLocked")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_system_locked");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("label");
+
+                    b.Property<string>("Metadata")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("{}")
+                        .HasColumnName("metadata");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sort_order");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "EntityType")
+                        .HasDatabaseName("idx_mv_tenant_type");
+
+                    b.HasIndex("TenantId", "GroupKey")
+                        .HasDatabaseName("idx_mv_tenant_group");
+
+                    b.HasIndex("TenantId", "EntityType", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("uq_master_value_tenant_type_code");
+
+                    b.ToTable("master_value", "master");
+                });
+
             modelBuilder.Entity("AuthService.Models.MedicationAdherence", b =>
                 {
                     b.Property<Guid>("Id")
@@ -16912,7 +17634,7 @@ namespace AuthService.Migrations
 
                     b.HasIndex("TenantId");
 
-                    b.ToTable("post_op_care_schedules");
+                    b.ToTable("post_op_care_schedule", (string)null);
                 });
 
             modelBuilder.Entity("AuthService.Models.PostOpMedication", b =>
@@ -17044,7 +17766,7 @@ namespace AuthService.Migrations
 
                     b.Property<Guid>("PostOpCareScheduleId")
                         .HasColumnType("uuid")
-                        .HasColumnName("post_op_care_schedule_id");
+                        .HasColumnName("schedule_id");
 
                     b.Property<DateTime>("ScheduledDate")
                         .HasColumnType("timestamp with time zone")
@@ -17081,7 +17803,7 @@ namespace AuthService.Migrations
 
                     b.HasIndex("TenantId");
 
-                    b.ToTable("post_op_visits");
+                    b.ToTable("post_op_visit", (string)null);
                 });
 
             modelBuilder.Entity("AuthService.Models.Prescription.DrugInteraction", b =>
@@ -18708,11 +19430,17 @@ namespace AuthService.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("AuthService.Models.Domain.Visit", "Visit")
+                        .WithMany()
+                        .HasForeignKey("VisitId");
+
                     b.Navigation("Doctor");
 
                     b.Navigation("Patient");
 
                     b.Navigation("Tenant");
+
+                    b.Navigation("Visit");
                 });
 
             modelBuilder.Entity("AuthService.Models.Domain.ImagingAnnotation", b =>
@@ -19065,6 +19793,28 @@ namespace AuthService.Migrations
                     b.Navigation("Patient");
                 });
 
+            modelBuilder.Entity("AuthService.Models.Domain.OptometrySegmentExam", b =>
+                {
+                    b.HasOne("AuthService.Models.Domain.Visit", "Visit")
+                        .WithMany()
+                        .HasForeignKey("VisitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Visit");
+                });
+
+            modelBuilder.Entity("AuthService.Models.Domain.OptometryVisitExam", b =>
+                {
+                    b.HasOne("AuthService.Models.Domain.Visit", "Visit")
+                        .WithMany()
+                        .HasForeignKey("VisitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Visit");
+                });
+
             modelBuilder.Entity("AuthService.Models.Domain.Organization", b =>
                 {
                     b.HasOne("AuthService.Models.Domain.Tenant", "Tenant")
@@ -19159,6 +19909,17 @@ namespace AuthService.Migrations
                 });
 
             modelBuilder.Entity("AuthService.Models.Domain.PatientInsurance", b =>
+                {
+                    b.HasOne("AuthService.Models.Domain.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("AuthService.Models.Domain.PatientJourneyReadOnly", b =>
                 {
                     b.HasOne("AuthService.Models.Domain.Patient", "Patient")
                         .WithMany()
@@ -19702,6 +20463,31 @@ namespace AuthService.Migrations
                     b.Navigation("Tenant");
 
                     b.Navigation("UpdatedByUser");
+                });
+
+            modelBuilder.Entity("AuthService.Models.Domain.VisitStationEvent", b =>
+                {
+                    b.HasOne("AuthService.Models.Identity.AppUser", "AssignedToUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedToUserId");
+
+                    b.HasOne("AuthService.Models.Domain.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AuthService.Models.Domain.Visit", "Visit")
+                        .WithMany()
+                        .HasForeignKey("VisitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AssignedToUser");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Visit");
                 });
 
             modelBuilder.Entity("AuthService.Models.Domain.VisitorLog", b =>

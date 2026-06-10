@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { licensesApi, employeesApi } from '@/lib/api';
+import { useCredentialTypes } from '@/hooks/use-hr-masters';
 
 interface License {
   id: string;
@@ -38,6 +39,7 @@ interface Employee {
 }
 
 export default function LicensesPage() {
+  const { types: credentialTypes } = useCredentialTypes();
   const [licenses, setLicenses] = useState<License[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(false);
@@ -295,11 +297,9 @@ export default function LicensesPage() {
             className="border rounded px-3 py-2"
           >
             <option value="">All License Types</option>
-            <option value="Medical License">Medical License</option>
-            <option value="Nursing License">Nursing License</option>
-            <option value="Pharmacy License">Pharmacy License</option>
-            <option value="Lab Technician">Lab Technician</option>
-            <option value="Radiology License">Radiology License</option>
+            {credentialTypes.map((t) => (
+              <option key={t.value} value={t.label}>{t.label}</option>
+            ))}
           </select>
           <select
             value={verificationStatusFilter}
@@ -386,13 +386,9 @@ export default function LicensesPage() {
                     required
                   >
                     <option value="">Select Type</option>
-                    <option value="Medical License">Medical License</option>
-                    <option value="Nursing License">Nursing License</option>
-                    <option value="Pharmacy License">Pharmacy License</option>
-                    <option value="Lab Technician">Lab Technician</option>
-                    <option value="Radiology License">Radiology License</option>
-                    <option value="Physiotherapy License">Physiotherapy License</option>
-                    <option value="Other">Other</option>
+                    {credentialTypes.map((t) => (
+                      <option key={t.value} value={t.label}>{t.label}</option>
+                    ))}
                   </select>
                 </div>
 

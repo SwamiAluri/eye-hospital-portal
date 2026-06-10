@@ -269,6 +269,10 @@ export const masterValuesApi = {
   getGroups: () =>
     getApi().get('/master-values/groups'),
 
+  /** Active-only dropdown lookup (master_data.lookup — all clinical roles). */
+  lookup: (entityType: string) =>
+    getApi().get(`/master-values/lookup/${encodeURIComponent(entityType)}`),
+
   getByEntityType: (entityType: string, includeInactive = false, page = 1, pageSize = 50) =>
     getApi().get(`/master-values/${entityType}`, { params: { includeInactive, page, pageSize } }),
 

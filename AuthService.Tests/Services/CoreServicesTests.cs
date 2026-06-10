@@ -1,6 +1,7 @@
 using Xunit;
 using Moq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using AuthService.Data;
 using AuthService.Services;
 using AuthService.Models;
@@ -185,12 +186,26 @@ namespace AuthService.Tests.Services
     public class TenantServiceTests
     {
         private readonly Mock<AppDbContext> _mockContext;
+        private readonly Mock<AuthService.Services.Interfaces.IMasterValueService> _mockMasterValues;
+        private readonly Mock<AuthService.Services.Interfaces.IServiceCatalogMasterSyncService> _mockCatalogSync;
         private readonly TenantService _tenantService;
 
         public TenantServiceTests()
         {
             _mockContext = new Mock<AppDbContext>();
-            _tenantService = new TenantService(_mockContext.Object);
+            _mockMasterValues = new Mock<AuthService.Services.Interfaces.IMasterValueService>();
+            _mockCatalogSync = new Mock<AuthService.Services.Interfaces.IServiceCatalogMasterSyncService>();
+            _mockMasterValues
+                .Setup(s => s.SeedDefaultsForTenantAsync(It.IsAny<Guid>(), It.IsAny<Guid>()))
+                .Returns(Task.CompletedTask);
+            _mockCatalogSync
+                .Setup(s => s.SyncTenantAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), default))
+                .ReturnsAsync(new AuthService.Services.Interfaces.ServiceCatalogSyncResult());
+            _tenantService = new TenantService(
+                _mockContext.Object,
+                _mockMasterValues.Object,
+                _mockCatalogSync.Object,
+                Mock.Of<ILogger<TenantService>>());
         }
 
         [Fact]

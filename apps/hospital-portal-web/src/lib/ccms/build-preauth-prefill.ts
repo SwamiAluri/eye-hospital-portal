@@ -82,6 +82,9 @@ export function resolveEstimate(
   const draftAmt = draft?.estimatedAmount != null ? Number(draft.estimatedAmount) : NaN;
   if (!Number.isNaN(draftAmt) && draftAmt > 0) return draftAmt;
 
+  const finalPayable = draft?.finalPayableAmount != null ? Number(draft.finalPayableAmount) : NaN;
+  if (!Number.isNaN(finalPayable) && finalPayable > 0) return finalPayable;
+
   const parts = [
     draft?.estimatedSurgery,
     draft?.estimatedLab,

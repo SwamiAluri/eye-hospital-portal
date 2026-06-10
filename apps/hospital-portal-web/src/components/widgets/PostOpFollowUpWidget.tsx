@@ -10,6 +10,7 @@ import { Calendar, CheckCircle2, Clock, AlertTriangle, Camera, CalendarCheck } f
 import { WidgetProps } from '@/lib/widgets/widget-types';
 import type { PostOpFollowUpData } from '@/lib/api/widgets.api';
 import { widgetsApi } from '@/lib/api/widgets.api';
+import { usePostopChecklist } from '@/hooks/use-clinical-masters';
 
 const PostOpFollowUpWidget: React.FC<WidgetProps> = ({
   patientId,
@@ -92,6 +93,30 @@ const PostOpFollowUpWidget: React.FC<WidgetProps> = ({
         </div>
         <Calendar className="w-6 h-6 text-blue-600" />
       </div>
+
+      {/* Post-op checklist (master-driven) */}
+      {postopChecklistItems.length > 0 && (
+        <div className="border rounded-lg p-4 space-y-2">
+          <h4 className="font-medium text-gray-900">Post-op Checklist</h4>
+          <ul className="space-y-2">
+            {postopChecklistItems.map((item) => (
+              <li key={item} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={checkedItems[item] ?? false}
+                  onChange={(e) =>
+                    setCheckedItems((prev) => ({ ...prev, [item]: e.target.checked }))
+                  }
+                  className="rounded border-gray-300 text-blue-600"
+                />
+                <span className={checkedItems[item] ? 'text-gray-500 line-through' : 'text-gray-800'}>
+                  {item}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Milestones Timeline */}
       <div className="border rounded-lg p-4 space-y-3">

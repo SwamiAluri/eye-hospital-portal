@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   CheckCircle, 
   FileText, 
@@ -31,6 +31,26 @@ import {
 // Import existing mega tab components
 import { MedicalHistoryTabContent } from '@/components/examination/MedicalHistoryTabContent';
 import VisualAcuityMegaTab from '@/components/examination/VisualAcuityMegaTab';
+import { TabLastVisitLine } from '@/components/examination/exam-ui/TabLastVisitLine';
+import { refractionApi, visualAcuityApi } from '@/lib/api/examination.api';
+import { fetchPriorVisitSnapshot } from '@/lib/optometry/optometry-prior-visit';
+import { optometrySegmentApi } from '@/lib/api/optometry-segment.api';
+import { OPTOMETRY_SEGMENT_KEYS } from '@/lib/optometry/optometry-segment-keys';
+import { validatePupilExamRequired } from '@/lib/optometry/anterior-segment-validation';
+import { buildPosteriorTabSegmentPayload } from '@/lib/optometry/build-segment-bundles';
+import { fetchDoctorDeskSegmentBundles } from '@/lib/optometry/doctor-desk-segment-hydration';
+import type { PriorVisitSnapshot } from '@/lib/optometry/optometry-exam-types';
+import type { VaClinicalDraftSlice, IopClinicalDraftSlice } from '@/lib/optometry/optometry-persistence';
+import type {
+  ColorVisionData,
+  ContrastSensitivityData,
+  KeratometryData,
+  PachymetryData,
+  RefractionData,
+  TonometryData,
+  VisualAcuityData,
+  VisualFieldData,
+} from '@/lib/stores/clinical-store';
 import IOPMegaTab from '@/components/examination/IOPMegaTab';
 import RetinoscopyMegaTab from '@/components/examination/RetinoscopyMegaTab';
 import AnteriorSegmentTab from '@/components/examination/AnteriorSegmentTab';
@@ -46,6 +66,8 @@ import type { PrescriptionValidationResult, ValidatePrescriptionMedication } fro
 
 interface DoctorComprehensiveExamProps {
   patientId: string;
+  /** Active visit for segment API persistence (optional). */
+  visitId?: string | null;
   patientData: any;
   optometryData: any;
   onSave: (data: any) => void;
@@ -54,6 +76,7 @@ interface DoctorComprehensiveExamProps {
 
 export default function DoctorComprehensiveExam({
   patientId,
+  visitId,
   patientData,
   optometryData,
   onSave,
@@ -71,11 +94,28 @@ export default function DoctorComprehensiveExam({
   const [pendingDraft, setPendingDraft] = useState<any>(null);
   
   // State for all examination components
-  const [visualAcuityData, setVisualAcuityData] = useState<any>(null);
-  const [iopData, setIopData] = useState<any>(null);
+  const [visualAcuityData, setVisualAcuityData] = useState<VisualAcuityData | null>(null);
+  const [refractionData, setRefractionData] = useState<RefractionData | null>(null);
+  const [keratometryData, setKeratometryData] = useState<KeratometryData | null>(null);
+  const [colorVisionData, setColorVisionData] = useState<ColorVisionData | null>(null);
+  const [contrastSensitivityData, setContrastSensitivityData] =
+    useState<ContrastSensitivityData | null>(null);
+  const [priorVisit, setPriorVisit] = useState<PriorVisitSnapshot | null>(null);
+  const [vaHistory, setVaHistory] = useState<unknown[]>([]);
+  const [refHistory, setRefHistory] = useState<unknown[]>([]);
+  const [vaExtended, setVaExtended] = useState<unknown>(null);
+  const [iopData, setIopData] = useState<TonometryData | null>(null);
+  const [pachymetryData, setPachymetryData] = useState<PachymetryData | null>(null);
+  const [visualFieldData, setVisualFieldData] = useState<VisualFieldData | null>(null);
+  const [iopExtended, setIopExtended] = useState<unknown>(null);
   const [retinoscopyData, setRetinoscopyData] = useState<any>(null);
   const [anteriorSegmentData, setAnteriorSegmentData] = useState<any>(null);
   const [posteriorSegmentData, setPosteriorSegmentData] = useState<any>(null);
+  const [anteriorSaving, setAnteriorSaving] = useState(false);
+  const [posteriorSaving, setPosteriorSaving] = useState(false);
+  const [, setAnteriorDirty] = useState(false);
+  const [, setPosteriorDirty] = useState(false);
+  const [effectiveVisitId, setEffectiveVisitId] = useState<string | null>(visitId ?? null);
   const [medicationsData, setMedicationsData] = useState<any>(null);
   const [diagnosisData, setDiagnosisData] = useState<any>(null);
   const [adviceData, setAdviceData] = useState<any>(null);
@@ -118,6 +158,9 @@ export default function DoctorComprehensiveExam({
     data: {
       visualAcuityData,
       iopData,
+      pachymetryData,
+      visualFieldData,
+      iopExtended,
       retinoscopyData,
       anteriorSegmentData,
       posteriorSegmentData,
@@ -246,6 +289,9 @@ export default function DoctorComprehensiveExam({
     const draftData = pendingDraft.data;
     if (draftData.visualAcuityData) setVisualAcuityData(draftData.visualAcuityData);
     if (draftData.iopData) setIopData(draftData.iopData);
+    if (draftData.pachymetryData) setPachymetryData(draftData.pachymetryData);
+    if (draftData.visualFieldData) setVisualFieldData(draftData.visualFieldData);
+    if (draftData.iopExtended) setIopExtended(draftData.iopExtended);
     if (draftData.retinoscopyData) setRetinoscopyData(draftData.retinoscopyData);
     if (draftData.anteriorSegmentData) setAnteriorSegmentData(draftData.anteriorSegmentData);
     if (draftData.posteriorSegmentData) setPosteriorSegmentData(draftData.posteriorSegmentData);
@@ -467,6 +513,81 @@ export default function DoctorComprehensiveExam({
     loadOptometryData();
   }, [patientId, visualAcuityData, isLoadingDraft, optometryData]);
 
+  useEffect(() => {
+    if (!patientId) return;
+    fetchPriorVisitSnapshot(patientId).then(setPriorVisit).catch(() => setPriorVisit(null));
+  }, [patientId]);
+
+  useEffect(() => {
+    setEffectiveVisitId(visitId ?? null);
+  }, [visitId]);
+
+  // Hydrate anterior/posterior mega-tabs from visit segment rows (same as optometry exam).
+  useEffect(() => {
+    if (!patientId) return;
+    let cancelled = false;
+    fetchDoctorDeskSegmentBundles(patientId, visitId).then((bundles) => {
+      if (cancelled) return;
+      if (bundles.visitId) setEffectiveVisitId(bundles.visitId);
+      if (bundles.anterior) {
+        setAnteriorSegmentData((prev: typeof anteriorSegmentData) => ({
+          ...(prev ?? {}),
+          ...bundles.anterior,
+        }));
+      }
+      if (bundles.posterior) {
+        setPosteriorSegmentData((prev: typeof posteriorSegmentData) => ({
+          ...(prev ?? {}),
+          ...bundles.posterior,
+        }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [patientId, visitId]);
+
+  useEffect(() => {
+    if (activeSection !== 'visual-acuity' || !patientId) return;
+    visualAcuityApi
+      .getHistory(patientId)
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+        setVaHistory(list);
+      })
+      .catch(() => setVaHistory([]));
+    refractionApi
+      .getHistory(patientId)
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+        setRefHistory(list);
+      })
+      .catch(() => setRefHistory([]));
+  }, [activeSection, patientId]);
+
+  const handleSyncVaClinicalDraft = useCallback((slice: VaClinicalDraftSlice) => {
+    setVisualAcuityData(slice.visualAcuity);
+    setRefractionData(slice.refraction);
+    setKeratometryData(slice.keratometry);
+    setColorVisionData(slice.colorVision);
+    setContrastSensitivityData(slice.contrastSensitivity);
+  }, []);
+
+  const handleVaExtendedChange = useCallback((data: unknown) => {
+    setVaExtended(data);
+  }, []);
+
+  const handleSyncIopClinicalDraft = useCallback((slice: IopClinicalDraftSlice, extended: unknown) => {
+    setIopData(slice.tonometry);
+    setPachymetryData(slice.pachymetry);
+    setVisualFieldData(slice.visualField);
+    setIopExtended(extended);
+  }, []);
+
+  const handleIopExtendedChange = useCallback((data: unknown) => {
+    setIopExtended(data);
+  }, []);
+
   const handleSave = async () => {
     if (!user?.id) {
       toast.error('User not authenticated');
@@ -659,34 +780,42 @@ export default function DoctorComprehensiveExam({
         )}
 
         {activeSection === 'visual-acuity' && (
-          <VisualAcuityMegaTab
-            patientId={patientId}
-            visualAcuityData={visualAcuityData}
-            refractionData={null}
-            autoRefractionData={null}
-            keratometryData={null}
-            colorVisionData={null}
-            contrastSensitivityData={null}
-            canEdit={canEdit}
-            onSaveVisualAcuity={(data) => setVisualAcuityData(data)}
-            onSaveRefraction={(data) => console.log('Refraction saved:', data)}
-            onSaveKeratometry={(data) => console.log('Keratometry saved:', data)}
-            onSaveColorVision={(data) => console.log('Color vision saved:', data)}
-            onSaveContrastSensitivity={(data) => console.log('Contrast sensitivity saved:', data)}
-          />
+          <>
+            <TabLastVisitLine tabId="visual-acuity" priorVisit={priorVisit} />
+            <VisualAcuityMegaTab
+              patientId={patientId}
+              priorVisit={priorVisit}
+              visualAcuityData={visualAcuityData}
+              refractionData={refractionData}
+              autoRefractionData={null}
+              keratometryData={keratometryData}
+              colorVisionData={colorVisionData}
+              contrastSensitivityData={contrastSensitivityData}
+              vaHistory={vaHistory}
+              refHistory={refHistory}
+              vaExtended={vaExtended}
+              onVaExtendedChange={handleVaExtendedChange}
+              canEdit={canEdit}
+              onSyncClinicalDraft={handleSyncVaClinicalDraft}
+            />
+          </>
         )}
 
         {activeSection === 'iop' && (
-          <IOPMegaTab
-            patientId={patientId}
-            tonometryData={iopData}
-            pachymetryData={null}
-            visualFieldData={null}
-            canEdit={canEdit}
-            onSaveTonometry={(data) => setIopData(data)}
-            onSavePachymetry={(data) => console.log('Pachymetry saved:', data)}
-            onSaveVisualField={(data) => console.log('Visual field saved:', data)}
-          />
+          <>
+            <TabLastVisitLine tabId="iop" priorVisit={priorVisit} />
+            <IOPMegaTab
+              patientId={patientId}
+              priorVisit={priorVisit}
+              tonometryData={iopData}
+              pachymetryData={pachymetryData}
+              visualFieldData={visualFieldData}
+              canEdit={canEdit}
+              iopExtended={iopExtended}
+              onIopExtendedChange={handleIopExtendedChange}
+              onSyncClinicalDraft={handleSyncIopClinicalDraft}
+            />
+          </>
         )}
 
         {activeSection === 'retinoscopy' && (
@@ -702,28 +831,110 @@ export default function DoctorComprehensiveExam({
         )}
 
         {activeSection === 'anterior-segment' && (
-          <AnteriorSegmentTab
-            pupilExamData={anteriorSegmentData?.pupil || null}
-            anteriorSegmentData={anteriorSegmentData?.segment || null}
-            canEdit={canEdit}
-            onSavePupilExam={(data) => setAnteriorSegmentData({...anteriorSegmentData, pupil: data})}
-            onSaveAnteriorSegment={(data) => setAnteriorSegmentData({...anteriorSegmentData, segment: data})}
-          />
+          <>
+            <TabLastVisitLine tabId="anterior" priorVisit={priorVisit} />
+            <AnteriorSegmentTab
+              pupilExamData={anteriorSegmentData?.pupil || null}
+              anteriorSegmentData={anteriorSegmentData?.segment || null}
+              priorVisit={priorVisit}
+              chiefComplaint={patientData?.chiefComplaint}
+              canEdit={canEdit}
+              saving={anteriorSaving}
+              onDirtyChange={setAnteriorDirty}
+              onSaveTab={async ({ pupil, segment }) => {
+                const pupilErr = validatePupilExamRequired(pupil);
+                if (pupilErr) return false;
+                setAnteriorSegmentData({
+                  ...(anteriorSegmentData ?? {}),
+                  pupil,
+                  segment,
+                });
+                if (!effectiveVisitId || !canEdit) return true;
+                setAnteriorSaving(true);
+                try {
+                  await Promise.all([
+                    optometrySegmentApi.upsertSegment(
+                      effectiveVisitId,
+                      OPTOMETRY_SEGMENT_KEYS.pupilExam,
+                      { patientId, data: pupil },
+                    ),
+                    optometrySegmentApi.upsertSegment(
+                      effectiveVisitId,
+                      OPTOMETRY_SEGMENT_KEYS.anteriorSegment,
+                      { patientId, data: segment },
+                    ),
+                  ]);
+                  return true;
+                } catch {
+                  return false;
+                } finally {
+                  setAnteriorSaving(false);
+                }
+              }}
+            />
+          </>
         )}
 
         {activeSection === 'posterior-segment' && (
-          <PosteriorSegmentTab
-            patientId={patientId}
-            posteriorSegmentData={posteriorSegmentData?.overview || null}
-            fundusExamData={posteriorSegmentData?.fundus || null}
-            peripheralRetinaData={posteriorSegmentData?.peripheralRetina || null}
-            vitreousExamData={posteriorSegmentData?.vitreous || null}
-            canEdit={canEdit}
-            onSavePosteriorSegment={(data) => setPosteriorSegmentData({...posteriorSegmentData, overview: data})}
-            onSaveFundusExam={(data) => setPosteriorSegmentData({...posteriorSegmentData, fundus: data})}
-            onSavePeripheralRetina={(data) => setPosteriorSegmentData({...posteriorSegmentData, peripheralRetina: data})}
-            onSaveVitreousExam={(data) => setPosteriorSegmentData({...posteriorSegmentData, vitreous: data})}
-          />
+          <>
+            <TabLastVisitLine tabId="posterior" priorVisit={priorVisit} />
+            <PosteriorSegmentTab
+              posteriorSegmentData={posteriorSegmentData?.overview || null}
+              fundusExamData={posteriorSegmentData?.fundus || null}
+              peripheralRetinaExamData={posteriorSegmentData?.peripheralRetina || null}
+              vitreousExamData={posteriorSegmentData?.vitreous || null}
+              priorVisit={priorVisit}
+              canEdit={canEdit}
+              saving={posteriorSaving}
+              onDirtyChange={setPosteriorDirty}
+              onSaveTab={async ({ overview, fundus, vitreous, peripheralRetina }) => {
+                const bundle = buildPosteriorTabSegmentPayload({
+                  overview,
+                  fundus,
+                  vitreous,
+                  peripheralRetina,
+                });
+                setPosteriorSegmentData({
+                  ...(posteriorSegmentData ?? {}),
+                  overview: bundle.overview,
+                  fundus: bundle.fundus,
+                  vitreous: bundle.vitreous,
+                  peripheralRetina: bundle.peripheralRetina,
+                });
+                if (!effectiveVisitId || !canEdit) return true;
+                setPosteriorSaving(true);
+                try {
+                  await Promise.all([
+                    optometrySegmentApi.upsertSegment(
+                      effectiveVisitId,
+                      OPTOMETRY_SEGMENT_KEYS.posteriorSegment,
+                      { patientId, data: bundle.overview },
+                    ),
+                    optometrySegmentApi.upsertSegment(
+                      effectiveVisitId,
+                      OPTOMETRY_SEGMENT_KEYS.fundusExam,
+                      { patientId, data: bundle.fundus },
+                    ),
+                    optometrySegmentApi.upsertSegment(
+                      effectiveVisitId,
+                      OPTOMETRY_SEGMENT_KEYS.vitreousExam,
+                      { patientId, data: bundle.vitreous },
+                    ),
+                    optometrySegmentApi.upsertSegment(
+                      effectiveVisitId,
+                      OPTOMETRY_SEGMENT_KEYS.peripheralRetinaExam,
+                      { patientId, data: bundle.peripheralRetina },
+                    ),
+                  ]);
+                  return true;
+                } catch {
+                  return false;
+                } finally {
+                  setPosteriorSaving(false);
+                }
+              }}
+            />
+          </>
         )}
 
         {activeSection === 'medications' && (

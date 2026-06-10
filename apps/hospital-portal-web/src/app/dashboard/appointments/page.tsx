@@ -12,6 +12,9 @@ import AppointmentsActionButtons from '@/components/appointments/AppointmentsAct
 import CheckInModal from '@/components/appointments/CheckInModal';
 import UnifiedAppointmentBooking from '@/components/appointments/UnifiedAppointmentBooking';
 import { toast } from 'sonner';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { masterLabelForValue } from '@/lib/master-data/appointment-master';
+import { AppointmentCancelDialog } from '@/components/appointments/AppointmentCancelDialog';
 import { Bell, RefreshCw, Clock, TrendingUp, AlertCircle, Calendar as CalendarIcon, AlertTriangle, CalendarDays, List, UserCog, BarChart3, Plus, Filter, Users, CheckCircle, Eye, Scissors, LogIn, X, MapPin, Stethoscope, FileText, User } from 'lucide-react';
 
 type TabType = 'calendar' | 'list' | 'availability' | 'specialty-slots' | 'analytics';
@@ -22,6 +25,7 @@ const EnhancedAppointmentCalendar = dynamic(
 );
 
 export default function AppointmentsPage() {
+  const { options: priorityOptions } = useMasterValues('appointment.priority');
   const [activeTab, setActiveTab] = useState<TabType>('calendar');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([]);
@@ -49,17 +53,29 @@ export default function AppointmentsPage() {
   const [checkInModalOpen, setCheckInModalOpen] = useState(false);
   const [appointmentForCheckIn, setAppointmentForCheckIn] = useState<Appointment | null>(null);
   const [isUnifiedBookingOpen, setIsUnifiedBookingOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelTargetIds, setCancelTargetIds] = useState<string[]>([]);
+  const [cancelling, setCancelling] = useState(false);
   const [filters, setFilters] = useState<AppointmentsFilters>({
     search: '',
     doctors: [],
     departments: [],
     branches: [],
     statuses: ['scheduled', 'confirmed', 'in-progress'],
-    priorities: ['low', 'normal', 'high', 'urgent'],
+    priorities: [],
     dateRange: { start: '', end: '' },
     appointmentCategory: undefined,
     specialty: undefined
   });
+
+  useEffect(() => {
+    if (filters.priorities.length === 0 && priorityOptions.length > 0) {
+      setFilters((prev) => ({
+        ...prev,
+        priorities: priorityOptions.map((p) => p.value),
+      }));
+    }
+  }, [priorityOptions, filters.priorities.length]);
 
   useEffect(() => {
     loadAppointments();
@@ -299,15 +315,9 @@ export default function AppointmentsPage() {
           break;
 
         case 'cancel':
-          const reason = prompt('Cancellation reason:');
-          if (reason) {
-            await appointmentsApi.bulkCancel({
-              appointmentIds: selectedAppointmentIds,
-              cancellationReason: reason
-            });
-            alert(`Cancelled ${selectedAppointmentIds.length} appointments`);
-          }
-          break;
+          setCancelTargetIds([...selectedAppointmentIds]);
+          setCancelDialogOpen(true);
+          return;
 
         case 'send-reminders':
           for (const id of selectedAppointmentIds) {
@@ -347,6 +357,39 @@ export default function AppointmentsPage() {
     handleFormClose();
     await loadAppointments();
     await loadStats();
+  };
+
+  const handleConfirmCancel = async (reason: string) => {
+    if (cancelTargetIds.length === 0) return;
+    const ids = [...cancelTargetIds];
+    const count = ids.length;
+    setCancelling(true);
+    try {
+      if (count === 1) {
+        await appointmentsApi.cancel(ids[0], reason);
+      } else {
+        await appointmentsApi.bulkCancel({
+          appointmentIds: ids,
+          cancellationReason: reason,
+        });
+      }
+      setCancelDialogOpen(false);
+      setCancelTargetIds([]);
+      setSelectedAppointmentIds([]);
+      if (selectedAppointment && ids.includes(selectedAppointment.id)) {
+        handleFormClose();
+      }
+      await loadAppointments();
+      await loadStats();
+      toast.success(
+        count === 1 ? 'Appointment cancelled' : `Cancelled ${count} appointments`,
+      );
+    } catch (error) {
+      console.error('Failed to cancel appointment(s):', error);
+      toast.error('Failed to cancel appointment(s)');
+    } finally {
+      setCancelling(false);
+    }
   };
 
   const handleEventDrop = async (appointmentId: string, newDate: Date, newStartTime: string) => {
@@ -727,21 +770,9 @@ export default function AppointmentsPage() {
             handleFormClose();
             toast.info('Reschedule functionality coming soon');
           }}
-          onCancel={async () => {
-            if (confirm('Are you sure you want to cancel this appointment?')) {
-              try {
-                const reason = prompt('Please provide a reason for cancellation:');
-                if (reason) {
-                  await appointmentsApi.cancel(selectedAppointment.id, reason);
-                  handleFormClose();
-                  loadAppointments();
-                  toast.success('Appointment cancelled successfully');
-                }
-              } catch (error) {
-                console.error('Failed to cancel appointment:', error);
-                toast.error('Failed to cancel appointment');
-              }
-            }
+          onCancel={() => {
+            setCancelTargetIds([selectedAppointment.id]);
+            setCancelDialogOpen(true);
           }}
         />
       )}
@@ -793,6 +824,17 @@ export default function AppointmentsPage() {
           }}
         />
       )}
+
+      <AppointmentCancelDialog
+        open={cancelDialogOpen}
+        title={cancelTargetIds.length > 1 ? `Cancel ${cancelTargetIds.length} appointments` : 'Cancel appointment'}
+        onClose={() => {
+          setCancelDialogOpen(false);
+          setCancelTargetIds([]);
+        }}
+        onConfirm={handleConfirmCancel}
+        confirming={cancelling}
+      />
     </div>
   );
 }
@@ -827,6 +869,8 @@ function AppointmentListItem({ appointment, selected, onSelect, onClick, onCheck
   onClick: () => void;
   onCheckIn: (appointment: Appointment) => void;
 }) {
+  const { options: priorityOptions } = useMasterValues('appointment.priority');
+
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       'scheduled': 'bg-blue-100 text-blue-700',
@@ -891,7 +935,7 @@ function AppointmentListItem({ appointment, selected, onSelect, onClick, onCheck
               </span>
               {appointment.priority && (
                 <span className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${getPriorityColor(appointment.priority)}`}>
-                  {appointment.priority}
+                  {masterLabelForValue(priorityOptions, appointment.priority)}
                 </span>
               )}
             </div>
@@ -931,6 +975,9 @@ function AppointmentDetailsModal({
   onCancel?: () => void;
   onReschedule?: () => void;
 }) {
+  const { options: priorityOptions } = useMasterValues('appointment.priority');
+  const { options: typeOptions } = useMasterValues('appointment.type');
+
   if (!isOpen) return null;
 
   const getStatusColor = (status: string) => {
@@ -1005,7 +1052,7 @@ function AppointmentDetailsModal({
               </span>
               {appointment.priority && (
                 <span className={`px-2 py-1 rounded text-xs font-medium ${getPriorityColor(appointment.priority)}`}>
-                  {appointment.priority} priority
+                  {masterLabelForValue(priorityOptions, appointment.priority)} priority
                 </span>
               )}
             </div>
@@ -1056,7 +1103,7 @@ function AppointmentDetailsModal({
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-gray-500">Type:</span>
                   <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm font-medium capitalize">
-                    {appointment.appointmentType}
+                    {masterLabelForValue(typeOptions, appointment.appointmentType)}
                   </span>
                 </div>
               )}

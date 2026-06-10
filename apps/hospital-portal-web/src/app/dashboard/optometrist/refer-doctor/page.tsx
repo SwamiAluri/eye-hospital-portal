@@ -21,6 +21,7 @@ import { useHasPermission } from '@/hooks/use-permissions';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import {
   doctorReferralApi,
+  optometryQueueApi,
   optometrySummaryApi,
   type DoctorReferral,
   type OptometryCompleteSummary,
@@ -40,6 +41,7 @@ function ReferToDoctorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const patientId = searchParams.get('patientId');
+  const visitId = searchParams.get('visitId');
 
   const { currentPatient, visualAcuity, refraction, tonometry, keratometry, pachymetry } = useClinicalStore();
   const { user } = useAuthStore();
@@ -195,6 +197,7 @@ function ReferToDoctorContent() {
 
       const referral: DoctorReferral = {
         patientId,
+        visitId: visitId ?? undefined,
         referredByOptometristId: user?.id || '',
         referredByOptometristName: user?.name || user?.email || '',
         referredToDoctorId: selectedDoctor || undefined,
@@ -220,13 +223,20 @@ function ReferToDoctorContent() {
         referredAt: new Date().toISOString(),
       };
 
-      await doctorReferralApi.create(referral);
+      try {
+        await doctorReferralApi.create(referral);
+      } catch {
+        // Clinical referral API may not exist yet — queue event still recorded below
+      }
+
+      if (visitId) {
+        await optometryQueueApi.referPatient(visitId, reason.trim());
+      }
+
       setSubmitted(true);
       toast.success('Patient successfully referred to Doctor\'s Desk');
     } catch {
-      // Save locally for now
-      setSubmitted(true);
-      toast.success('Referral recorded successfully');
+      toast.error('Failed to record referral');
     } finally {
       setSubmitting(false);
     }

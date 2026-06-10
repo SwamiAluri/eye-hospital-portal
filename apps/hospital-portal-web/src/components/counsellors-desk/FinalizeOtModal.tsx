@@ -21,25 +21,9 @@ import type {
   FinalizeSurgeryRecord,
   FinalizeStatus,
 } from '@/types/counsellors-desk';
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const ANESTHESIA_OPTIONS = [
-  'Topical',
-  'Local',
-  'General',
-  'Peribulbar',
-  'Retrobulbar',
-  'Sub-Tenon',
-];
-
-type ChecklistValue = 'Done' | 'Pending' | 'NotRequired';
-
-const CHECKLIST_COLORS: Record<ChecklistValue, string> = {
-  Done:        'bg-green-100 text-green-700 border border-green-200',
-  Pending:     'bg-yellow-100 text-yellow-700 border border-yellow-200',
-  NotRequired: 'bg-gray-100 text-gray-500 border border-gray-200',
-};
+import { useAnesthesiaTypeMaster } from '@/hooks/use-anesthesia-type-master';
+import { CounsellorOutpatientChecklist } from '@/components/counsellors-desk/CounsellorOutpatientChecklist';
+import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
 
 const STATUS_COLORS: Record<FinalizeStatus, string> = {
   NotConfirmed: 'bg-orange-100 text-orange-700 border border-orange-200',
@@ -249,20 +233,6 @@ function TextareaInput({
   );
 }
 
-// ─── ChecklistCard ────────────────────────────────────────────────────────────
-
-function ChecklistCard({ title, status }: { title: string; status?: ChecklistValue }) {
-  const val: ChecklistValue = status ?? 'Pending';
-  return (
-    <div className="flex flex-col items-center gap-1 p-3 rounded-lg border border-gray-200 bg-gray-50">
-      <span className="text-xs font-medium text-gray-600 text-center leading-tight">{title}</span>
-      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full mt-1 ${CHECKLIST_COLORS[val]}`}>
-        {val === 'NotRequired' ? 'N/A' : val}
-      </span>
-    </div>
-  );
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export interface FinalizeOtModalProps {
@@ -290,6 +260,13 @@ const EMPTY_FORM: UpdateOtDetailsPayload = {
 };
 
 export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }: FinalizeOtModalProps) {
+  const { canEditCounsellorOutpatient } = useIpChecklistPermissions();
+  const { options: anesthesiaMasterOptions } = useAnesthesiaTypeMaster();
+  const anesthesiaSelectOptions = anesthesiaMasterOptions.map((o) => ({
+    id: o.label,
+    name: o.label,
+  }));
+
   const [detail, setDetail] = useState<OtScheduleDetail | null>(null);
   const [form, setForm] = useState<UpdateOtDetailsPayload>(EMPTY_FORM);
   const [surgeons, setSurgeons] = useState<{ id: string; name: string }[]>([]);
@@ -650,7 +627,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     label="Anesthesia Type"
                     value={form.anesthesiaType ?? ''}
                     onChange={(v) => set('anesthesiaType', v)}
-                    options={ANESTHESIA_OPTIONS.map((o) => ({ id: o, name: o }))}
+                    options={anesthesiaSelectOptions}
                     readOnly={isLocked}
                   />
                   {/* Anesthetist — dropdown with External option for manual entry */}
@@ -738,18 +715,26 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                 </div>
               </section>
 
-              {/* ── Section 5: Checklist ──────────────────────────────────── */}
-              {detail?.checklistItems && (
-                <section className="rounded-xl border border-gray-200 p-4">
-                  <SectionHeader icon={<ClipboardCheck className="w-4 h-4" />} title="Pre-Op Checklist" />
-                  <div className="grid grid-cols-4 gap-3">
-                    <ChecklistCard title="Investigations" status={detail.checklistItems.investigationsStatus as ChecklistValue} />
-                    <ChecklistCard title="Payment"        status={detail.checklistItems.paymentStatus        as ChecklistValue} />
-                    <ChecklistCard title="Consent"        status={detail.checklistItems.consentStatus        as ChecklistValue} />
-                    <ChecklistCard title="Pre-Auth"       status={detail.checklistItems.preAuthStatus        as ChecklistValue} />
-                  </div>
-                </section>
-              )}
+              {/* ── Section 5: Outpatient Safety Checklist (Form 1) ─────────── */}
+              <section className="rounded-xl border border-gray-200 p-4">
+                <SectionHeader icon={<ClipboardCheck className="w-4 h-4" />} title="Outpatient Safety Checklist" />
+                {detail?.counsellingSessionId ? (
+                  <CounsellorOutpatientChecklist
+                    counselingSessionId={detail.counsellingSessionId}
+                    readOnly={isLocked || !canEditCounsellorOutpatient}
+                    showRollup
+                    integrationContext={{
+                      patientId: undefined,
+                      paymentType: detail.paymentMode,
+                      packageRate: form.packageRate ?? detail.packageRate,
+                    }}
+                  />
+                ) : (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    No counselling session linked — outpatient checklist unavailable for this OT schedule.
+                  </p>
+                )}
+              </section>
 
               {/* ── Remarks ───────────────────────────────────────────────── */}
               <section className="rounded-xl border border-gray-200 p-4">

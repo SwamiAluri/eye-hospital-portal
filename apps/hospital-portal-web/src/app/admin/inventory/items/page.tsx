@@ -11,6 +11,8 @@ import {
   CategoryDto,
 } from '@/lib/api/inventory-service.api';
 import { useCategories } from '@/hooks/useInventoryReferenceData';
+import { useMasterListOptions } from '@/hooks/use-master-list-options';
+import { requiresColdStorageFromCode, useStorageConditions } from '@/hooks/use-inventory-masters';
 
 const ITEM_TYPES = ['Drug', 'Surgical', 'Equipment', 'Consumable', 'Optical', 'IOL'];
 const SCHEDULE_TYPES = ['H', 'H1', 'X', 'G', 'OTC'];
@@ -69,6 +71,10 @@ function ItemModal({ initial, categories, onClose, onSaved }: {
     scheduleType: initial.scheduleType ?? undefined, reorderLevel: initial.reorderLevel ?? 0,
     maxStockLevel: initial.maxStockLevel ?? 0,
   } : { ...BLANK });
+  const { labels: itemTypeLabels } = useMasterListOptions('inventory.item_type', ITEM_TYPES);
+  const { labels: unitLabels } = useMasterListOptions('inventory.uom', UNITS);
+  const { labels: gstLabels } = useMasterListOptions('inventory.gst_rate', GST_RATES);
+  const { labels: scheduleLabels } = useMasterListOptions('pharmacy.drug_schedule', SCHEDULE_TYPES);
   const [barcodeScan, setBarcodeScan] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -82,8 +88,14 @@ function ItemModal({ initial, categories, onClose, onSaved }: {
     if (!form.itemName.trim()) { setError('Item name is required.'); return; }
     setBusy(true); setError('');
     try {
-      if (initial) await inventoryItemApi.update(initial.id, form);
-      else await inventoryItemApi.create(form);
+      const payload = {
+        ...form,
+        requiresColdStorage: storageCondition
+          ? requiresColdStorageFromCode(storageCondition)
+          : (form as { requiresColdStorage?: boolean }).requiresColdStorage ?? false,
+      };
+      if (initial) await inventoryItemApi.update(initial.id, payload as CreateItemRequest);
+      else await inventoryItemApi.create(payload as CreateItemRequest);
       onSaved();
     } catch (e: any) { setError(e?.response?.data ?? e?.message ?? 'Save failed.'); }
     finally { setBusy(false); }
@@ -120,7 +132,7 @@ function ItemModal({ initial, categories, onClose, onSaved }: {
             <label className="block text-sm font-medium text-gray-700 mb-1">Item Type</label>
             <select value={form.itemType ?? ''} onChange={set('itemType')}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {ITEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {itemTypeLabels.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
@@ -135,7 +147,7 @@ function ItemModal({ initial, categories, onClose, onSaved }: {
             <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
             <select value={form.unit ?? 'Nos'} onChange={set('unit')}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+              {unitLabels.map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
           <div>
@@ -143,7 +155,20 @@ function ItemModal({ initial, categories, onClose, onSaved }: {
             <select value={form.scheduleType ?? ''} onChange={e => setForm(f => ({ ...f, scheduleType: e.target.value || undefined }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">— None —</option>
-              {SCHEDULE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
+              {scheduleLabels.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Storage Condition</label>
+            <select
+              value={storageCondition}
+              onChange={(e) => setStorageCondition(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Not specified —</option>
+              {storageChoices.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -160,7 +185,10 @@ function ItemModal({ initial, categories, onClose, onSaved }: {
             <label className="block text-sm font-medium text-gray-700 mb-1">GST %</label>
             <select value={String(form.gstPercent ?? 0)} onChange={e => setForm(f => ({ ...f, gstPercent: parseFloat(e.target.value) }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
+              {gstLabels.map((r) => {
+                const num = r.match(/\d+/)?.[0] ?? r;
+                return <option key={r} value={num}>{r}</option>;
+              })}
             </select>
           </div>
           <div>

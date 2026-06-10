@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import type { AddPatientFormData } from '@/types/counsellors-desk';
 import { useSurgeonsQuery } from '@/hooks/use-counsellors-desk-queries';
+import { SessionTypeSelect } from '@/components/counsellors-desk/SessionTypeSelect';
+import { defaultSessionTypeCode } from '@/lib/counsellors-desk/counsellor-master-maps';
 
 interface AddPatientModalProps {
   isOpen: boolean;
@@ -190,6 +192,13 @@ export function AddPatientModal({ isOpen, onClose, onAdd }: AddPatientModalProps
               {surgeons.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
           </div>
+
+          <SessionTypeSelect
+            id="add-patient-session-type"
+            value={form.sessionTypeCode}
+            onChange={(code) => setForm((f) => ({ ...f, sessionTypeCode: code }))}
+            context="new"
+          />
 
           {/* Remarks */}
           <div>

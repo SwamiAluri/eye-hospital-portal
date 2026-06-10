@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { usersApi, rolesApi, departmentsApi, branchesApi } from '@/lib/api';
 import PhoneInput from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
+import { useQualificationTypes } from '@/hooks/use-hr-masters';
 
 interface Props {
   initialUser?: any;
@@ -396,13 +397,21 @@ export default function UserForm({ initialUser, onClose, onSuccess }: Props) {
         <div className="grid grid-cols-2 gap-4 mt-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Qualifications</label>
-            <input 
-              name="qualifications" 
-              value={form.qualifications} 
-              onChange={handleChange} 
-              placeholder="e.g., MBBS, MD"
-              className="w-full border border-gray-300 px-3 py-2 rounded focus:ring-2 focus:ring-indigo-500" 
-            />
+            <select
+              name="qualifications"
+              value={form.qualifications}
+              onChange={handleChange}
+              className="w-full border border-gray-300 px-3 py-2 rounded focus:ring-2 focus:ring-indigo-500 bg-white"
+            >
+              <option value="">Select qualification…</option>
+              {qualificationTypes.map((t) => (
+                <option key={t.value} value={t.label}>{t.label}</option>
+              ))}
+              {form.qualifications &&
+                !qualificationTypes.some((t) => t.label === form.qualifications) && (
+                  <option value={form.qualifications}>{form.qualifications}</option>
+                )}
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Specialization</label>

@@ -1,214 +1,145 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { ReactElement } from 'react';
-import { getApi } from '@/lib/api';
-import { Phone, Clock, UserX, ArrowRight, AlertCircle, Users, Activity } from 'lucide-react';
-import { HubConnectionBuilder, LogLevel, HubConnection } from '@microsoft/signalr';
+import { Phone, Clock, UserX, ArrowRight, Users, Activity } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useAuthStore } from '@/lib/auth-store';
+import { useQueueConnection } from '@/hooks/useQueueConnection';
 import { useConfirmation } from '@/components/common/ConfirmationDialog';
-
-interface QueueItem {
-  id: string;
-  tokenNumber: string;
-  patientId: string;
-  patientName: string;
-  mobileNumber: string;
-  appointmentId?: string;
-  queueType: 'Optometry' | 'Doctor' | 'Billing' | 'Pharmacy';
-  status: 'waiting' | 'called' | 'in-progress' | 'completed' | 'absent';
-  checkedInAt: string;
-  calledAt?: string;
-  waitTime: number; // minutes
-  doctorName?: string;
-  roomNumber?: string;
-  priority: 'normal' | 'emergency' | 'follow-up';
-}
-
-interface QueueStats {
-  totalWaiting: number;
-  averageWaitTime: number;
-  totalCompleted: number;
-  totalAbsent: number;
-}
+import { visitsApi } from '@/lib/api/visits.api';
+import { optometryQueueApi } from '@/lib/api/optometry.api';
+import { queueTypeToStation } from '@/lib/frontdesk/station-ids';
+import {
+  loadStationQueues,
+  emptyStationQueues,
+  type StationQueueItem,
+  type StationQueueStats,
+  type StationQueueType,
+  type StationQueuesState,
+  type StationStatsState,
+} from '@/lib/frontdesk/load-station-queues';
 
 interface QueueSectionProps {
   title: string;
-  queueType: 'Optometry' | 'Doctor' | 'Billing' | 'Pharmacy';
+  queueType: StationQueueType;
   icon: React.ReactNode;
   color: string;
 }
 
 export default function QueueDashboard() {
-  const [queues, setQueues] = useState<Record<string, QueueItem[]>>({
-    Optometry: [],
-    Doctor: [],
-    Billing: [],
-    Pharmacy: [],
-  });
-  const [stats, setStats] = useState<Record<string, QueueStats>>({
-    Optometry: { totalWaiting: 0, averageWaitTime: 0, totalCompleted: 0, totalAbsent: 0 },
-    Doctor: { totalWaiting: 0, averageWaitTime: 0, totalCompleted: 0, totalAbsent: 0 },
-    Billing: { totalWaiting: 0, averageWaitTime: 0, totalCompleted: 0, totalAbsent: 0 },
-    Pharmacy: { totalWaiting: 0, averageWaitTime: 0, totalCompleted: 0, totalAbsent: 0 },
-  });
-  const [selectedQueue, setSelectedQueue] = useState<QueueItem | null>(null);
+  const { user } = useAuthStore();
+  const branchId = user?.branchId;
+
+  const empty = emptyStationQueues();
+  const [queues, setQueues] = useState<StationQueuesState>(empty.queues);
+  const [stats, setStats] = useState<StationStatsState>(empty.stats);
+  const [selectedQueue, setSelectedQueue] = useState<StationQueueItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
-  const [transferToQueue, setTransferToQueue] = useState<'Optometry' | 'Doctor' | 'Billing' | 'Pharmacy'>('Doctor');
-  const [connection, setConnection] = useState<HubConnection | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
+  const [transferToQueue, setTransferToQueue] = useState<StationQueueType>('Doctor');
 
   const { showConfirmation, ConfirmationComponent } = useConfirmation();
 
-  // SignalR connection for real-time updates
-  useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5073';
-    const newConnection = new HubConnectionBuilder()
-      .withUrl(`${apiUrl}/hubs/queue`, {
-        accessTokenFactory: () => localStorage.getItem('token') || ''
-      })
-      .configureLogging(LogLevel.Information)
-      .withAutomaticReconnect()
-      .build();
-
-    newConnection.start()
-      .then(() => {
-        console.log('Queue Dashboard: Connected to SignalR');
-        setIsConnected(true);
-        
-        // Subscribe to all queues (branch-wide)
-        const branchId = localStorage.getItem('branchId');
-        if (branchId) {
-          newConnection.invoke('SubscribeToBranch', branchId)
-            .catch(err => console.error('Error subscribing to branch:', err));
-        }
-
-        // Listen for queue updates
-        newConnection.on('QueueUpdate', (data: any) => {
-          console.log('Queue Dashboard: Received queue update', data);
-          fetchQueueData(); // Refresh data
-        });
-
-        // Listen for token calls
-        newConnection.on('TokenCalled', (data: any) => {
-          console.log('Queue Dashboard: Token called', data);
-          fetchQueueData(); // Refresh data
-        });
-
-        // Listen for subscription confirmation
-        newConnection.on('SubscriptionConfirmed', (data: any) => {
-          console.log('Queue Dashboard: Subscription confirmed', data);
-        });
-      })
-      .catch(err => {
-        console.error('SignalR connection error:', err);
-        setIsConnected(false);
-      });
-
-    newConnection.onreconnecting(() => {
-      console.log('Queue Dashboard: Reconnecting...');
-      setIsConnected(false);
-    });
-
-    newConnection.onreconnected(() => {
-      console.log('Queue Dashboard: Reconnected');
-      setIsConnected(true);
-      // Resubscribe after reconnection
-      const branchId = localStorage.getItem('branchId');
-      if (branchId) {
-        newConnection.invoke('SubscribeToBranch', branchId)
-          .catch(err => console.error('Error resubscribing:', err));
-      }
-    });
-
-    newConnection.onclose(() => {
-      console.log('Queue Dashboard: Disconnected');
-      setIsConnected(false);
-    });
-
-    setConnection(newConnection);
-
-    return () => {
-      newConnection?.stop();
-    };
-  }, []);
-
-  // Fetch queue data (initial load and fallback)
-  useEffect(() => {
-    fetchQueueData();
-    // Reduced polling interval since we have real-time updates
-    const interval = setInterval(fetchQueueData, 30000); // Refresh every 30 seconds (fallback)
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchQueueData = async () => {
-    try {
-      const api = getApi();
-      const response = await api.get('/queue/all'); // Backend API to implement
-      
-      if (response.data) {
-        setQueues(response.data.queues);
-        setStats(response.data.stats);
-      }
+  const fetchQueueData = useCallback(async () => {
+    if (!branchId) {
+      const e = emptyStationQueues();
+      setQueues(e.queues);
+      setStats(e.stats);
       setLoading(false);
+      return;
+    }
+
+    try {
+      const { queues: nextQueues, stats: nextStats } = await loadStationQueues(branchId);
+      setQueues(nextQueues);
+      setStats(nextStats);
     } catch (error) {
       console.error('Failed to fetch queue data:', error);
+      toast.error('Failed to load queue data');
+    } finally {
       setLoading(false);
     }
-  };
+  }, [branchId]);
 
-  // Call patient
-  const handleCallPatient = async (item: QueueItem) => {
+  const { isConnected } = useQueueConnection({
+    branchId,
+    autoConnect: !!branchId,
+    onQueueUpdate: () => {
+      void fetchQueueData();
+    },
+  });
+
+  useEffect(() => {
+    void fetchQueueData();
+    if (!branchId) return undefined;
+    const interval = setInterval(() => {
+      void fetchQueueData();
+    }, isConnected ? 120_000 : 30_000);
+    return () => clearInterval(interval);
+  }, [branchId, fetchQueueData, isConnected]);
+
+  const handleCallPatient = async (item: StationQueueItem) => {
     try {
-      const api = getApi();
-      await api.post(`/queue/${item.id}/call`, {
-        roomNumber: item.roomNumber,
-        doctorName: item.doctorName,
-      });
-      
-      // SignalR will automatically broadcast the update to all connected clients
-      // Backend QueueService handles the broadcast via IHubContext<QueueHub>
-      
-      fetchQueueData();
+      if (item.queueType === 'Optometry') {
+        await optometryQueueApi.startExam(item.visitId, item.roomNumber ?? 'OPT-1');
+        toast.success(`Started exam for ${item.patientName}`);
+      } else {
+        await visitsApi.sendTo({
+          visitId: item.visitId,
+          station: queueTypeToStation(item.queueType),
+        });
+        toast.success(`Called ${item.patientName}`);
+      }
+      await fetchQueueData();
     } catch (error) {
       console.error('Failed to call patient:', error);
+      toast.error('Failed to call patient');
     }
   };
 
-  // Mark patient as absent
-  const handleMarkAbsent = async (item: QueueItem) => {
+  const handleMarkAbsent = async (item: StationQueueItem) => {
     showConfirmation({
       title: 'Mark Absent',
       message: `Mark ${item.patientName} (${item.tokenNumber}) as absent?`,
       variant: 'warning',
       confirmText: 'Mark Absent',
       onConfirm: async () => {
-        const api = getApi();
-        await api.post(`/queue/${item.id}/mark-absent`);
-        fetchQueueData();
+        try {
+          if (item.queueType === 'Optometry') {
+            await optometryQueueApi.skipPatient(item.visitId, 'Marked absent from queue management');
+          } else {
+            await visitsApi.markNoShow(item.visitId);
+          }
+          toast.success('Patient marked absent');
+          await fetchQueueData();
+        } catch {
+          toast.error('Failed to mark absent');
+        }
       },
     });
   };
 
-  // Transfer to another queue
   const handleTransferQueue = async () => {
     if (!selectedQueue) return;
-    
+
     try {
-      const api = getApi();
-      await api.post(`/queue/${selectedQueue.id}/transfer`, {
-        newQueueType: transferToQueue,
+      await visitsApi.sendTo({
+        visitId: selectedQueue.visitId,
+        station: queueTypeToStation(transferToQueue),
+        reasonCode:
+          transferToQueue === 'Optometry' ? 'INITIAL_REFRACTION' : undefined,
       });
-      
+      toast.success(`Transferred to ${transferToQueue}`);
       setTransferDialogOpen(false);
       setSelectedQueue(null);
-      fetchQueueData();
+      await fetchQueueData();
     } catch (error) {
       console.error('Failed to transfer queue:', error);
+      toast.error('Failed to transfer patient');
     }
   };
 
-  // Calculate wait time in minutes
   const calculateWaitTime = (checkedInAt: string): number => {
     const checkedIn = new Date(checkedInAt);
     const now = new Date();
@@ -339,9 +270,20 @@ export default function QueueDashboard() {
     <div className="max-w-[1600px] mx-auto">
       <ConfirmationComponent />
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900 mb-1">Queue Management</h1>
-        <p className="text-sm text-slate-600">Monitor and manage patient queues across all departments</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 mb-1">Queue Management</h1>
+          <p className="text-sm text-slate-600">
+            Live visit queues by station (optometry, doctor, billing, pharmacy)
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}
+          />
+          {isConnected ? 'Live' : 'Polling'}
+          {!branchId && <span className="text-amber-600 ml-2">Branch not set on profile</span>}
+        </div>
       </div>
 
       {/* Overall Stats */}

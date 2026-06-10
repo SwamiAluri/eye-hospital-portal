@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { visitsApi, CheckInValidation, CheckInResult } from '@/lib/api/visits.api';
 import { opdBillingApi, CreateOpdBillRequest, AddPaymentRequest, PaymentMode, OpdBill } from '@/lib/api/opd-billing.api';
+import { usePaymentModes } from '@/hooks/use-payment-modes';
+import type { LucideIcon } from 'lucide-react';
 import { departmentsApi, Department } from '@/lib/api/departments.api';
 import { getApi } from '@/lib/api';
 import {
@@ -35,6 +37,16 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/auth-store';
+
+const PAYMENT_MODE_ICONS: Partial<Record<PaymentMode, LucideIcon>> = {
+  cash: Banknote,
+  card: CreditCard,
+  upi: Wallet,
+  net_banking: Building2,
+  cheque: Building2,
+  insurance: CreditCard,
+  wallet: Wallet,
+};
 
 interface Branch {
   id: string;
@@ -108,6 +120,13 @@ export default function CheckInModal({
   
   const router = useRouter();
   const { user } = useAuthStore();
+  const { modes: paymentModeChoices, loading: paymentModesLoading } = usePaymentModes();
+
+  useEffect(() => {
+    if (paymentModeChoices.length === 0) return;
+    const valid = paymentModeChoices.some((m) => m.apiMode === paymentMode);
+    if (!valid) setPaymentMode(paymentModeChoices[0].apiMode);
+  }, [paymentModeChoices, paymentMode]);
 
   // Format date for display
   const formatDate = (dateStr: string) => {
@@ -240,19 +259,12 @@ export default function CheckInModal({
   };
 
   const handleGenerateBill = async () => {
-    // Determine which branchId to use - from appointment, selected, or fallback to first branch
+    // Determine which branchId to use - from user profile or explicit selection.
     let effectiveBranchId = branchId || selectedBranchId;
     
-    // If still no branch, use the first branch from the list
-    if (!effectiveBranchId && branches.length > 0) {
-      effectiveBranchId = branches[0].id;
-      console.log('Using first available branch as fallback:', effectiveBranchId);
-    }
-    
-    // Final fallback - hardcoded first branch ID from the system (Downtown Hospital)
     if (!effectiveBranchId) {
-      effectiveBranchId = '74c014cf-9570-4824-bdf9-b369ea11a8f4'; // Downtown Hospital
-      console.log('Using hardcoded fallback branch ID:', effectiveBranchId);
+      alert('Your user profile is missing a branch assignment. Please assign a branch to generate bills.');
+      return;
     }
     
     try {
@@ -759,15 +771,23 @@ export default function CheckInModal({
               </div>
             )}
             
-            {/* Payment Mode Selection */}
+            {/* Payment Mode Selection — B3: billing.payment_mode master */}
             <div>
               <Label className="mb-2 block">Payment Mode</Label>
-              <div className="grid grid-cols-4 gap-2">
-                <PaymentModeButton mode="cash" icon={Banknote} label="Cash" />
-                <PaymentModeButton mode="card" icon={CreditCard} label="Card" />
-                <PaymentModeButton mode="upi" icon={Wallet} label="UPI" />
-                <PaymentModeButton mode="net_banking" icon={Building2} label="Bank" />
-              </div>
+              {paymentModesLoading ? (
+                <p className="text-xs text-gray-500">Loading payment modes…</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {paymentModeChoices.map((choice) => (
+                    <PaymentModeButton
+                      key={choice.masterCode}
+                      mode={choice.apiMode}
+                      icon={PAYMENT_MODE_ICONS[choice.apiMode] ?? Banknote}
+                      label={choice.label}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
             
             <div>

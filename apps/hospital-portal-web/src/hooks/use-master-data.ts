@@ -18,6 +18,14 @@ import {
   type FlatVariantDto,
   flattenCatalog,
 } from '@/lib/api/service-catalog.api';
+import {
+  buildCounsellorIolDtos,
+  type CounsellorProcedureVariant,
+} from '@/lib/master-data/clinical-catalog-master';
+import {
+  useClinicalIolWithPricing,
+  useCounsellorProcedureVariants,
+} from '@/hooks/use-clinical-catalog-master';
 
 // ============================================================================
 // Query Keys
@@ -120,47 +128,52 @@ export function useFullCatalog(
   });
 }
 
-/** IOL options for a specific service variant */
+/**
+ * IOL options for a variant — master labels joined to catalog pricing.
+ * @deprecated Prefer `useClinicalIolWithPricing` from `@/hooks/use-clinical-catalog-master`.
+ */
 export function useIolOptions(
   variantId?: string,
-  options?: Omit<UseQueryOptions<IolMasterDto[]>, 'queryKey' | 'queryFn'>
+  options?: Omit<UseQueryOptions<IolMasterDto[]>, 'queryKey' | 'queryFn'> & { enabled?: boolean },
 ) {
-  return useQuery({
-    queryKey: masterDataKeys.iolOptions(variantId),
-    queryFn: () => serviceCatalogApi.getVariantIolOptions(variantId!),
-    enabled: !!variantId,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    ...options,
-  });
+  const enabled = (options?.enabled ?? true) && !!variantId;
+  const { items, loading, error, refetch } = useClinicalIolWithPricing(
+    enabled ? variantId : undefined,
+  );
+  const data = enabled ? buildCounsellorIolDtos(items) : undefined;
+  return {
+    data,
+    isLoading: loading,
+    isError: error,
+    refetch,
+    isFetching: loading,
+    isSuccess: !loading && !error && !!data,
+    status: loading ? 'pending' : error ? 'error' : 'success',
+  } as ReturnType<typeof useQuery<IolMasterDto[]>>;
 }
 
 /**
- * Backward-compatible hook: wraps useFullCatalog and returns
- * { data: { data: FlatVariantDto[] } } so existing callers
- * that do `surgeryData?.data ?? []` continue to compile.
+ * Backward-compatible hook: master surgery types + catalog pricing.
+ * Returns `{ data: { data: CounsellorProcedureVariant[] } }` for legacy callers.
  */
 export function useSurgeryTypesWithPricing(
   _params?: { branchId?: string; category?: string },
-  options?: Omit<UseQueryOptions<FlatVariantDto[]>, 'queryKey' | 'queryFn'>
+  options?: { enabled?: boolean },
 ) {
-  const q = useQuery({
-    queryKey: masterDataKeys.fullCatalog(),
-    queryFn: async () => {
-      const catalog = await serviceCatalogApi.getFullCatalog();
-      return flattenCatalog(catalog);
-    },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    ...options,
-  });
-  // Wrap data into { data: FlatVariantDto[] } to match old shape
+  const enabled = options?.enabled ?? true;
+  const { variants, loading, error, refetch } = useCounsellorProcedureVariants(enabled);
   return {
-    ...q,
-    data: q.data ? { data: q.data } : undefined,
-  };
+    data: enabled ? { data: variants as CounsellorProcedureVariant[] } : undefined,
+    isLoading: loading,
+    isError: error,
+    refetch,
+    isFetching: loading,
+    isSuccess: !loading && !error,
+    status: loading ? 'pending' : error ? 'error' : 'success',
+  } as { data?: { data: FlatVariantDto[] }; isLoading: boolean; isError: boolean; refetch: () => void };
 }
 
+/** @deprecated Use useCounsellorProcedureVariants from use-clinical-catalog-master */
 export function useSurgeryTypes(
   options?: Omit<UseQueryOptions<SurgeryType[]>, 'queryKey' | 'queryFn'>
 ) {
@@ -177,12 +190,32 @@ export function useSurgeryTypes(
 // Anesthesia Type Hooks
 // ============================================================================
 
+/** @deprecated Prefer useAnesthesiaTypeMaster — backed by clinical.anesthesia_type master lookup */
 export function useAnesthesiaTypes(
   options?: Omit<UseQueryOptions<AnesthesiaType[]>, 'queryKey' | 'queryFn'>
 ) {
   return useQuery({
     queryKey: masterDataKeys.anesthesiaTypes(),
-    queryFn: masterDataApi.getAnesthesiaTypes,
+    queryFn: async () => {
+      const { masterValuesApi } = await import('@/lib/api');
+      const res = await masterValuesApi.lookup('clinical.anesthesia_type');
+      const raw = res.data?.items ?? res.data?.Items ?? [];
+      return (raw as { code: string; label: string; metadata?: Record<string, unknown> }[]).map(
+        (row, i) => ({
+          id: row.code,
+          anesthesiaCode: row.code,
+          anesthesiaName: row.label,
+          anesthesiaCategory: (typeof row.metadata?.category === 'string'
+            ? row.metadata.category
+            : 'Local') as AnesthesiaType['anesthesiaCategory'],
+          requiresAnesthetist: false,
+          displayOrder: i + 1,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+    },
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     ...options,

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { departmentsEnhancedApi, Department } from '@/lib/api/departments-enhanced.api';
+import { useDepartmentMaster } from '@/hooks/use-system-masters';
 import { 
   X, 
   Building, 
@@ -84,6 +85,7 @@ interface DepartmentFormData {
 }
 
 export default function EnhancedDepartmentFormModal({ department, onClose, onSave }: EnhancedDepartmentFormModalProps) {
+  const { departments: departmentTypes } = useDepartmentMaster();
   const [formData, setFormData] = useState<DepartmentFormData>({
     departmentName: '',
     departmentCode: '',
@@ -396,12 +398,14 @@ export default function EnhancedDepartmentFormModal({ department, onClose, onSav
                       onChange={(e) => setFormData({ ...formData, departmentType: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value="Clinical">Clinical</option>
-                      <option value="Administrative">Administrative</option>
-                      <option value="Support">Support</option>
-                      <option value="Emergency">Emergency</option>
-                      <option value="Diagnostic">Diagnostic</option>
-                      <option value="Surgical">Surgical</option>
+                      <option value="">Select department type…</option>
+                      {departmentTypes.map((d) => (
+                        <option key={d.value} value={d.label}>{d.label}</option>
+                      ))}
+                      {formData.departmentType &&
+                        !departmentTypes.some((d) => d.label === formData.departmentType) && (
+                          <option value={formData.departmentType}>{formData.departmentType}</option>
+                        )}
                     </select>
                   </div>
 

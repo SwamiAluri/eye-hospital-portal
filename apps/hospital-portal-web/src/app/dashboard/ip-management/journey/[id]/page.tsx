@@ -20,6 +20,7 @@ import {
   UpdateWardAssignmentRequest,
 } from '@/lib/api/ip-management.api';
 import { PreOpTab } from '@/components/ip-management/PreOpTab';
+import { ChecklistPhaseStatusChips } from '@/components/ip-management/ChecklistPhaseStatusChips';
 import { useUserDepartment } from '@/hooks/useUserDepartment';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -478,6 +479,9 @@ export default function JourneyDetailPage() {
                 <AlertTriangle className="h-2.5 w-2.5" /> Emg FC
               </span>
             )}
+          </div>
+          <div className="mt-2">
+            <ChecklistPhaseStatusChips phaseStatus={journey.checklistPhaseStatus} />
           </div>
         </div>
 

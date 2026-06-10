@@ -4,6 +4,13 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
+import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader';
+import {
+  AuthGlassCard,
+  AuthAlert,
+  AuthGradientButton,
+} from '@/components/auth/AuthGlassCard';
+import { AuthInputField, AuthCardBottomActions } from '@/components/auth/AuthFormFields';
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -32,7 +39,6 @@ export default function ChangePasswordPage() {
     setIsLoading(true);
 
     try {
-      // Validation
       if (!currentPassword || !newPassword || !confirmPassword) {
         setError('All fields are required');
         return;
@@ -55,100 +61,93 @@ export default function ChangePasswordPage() {
         return;
       }
 
-      // Call API
       await authApi.changePassword(currentPassword, newPassword);
 
       setSuccess('Password changed successfully!');
       clearMustChangePassword();
 
-      // Redirect after 2 seconds
       setTimeout(() => {
         router.push('/dashboard');
       }, 2000);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to change password');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { message?: string } } };
+      setError(apiErr.response?.data?.message || 'Failed to change password');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="w-full">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Change Password</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {mustChangePassword
+    <>
+      <AuthBrandHeader />
+
+      <div className="auth-panel-stack">
+        <AuthGlassCard
+          title="Change Password"
+          subtitle={
+            mustChangePassword
               ? 'You must change your password before accessing the system'
-              : 'Update your password'}
-          </p>
-          {user && <p className="text-xs text-gray-400 mt-1">{user.email}</p>}
-        </div>
+              : user?.email
+                ? `Update password for ${user.email}`
+                : 'Update your security password'
+          }
+        >
+          <form onSubmit={handleChangePassword} className="auth-form">
+            {error && <AuthAlert variant="error">{error}</AuthAlert>}
+            {success && <AuthAlert variant="success">{success}</AuthAlert>}
 
-        <form onSubmit={handleChangePassword} className="space-y-5">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
-              {success}
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Current Password</label>
-            <input
+            <AuthInputField
+              id="currentPassword"
+              label="Current Password"
+              icon="lock"
               type="password"
+              autoComplete="current-password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
               required
+              staggerClass="stagger-2"
             />
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">New Password</label>
-            <input
+            <AuthInputField
+              id="newPassword"
+              label="New Password"
+              icon="lock"
               type="password"
+              autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
               required
+              staggerClass="stagger-3"
             />
-            <p className="text-xs text-gray-400 mt-1.5">
+            <p className="auth-card-subtitle px-1 staggered-child stagger-3" style={{ marginTop: '-0.25rem' }}>
               12+ characters with uppercase, lowercase, numbers, and special characters
             </p>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm Password</label>
-            <input
+            <AuthInputField
+              id="confirmPassword"
+              label="Confirm Password"
+              icon="lock"
               type="password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
               required
+              staggerClass="stagger-4"
             />
-          </div>
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{backgroundColor:'#10b981'}}
-            onMouseEnter={e => { if(!isLoading) e.currentTarget.style.backgroundColor='#059669'; }}
-            onMouseLeave={e => { if(!isLoading) e.currentTarget.style.backgroundColor='#10b981'; }}
-          >
-            {isLoading ? 'Changing Password…' : 'Change Password'}
-          </button>
-        </form>
+            <div className="auth-btn-wrap staggered-child stagger-5">
+              <AuthGradientButton loading={isLoading} loadingText="Changing Password…">
+                Change Password
+              </AuthGradientButton>
+            </div>
+
+            <AuthCardBottomActions />
+          </form>
+        </AuthGlassCard>
       </div>
-    </div>
+    </>
   );
 }

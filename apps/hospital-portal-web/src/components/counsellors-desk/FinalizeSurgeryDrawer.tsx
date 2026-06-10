@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import type { FinalizeSurgeryRecord, FinalizeFormData } from '@/types/counsellors-desk';
+import { useAnesthesiaTypeMaster } from '@/hooks/use-anesthesia-type-master';
 
 interface FinalizeSurgeryDrawerProps {
   isOpen: boolean;
@@ -10,15 +11,6 @@ interface FinalizeSurgeryDrawerProps {
   patient: FinalizeSurgeryRecord | null;
   onSave: (data: FinalizeFormData) => void;
 }
-
-const ANESTHESIA_OPTIONS = [
-  'General Anesthesia',
-  'Local Anesthesia',
-  'Topical Anesthesia',
-  'Peribulbar Block',
-  'Retrobulbar Block',
-  'Sub-Tenon Block',
-];
 
 const STATUS_OPTIONS: { value: 'Finalised' | 'Confirmed' | 'NotConfirmed'; label: string; active: string; inactive: string }[] = [
   {
@@ -52,6 +44,7 @@ const EMPTY_FORM: FinalizeFormData = {
 };
 
 export function FinalizeSurgeryDrawer({ isOpen, onClose, patient, onSave }: FinalizeSurgeryDrawerProps) {
+  const { options: anesthesiaMasterOptions } = useAnesthesiaTypeMaster();
   const [form, setForm] = useState<FinalizeFormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -146,7 +139,9 @@ export function FinalizeSurgeryDrawer({ isOpen, onClose, patient, onSave }: Fina
               className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors.anesthesiaType ? 'border-red-400' : 'border-gray-300'}`}
             >
               <option value="">Select type</option>
-              {ANESTHESIA_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              {anesthesiaMasterOptions.map((o) => (
+                <option key={o.value} value={o.label}>{o.label}</option>
+              ))}
             </select>
             {errors.anesthesiaType && <p className="text-xs text-red-500 mt-1">{errors.anesthesiaType}</p>}
           </div>

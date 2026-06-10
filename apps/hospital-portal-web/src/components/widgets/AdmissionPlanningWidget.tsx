@@ -10,6 +10,7 @@ import { Activity as Bed, Calendar, Clock, Phone, CheckCircle2 as Check, AlertCi
 import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { widgetsApi, type WardOption as WardOptionAPI } from '@/lib/api/widgets.api';
+import { useMasterListOptions } from '@/hooks/use-master-list-options';
 
 type WardType = 'general' | 'semi-private' | 'private-deluxe' | 'icu';
 
@@ -40,6 +41,8 @@ export default function AdmissionPlanningWidget({
   onAction,
   onDataChange,
 }: WidgetProps) {
+  const { labels: wardTypeMasterLabels } = useMasterListOptions('ward.ward_type', WARD_TYPE_LABELS_FALLBACK);
+  const { labels: bedTypeLabels } = useMasterListOptions('ward.bed_type', BED_TYPE_LABELS_FALLBACK);
   const [admissionDetails, setAdmissionDetails] = useState<Partial<AdmissionDetails>>({
     wardType: 'semi-private',
     admissionDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
@@ -273,7 +276,12 @@ export default function AdmissionPlanningWidget({
                 <div className="flex items-start justify-between mb-2">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">{ward.name}</p>
-                    <p className="text-xs text-gray-600 mt-0.5">₹{ward.pricePerDay.toLocaleString()}/day</p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      ₹{ward.pricePerDay.toLocaleString()}/day
+                      {wardTypeMasterLabels.length > 0 && ward.type && (
+                        <span className="ml-1 text-gray-400">· {ward.type}</span>
+                      )}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     {ward.bedsAvailable > 0 ? (
@@ -367,6 +375,24 @@ export default function AdmissionPlanningWidget({
               placeholder="Enter 10-digit mobile number"
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">Preferred bed type</label>
+            <select
+              value={admissionDetails.bedType || ''}
+              onChange={(e) => {
+                const updated = { ...admissionDetails, bedType: e.target.value || undefined };
+                setAdmissionDetails(updated);
+                onDataChange?.({ admissionDetails: updated });
+              }}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Select —</option>
+              {bedTypeLabels.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
           </div>
 
           <div>

@@ -15,6 +15,9 @@ import {
   ShieldCheck, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { useQueryClient } from '@tanstack/react-query';
+import { ccmsKeys } from '@/lib/ccms/ccms-query-keys';
 
 // ── Form helpers ──────────────────────────────────────────────────────────────
 
@@ -48,6 +51,7 @@ function emptyForm(): CreatePayerRequest {
 function payerToForm(p: InsurancePayer): CreatePayerRequest {
   return {
     name:                       p.name,
+    providerCode:               p.providerCode ?? p.shortCode,
     shortCode:                  p.shortCode,
     contactEmail:               p.contactEmail,
     contactPhone:               p.contactPhone,
@@ -149,6 +153,8 @@ function ConfirmDeleteModal({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CcmsMasterDataPayersPage() {
+  const queryClient = useQueryClient();
+  const { options: masterProviders, loading: masterLoading } = useMasterValues('insurance.provider');
   const [payers,      setPayers]      = useState<InsurancePayer[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState<string | null>(null);
@@ -159,6 +165,7 @@ export default function CcmsMasterDataPayersPage() {
   const [isNew,       setIsNew]       = useState(false);
   const [form,        setForm]        = useState<CreatePayerRequest>(emptyForm());
   const [saving,      setSaving]      = useState(false);
+  const [syncing,     setSyncing]     = useState(false);
   const [deleteId,    setDeleteId]    = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -191,8 +198,71 @@ export default function CcmsMasterDataPayersPage() {
     setForm(payerToForm(p));
   };
 
+  const isInsurancePayer = (form.payerCategory ?? 'insurance') === 'insurance';
+  const configuredCodes = new Set(
+    payers
+      .filter(p => (p.payerCategory ?? 'insurance') === 'insurance')
+      .map(p => (p.providerCode ?? p.shortCode ?? '').toUpperCase())
+      .filter(Boolean),
+  );
+  const availableMasterProviders = masterProviders.filter(
+    m => !configuredCodes.has(m.value.toUpperCase()),
+  );
+
+  const handleMasterProviderPick = (code: string) => {
+    const match = masterProviders.find(m => m.value === code);
+    if (!match) return;
+    setForm(prev => ({
+      ...prev,
+      name: match.label,
+      providerCode: match.value,
+      shortCode: match.value,
+      payerCategory: 'insurance',
+    }));
+  };
+
+  /** B7.2 — bulk provision CCMS payers for master insurers not yet configured */
+  const handleSyncAllFromMaster = async () => {
+    if (availableMasterProviders.length === 0) {
+      toast.success('All master insurers are already provisioned as payers');
+      return;
+    }
+    setSyncing(true);
+    try {
+      const created: InsurancePayer[] = [];
+      for (const m of availableMasterProviders) {
+        const p = await createInsurancePayer({
+          name: m.label,
+          providerCode: m.value,
+          shortCode: m.value,
+          payerCategory: 'insurance',
+          serviceTaxApplicable: false,
+          tdsMandatory: false,
+          defaultServiceTaxPercent: 0,
+        });
+        created.push(p);
+      }
+      setPayers(prev => [...created, ...prev]);
+      void queryClient.invalidateQueries({ queryKey: ccmsKeys.payers() });
+      toast.success(`Provisioned ${created.length} payer(s) from Master Data`);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? 'Failed to sync payers from master');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleSave = async () => {
-    if (!form.name.trim()) { toast.error('Payer name is required'); return; }
+    if (isInsurancePayer) {
+      if (!form.providerCode?.trim()) {
+        toast.error('Select an insurance provider from Master Data');
+        return;
+      }
+    } else if (!form.name.trim()) {
+      toast.error('Payer name is required');
+      return;
+    }
     setSaving(true);
     try {
       if (isNew) {
@@ -200,10 +270,12 @@ export default function CcmsMasterDataPayersPage() {
         setPayers(prev => [p, ...prev]);
         setIsNew(false);
         setSelectedId(p.id);
+        void queryClient.invalidateQueries({ queryKey: ccmsKeys.payers() });
         toast.success('Payer created');
       } else if (selectedId) {
         const p = await updateInsurancePayer(selectedId, form);
         setPayers(prev => prev.map(pp => pp.id === selectedId ? p : pp));
+        void queryClient.invalidateQueries({ queryKey: ccmsKeys.payers() });
         toast.success('Payer updated');
       }
     } catch (e: unknown) {
@@ -220,6 +292,7 @@ export default function CcmsMasterDataPayersPage() {
       await deleteInsurancePayer(deleteId);
       setPayers(prev => prev.filter(p => p.id !== deleteId));
       if (selectedId === deleteId) { setSelectedId(null); setIsNew(false); }
+      void queryClient.invalidateQueries({ queryKey: ccmsKeys.payers() });
       toast.success('Payer removed');
     } catch {
       toast.error('Failed to delete payer');
@@ -243,10 +316,20 @@ export default function CcmsMasterDataPayersPage() {
             Payer Master
           </h1>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Insurance companies, TPAs &amp; other debtors
+            Insurance payers from Master Data; configure finance &amp; contact fields here
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {availableMasterProviders.length > 0 && (
+            <button
+              onClick={handleSyncAllFromMaster}
+              disabled={syncing || masterLoading}
+              className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 border border-indigo-200 rounded-lg px-3 py-1.5 hover:bg-indigo-50 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              Sync {availableMasterProviders.length} from Master
+            </button>
+          )}
           <button
             onClick={load}
             disabled={loading}
@@ -379,20 +462,63 @@ export default function CcmsMasterDataPayersPage() {
                   <Building2 className="w-3 h-3" />Identity
                 </p>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label required>Payer Name</Label>
-                    <Input value={form.name} onChange={e => patch('name', e.target.value)} placeholder="e.g. Star Health Insurance" />
-                  </div>
-                  <div>
-                    <Label>Short Code</Label>
-                    <Input value={form.shortCode ?? ''} onChange={e => patch('shortCode', e.target.value)} placeholder="e.g. STAR" />
-                  </div>
+                  {isInsurancePayer ? (
+                    isNew ? (
+                      <div className="col-span-2">
+                        <Label required>Insurance Provider (Master Data)</Label>
+                        <select
+                          value={form.providerCode ?? ''}
+                          onChange={e => handleMasterProviderPick(e.target.value)}
+                          disabled={masterLoading}
+                          className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-400 bg-white"
+                        >
+                          <option value="">
+                            {masterLoading ? 'Loading providers…' : '— select insurer —'}
+                          </option>
+                          {availableMasterProviders.map(m => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                        {availableMasterProviders.length === 0 && !masterLoading && (
+                          <p className="text-[10px] text-amber-600 mt-1">
+                            All master insurers are already configured. Add providers in Settings → Master Data.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <Label>Provider Name</Label>
+                          <Input value={form.name} readOnly disabled className="bg-gray-50 text-gray-600" />
+                        </div>
+                        <div>
+                          <Label>Provider Code</Label>
+                          <Input value={form.providerCode ?? form.shortCode ?? ''} readOnly disabled className="bg-gray-50 text-gray-600" />
+                        </div>
+                      </>
+                    )
+                  ) : (
+                    <div className="col-span-2">
+                      <Label required>Debtor Name</Label>
+                      <Input value={form.name} onChange={e => patch('name', e.target.value)} placeholder="e.g. ABC Corporate" />
+                    </div>
+                  )}
                   <div>
                     <Label>Category</Label>
                     <select
                       value={form.payerCategory ?? 'insurance'}
-                      onChange={e => patch('payerCategory', e.target.value as PayerCategory)}
-                      className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-400 bg-white"
+                      onChange={e => {
+                        const cat = e.target.value as PayerCategory;
+                        setForm(prev => ({
+                          ...prev,
+                          payerCategory: cat,
+                          ...(isNew && cat === 'insurance'
+                            ? { name: '', providerCode: undefined, shortCode: undefined }
+                            : {}),
+                        }));
+                      }}
+                      disabled={!isNew}
+                      className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-400 bg-white disabled:bg-gray-50"
                     >
                       <option value="insurance">Insurance</option>
                       <option value="other_debtor">Other Debtor</option>
@@ -521,7 +647,7 @@ export default function CcmsMasterDataPayersPage() {
                 )}
                 <button
                   onClick={() => void handleSave()}
-                  disabled={saving || !form.name.trim()}
+                  disabled={saving || (isInsurancePayer ? !form.providerCode?.trim() : !form.name.trim())}
                   className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                 >
                   <Edit2 className="w-3.5 h-3.5" />

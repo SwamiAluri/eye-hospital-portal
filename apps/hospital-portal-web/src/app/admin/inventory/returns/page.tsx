@@ -30,13 +30,8 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PURCHASE_CATEGORIES = [
-  'Pharmacy', 'OT & Surgery', 'Consumables', 'Optical',
-  'Laboratory', 'Stationery', 'Equipment', 'General Hospital',
-];
 const RETURN_REASONS = ['Damaged', 'Expired', 'Excess', 'QualityRejection', 'Other'];
 const RETURN_CAUSES  = ['Damaged', 'Expired', 'Excess', 'QualityRejection', 'Other'];
-const PAYMENT_MODES  = ['Cash', 'Credit', 'UPI', 'NEFT', 'RTGS', 'Cheque'];
 const SOURCE_TYPES   = ['Manual', 'Invoice', 'GRN'];
 const ALL_STATUSES   = ['All', 'Pending', 'SentToVendor', 'CreditNoteReceived', 'Settled', 'Cancelled'];
 
@@ -553,14 +548,8 @@ function InlineCreateForm({
 }) {
   const today = new Date().toISOString().slice(0, 10);
 
-  const { options: purchaseCategoryOptions } = useMasterValues(
-    'inventory.purchase_category',
-    PURCHASE_CATEGORIES.map(c => ({ value: c, label: c }))
-  );
-  const { options: paymentModeOptions } = useMasterValues(
-    'billing.payment_mode',
-    PAYMENT_MODES.map(m => ({ value: m, label: m }))
-  );
+  const { options: purchaseCategoryOptions } = useMasterValues('inventory.purchase_category');
+  const { options: paymentModeOptions } = useMasterValues('billing.payment_mode');
 
   // ── Header state ──────────────────────────────────────────────────────
   const [purchaseCategory, setPurchaseCategory] = useState('');
@@ -1225,10 +1214,7 @@ function InlineCreateForm({
 export default function ReturnsPage() {
   const [mode, setMode] = useState<'list' | 'create'>('list');
 
-  const { options: categoryFilterOptions } = useMasterValues(
-    'inventory.purchase_category',
-    PURCHASE_CATEGORIES.map(c => ({ value: c, label: c }))
-  );
+  const { options: categoryFilterOptions } = useMasterValues('inventory.purchase_category');
 
   const [data,     setData]     = useState<{ total: number; page: number; pageSize: number; items: PurchaseReturnDto[] } | null>(null);
   const [loading,  setLoading]  = useState(true);

@@ -53,17 +53,27 @@ public class MasterDataFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
-        var body = await JsonSerializer.DeserializeAsync<CcmsInsuranceProvider>(req.Body);
+        var body = await JsonSerializer.DeserializeAsync<CcmsInsuranceProvider>(
+            req.Body, HttpRequestDataExtensions.DeserializeOpts);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
         body.TenantId           = claims!.TenantId;
         body.CreatedByUserId    = claims.UserId;
         body.UpdatedByUserId    = claims.UserId;
 
-        var result = await _svc.CreateInsuranceProviderAsync(body);
-        var resp = req.CreateResponse(HttpStatusCode.Created);
-        await resp.WriteAsJsonAsync(result);
-        return resp;
+        try
+        {
+            var result = await _svc.CreateInsuranceProviderAsync(body);
+            return await req.CreatedJsonAsync(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return await req.BadRequestAsync(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return await req.BadRequestAsync(ex.Message);
+        }
     }
 
     [Function("UpdateInsuranceProvider")]
@@ -73,14 +83,22 @@ public class MasterDataFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
-        var body = await JsonSerializer.DeserializeAsync<CcmsInsuranceProvider>(req.Body);
+        var body = await JsonSerializer.DeserializeAsync<CcmsInsuranceProvider>(
+            req.Body, HttpRequestDataExtensions.DeserializeOpts);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
         body.Id                 = id;
         body.UpdatedByUserId    = claims!.UserId;
 
-        var result = await _svc.UpdateInsuranceProviderAsync(body);
-        return await req.OkJsonAsync(result);
+        try
+        {
+            var result = await _svc.UpdateInsuranceProviderAsync(body);
+            return await req.OkJsonAsync(result);
+        }
+        catch (KeyNotFoundException)
+        {
+            return await req.NotFoundAsync("Insurance provider not found.");
+        }
     }
 
     [Function("DeleteInsuranceProvider")]

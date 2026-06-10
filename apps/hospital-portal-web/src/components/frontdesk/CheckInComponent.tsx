@@ -321,6 +321,20 @@ export default function CheckInComponent() {
 
       console.log('Check-in successful:', checkInResponse.data);
 
+      const visitId = checkInResponse.data?.visit?.id ?? checkInResponse.data?.Visit?.id;
+      if (visitId) {
+        try {
+          await api.post('/visits/send-to', {
+            visitId,
+            station: 'optometrist',
+            reasonCode: 'INITIAL_REFRACTION',
+            reason: chiefComplaint.trim() || 'New OPD visit',
+          });
+        } catch (routeErr) {
+          console.warn('Auto route to optometry failed:', routeErr);
+        }
+      }
+
       // Show token display
       setGeneratedToken(checkInResponse.data);
       setShowTokenDisplay(true);

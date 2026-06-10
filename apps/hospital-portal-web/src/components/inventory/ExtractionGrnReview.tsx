@@ -21,11 +21,6 @@ import {
 } from '@/lib/api/inventory-service.api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const PURCHASE_CATEGORIES = [
-  'Pharmacy', 'OT & Surgery', 'Consumables', 'Optical',
-  'Laboratory', 'Stationery', 'Equipment', 'General Hospital',
-];
-const PAYMENT_MODES = ['Cash', 'Credit', 'UPI', 'NEFT', 'RTGS', 'Cheque'];
 const ITEM_TYPES   = ['Drug', 'Surgical', 'Consumable', 'Optical', 'Equipment', 'General'];
 const UNITS        = ['Nos', 'Strips', 'Bottles', 'Vials', 'Ampoules', 'Boxes', 'Kgs', 'Ltrs', 'Pairs', 'Sets'];
 const GST_RATES    = [0, 5, 12, 18, 28];
@@ -292,14 +287,8 @@ function QuickCreateItemModal({ prefillName, prefillHsn, prefillGst, onCreated, 
 export function ExtractionGrnReview({ preview, vendors, stores, onConfirm, onClose }: Props) {
   const today = new Date().toISOString().slice(0, 10);
 
-  const { options: purchaseCategoryOptions } = useMasterValues(
-    'inventory.purchase_category',
-    PURCHASE_CATEGORIES.map(c => ({ value: c, label: c }))
-  );
-  const { options: paymentModeOptions } = useMasterValues(
-    'billing.payment_mode',
-    PAYMENT_MODES.map(m => ({ value: m, label: m }))
-  );
+  const { options: purchaseCategoryOptions } = useMasterValues('inventory.purchase_category');
+  const { options: paymentModeOptions } = useMasterValues('billing.payment_mode');
 
   // ── Header init from extraction ────────────────────────────────────────────
   const [hdr, setHdr] = useState<HdrState>(() => {

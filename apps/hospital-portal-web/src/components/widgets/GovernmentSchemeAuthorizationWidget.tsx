@@ -10,7 +10,7 @@ import { Activity as Building, Activity as Flag, Activity as Award, Activity as 
 import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { useCounselingSession } from '@/hooks/use-counseling-sessions';
-import { usePatientTypeConfig } from '@/hooks/use-patient-type-configs';
+import { usePatientTypeMasterConfig } from '@/hooks/use-patient-type-master';
 import { toast } from 'sonner';
 
 // Icon mapping
@@ -36,9 +36,7 @@ export default function GovernmentSchemeAuthorizationWidget({
   });
 
   const patientType = session?.patientType || 'CGHS';
-  const { data: config, isLoading: configLoading } = usePatientTypeConfig(patientType, {
-    enabled: !!patientType,
-  });
+  const { config, loading: configLoading } = usePatientTypeMasterConfig(patientType);
 
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [documents, setDocuments] = useState<string[]>([]);

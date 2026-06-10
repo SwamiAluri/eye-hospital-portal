@@ -9,11 +9,13 @@ import { useEffect, useState } from 'react';
 export function ProtectedRoute({
   children,
   requiredPermission,
+  requiredAnyPermission,
   requiredRole,
   fallbackPath = '/dashboard/unauthorized'
 }: {
   children: React.ReactNode;
   requiredPermission?: string;
+  requiredAnyPermission?: string[];
   requiredRole?: string;
   fallbackPath?: string;
 }) {
@@ -55,12 +57,19 @@ export function ProtectedRoute({
       return;
     }
 
+    if (requiredAnyPermission?.length
+        && !requiredAnyPermission.some(p => checkPermission(p))) {
+      console.warn('🔒 ProtectedRoute: Missing any of permissions:', requiredAnyPermission.join(', '));
+      router.push(fallbackPath);
+      return;
+    }
+
     if (requiredRole && !checkRole(requiredRole)) {
       console.warn('🔒 ProtectedRoute: Missing role:', requiredRole);
       router.push(fallbackPath);
       return;
     }
-  }, [isHydrated, token, requiredPermission, requiredRole, router, fallbackPath]);
+  }, [isHydrated, token, requiredPermission, requiredAnyPermission, requiredRole, router, fallbackPath]);
 
   // Show session expired message
   if (showSessionExpired) {

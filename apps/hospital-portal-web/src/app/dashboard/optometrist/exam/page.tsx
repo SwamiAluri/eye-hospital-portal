@@ -1,49 +1,95 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import toast from 'react-hot-toast';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useHasPermission } from '@/hooks/use-permissions';
 import { useClinicalStore } from '@/lib/stores/clinical-store';
-import { patientApi, type Patient as PatientDetails } from '@/lib/api/patients.api';
-import { patientHistoryApi, type PatientHistory } from '@/lib/api/medical-records.api';
+import { type Patient as PatientDetails } from '@/lib/api/patients.api';
+import { type PatientHistory } from '@/lib/api/medical-records.api';
+import { optometryQueueApi } from '@/lib/api/optometry.api';
+import { optometryHistoryApi } from '@/lib/api/optometry-history.api';
+import { optometrySegmentApi } from '@/lib/api/optometry-segment.api';
+import { OPTOMETRY_SEGMENT_KEYS } from '@/lib/optometry/optometry-segment-keys';
+import { useAuthStore } from '@/lib/auth-store';
+import { useOptometryExam } from '@/hooks/use-optometry-exam';
+import { useExamAutosave } from '@/hooks/use-exam-autosave';
+import { buildExamDraftPayload } from '@/lib/optometry/build-exam-draft';
 import {
-  autoRefractionApi,
-  colorVisionApi,
-  contrastSensitivityApi,
-  keratometryApi,
-  pachymetryApi,
-  refractionApi,
-  retinoscopyApi,
-  tonometryApi,
-  visualAcuityApi,
-  visualFieldApi,
-} from '@/lib/api/examination.api';
-
-import VisualAcuityForm from '@/components/examination/VisualAcuityForm';
-import RefractionForm from '@/components/examination/RefractionForm';
-import AutoRefractionForm from '@/components/examination/AutoRefractionForm';
-import RetinoscopyForm from '@/components/examination/RetinoscopyForm';
-import KeratometryForm from '@/components/examination/KeratometryForm';
-import TonometryForm from '@/components/examination/TonometryForm';
-import PachymetryForm from '@/components/examination/PachymetryForm';
-import VisualFieldForm from '@/components/examination/VisualFieldForm';
-import ColorVisionForm from '@/components/examination/ColorVisionForm';
-import ContrastSensitivityForm from '@/components/examination/ContrastSensitivityForm';
-import VisualAcuityMegaTab from '@/components/examination/VisualAcuityMegaTab';
-import IOPMegaTab from '@/components/examination/IOPMegaTab';
-import RetinoscopyMegaTab from '@/components/examination/RetinoscopyMegaTab';
-import AnteriorSegmentTab from '@/components/examination/AnteriorSegmentTab';
-import PosteriorSegmentTab from '@/components/examination/PosteriorSegmentTab';
-import MedicationsTab from '@/components/examination/MedicationsTab';
-import ContactLensTab from '@/components/examination/ContactLensTab';
-import ReferralOrdersTab from '@/components/examination/ReferralOrdersTab';
-import DiagnosisTab from '@/components/examination/DiagnosisTab';
-import AdvicePatientEducationTab from '@/components/examination/AdvicePatientEducationTab';
+  buildIopBundle,
+  buildMedicalHistoryBundle,
+  buildVisualAcuityBundle,
+} from '@/lib/optometry/build-segment-bundles';
+import { persistSegmentBundle } from '@/lib/optometry/persist-segment-bundle';
+import {
+  EMPTY_SPECTACLE_DRAFT,
+  flushVisitSegments,
+  normalizeSpectacleDraft,
+  type IopClinicalDraftSlice,
+  type SpectacleDispensingDraft,
+  type VaClinicalDraftSlice,
+} from '@/lib/optometry/optometry-persistence';
+import { TabLastVisitLine } from '@/components/examination/exam-ui/TabLastVisitLine';
+import { ExamTabNav } from '@/components/examination/exam-ui/ExamTabNav';
+import { PatientDemographicsSheet } from '@/components/examination/PatientDemographicsSheet';
+import {
+  formatPatientDob,
+  resolvePatientMrn,
+  resolvePatientPhone,
+  resolvePatientPhotoUrl,
+} from '@/lib/patients/patient-display-utils';
+import type { MedicalHistorySnapshot } from '@/components/examination/medical-history/medical-history-handle';
+import {
+  applyExamDraft,
+  segmentKeysToDraftSkipKeys,
+  type ExamDraftHydrationKey,
+} from '@/lib/optometry/apply-exam-draft';
+import { fetchExamInitialContext } from '@/lib/optometry/fetch-exam-initial-context';
+import { hydrateVisitSegments } from '@/lib/optometry/hydrate-visit-segments';
+import { OPTOMETRY_TAB_ORDER, type OptometryExamTabId } from '@/lib/optometry/optometry-exam-types';
+import { PatientContextBar } from '@/components/examination/PatientContextBar';
+import type { PatientContextAllergy } from '@/components/examination/PatientContextBar';
+import { UnsavedMedicalHistoryDialog } from '@/components/examination/medical-history/UnsavedMedicalHistoryDialog';
 import { MedicalHistoryTabContent } from '@/components/examination/MedicalHistoryTabContent';
+import type { MedicalHistoryHandle } from '@/components/examination/medical-history/medical-history-handle';
+import type { DisplayAllergy } from '@/lib/medical-history/allergy-utils';
+import {
+  medicalHistorySnapshotFromPatient,
+  medicalHistorySnapshotHasClinicalData,
+  pickMedicalHistoryLoadSnapshot,
+} from '@/lib/medical-history/medical-history-snapshot';
+import LastVisitSummaryBar from '@/components/examination/LastVisitSummaryBar';
+import {
+  VisualAcuityMegaTab,
+  IOPMegaTab,
+  RetinoscopyMegaTab,
+  AnteriorSegmentTab,
+  PosteriorSegmentTab,
+  MedicationsTab,
+  ContactLensTab,
+  ReferralOrdersTab,
+  DiagnosisTab,
+  AdvicePatientEducationTab,
+} from '@/components/examination/optometry-exam-dynamic-tabs';
+import { readLocalDraft, persistExamDraft, clearExamDraft } from '@/lib/optometry/optometry-exam-draft';
+import { fetchOptometryPatientHistory } from '@/lib/optometry/optometry-prior-visit';
+import { historyQueryForExamVisit } from '@/lib/optometry/optometry-history-query';
+import type { OptometryVisitExamRecord } from '@/lib/optometry/optometry-history.types';
+import { anteriorTabHasAnyData } from '@/lib/optometry/anterior-segment-validation';
+import { posteriorTabHasAnyData } from '@/lib/optometry/posterior-segment-tab-utils';
+import {
+  buildAnteriorTabSegmentPayload,
+  buildPosteriorTabSegmentPayload,
+} from '@/lib/optometry/build-segment-bundles';
+import type { AnteriorSegmentExamData, PupilExamData } from '@/lib/optometry/anterior-segment-types';
+import type {
+  FundusExamData,
+  PeripheralRetinaExamData,
+  PosteriorSegmentExamData,
+  VitreousExamData,
+} from '@/lib/optometry/posterior-segment-types';
 
 import type {
   AutoRefractionData,
@@ -58,19 +104,26 @@ import type {
   VisualFieldData,
 } from '@/lib/stores/clinical-store';
 
-const TAB_LIST = [
-  { id: 'medical-history', label: 'Medical History' },
-  { id: 'visual-acuity', label: 'Visual Acuity' },
-  { id: 'iop', label: 'IOP' },
-  { id: 'retinoscopy', label: 'Retinoscopy' },
-  { id: 'anterior', label: 'Anterior Segment' },
-  { id: 'posterior', label: 'Posterior Segment' },
-  { id: 'medications', label: 'Medications' },
-  { id: 'optical-prescription', label: 'Optical Prescription' },
-  { id: 'referral', label: 'Referral & Orders' },
-  { id: 'diagnosis', label: 'Diagnosis' },
-  { id: 'advice', label: 'Advice & Patient Education' },
-];
+const TAB_SHORT_LABELS: Partial<Record<OptometryExamTabId, string>> = {
+  'medical-history': 'Med History',
+  'visual-acuity': 'VA',
+  iop: 'IOP',
+  retinoscopy: 'Retino',
+  anterior: 'Anterior',
+  posterior: 'Posterior',
+  medications: 'Meds',
+  'optical-prescription': 'Rx',
+  referral: 'Referral',
+  diagnosis: 'Dx',
+  advice: 'Advice',
+};
+
+const TAB_LIST = OPTOMETRY_TAB_ORDER.map((t) => ({
+  id: t.id,
+  label: t.label,
+  shortLabel: TAB_SHORT_LABELS[t.id] ?? t.label,
+  step: t.step,
+}));
 
 const getAgeFromDob = (dob: Date | string) => {
   const date = dob instanceof Date ? dob : new Date(dob);
@@ -83,13 +136,47 @@ function OptometristExamContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const patientId = searchParams.get('patientId') || '';
+  const visitId = searchParams.get('visitId') || '';
   const complaintParam = searchParams.get('complaint') || '';
+  const initialTab = searchParams.get('tab') || 'medical-history';
 
   const { currentPatient } = useClinicalStore();
   const canView = useHasPermission('CLINICAL:EXAMINATION:VIEW');
   const canEdit = useHasPermission('CLINICAL:EXAMINATION:EDIT');
 
-  const [activeTab, setActiveTab] = useState('medical-history');
+  const {
+    priorVisit,
+    priorLoading,
+    tabStatus,
+    markTabDirty,
+    markTabSaved,
+    isSaving,
+    lastSavedAt,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    saveExam,
+    reloadPriorVisit,
+    hydratePriorVisit,
+  } = useOptometryExam(patientId, visitId);
+
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const tabMap = useMemo(() => new Set(TAB_LIST.map((tab) => tab.id)), []);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && tabMap.has(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams, tabMap]);
+  const [spectacleDispensing, setSpectacleDispensing] =
+    useState<SpectacleDispensingDraft>(EMPTY_SPECTACLE_DRAFT);
+  const [optometryPatientHistory, setOptometryPatientHistory] = useState<
+    OptometryVisitExamRecord[]
+  >([]);
+  const [visitDateIso, setVisitDateIso] = useState<string | null>(null);
+  const [vaExtended, setVaExtended] = useState<unknown>(null);
+  const [iopExtended, setIopExtended] = useState<unknown>(null);
+  const { user } = useAuthStore();
   const [patientDetails, setPatientDetails] = useState<PatientDetails | null>(null);
   const [patientHistory, setPatientHistory] = useState<PatientHistory | null>(null);
   const [patientLoading, setPatientLoading] = useState(false);
@@ -111,12 +198,18 @@ function OptometristExamContent() {
   const [subjectiveRefraction, setSubjectiveRefraction] = useState<any>(null); // TODO: Add proper type
 
   // Anterior segment tab state
-  const [pupilExam, setPupilExam] = useState<any>(null); // TODO: Add proper type
-  const [anteriorSegment, setAnteriorSegment] = useState<any>(null); // TODO: Add proper type
+  const [pupilExam, setPupilExam] = useState<PupilExamData | null>(null);
+  const [anteriorSegment, setAnteriorSegment] = useState<AnteriorSegmentExamData | null>(null);
 
   // Posterior segment tab state
-  const [posteriorSegment, setPosteriorSegment] = useState<any>(null); // TODO: Add proper type
-  const [fundusExam, setFundusExam] = useState<any>(null); // TODO: Add proper type
+  const [posteriorSegment, setPosteriorSegment] = useState<PosteriorSegmentExamData | null>(null);
+  const [fundusExam, setFundusExam] = useState<FundusExamData | null>(null);
+  const [vitreousExam, setVitreousExam] = useState<VitreousExamData | null>(null);
+  const [peripheralRetinaExam, setPeripheralRetinaExam] = useState<PeripheralRetinaExamData | null>(
+    null,
+  );
+  const [anteriorSaving, setAnteriorSaving] = useState(false);
+  const [posteriorSaving, setPosteriorSaving] = useState(false);
 
   // Medications tab state
   const [currentMedications, setCurrentMedications] = useState<any>(null); // TODO: Add proper type
@@ -143,254 +236,971 @@ function OptometristExamContent() {
   const [advicePrecautions, setAdvicePrecautions] = useState<any>(null); // TODO: Add proper type
   const [adviceEducation, setAdviceEducation] = useState<any>(null); // TODO: Add proper type
 
-  const tabMap = useMemo(() => new Set(TAB_LIST.map((tab) => tab.id)), []);
+  const draftHydratedRef = useRef<Set<ExamDraftHydrationKey>>(new Set());
+  const [examContextReady, setExamContextReady] = useState(false);
+  const [examContextLoading, setExamContextLoading] = useState(false);
+  const medicalHistoryRef = useRef<MedicalHistoryHandle>(null);
+  const [medicalHistoryDirty, setMedicalHistoryDirty] = useState(false);
+  const [mhSaving, setMhSaving] = useState(false);
+  const [headerAllergies, setHeaderAllergies] = useState<PatientContextAllergy[]>([]);
+  const [headerNkda, setHeaderNkda] = useState(false);
+  const [unsavedMhDialogOpen, setUnsavedMhDialogOpen] = useState(false);
+  const pendingTabRef = useRef<string | null>(null);
+  const pendingBackRef = useRef(false);
+  const [mhDraftSnapshot, setMhDraftSnapshot] = useState<MedicalHistorySnapshot | null>(null);
+  /** Last MH snapshot from tab (survives tab switch / unmount). */
+  const [medicalHistorySnapshot, setMedicalHistorySnapshot] =
+    useState<MedicalHistorySnapshot | null>(null);
+  /** Visit segment snapshot (`medical_history_bundle`) for this visit. */
+  const [mhVisitSnapshot, setMhVisitSnapshot] = useState<MedicalHistorySnapshot | null>(null);
+  const medicalHistorySnapshotRef = useRef<MedicalHistorySnapshot | null>(null);
+  const mhReviewedAtRef = useRef<string | null>(null);
+  const mhPatientFallbackVisitRef = useRef<string | null>(null);
+  const examContextKeyRef = useRef<string | null>(null);
+  const mhHydratedKeyRef = useRef<string>('');
+  const [demographicsOpen, setDemographicsOpen] = useState(false);
+
+  const mhHydrationReady =
+    examContextReady && Boolean(patientDetails) && !examContextLoading;
+
+  const applyMedicalHistorySnapshot = useCallback((snap: MedicalHistorySnapshot | null) => {
+    medicalHistorySnapshotRef.current = snap;
+    setMedicalHistorySnapshot(snap);
+    if (snap?.medicalHistoryReviewedAt) {
+      mhReviewedAtRef.current = snap.medicalHistoryReviewedAt;
+    }
+  }, []);
+
+  const handleMhSnapshotChange = useCallback((snap: MedicalHistorySnapshot) => {
+    medicalHistorySnapshotRef.current = snap;
+    setMedicalHistorySnapshot(snap);
+  }, []);
+
+  const reloadOptometryPatientHistory = useCallback(async () => {
+    if (!patientId) return;
+    const visits = await fetchOptometryPatientHistory(
+      patientId,
+      {
+        ...historyQueryForExamVisit(visitId || undefined, 10, visitDateIso ?? undefined),
+      },
+    );
+    setOptometryPatientHistory(visits);
+  }, [patientId, visitId, visitDateIso]);
+
+  const refreshExamHistory = useCallback(async () => {
+    await Promise.all([reloadOptometryPatientHistory(), reloadPriorVisit()]);
+  }, [reloadOptometryPatientHistory, reloadPriorVisit]);
 
   useEffect(() => {
-    if (!patientId) return;
+    if (!patientId) {
+      draftHydratedRef.current = new Set();
+      setExamContextReady(true);
+      setExamContextLoading(false);
+      setPatientLoading(false);
+      return;
+    }
 
-    const loadTabData = async () => {
-      try {
-        switch (activeTab) {
-          case 'visual-acuity': {
-            // Load all data for Visual Acuity mega-tab
-            const [vaData, refData, autoRefData, keraData, colorData, contrastData] = await Promise.all([
-              visualAcuityApi.get(patientId),
-              refractionApi.get(patientId),
-              autoRefractionApi.get(patientId),
-              keratometryApi.get(patientId),
-              colorVisionApi.get(patientId),
-              contrastSensitivityApi.get(patientId),
-            ]);
-            setVisualAcuity(vaData);
-            setRefraction(refData);
-            setAutoRefraction(autoRefData);
-            setKeratometry(keraData);
-            setColorVision(colorData);
-            setContrastSensitivity(contrastData);
-            break;
-          }
-          case 'iop': {
-            // Load all data for IOP mega-tab
-            const [tonData, pachData, vfData] = await Promise.all([
-              tonometryApi.get(patientId),
-              pachymetryApi.get(patientId),
-              visualFieldApi.get(patientId),
-            ]);
-            setTonometry(tonData);
-            setPachymetry(pachData);
-            setVisualField(vfData);
-            break;
-          }
-          case 'retinoscopy': {
-            // For now, load retinoscopy data and initialize empty wet/dry/subjective
-            // TODO: Create separate APIs for wet/dry/subjective retinoscopy
-            const data = await retinoscopyApi.get(patientId);
-            setRetinoscopy(data);
-            // Initialize empty structures until backend is ready
-            setWetRetinoscopy({ drug: undefined, duration: undefined, timeAdministered: undefined, odReadings: [], osReadings: [] });
-            setDryRetinoscopy({ odReadings: [], osReadings: [] });
-            setSubjectiveRefraction({ readings: [] });
-            break;
-          }
-          case 'anterior': {
-            // TODO: Create separate APIs for pupil_exam and anterior_segment_exam
-            // Initialize empty structures until backend is ready
-            setPupilExam({
-              sizeLightOD: undefined,
-              sizeDarkOD: undefined,
-              shapeOD: undefined,
-              directReactionOD: undefined,
-              consensualReactionOD: undefined,
-              sizeLightOS: undefined,
-              sizeDarkOS: undefined,
-              shapeOS: undefined,
-              directReactionOS: undefined,
-              consensualReactionOS: undefined,
-              rapdPresent: false,
-              rapdEye: null,
-            });
-            setAnteriorSegment({
-              lidsOD: undefined,
-              conjunctivaOD: undefined,
-              scleraOD: undefined,
-              lacrimalOD: undefined,
-              lidsOS: undefined,
-              conjunctivaOS: undefined,
-              scleraOS: undefined,
-              lacrimalOS: undefined,
-              corneaOD: undefined,
-              acOD: undefined,
-              acDepthOD: undefined,
-              corneaOS: undefined,
-              acOS: undefined,
-              acDepthOS: undefined,
-              irisOD: undefined,
-              lensOD: undefined,
-              lensOpacityGradeOD: undefined,
-              irisOS: undefined,
-              lensOS: undefined,
-              lensOpacityGradeOS: undefined,
-            });
-            break;
-          }
-          case 'posterior': {
-            // TODO: Create separate APIs for posterior_segment_exam and fundus_exam
-            // Initialize empty structures until backend is ready
-            setPosteriorSegment({
-              mediaClarityOD: undefined,
-              isDilatedOD: false,
-              dilationDrug: undefined,
-              dilationTime: undefined,
-              overallFindingOD: undefined,
-              mediaClarityOS: undefined,
-              isDilatedOS: false,
-              overallFindingOS: undefined,
-            });
-            setFundusExam({
-              cupDiscRatioOD: undefined,
-              discColorOD: undefined,
-              discMarginsOD: undefined,
-              discNvOD: undefined,
-              discHemorrhageOD: undefined,
-              peripapillaryAtrophyOD: undefined,
-              discNotesOD: undefined,
-              cupDiscRatioOS: undefined,
-              discColorOS: undefined,
-              discMarginsOS: undefined,
-              discNvOS: undefined,
-              discHemorrhageOS: undefined,
-              peripapillaryAtrophyOS: undefined,
-              discNotesOS: undefined,
-              fovealReflexOD: undefined,
-              macularEdemaOD: undefined,
-              macularHemorrhageOD: undefined,
-              macularExudatesOD: undefined,
-              drusenOD: undefined,
-              macularScarOD: undefined,
-              maculaNotesOD: undefined,
-              fovealReflexOS: undefined,
-              macularEdemaOS: undefined,
-              macularHemorrhageOS: undefined,
-              macularExudatesOS: undefined,
-              drusenOS: undefined,
-              macularScarOS: undefined,
-              maculaNotesOS: undefined,
-              retinaConfigOD: undefined,
-              retinalTearsOD: undefined,
-              retinalHemorrhageOD: undefined,
-              retinalExudatesOD: undefined,
-              diabeticRetinopathyOD: undefined,
-              peripheralDegenerationOD: undefined,
-              retinaNotesOD: undefined,
-              retinaConfigOS: undefined,
-              retinalTearsOS: undefined,
-              retinalHemorrhageOS: undefined,
-              retinalExudatesOS: undefined,
-              diabeticRetinopathyOS: undefined,
-              peripheralDegenerationOS: undefined,
-              retinaNotesOS: undefined,
-              avRatioOD: undefined,
-              arterialChangesOD: [],
-              venousChangesOD: [],
-              avCrossingOD: undefined,
-              vesselNvOD: undefined,
-              vesselNotesOD: undefined,
-              avRatioOS: undefined,
-              arterialChangesOS: [],
-              venousChangesOS: [],
-              avCrossingOS: undefined,
-              vesselNvOS: undefined,
-              vesselNotesOS: undefined,
-            });
-            break;
-          }
-          case 'medications': {
-            // TODO: Create separate APIs for current_medications and prescription_items
-            // Initialize empty structures until backend is ready
-            // Current medications should come from patient's medical history
-            setCurrentMedications([]); // Will be populated from medical history
-            setPrescriptionItems([]); // Will store new prescriptions for this visit
-            break;
-          }
-          case 'optical-prescription': {
-            // TODO: Create separate APIs for contact lens and spectacle dispensing data
-            // Initialize empty structures until backend is ready
-            setClAssessment({ isCurrentWearer: false, examReasons: [] });
-            setClPrescription({});
-            setClFitting({});
-            setClCornealHealth({});
-            setClInstructions({ precautions: [], trialDispensed: false });
-            break;
-          }
-          case 'referral': {
-            // TODO: Create separate APIs for referrals and orders
-            // Initialize empty structures until backend is ready
-            setDoctorReferrals([]);
-            setImagingOrders([]);
-            setReceptionReferrals([]);
-            break;
-          }
-          case 'diagnosis': {
-            // TODO: Create separate API for diagnoses
-            // Initialize empty structures until backend is ready
-            setDiagnoses([]);
-            break;
-          }
-          case 'advice': {
-            // TODO: Create separate APIs for advice and patient education
-            // Initialize empty structures until backend is ready
-            setAdviceInstructions([]);
-            setAdviceFollowUp({ nextVisitDate: '', followUpReason: '', testsNeeded: [], reminderPreferences: [] });
-            setAdvicePrecautions({ conditionSpecific: [], customPrecautions: '', redFlags: [] });
-            setAdviceEducation({ selectedMaterials: [], deliveryMethods: [], language: 'English' });
-            break;
-          }
-          default:
-            break;
+    let cancelled = false;
+
+    const examDraftSetters = {
+      onMedicalHistorySnapshot: (mhFromDraft: MedicalHistorySnapshot | null) => {
+        if (!mhFromDraft) return;
+        setMhDraftSnapshot(mhFromDraft);
+        const prevLifted = medicalHistorySnapshotRef.current;
+        if (!prevLifted || !medicalHistorySnapshotHasClinicalData(prevLifted)) {
+          applyMedicalHistorySnapshot(mhFromDraft);
         }
-      } catch (error: any) {
-        if (error?.response?.status !== 404) {
-          toast.error('Failed to load examination data');
-        }
-      }
+      },
+      setVisualAcuity,
+      setRefraction,
+      setAutoRefraction,
+      setKeratometry,
+      setColorVision,
+      setContrastSensitivity,
+      setTonometry,
+      setPachymetry,
+      setVisualField,
+      setVaExtended,
+      setIopExtended,
+      setRetinoscopy,
+      setWetRetinoscopy,
+      setDryRetinoscopy,
+      setSubjectiveRefraction,
+      setPupilExam,
+      setAnteriorSegment,
+      setPosteriorSegment,
+      setFundusExam,
+      setVitreousExam,
+      setPeripheralRetinaExam,
+      setCurrentMedications,
+      setPrescriptionItems,
+      setClAssessment,
+      setClPrescription,
+      setClFitting,
+      setClCornealHealth,
+      setClInstructions,
+      setSpectacleDispensing,
+      setDoctorReferrals,
+      setImagingOrders,
+      setReceptionReferrals,
+      setDiagnoses,
+      setAdviceInstructions,
+      setAdviceFollowUp,
+      setAdvicePrecautions,
+      setAdviceEducation,
     };
 
-    loadTabData();
-  }, [activeTab, patientId]);
+    const contextKey = visitId ? `${patientId}:${visitId}` : patientId;
+    if (examContextKeyRef.current !== contextKey) {
+      examContextKeyRef.current = contextKey;
+      applyMedicalHistorySnapshot(null);
+      setMhDraftSnapshot(null);
+      setMhVisitSnapshot(null);
+      mhReviewedAtRef.current = null;
+      mhPatientFallbackVisitRef.current = null;
+      mhHydratedKeyRef.current = '';
+      draftHydratedRef.current = new Set();
+      setVaExtended(null);
+      setIopExtended(null);
+      setVisualAcuity(null);
+      setRefraction(null);
+      setAutoRefraction(null);
+      setKeratometry(null);
+      setTonometry(null);
+      setPachymetry(null);
+      setVisualField(null);
+      setColorVision(null);
+      setContrastSensitivity(null);
+      setExamContextReady(false);
+    }
 
-  useEffect(() => {
-    if (!patientId) return;
-
-    const loadPatientContext = async () => {
+    const loadExamContext = async () => {
+      setExamContextLoading(true);
       setPatientLoading(true);
       try {
-        const [patientRes, historyRes] = await Promise.all([
-          patientApi.getById(patientId),
-          patientHistoryApi.get(patientId).catch(() => null),
-        ]);
-        console.log('Patient API Response:', { patientRes, hasData: !!patientRes.data });
-        setPatientDetails(patientRes.data ?? null);
-        setPatientHistory(historyRes ?? null);
-        console.log('Patient Details Set:', { patientId, patientDetails: patientRes.data });
+        const ctx = await fetchExamInitialContext(patientId, visitId);
+        if (cancelled) return;
+
+        setPatientDetails(ctx.patient);
+        setPatientHistory(ctx.patientHistory);
+        setOptometryPatientHistory(ctx.optometryHistory);
+        setVisitDateIso(ctx.visitDateIso);
+        hydratePriorVisit(ctx.priorVisit);
+
+        const segmentResult = hydrateVisitSegments(ctx.segments, examDraftSetters, {
+          patientId,
+          examinerId: user?.id ?? '',
+        });
+        setMhVisitSnapshot(segmentResult.mhVisitSnapshot);
+        if (segmentResult.mhVisitSnapshot) {
+          applyMedicalHistorySnapshot(segmentResult.mhVisitSnapshot);
+          mhPatientFallbackVisitRef.current = visitId || null;
+        }
+
+        const draft =
+          ctx.draft && (!visitId || ctx.draft.visitId === visitId)
+            ? ctx.draft
+            : visitId
+              ? readLocalDraft(visitId)
+              : null;
+
+        let hydrated = new Set<ExamDraftHydrationKey>();
+        if (draft && (!visitId || draft.visitId === visitId)) {
+          const skipKeys = segmentKeysToDraftSkipKeys(segmentResult.loadedSegmentKeys);
+          const draftResult = applyExamDraft(draft, examDraftSetters, {
+            skipKeys,
+            skipMedicalHistory: segmentResult.skipDraftMedicalHistory,
+          });
+          hydrated = draftResult.hydrated;
+        }
+
+        draftHydratedRef.current = hydrated;
+
+        const hasOpticalSegment = segmentResult.loadedSegmentKeys.has(
+          OPTOMETRY_SEGMENT_KEYS.opticalBundle,
+        );
+        if (!hydrated.has('spectacleDispensing') && !hasOpticalSegment) {
+          setSpectacleDispensing(EMPTY_SPECTACLE_DRAFT);
+        } else if (hydrated.has('spectacleDispensing')) {
+          setSpectacleDispensing((s) => normalizeSpectacleDraft(s));
+        }
       } catch (error) {
-        console.error('Failed to load patient context', error);
+        console.error('Failed to load exam context', error);
+        if (!cancelled) {
+          toast.error('Failed to load examination data');
+        }
       } finally {
-        setPatientLoading(false);
+        if (!cancelled) {
+          setExamContextReady(true);
+          setExamContextLoading(false);
+          setPatientLoading(false);
+        }
       }
     };
 
-    loadPatientContext();
-  }, [patientId]);
+    void loadExamContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [patientId, visitId, user?.id, hydratePriorVisit]);
+
+  const resolveMedicalHistorySnapshot = useCallback((): MedicalHistorySnapshot | undefined => {
+    const draftMh = (() => {
+      if (!visitId) return null;
+      const local = readLocalDraft(visitId);
+      if (local?.visitId !== visitId || !local.medicalHistorySnapshot) return null;
+      return local.medicalHistorySnapshot as MedicalHistorySnapshot;
+    })();
+
+    const snap =
+      medicalHistoryRef.current?.getSnapshot() ??
+      medicalHistorySnapshotRef.current ??
+      medicalHistorySnapshot ??
+      mhDraftSnapshot ??
+      mhVisitSnapshot ??
+      draftMh ??
+      (patientDetails ? medicalHistorySnapshotFromPatient(patientDetails) : null);
+    if (!snap) return undefined;
+    return {
+      ...snap,
+      medicalHistoryReviewedAt:
+        mhReviewedAtRef.current ?? snap.medicalHistoryReviewedAt,
+    };
+  }, [visitId, medicalHistorySnapshot, mhDraftSnapshot, mhVisitSnapshot, patientDetails]);
+
+  const saveOptometrySegment = async (
+    segmentKey: string,
+    data: unknown,
+    label: string,
+    setter: (value: unknown) => void,
+    tabId?: OptometryExamTabId,
+    options?: { toast?: boolean },
+  ): Promise<boolean> => {
+    const showToast = options?.toast !== false;
+    if (!canEdit) {
+      if (showToast) toast.error('You do not have permission to save examinations');
+      return false;
+    }
+    if (!visitId || !patientId) {
+      if (showToast) toast.error('Visit ID is required to save segment data');
+      return false;
+    }
+    try {
+      await optometrySegmentApi.upsertSegment(visitId, segmentKey, {
+        patientId,
+        data,
+      });
+      setter(data);
+      if (tabId) markTabSaved(tabId);
+      if (showToast) toast.success(`${label} saved`);
+      return true;
+    } catch {
+      if (showToast) toast.error(`Failed to save ${label}`);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    if (!patientId || !visitId || !mhHydrationReady || !patientDetails) return;
+
+    const localDraft = readLocalDraft(visitId);
+    const draftFromLocal =
+      localDraft?.visitId === visitId && localDraft.medicalHistorySnapshot
+        ? (localDraft.medicalHistorySnapshot as MedicalHistorySnapshot)
+        : null;
+
+    const snap = pickMedicalHistoryLoadSnapshot({
+      draft: draftFromLocal ?? mhDraftSnapshot,
+      visitSegment: mhVisitSnapshot,
+      patient: patientDetails,
+    });
+
+    const fp = snap ? JSON.stringify(snap) : 'empty';
+    const loadKey = `${patientId}:${visitId}:${fp}`;
+    if (mhHydratedKeyRef.current === loadKey) return;
+
+    const segmentHasClinical =
+      mhVisitSnapshot != null && medicalHistorySnapshotHasClinicalData(mhVisitSnapshot);
+    if (
+      draftFromLocal &&
+      medicalHistorySnapshotHasClinicalData(draftFromLocal) &&
+      !segmentHasClinical
+    ) {
+      setMhDraftSnapshot(draftFromLocal);
+    } else if (segmentHasClinical) {
+      setMhDraftSnapshot(null);
+    }
+
+    const tryHydrate = (): boolean => {
+      const mh = medicalHistoryRef.current;
+      if (!mh?.isHydrated()) return false;
+      if (snap) {
+        const merged: MedicalHistorySnapshot = {
+          ...snap,
+          allergies:
+            Array.isArray(snap.allergies) && snap.allergies.length > 0
+              ? snap.allergies
+              : mh.getDisplayAllergies(),
+        };
+        mh.hydrateFromSnapshot(merged);
+        applyMedicalHistorySnapshot(merged);
+      }
+      mhHydratedKeyRef.current = loadKey;
+      return true;
+    };
+
+    if (tryHydrate()) return;
+
+    const interval = window.setInterval(() => {
+      if (tryHydrate()) window.clearInterval(interval);
+    }, 50);
+    const timeout = window.setTimeout(() => window.clearInterval(interval), 8000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [
+    patientId,
+    visitId,
+    mhHydrationReady,
+    patientDetails,
+    mhDraftSnapshot,
+    mhVisitSnapshot,
+    applyMedicalHistorySnapshot,
+  ]);
+
+  const saveOpticalBundle = async (overrides?: {
+    assessment?: unknown;
+    prescription?: unknown;
+    fitting?: unknown;
+    cornealHealth?: unknown;
+    instructions?: unknown;
+    spectacle?: unknown;
+  }) => {
+    const bundle = {
+      assessment: overrides?.assessment ?? clAssessment,
+      prescription: overrides?.prescription ?? clPrescription,
+      fitting: overrides?.fitting ?? clFitting,
+      cornealHealth: overrides?.cornealHealth ?? clCornealHealth,
+      instructions: overrides?.instructions ?? clInstructions,
+      spectacleDispensing: overrides?.spectacle ?? spectacleDispensing,
+    };
+    if (overrides?.assessment !== undefined) setClAssessment(overrides.assessment);
+    if (overrides?.prescription !== undefined) setClPrescription(overrides.prescription);
+    if (overrides?.fitting !== undefined) setClFitting(overrides.fitting);
+    if (overrides?.cornealHealth !== undefined) setClCornealHealth(overrides.cornealHealth);
+    if (overrides?.instructions !== undefined) setClInstructions(overrides.instructions);
+    if (overrides?.spectacle !== undefined) setSpectacleDispensing(overrides.spectacle);
+    await saveOptometrySegment(
+      OPTOMETRY_SEGMENT_KEYS.opticalBundle,
+      bundle,
+      'Optical prescription',
+      () => {},
+      'optical-prescription',
+    );
+  };
+
+  const buildDraftPayload = useCallback(
+    () =>
+      buildExamDraftPayload(visitId, patientId, complaintParam || undefined, {
+        medicalHistorySnapshot: resolveMedicalHistorySnapshot(),
+        visualAcuity,
+        refraction,
+        autoRefraction,
+        keratometry,
+        colorVision,
+        contrastSensitivity,
+        tonometry,
+        pachymetry,
+        visualField,
+        vaExtended,
+        iopExtended,
+        wetRetinoscopy,
+        dryRetinoscopy,
+        subjectiveRefraction,
+        retinoscopy,
+        pupilExam,
+        anteriorSegment,
+        posteriorSegment,
+        fundusExam,
+        vitreousExam,
+        peripheralRetinaExam,
+        currentMedications,
+        prescriptionItems,
+        clAssessment,
+        clPrescription,
+        clFitting,
+        clCornealHealth,
+        clInstructions,
+        spectacleDispensing,
+        doctorReferrals,
+        imagingOrders,
+        receptionReferrals,
+        diagnoses,
+        adviceInstructions,
+        adviceFollowUp,
+        advicePrecautions,
+        adviceEducation,
+      }),
+    [
+      visitId,
+      patientId,
+      complaintParam,
+      visualAcuity,
+      refraction,
+      autoRefraction,
+      keratometry,
+      colorVision,
+      contrastSensitivity,
+      tonometry,
+      pachymetry,
+      visualField,
+      vaExtended,
+      iopExtended,
+      wetRetinoscopy,
+      dryRetinoscopy,
+      subjectiveRefraction,
+      retinoscopy,
+      pupilExam,
+      anteriorSegment,
+      posteriorSegment,
+      fundusExam,
+      vitreousExam,
+      peripheralRetinaExam,
+      currentMedications,
+      prescriptionItems,
+      clAssessment,
+      clPrescription,
+      clFitting,
+      clCornealHealth,
+      clInstructions,
+      spectacleDispensing,
+      doctorReferrals,
+      imagingOrders,
+      receptionReferrals,
+      diagnoses,
+      adviceInstructions,
+      adviceFollowUp,
+      advicePrecautions,
+      adviceEducation,
+      resolveMedicalHistorySnapshot,
+    ],
+  );
+
+  useExamAutosave(
+    Boolean(patientId && visitId && canEdit),
+    patientId,
+    visitId,
+    user?.id,
+    hasUnsavedChanges,
+    buildDraftPayload,
+  );
+
+  const savedSectionCount = useMemo(
+    () => Object.values(tabStatus).filter((s) => s === 'saved').length,
+    [tabStatus],
+  );
+
+  const persistMedicalHistoryBundle = useCallback(
+    async (snap?: MedicalHistorySnapshot) => {
+      if (!visitId || !patientId || !canEdit) return false;
+      const snapshot = snap ?? resolveMedicalHistorySnapshot();
+      if (!snapshot || !medicalHistorySnapshotHasClinicalData(snapshot)) return true;
+      try {
+        await persistSegmentBundle(
+          visitId,
+          patientId,
+          OPTOMETRY_SEGMENT_KEYS.medicalHistoryBundle,
+          buildMedicalHistoryBundle(snapshot),
+        );
+        setMhVisitSnapshot(snapshot);
+        applyMedicalHistorySnapshot(snapshot);
+        return true;
+      } catch (e) {
+        console.error(e);
+        toast.error('Failed to save medical history to visit');
+        return false;
+      }
+    },
+    [visitId, patientId, canEdit, resolveMedicalHistorySnapshot, applyMedicalHistorySnapshot],
+  );
+
+  const handlePersistMedicalHistoryBundle = useCallback(
+    async (snap: MedicalHistorySnapshot) => {
+      const ok = await persistMedicalHistoryBundle(snap);
+      if (ok) {
+        await refreshExamHistory();
+      }
+      return ok;
+    },
+    [persistMedicalHistoryBundle, refreshExamHistory],
+  );
+
+  const handleVaExtendedChange = useCallback((data: unknown) => {
+    setVaExtended((prev) => {
+      const prevJson = prev != null ? JSON.stringify(prev) : '';
+      const nextJson = JSON.stringify(data);
+      if (prevJson === nextJson) return prev;
+      return data;
+    });
+  }, []);
+
+  const handleVaDirtyChange = useCallback(
+    (dirty: boolean) => {
+      if (dirty) markTabDirty('visual-acuity');
+    },
+    [markTabDirty],
+  );
+
+  const handleMhDirtyChange = useCallback(
+    (dirty: boolean) => {
+      setMedicalHistoryDirty(dirty);
+      if (dirty) markTabDirty('medical-history');
+      else markTabSaved('medical-history');
+    },
+    [markTabDirty, markTabSaved],
+  );
+
+  const handleIopExtendedChange = useCallback(
+    (data: unknown) => {
+      let changed = false;
+      setIopExtended((prev) => {
+        const prevJson = prev != null ? JSON.stringify(prev) : '';
+        const nextJson = JSON.stringify(data);
+        if (prevJson === nextJson) return prev;
+        changed = true;
+        return data;
+      });
+      if (changed) markTabDirty('iop');
+    },
+    [markTabDirty],
+  );
+
+  const handleVaSectionSaved = useCallback(() => {
+    markTabSaved('visual-acuity');
+    void refreshExamHistory();
+  }, [markTabSaved, refreshExamHistory]);
+
+  const handleIopSectionSaved = useCallback(() => {
+    markTabSaved('iop');
+    void refreshExamHistory();
+  }, [markTabSaved, refreshExamHistory]);
+
+  const handleRetinoscopyDirtyChange = useCallback(
+    (dirty: boolean) => {
+      if (dirty) markTabDirty('retinoscopy');
+    },
+    [markTabDirty],
+  );
+
+  const handleRetinoscopyTabRecordState = useCallback(
+    (sectionRecorded: Partial<Record<'wet' | 'dry' | 'subjective', boolean>>) => {
+      const allRecorded =
+        sectionRecorded.wet === true &&
+        sectionRecorded.dry === true &&
+        sectionRecorded.subjective === true;
+      if (allRecorded) {
+        markTabSaved('retinoscopy');
+        void refreshExamHistory();
+      } else if (
+        sectionRecorded.wet ||
+        sectionRecorded.dry ||
+        sectionRecorded.subjective
+      ) {
+        markTabDirty('retinoscopy');
+      }
+    },
+    [markTabSaved, markTabDirty, refreshExamHistory],
+  );
+
+  const handleSyncVaClinicalDraft = useCallback(
+    (slice: VaClinicalDraftSlice) => {
+      setVisualAcuity(slice.visualAcuity);
+      setRefraction(slice.refraction);
+      setKeratometry(slice.keratometry);
+      setColorVision(slice.colorVision);
+      setContrastSensitivity(slice.contrastSensitivity);
+      markTabDirty('visual-acuity');
+    },
+    [markTabDirty],
+  );
+
+  const handleSyncIopClinicalDraft = useCallback(
+    (slice: IopClinicalDraftSlice, extended: unknown) => {
+      setTonometry(slice.tonometry);
+      setPachymetry(slice.pachymetry);
+      setVisualField(slice.visualField);
+      setIopExtended(extended);
+      markTabDirty('iop');
+    },
+    [markTabDirty],
+  );
+
+  const prefillSpectacleFromRefraction = useCallback(() => {
+    const ext = vaExtended as {
+      newPrescription?: { OD?: { sphere?: string }; OS?: { sphere?: string } };
+      refraction?: { OD?: { sphere?: string }; OS?: { sphere?: string } };
+    } | null;
+    const fmt = (n: number | undefined) =>
+      n === undefined || Number.isNaN(n) ? '' : n >= 0 ? `+${n.toFixed(2)}` : n.toFixed(2);
+
+    const od =
+      ext?.newPrescription?.OD ??
+      (ext?.refraction?.OD
+        ? {
+            sphere: ext.refraction.OD.sphere,
+            cylinder: (ext.refraction.OD as { cylinder?: string }).cylinder,
+            axis: (ext.refraction.OD as { axis?: string }).axis,
+          }
+        : null);
+    const os =
+      ext?.newPrescription?.OS ??
+      (ext?.refraction?.OS
+        ? {
+            sphere: ext.refraction.OS.sphere,
+            cylinder: (ext.refraction.OS as { cylinder?: string }).cylinder,
+            axis: (ext.refraction.OS as { axis?: string }).axis,
+          }
+        : null);
+
+    if (refraction?.finalRx) {
+      setSpectacleDispensing((prev) => ({
+        ...prev,
+        od: {
+          sphere: fmt(refraction.finalRx.OD.sphere),
+          cylinder: refraction.finalRx.OD.cylinder != null ? fmt(refraction.finalRx.OD.cylinder) : '',
+          axis: refraction.finalRx.OD.axis?.toString() ?? '',
+          add: refraction.nearRx?.OD?.add != null ? fmt(refraction.nearRx.OD.add) : '',
+        },
+        os: {
+          sphere: fmt(refraction.finalRx.OS.sphere),
+          cylinder: refraction.finalRx.OS.cylinder != null ? fmt(refraction.finalRx.OS.cylinder) : '',
+          axis: refraction.finalRx.OS.axis?.toString() ?? '',
+          add: refraction.nearRx?.OS?.add != null ? fmt(refraction.nearRx.OS.add) : '',
+        },
+      }));
+      markTabDirty('optical-prescription');
+      toast.success('Spectacle Rx prefilled from refraction');
+      return;
+    }
+
+    if (od?.sphere || os?.sphere) {
+      setSpectacleDispensing((prev) => ({
+        ...prev,
+        od: {
+          sphere: od.sphere ?? '',
+          cylinder: (od as { cylinder?: string }).cylinder ?? '',
+          axis: (od as { axis?: string }).axis ?? '',
+          add: prev.od?.add ?? '',
+        },
+        os: {
+          sphere: os?.sphere ?? '',
+          cylinder: (os as { cylinder?: string })?.cylinder ?? '',
+          axis: (os as { axis?: string })?.axis ?? '',
+          add: prev.os?.add ?? '',
+        },
+      }));
+      markTabDirty('optical-prescription');
+      toast.success('Spectacle Rx prefilled from VA tab');
+    } else {
+      toast.error('Record refraction in Visual Acuity tab first');
+    }
+  }, [refraction, vaExtended, markTabDirty]);
+
+  const handleCopyPreviousDiagnoses = useCallback(() => {
+    const prior = priorVisit?.raw as { diagnoses?: Array<Record<string, unknown>> } | undefined;
+    const list = prior?.diagnoses;
+    if (!list?.length) {
+      toast.error('No prior diagnoses on last visit');
+      return;
+    }
+    const mapped = list.map((d, i) => ({
+      id: `prior-${i}-${Date.now()}`,
+      icd10Code: String(d.icd10Code ?? d.code ?? ''),
+      description: String(d.description ?? ''),
+      laterality: String(d.laterality ?? 'Both Eyes (Bilateral)'),
+      severity: String(d.severity ?? 'Not Applicable'),
+      status: 'Previous',
+      isPrimary: i === 0,
+      clinicalNotes: d.clinicalNotes ? String(d.clinicalNotes) : undefined,
+    }));
+    setDiagnoses(mapped);
+    markTabDirty('diagnosis');
+    toast.success(`Loaded ${mapped.length} diagnosis(es) from prior visit`);
+  }, [priorVisit, markTabDirty]);
+
+  const saveAdviceBundle = async (overrides?: {
+    instructions?: unknown;
+    followUp?: unknown;
+    precautions?: unknown;
+    education?: unknown;
+  }) => {
+    const bundle = {
+      instructions: overrides?.instructions ?? adviceInstructions,
+      followUp: overrides?.followUp ?? adviceFollowUp,
+      precautions: overrides?.precautions ?? advicePrecautions,
+      education: overrides?.education ?? adviceEducation,
+    };
+    if (overrides?.instructions !== undefined) setAdviceInstructions(overrides.instructions);
+    if (overrides?.followUp !== undefined) setAdviceFollowUp(overrides.followUp);
+    if (overrides?.precautions !== undefined) setAdvicePrecautions(overrides.precautions);
+    if (overrides?.education !== undefined) setAdviceEducation(overrides.education);
+    await saveOptometrySegment(
+      OPTOMETRY_SEGMENT_KEYS.adviceBundle,
+      bundle,
+      'Advice & patient education',
+      () => {},
+      'advice',
+    );
+  };
+
+  const applyTabChange = useCallback(
+    (tabId: string) => {
+      if (!tabMap.has(tabId)) return;
+      setActiveTab(tabId);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('tab', tabId);
+      if (patientId) params.set('patientId', patientId);
+      if (visitId) params.set('visitId', visitId);
+      if (complaintParam) params.set('complaint', complaintParam);
+      router.replace(`/dashboard/optometrist/exam?${params.toString()}`, { scroll: false });
+    },
+    [tabMap, searchParams, patientId, visitId, complaintParam, router],
+  );
+
+  const isMedicalHistoryBlockingNavigation = useCallback(() => {
+    if (activeTab !== 'medical-history') return false;
+    const mh = medicalHistoryRef.current;
+    if (!mh?.isHydrated()) return false;
+    return mh.isDirty();
+  }, [activeTab]);
 
   const handleTabChange = (tabId: string) => {
     if (!tabMap.has(tabId)) return;
-    setActiveTab(tabId);
-    // Don't update URL to prevent tab persistence across page loads
+    if (tabId === activeTab) return;
+    if (isMedicalHistoryBlockingNavigation()) {
+      pendingTabRef.current = tabId;
+      pendingBackRef.current = false;
+      setUnsavedMhDialogOpen(true);
+      return;
+    }
+    applyTabChange(tabId);
+  };
+
+  const handleBackFromExam = () => {
+    if (isMedicalHistoryBlockingNavigation()) {
+      pendingTabRef.current = null;
+      pendingBackRef.current = true;
+      setUnsavedMhDialogOpen(true);
+      return;
+    }
+    router.push('/dashboard/optometrist');
+  };
+
+  const handleMhSaveAndContinue = async () => {
+    setMhSaving(true);
+    try {
+      const updated = await medicalHistoryRef.current?.save();
+      if (updated) {
+        setPatientDetails(updated);
+        setMedicalHistoryDirty(false);
+        markTabSaved('medical-history');
+        medicalHistoryRef.current?.acknowledgePersisted();
+      }
+      setUnsavedMhDialogOpen(false);
+      if (pendingBackRef.current) {
+        pendingBackRef.current = false;
+        router.push('/dashboard/optometrist');
+      } else if (pendingTabRef.current) {
+        applyTabChange(pendingTabRef.current);
+        pendingTabRef.current = null;
+      }
+    } finally {
+      setMhSaving(false);
+    }
+  };
+
+  const handleMhDiscardAndContinue = () => {
+    medicalHistoryRef.current?.discard();
+    const snap = medicalHistoryRef.current?.getSnapshot();
+    if (snap) applyMedicalHistorySnapshot(snap);
+    setMedicalHistoryDirty(false);
+    setUnsavedMhDialogOpen(false);
+    if (pendingBackRef.current) {
+      pendingBackRef.current = false;
+      router.push('/dashboard/optometrist');
+    } else if (pendingTabRef.current) {
+      applyTabChange(pendingTabRef.current);
+      pendingTabRef.current = null;
+    }
+  };
+
+  const handleMhStay = () => {
+    setUnsavedMhDialogOpen(false);
+    pendingTabRef.current = null;
+    pendingBackRef.current = false;
+  };
+
+  useEffect(() => {
+    const mhDirty =
+      activeTab === 'medical-history' &&
+      medicalHistoryRef.current?.isHydrated() &&
+      medicalHistoryRef.current?.isDirty();
+    if (!medicalHistoryDirty && !mhDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [medicalHistoryDirty, activeTab]);
+
+  useEffect(() => {
+    if (!canEdit || activeTab !== 'medical-history') return;
+    const timer = window.setInterval(() => {
+      const mh = medicalHistoryRef.current;
+      if (!mh?.isHydrated() || !mh.isDirty()) return;
+      void mh.save().then(async (updated) => {
+        if (updated) {
+          setPatientDetails(updated);
+          setMedicalHistoryDirty(false);
+          markTabSaved('medical-history');
+          medicalHistoryRef.current?.acknowledgePersisted();
+          if (patientId && visitId && user?.id) {
+            try {
+              const payload = buildDraftPayload();
+              payload.visitId = visitId;
+              payload.patientId = patientId;
+              await persistExamDraft(patientId, user.id, payload);
+            } catch {
+              /* draft sync best-effort */
+            }
+          }
+        }
+      });
+    }, 45_000);
+    return () => window.clearInterval(timer);
+  }, [medicalHistoryDirty, canEdit, activeTab, markTabSaved, buildDraftPayload, patientId, visitId, user?.id]);
+
+  const handleAllergiesUpdated = useCallback((allergies: DisplayAllergy[], nkda: boolean) => {
+    setHeaderNkda(nkda);
+    setHeaderAllergies(
+      nkda
+        ? []
+        : allergies.map((a) => ({ name: a.allergenName, severity: a.severity })),
+    );
+  }, []);
+
+  const handleSaveExamination = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to save examinations');
+      return;
+    }
+    if (!patientId || !visitId) {
+      toast.error('Patient and visit are required');
+      return;
+    }
+    try {
+      const mhSnap = resolveMedicalHistorySnapshot();
+      const medicalHistoryBundle =
+        mhSnap != null && medicalHistorySnapshotHasClinicalData(mhSnap)
+          ? buildMedicalHistoryBundle(mhSnap)
+          : undefined;
+      const visualAcuityBundle = vaExtended ? buildVisualAcuityBundle(vaExtended) : undefined;
+      const iopBundle = iopExtended ? buildIopBundle(iopExtended) : undefined;
+
+      let draftSaved = true;
+      try {
+        await saveExam(buildDraftPayload);
+      } catch (draftErr) {
+        draftSaved = false;
+        console.error(draftErr);
+        toast.error('Draft save failed — saved locally; retry Save exam');
+      }
+
+      let segmentFailures: string[] = [];
+      if (visitId) {
+        segmentFailures = await flushVisitSegments(visitId, patientId, {
+          medicalHistoryBundle,
+          visualAcuityBundle,
+          iopBundle,
+          opticalBundle: {
+            assessment: clAssessment,
+            prescription: clPrescription,
+            fitting: clFitting,
+            cornealHealth: clCornealHealth,
+            instructions: clInstructions,
+            spectacleDispensing,
+          },
+          wetRetinoscopy,
+          dryRetinoscopy,
+          subjectiveRefraction,
+          pupilExam,
+          anteriorSegment,
+          posteriorSegment,
+          fundusExam,
+          vitreousExam,
+          peripheralRetinaExam,
+          prescriptionItems,
+          doctorReferrals,
+          imagingOrders,
+          receptionReferrals,
+          diagnoses,
+          adviceBundle: {
+            instructions: adviceInstructions,
+            followUp: adviceFollowUp,
+            precautions: advicePrecautions,
+            education: adviceEducation,
+          },
+        });
+      }
+
+      if (segmentFailures.length > 0) {
+        toast.error(`Some sections failed to save: ${segmentFailures.join(', ')}`);
+      } else if (draftSaved) {
+        toast.success('Examination saved');
+      }
+
+      if (segmentFailures.length === 0) {
+        setHasUnsavedChanges(false);
+        setMedicalHistoryDirty(false);
+        medicalHistoryRef.current?.acknowledgePersisted();
+        if (mhSnap && medicalHistorySnapshotHasClinicalData(mhSnap)) {
+          setMhVisitSnapshot(mhSnap);
+          applyMedicalHistorySnapshot(mhSnap);
+        }
+        OPTOMETRY_TAB_ORDER.forEach((t) => markTabSaved(t.id));
+      }
+
+      await refreshExamHistory();
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to save examination');
+    }
+  };
+
+  const tabStatusDot = (tabId: OptometryExamTabId): string | null => {
+    const s = tabStatus[tabId];
+    if (s === 'error') return 'bg-red-500';
+    if (s === 'saved') return 'bg-emerald-500';
+    if (s === 'dirty') return 'bg-amber-400 ring-2 ring-amber-200';
+    if (tabId === 'medical-history' && medicalHistoryDirty) {
+      return 'bg-amber-400 ring-2 ring-amber-200';
+    }
+    if (hasUnsavedChanges && activeTab === tabId) {
+      return 'bg-amber-400 ring-2 ring-amber-200';
+    }
+    return null;
   };
 
   const handleCompleteExamination = async () => {
     if (!patientId) {
       toast.error('No patient selected');
+      return;
+    }
+    if (!visitId) {
+      toast.error('No visit linked — open exam from the optometry queue');
       return;
     }
 
@@ -399,40 +1209,36 @@ function OptometristExamContent() {
       return;
     }
 
-    try {
-      // TODO: Call API to mark examination as complete
-      // await optometryQueueApi.completeExamination(patientId);
-      toast.success('Examination completed successfully!');
-      // Navigate back to queue after short delay
-      setTimeout(() => {
-        router.push('/dashboard/optometrist');
-      }, 1000);
-    } catch (error) {
-      console.error('Failed to complete examination:', error);
-      toast.error('Failed to complete examination');
+    if (hasUnsavedChanges || medicalHistoryDirty) {
+      toast.error('Save exam before completing — you have unsaved changes');
+      return;
     }
-  };
 
-  const handleSave = async <T extends { id?: string }>(
-    data: T,
-    existingId: string | undefined,
-    saveFn: (payload: T) => Promise<T>,
-    updateFn: (id: string, payload: T) => Promise<T>,
-    successMessage: string,
-    setState: (value: T) => void,
-  ) => {
-    if (!canEdit) {
-      toast.error('You do not have permission to edit examinations');
+    if (!lastSavedAt) {
+      toast.error('Save exam at least once before completing the examination');
       return;
     }
 
     try {
-      const saved = existingId ? await updateFn(existingId, data) : await saveFn(data);
-      setState(saved);
-      toast.success(successMessage);
+      await optometryQueueApi.completeLeg(visitId, 'doctor');
+      let archiveOk = true;
+      try {
+        await optometryHistoryApi.archiveVisitExam(visitId, patientId);
+      } catch (archiveErr) {
+        archiveOk = false;
+        console.error('Archive failed after complete:', archiveErr);
+        toast.error(
+          'Patient sent to doctor, but exam archive failed — save exam again or contact support',
+        );
+      }
+      await clearExamDraft(patientId, visitId);
+      if (archiveOk) {
+        toast.success('Examination completed — patient sent to doctor');
+      }
+      router.push('/dashboard/optometrist');
     } catch (error) {
-      console.error(error);
-      toast.error('Failed to save examination data');
+      console.error('Failed to complete examination:', error);
+      toast.error('Failed to complete examination');
     }
   };
 
@@ -443,16 +1249,26 @@ function OptometristExamContent() {
     : currentPatient
       ? `${currentPatient.firstName} ${currentPatient.lastName}`
       : null;
-  const patientCode = patientDetails?.patientCode ?? currentPatient?.mrn ?? patientHistory?.mrn ?? null;
+  const patientMrn = resolvePatientMrn(
+    patientDetails,
+    currentPatient?.mrn ?? patientHistory?.mrn ?? null,
+  );
   const patientGender = patientDetails?.gender ?? currentPatient?.gender ?? patientHistory?.gender ?? null;
+  const patientDobLabel = formatPatientDob(derivedDob);
+  const patientPhone = resolvePatientPhone(patientDetails);
+  const patientPhotoUrl = resolvePatientPhotoUrl(patientDetails?.photoUrl);
   const patientLabel = patientName
-    ? `${patientName} • ${patientAge ?? '-'}y / ${patientGender ?? '-'} • ${patientCode ?? 'MRN N/A'}`
+    ? `${patientName} • ${patientAge ?? '-'}y / ${patientGender ?? '-'} • ${patientMrn ?? 'MRN N/A'}`
     : patientId
       ? `Patient ID: ${patientId}`
       : 'No patient selected';
 
-  const allergyList = (patientHistory?.allergies || []).map((item) => item.allergen).filter(Boolean);
+  const allergyList =
+    headerAllergies.length > 0 || headerNkda
+      ? headerAllergies.map((a) => a.name)
+      : (patientHistory?.allergies || []).map((item) => item.allergen).filter(Boolean);
   const medicationList = (patientHistory?.currentMedications || []).map((item) => item.name).filter(Boolean);
+  const conditionCount = (patientHistory?.medicalHistory || []).length;
   const medicalHistoryList = (patientHistory?.medicalHistory || []).map((item) => item.condition).filter(Boolean);
   const surgicalHistoryList = (patientHistory?.surgicalHistory || []).map((item) => item.procedure).filter(Boolean);
   const familyHistoryList = (patientHistory?.familyHistory || []).map((item) => item.condition).filter(Boolean);
@@ -468,121 +1284,45 @@ function OptometristExamContent() {
     );
   }
 
-  console.log('Render Check:', { patientId, hasPatientDetails: !!patientDetails, patientDetails });
-
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* Tab Navigation with Patient Demographics */}
       <div className="bg-white border-b-2 border-gray-100 shadow-sm">
         {patientId ? (
-          <div className="px-6 py-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                {/* Patient Avatar/Photo */}
-                <div className="relative">
-                  {patientDetails?.photoUrl ? (
-                    <img
-                      src={patientDetails.photoUrl}
-                      alt={patientName || 'Patient'}
-                      className="w-16 h-16 rounded-full object-cover border-4 border-white shadow-lg"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center font-bold text-xl border-4 border-white shadow-lg">
-                      {patientDetails?.firstName?.[0]?.toUpperCase() || 'P'}{patientDetails?.lastName?.[0]?.toUpperCase() || 'T'}
-                    </div>
-                  )}
-                  <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-2 border-white rounded-full" title="Active Patient"></div>
-                </div>
-                
-                {/* Patient Info */}
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 mb-1">
-                    {patientLoading ? (
-                      <span className="text-gray-400 animate-pulse">Loading patient...</span>
-                    ) : (
-                      patientName || 'Unknown Patient'
-                    )}
-                  </h2>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-gray-700">
-                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
-                      </svg>
-                      MRN: {patientCode || 'N/A'}
-                    </span>
-                    <span className="text-gray-400">•</span>
-                    <span className="inline-flex items-center gap-1.5 text-gray-700">
-                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      {patientAge || '-'} years • {patientGender || 'Unknown'}
-                    </span>
-                    {patientDetails?.bloodGroup && (
-                      <>
-                        <span className="text-gray-400">•</span>
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100 text-red-800 rounded-full text-xs font-bold border border-red-200">
-                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                          </svg>
-                          {patientDetails.bloodGroup}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 mt-1.5">
-                    {patientDetails?.phone && (
-                      <span className="inline-flex items-center gap-1">
-                        <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                        </svg>
-                        {patientDetails.phone}
-                      </span>
-                    )}
-                    {patientDetails?.email && (
-                      <span className="inline-flex items-center gap-1">
-                        <svg className="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                        {patientDetails.email}
-                      </span>
-                    )}
-                    {complaintParam && (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-orange-100 text-orange-800 rounded font-semibold border border-orange-200">
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                        </svg>
-                        Chief Complaint: {complaintParam}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {/* Complete Examination Button */}
-                <button
-                  type="button"
-                  onClick={handleCompleteExamination}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-lg text-sm font-semibold hover:from-emerald-700 hover:to-emerald-800 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Complete Examination
-                </button>
-                
-                {/* Back to Queue Button */}
-                <Link
-                  href="/dashboard/optometrist"
-                  className="inline-flex items-center gap-2 px-5 py-3 bg-white border-2 border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-emerald-500 hover:text-emerald-700 transition-all shadow-md hover:shadow-lg"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                  </svg>
-                  Back to Queue
-                </Link>
-              </div>
-            </div>
-          </div>
+          <PatientContextBar
+            loading={patientLoading || examContextLoading}
+            name={patientName}
+            firstName={patientDetails?.firstName ?? currentPatient?.firstName}
+            lastName={patientDetails?.lastName ?? currentPatient?.lastName}
+            mrn={patientMrn}
+            age={patientAge}
+            gender={patientGender}
+            bloodGroup={patientDetails?.bloodGroup}
+            dateOfBirthLabel={patientDobLabel}
+            phone={patientPhone}
+            photoUrl={patientPhotoUrl}
+            complaint={complaintParam || null}
+            allergies={
+              headerAllergies.length > 0
+                ? headerAllergies
+                : allergyList.map((name) => ({ name, severity: undefined }))
+            }
+            nkda={headerNkda}
+            medicationCount={medicationList.length}
+            conditionCount={conditionCount}
+            savedSections={savedSectionCount}
+            totalSections={TAB_LIST.length}
+            lastSavedAt={lastSavedAt}
+            hasUnsavedChanges={hasUnsavedChanges}
+            medicalHistoryDirty={medicalHistoryDirty}
+            isSaving={isSaving || mhSaving}
+            canEdit={canEdit}
+            onSaveExam={handleSaveExamination}
+            onComplete={handleCompleteExamination}
+            visitLabel="Optometry examination"
+            onViewDetails={() => setDemographicsOpen(true)}
+            onBack={handleBackFromExam}
+          />
         ) : (
           <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100">
             <div className="flex items-center justify-center gap-3 text-gray-500">
@@ -593,212 +1333,289 @@ function OptometristExamContent() {
             </div>
           </div>
         )}
-        
-        {/* Modern Tabs */}
-        <div className="flex gap-0 overflow-x-auto px-4 bg-white">
-          {TAB_LIST.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => handleTabChange(tab.id)}
-              className={`px-5 py-3 text-sm font-semibold whitespace-nowrap transition-all relative ${
-                activeTab === tab.id
-                  ? 'text-emerald-700 bg-emerald-50 border-b-3 border-emerald-600'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-              style={{
-                borderBottom: activeTab === tab.id ? '3px solid rgb(5 150 105)' : '3px solid transparent',
-              }}
-            >
-              <span className="relative">
-                {tab.label}
-                {activeTab === tab.id && (
-                  <span className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-emerald-600 rounded-full"></span>
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
+
+        <LastVisitSummaryBar priorVisit={priorVisit} loading={priorLoading} />
+
+        <ExamTabNav
+          tabs={TAB_LIST}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          statusDotClass={tabStatusDot}
+        />
       </div>
 
-      {/* Main Content Area with Gray Background */}
-      <div className="flex-1 overflow-auto bg-gray-50 p-6">
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-auto bg-slate-50 px-4 py-3">
         {!patientId ? (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center text-gray-600">
             Select a patient from the queue to begin the examination.
           </div>
+        ) : !examContextReady ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 animate-pulse space-y-4">
+            <div className="h-6 bg-gray-200 rounded w-48" />
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-12 bg-gray-100 rounded" />
+            ))}
+          </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4 w-full">
             {activeTab === 'medical-history' && (
-              <MedicalHistoryTabContent 
-                patientId={patientId} 
-                canEdit={canEdit} 
-                patientDetails={patientDetails}
-                onUpdate={(updated) => setPatientDetails(updated)}
-              />
+              <TabLastVisitLine tabId="medical-history" priorVisit={priorVisit} />
             )}
+            <div className={activeTab === 'medical-history' ? undefined : 'hidden'} aria-hidden={activeTab !== 'medical-history'}>
+              <MedicalHistoryTabContent
+                ref={medicalHistoryRef}
+                patientId={patientId}
+                visitId={visitId}
+                canEdit={canEdit}
+                patientDetails={patientDetails}
+                patientLoading={patientLoading}
+                priorVisit={priorVisit}
+                patientOptometryHistory={optometryPatientHistory}
+                excludeVisitId={visitId}
+                visitSnapshot={mhVisitSnapshot}
+                draftSnapshot={
+                  mhVisitSnapshot && medicalHistorySnapshotHasClinicalData(mhVisitSnapshot)
+                    ? null
+                    : mhDraftSnapshot
+                }
+                hydrationReady={mhHydrationReady}
+                onUpdate={(updated) => setPatientDetails(updated)}
+                onDirtyChange={handleMhDirtyChange}
+                onAllergiesUpdated={handleAllergiesUpdated}
+                onMhReviewed={() => {
+                  mhReviewedAtRef.current = new Date().toISOString();
+                  toast.success('Medical history marked as reviewed');
+                }}
+                onSnapshotChange={handleMhSnapshotChange}
+                onPersistVisitBundle={
+                  visitId && canEdit ? handlePersistMedicalHistoryBundle : undefined
+                }
+              />
+            </div>
 
             {activeTab === 'visual-acuity' && (
+              <>
+                <TabLastVisitLine tabId="visual-acuity" priorVisit={priorVisit} />
               <VisualAcuityMegaTab
                 patientId={patientId}
+                visitId={visitId}
+                priorVisit={priorVisit}
                 visualAcuityData={visualAcuity}
                 refractionData={refraction}
                 autoRefractionData={autoRefraction}
                 keratometryData={keratometry}
                 colorVisionData={colorVision}
                 contrastSensitivityData={contrastSensitivity}
+                patientOptometryHistory={optometryPatientHistory}
+                excludeVisitId={visitId}
                 canEdit={canEdit}
-                onSaveVisualAcuity={(data) =>
-                  handleSave(
-                    data,
-                    visualAcuity?.id,
-                    visualAcuityApi.save,
-                    visualAcuityApi.update,
-                    'Visual acuity saved successfully',
-                    setVisualAcuity,
-                  )
-                }
-                onSaveRefraction={(data) =>
-                  handleSave(
-                    data,
-                    refraction?.id,
-                    refractionApi.save,
-                    refractionApi.update,
-                    'Refraction saved successfully',
-                    setRefraction,
-                  )
-                }
-                onSaveKeratometry={(data) =>
-                  handleSave(
-                    data,
-                    keratometry?.id,
-                    keratometryApi.save,
-                    keratometryApi.update,
-                    'Keratometry saved successfully',
-                    setKeratometry,
-                  )
-                }
-                onSaveColorVision={(data) =>
-                  handleSave(
-                    data,
-                    colorVision?.id,
-                    colorVisionApi.save,
-                    colorVisionApi.update,
-                    'Color vision saved successfully',
-                    setColorVision,
-                  )
-                }
-                onSaveContrastSensitivity={(data) =>
-                  handleSave(
-                    data,
-                    contrastSensitivity?.id,
-                    contrastSensitivityApi.save,
-                    contrastSensitivityApi.update,
-                    'Contrast sensitivity saved successfully',
-                    setContrastSensitivity,
-                  )
-                }
+                onDirtyChange={handleVaDirtyChange}
+                vaExtended={vaExtended}
+                onVaExtendedChange={handleVaExtendedChange}
+                onSectionSaved={handleVaSectionSaved}
+                onSyncClinicalDraft={handleSyncVaClinicalDraft}
+                visitDateIso={visitDateIso}
               />
+              </>
             )}
 
             {activeTab === 'retinoscopy' && (
+              <>
+                <TabLastVisitLine tabId="retinoscopy" priorVisit={priorVisit} />
               <RetinoscopyMegaTab
                 wetRetinoscopyData={wetRetinoscopy}
                 dryRetinoscopyData={dryRetinoscopy}
                 subjectiveRefractionData={subjectiveRefraction}
+                priorVisit={priorVisit}
+                patientOptometryHistory={optometryPatientHistory}
+                excludeVisitId={visitId}
+                visitDateIso={visitDateIso}
                 canEdit={canEdit}
-                onSaveWetRetinoscopy={(data) => {
-                  // TODO: Implement backend API for wet retinoscopy
-                  setWetRetinoscopy(data);
-                  toast.success('Wet retinoscopy saved (frontend only - backend pending)');
-                }}
-                onSaveDryRetinoscopy={(data) => {
-                  // TODO: Implement backend API for dry retinoscopy
-                  setDryRetinoscopy(data);
-                  toast.success('Dry retinoscopy saved (frontend only - backend pending)');
-                }}
-                onSaveSubjectiveRefraction={(data) => {
-                  // TODO: Implement backend API for subjective refraction
-                  setSubjectiveRefraction(data);
-                  toast.success('Subjective refraction saved (frontend only - backend pending)');
-                }}
+                onDirtyChange={handleRetinoscopyDirtyChange}
+                onTabRecordStateChange={handleRetinoscopyTabRecordState}
+                onSaveWetRetinoscopy={(data) =>
+                  saveOptometrySegment(
+                    OPTOMETRY_SEGMENT_KEYS.wetRetinoscopy,
+                    data,
+                    'Wet retinoscopy',
+                    setWetRetinoscopy,
+                    undefined,
+                    { toast: false },
+                  )
+                }
+                onSaveDryRetinoscopy={(data) =>
+                  saveOptometrySegment(
+                    OPTOMETRY_SEGMENT_KEYS.dryRetinoscopy,
+                    data,
+                    'Dry retinoscopy',
+                    setDryRetinoscopy,
+                    undefined,
+                    { toast: false },
+                  )
+                }
+                onSaveSubjectiveRefraction={(data) =>
+                  saveOptometrySegment(
+                    OPTOMETRY_SEGMENT_KEYS.subjectiveRefraction,
+                    data,
+                    'Subjective refraction',
+                    setSubjectiveRefraction,
+                    undefined,
+                    { toast: false },
+                  )
+                }
               />
+              </>
             )}
 
             {activeTab === 'iop' && (
+              <>
+                <TabLastVisitLine tabId="iop" priorVisit={priorVisit} />
               <IOPMegaTab
                 patientId={patientId}
+                visitId={visitId}
+                priorVisit={priorVisit}
                 tonometryData={tonometry}
                 pachymetryData={pachymetry}
                 visualFieldData={visualField}
                 canEdit={canEdit}
-                onSaveTonometry={(data) =>
-                  handleSave(
-                    data,
-                    tonometry?.id,
-                    tonometryApi.save,
-                    tonometryApi.update,
-                    'Tonometry saved successfully',
-                    setTonometry,
-                  )
-                }
-                onSavePachymetry={(data) =>
-                  handleSave(
-                    data,
-                    pachymetry?.id,
-                    pachymetryApi.save,
-                    pachymetryApi.update,
-                    'Pachymetry saved successfully',
-                    setPachymetry,
-                  )
-                }
-                onSaveVisualField={(data) =>
-                  handleSave(
-                    data,
-                    visualField?.id,
-                    visualFieldApi.save,
-                    visualFieldApi.update,
-                    'Visual field saved successfully',
-                    setVisualField,
-                  )
-                }
+                onDirtyChange={(dirty) => {
+                  if (dirty) markTabDirty('iop');
+                }}
+                iopExtended={iopExtended}
+                onIopExtendedChange={handleIopExtendedChange}
+                onSectionSaved={handleIopSectionSaved}
+                onSyncClinicalDraft={handleSyncIopClinicalDraft}
+                patientOptometryHistory={optometryPatientHistory}
+                excludeVisitId={visitId}
               />
+              </>
             )}
 
             {activeTab === 'anterior' && (
+              <>
+                <TabLastVisitLine tabId="anterior" priorVisit={priorVisit} />
               <AnteriorSegmentTab
                 pupilExamData={pupilExam}
                 anteriorSegmentData={anteriorSegment}
+                priorVisit={priorVisit}
+                chiefComplaint={complaintParam || patientDetails?.chiefComplaint}
                 canEdit={canEdit}
-                onSavePupilExam={(data) => {
-                  // TODO: Implement backend API for pupil exam
-                  setPupilExam(data);
-                  toast.success('Pupil exam saved (frontend only - backend pending)');
+                saving={anteriorSaving}
+                onDirtyChange={(dirty) => {
+                  if (dirty) markTabDirty('anterior');
                 }}
-                onSaveAnteriorSegment={(data) => {
-                  // TODO: Implement backend API for anterior segment exam
-                  setAnteriorSegment(data);
-                  toast.success('Anterior segment exam saved (frontend only - backend pending)');
+                onSaveTab={async ({ pupil, segment }) => {
+                  setAnteriorSaving(true);
+                  try {
+                    const bundle = buildAnteriorTabSegmentPayload({ pupil, segment });
+                    const [a, b] = await Promise.all([
+                      saveOptometrySegment(
+                        OPTOMETRY_SEGMENT_KEYS.pupilExam,
+                        bundle.pupil,
+                        'Pupil exam',
+                        setPupilExam,
+                        undefined,
+                        { toast: false },
+                      ),
+                      saveOptometrySegment(
+                        OPTOMETRY_SEGMENT_KEYS.anteriorSegment,
+                        bundle.segment,
+                        'Anterior segment',
+                        setAnteriorSegment,
+                        undefined,
+                        { toast: false },
+                      ),
+                    ]);
+                    const ok = a && b;
+                    if (ok && anteriorTabHasAnyData(bundle.pupil, bundle.segment)) {
+                      markTabSaved('anterior');
+                    }
+                    return ok;
+                  } finally {
+                    setAnteriorSaving(false);
+                  }
                 }}
               />
+              </>
             )}
 
             {activeTab === 'posterior' && (
+              <>
+                <TabLastVisitLine tabId="posterior" priorVisit={priorVisit} />
               <PosteriorSegmentTab
                 posteriorSegmentData={posteriorSegment}
                 fundusExamData={fundusExam}
+                vitreousExamData={vitreousExam}
+                peripheralRetinaExamData={peripheralRetinaExam}
+                priorVisit={priorVisit}
                 canEdit={canEdit}
-                onSavePosteriorSegment={(data) => {
-                  // TODO: Implement backend API for posterior segment exam
-                  setPosteriorSegment(data);
-                  toast.success('Posterior segment exam saved (frontend only - backend pending)');
+                saving={posteriorSaving}
+                onDirtyChange={(dirty) => {
+                  if (dirty) markTabDirty('posterior');
                 }}
-                onSaveFundusExam={(data) => {
-                  // TODO: Implement backend API for fundus exam
-                  setFundusExam(data);
-                  toast.success('Fundus exam saved (frontend only - backend pending)');
+                onSaveTab={async ({ overview, fundus, vitreous, peripheralRetina }) => {
+                  setPosteriorSaving(true);
+                  try {
+                    const bundle = buildPosteriorTabSegmentPayload({
+                      overview,
+                      fundus,
+                      vitreous,
+                      peripheralRetina,
+                    });
+                    const [a, b, c, d] = await Promise.all([
+                      saveOptometrySegment(
+                        OPTOMETRY_SEGMENT_KEYS.posteriorSegment,
+                        bundle.overview,
+                        'Posterior overview',
+                        setPosteriorSegment,
+                        undefined,
+                        { toast: false },
+                      ),
+                      saveOptometrySegment(
+                        OPTOMETRY_SEGMENT_KEYS.fundusExam,
+                        bundle.fundus,
+                        'Fundus exam',
+                        setFundusExam,
+                        undefined,
+                        { toast: false },
+                      ),
+                      saveOptometrySegment(
+                        OPTOMETRY_SEGMENT_KEYS.vitreousExam,
+                        bundle.vitreous,
+                        'Vitreous exam',
+                        setVitreousExam,
+                        undefined,
+                        { toast: false },
+                      ),
+                      saveOptometrySegment(
+                        OPTOMETRY_SEGMENT_KEYS.peripheralRetinaExam,
+                        bundle.peripheralRetina,
+                        'Peripheral retina',
+                        setPeripheralRetinaExam,
+                        undefined,
+                        { toast: false },
+                      ),
+                    ]);
+                    const ok = a && b && c && d;
+                    if (
+                      ok &&
+                      posteriorTabHasAnyData(
+                        bundle.overview,
+                        bundle.fundus,
+                        bundle.vitreous,
+                        bundle.peripheralRetina,
+                      )
+                    ) {
+                      markTabSaved('posterior');
+                    }
+                    return ok;
+                  } finally {
+                    setPosteriorSaving(false);
+                  }
                 }}
               />
+              </>
             )}
 
             {activeTab === 'medications' && (
@@ -806,11 +1623,15 @@ function OptometristExamContent() {
                 currentMedications={currentMedications}
                 prescriptionItems={prescriptionItems}
                 canEdit={canEdit}
-                onSavePrescription={(items) => {
-                  // TODO: Implement backend API for prescription items
-                  setPrescriptionItems(items);
-                  toast.success('Prescription saved (frontend only - backend pending)');
-                }}
+                onSavePrescription={(items) =>
+                  saveOptometrySegment(
+                    OPTOMETRY_SEGMENT_KEYS.prescriptionItems,
+                    items,
+                    'Prescription',
+                    setPrescriptionItems,
+                    'medications',
+                  )
+                }
                 onPrintPrescription={() => {
                   // TODO: Implement prescription PDF generation
                   toast.success('Print prescription (backend pending)');
@@ -823,39 +1644,29 @@ function OptometristExamContent() {
             )}
 
             {activeTab === 'optical-prescription' && (
+              <>
+                <TabLastVisitLine tabId="optical-prescription" priorVisit={priorVisit} />
               <ContactLensTab
                 assessmentData={clAssessment}
                 prescriptionData={clPrescription}
                 fittingData={clFitting}
                 cornealHealthData={clCornealHealth}
                 instructionsData={clInstructions}
+                spectacleData={spectacleDispensing}
+                priorVisit={priorVisit}
                 keratometryData={keratometry}
                 canEdit={canEdit}
-                onSaveAssessment={(data) => {
-                  // TODO: Implement backend API for contact lens assessment
-                  setClAssessment(data);
-                  toast.success('Assessment saved (frontend only - backend pending)');
+                onSpectacleChange={(data) => {
+                  setSpectacleDispensing(data);
+                  markTabDirty('optical-prescription');
                 }}
-                onSavePrescription={(data) => {
-                  // TODO: Implement backend API for contact lens prescription
-                  setClPrescription(data);
-                  toast.success('Prescription saved (frontend only - backend pending)');
-                }}
-                onSaveFitting={(data) => {
-                  // TODO: Implement backend API for contact lens fitting
-                  setClFitting(data);
-                  toast.success('Fitting assessment saved (frontend only - backend pending)');
-                }}
-                onSaveCornealHealth={(data) => {
-                  // TODO: Implement backend API for corneal health
-                  setClCornealHealth(data);
-                  toast.success('Corneal health saved (frontend only - backend pending)');
-                }}
-                onSaveInstructions={(data) => {
-                  // TODO: Implement backend API for patient instructions
-                  setClInstructions(data);
-                  toast.success('Instructions saved (frontend only - backend pending)');
-                }}
+                onPrefillSpectacleFromRefraction={prefillSpectacleFromRefraction}
+                onSaveSpectacleBundle={() => saveOpticalBundle()}
+                onSaveAssessment={(data) => saveOpticalBundle({ assessment: data })}
+                onSavePrescription={(data) => saveOpticalBundle({ prescription: data })}
+                onSaveFitting={(data) => saveOpticalBundle({ fitting: data })}
+                onSaveCornealHealth={(data) => saveOpticalBundle({ cornealHealth: data })}
+                onSaveInstructions={(data) => saveOpticalBundle({ instructions: data })}
                 onPrintPrescription={() => {
                   // TODO: Implement CL prescription PDF generation
                   toast.success('Print CL prescription (backend pending)');
@@ -865,6 +1676,7 @@ function OptometristExamContent() {
                   toast.success('Email CL prescription (backend pending)');
                 }}
               />
+              </>
             )}
 
             {activeTab === 'referral' && (
@@ -873,21 +1685,33 @@ function OptometristExamContent() {
                 imagingOrders={imagingOrders}
                 receptionReferrals={receptionReferrals}
                 canEdit={canEdit}
-                onSaveDoctorReferral={(referrals) => {
-                  // TODO: Implement backend API for doctor referrals
-                  setDoctorReferrals(referrals);
-                  toast.success('Doctor referral saved (frontend only - backend pending)');
-                }}
-                onSaveImagingOrders={(orders) => {
-                  // TODO: Implement backend API for imaging orders
-                  setImagingOrders(orders);
-                  toast.success('Imaging order saved (frontend only - backend pending)');
-                }}
-                onSaveReceptionReferral={(referrals) => {
-                  // TODO: Implement backend API for reception referrals
-                  setReceptionReferrals(referrals);
-                  toast.success('Reception referral saved (frontend only - backend pending)');
-                }}
+                onSaveDoctorReferral={(referrals) =>
+                  saveOptometrySegment(
+                    OPTOMETRY_SEGMENT_KEYS.doctorReferrals,
+                    referrals,
+                    'Doctor referrals',
+                    setDoctorReferrals,
+                    'referral',
+                  )
+                }
+                onSaveImagingOrders={(orders) =>
+                  saveOptometrySegment(
+                    OPTOMETRY_SEGMENT_KEYS.imagingOrders,
+                    orders,
+                    'Imaging orders',
+                    setImagingOrders,
+                    'referral',
+                  )
+                }
+                onSaveReceptionReferral={(referrals) =>
+                  saveOptometrySegment(
+                    OPTOMETRY_SEGMENT_KEYS.receptionReferrals,
+                    referrals,
+                    'Reception referrals',
+                    setReceptionReferrals,
+                    'referral',
+                  )
+                }
                 onPrintReferral={(id, type) => {
                   // TODO: Implement referral letter PDF generation
                   toast.success(`Print ${type} referral (backend pending)`);
@@ -899,15 +1723,16 @@ function OptometristExamContent() {
               <DiagnosisTab
                 diagnoses={diagnoses}
                 canEdit={canEdit}
-                onSaveDiagnoses={(diagnosisList) => {
-                  // TODO: Implement backend API for diagnoses
-                  setDiagnoses(diagnosisList);
-                  toast.success('Diagnoses saved (frontend only - backend pending)');
-                }}
-                onCopyPreviousDiagnoses={() => {
-                  // TODO: Implement copy from previous visit
-                  toast.success('Copy previous diagnoses (backend pending)');
-                }}
+                onSaveDiagnoses={(diagnosisList) =>
+                  saveOptometrySegment(
+                    OPTOMETRY_SEGMENT_KEYS.diagnoses,
+                    diagnosisList,
+                    'Diagnoses',
+                    setDiagnoses,
+                    'diagnosis',
+                  )
+                }
+                onCopyPreviousDiagnoses={handleCopyPreviousDiagnoses}
                 onPrintSummary={() => {
                   // TODO: Implement diagnosis summary PDF generation
                   toast.success('Print diagnosis summary (backend pending)');
@@ -923,26 +1748,10 @@ function OptometristExamContent() {
                 education={adviceEducation}
                 diagnoses={diagnoses}
                 canEdit={canEdit}
-                onSaveInstructions={(instructions) => {
-                  // TODO: Implement backend API for patient instructions
-                  setAdviceInstructions(instructions);
-                  toast.success('Patient instructions saved (frontend only - backend pending)');
-                }}
-                onSaveFollowUp={(followUp) => {
-                  // TODO: Implement backend API for follow-up schedule
-                  setAdviceFollowUp(followUp);
-                  toast.success('Follow-up schedule saved (frontend only - backend pending)');
-                }}
-                onSavePrecautions={(precautions) => {
-                  // TODO: Implement backend API for precautions
-                  setAdvicePrecautions(precautions);
-                  toast.success('Precautions saved (frontend only - backend pending)');
-                }}
-                onSaveEducation={(education) => {
-                  // TODO: Implement backend API for education materials
-                  setAdviceEducation(education);
-                  toast.success('Education materials saved (frontend only - backend pending)');
-                }}
+                onSaveInstructions={(instructions) => saveAdviceBundle({ instructions })}
+                onSaveFollowUp={(followUp) => saveAdviceBundle({ followUp })}
+                onSavePrecautions={(precautions) => saveAdviceBundle({ precautions })}
+                onSaveEducation={(education) => saveAdviceBundle({ education })}
                 onPrintInstructions={() => {
                   // TODO: Implement patient instructions PDF generation
                   toast.success('Print patient instructions (backend pending)');
@@ -965,6 +1774,21 @@ function OptometristExamContent() {
           </div>
         )}
       </div>
+
+      <UnsavedMedicalHistoryDialog
+        isOpen={unsavedMhDialogOpen}
+        isSaving={mhSaving}
+        onStay={handleMhStay}
+        onDiscard={handleMhDiscardAndContinue}
+        onSaveAndContinue={handleMhSaveAndContinue}
+      />
+
+      <PatientDemographicsSheet
+        open={demographicsOpen}
+        onClose={() => setDemographicsOpen(false)}
+        patient={patientDetails}
+        age={patientAge}
+      />
     </div>
   );
 }

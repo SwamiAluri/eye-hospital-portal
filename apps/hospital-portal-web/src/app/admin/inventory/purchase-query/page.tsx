@@ -41,6 +41,8 @@ import { ItemSearchModal, LastPurchaseInfo } from '@/components/inventory/ItemSe
 import { ItemGstFormModal, GrnLineItem } from '@/components/inventory/ItemGstFormModal';
 import { InvoiceDetailDrawer } from '@/components/inventory/InvoiceDetailDrawer';
 import type { ItemDto } from '@/lib/api/inventory-service.api';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { useInventoryPaymentModeLabels } from '@/hooks/use-payment-modes';
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
 const MODULE_TABS = ['GRN', 'Bill Transfer', 'Settlements'] as const;
@@ -714,6 +716,8 @@ function EditInvoiceModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { labels: paymentModeLabels } = useInventoryPaymentModeLabels();
+  const { options: purchaseCategoryOptions } = useMasterValues('inventory.purchase_category');
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
   const [invoiceNo,        setInvoiceNo]        = useState('');
@@ -908,14 +912,17 @@ function EditInvoiceModal({
                   <label className={lblCls}>Purchase Category</label>
                   <select value={purchaseCategory} onChange={e => setPurchaseCategory(e.target.value)} className={inputCls}>
                     <option value="">Select…</option>
-                    {PURCHASE_CATEGORIES_QP.map(c => <option key={c} value={c}>{c}</option>)}
+                    {(purchaseCategoryOptions.length > 0
+                      ? purchaseCategoryOptions.map((c) => c.label)
+                      : [...PURCHASE_CATEGORIES_QP]
+                    ).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className={lblCls}>Payment Mode</label>
                   <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} className={inputCls}>
                     <option value="">Select…</option>
-                    {PAYMENT_MODES_QP.map(m => <option key={m} value={m}>{m}</option>)}
+                    {paymentModeLabels.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div>

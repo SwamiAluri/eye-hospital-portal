@@ -19,6 +19,8 @@ import type {
   ReQueuePayload,
 } from '@/types/counsellors-desk';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { SessionTypeSelect } from '@/components/counsellors-desk/SessionTypeSelect';
+import { defaultSessionTypeCode } from '@/lib/counsellors-desk/counsellor-master-maps';
 import {
   useActiveFollowupsQuery,
   useColdLeadsQuery,
@@ -245,6 +247,7 @@ function ReQueueModal({
   onQueued: () => void;
 }) {
   const [intention, setIntention] = useState<PatientIntention | ''>('WillingCallToConfirm');
+  const [sessionTypeCode, setSessionTypeCode] = useState(defaultSessionTypeCode('requeue'));
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -261,6 +264,7 @@ function ReQueueModal({
       const payload: ReQueuePayload = {
         newIntention: intention as PatientIntention || undefined,
         notes: notes || undefined,
+        sessionType: sessionTypeCode,
       };
       const result = await counsellorsDeskApi.reQueueSession(sessionId, payload);
       toast.success(`Patient re-queued â€” Token: ${result.tokenNumber}`);
@@ -268,6 +272,7 @@ function ReQueueModal({
       onClose();
       setNotes('');
       setIntention('WillingCallToConfirm');
+      setSessionTypeCode(defaultSessionTypeCode('requeue'));
     } catch {
       toast.error('Failed to re-queue patient');
     } finally {
@@ -287,6 +292,13 @@ function ReQueueModal({
           <p className="text-xs text-emerald-100 mt-0.5">{patientName}</p>
         </div>
         <div className="px-5 py-4 space-y-4">
+          <SessionTypeSelect
+            id="requeue-session-type"
+            value={sessionTypeCode}
+            onChange={setSessionTypeCode}
+            context="requeue"
+          />
+
           <div>
             <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Updated Intention</label>
             <select

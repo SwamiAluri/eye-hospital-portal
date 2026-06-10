@@ -21,8 +21,6 @@ import type { ItemDto } from '@/lib/api/inventory-service.api';
 import { useMasterValues } from '@/hooks/use-master-values';
 import { useVendors, useStores } from '@/hooks/useInventoryReferenceData';
 
-const PURCHASE_CATEGORIES = ['Pharmacy', 'OT & Surgery', 'Consumables', 'Optical', 'Laboratory', 'Stationery', 'Equipment', 'General Hospital'];
-const PAYMENT_MODES       = ['Cash', 'Credit', 'UPI', 'NEFT', 'RTGS', 'Cheque'];
 // ─── Read-only field (Phase 2 locked fields) ──────────────────────────────────────
 function ROField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -55,14 +53,8 @@ function InlineHeaderForm({
   onCancel: () => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
-  const { options: purchaseCategoryOptions } = useMasterValues(
-    'inventory.purchase_category',
-    PURCHASE_CATEGORIES.map(c => ({ value: c, label: c }))
-  );
-  const { options: paymentModeOptions } = useMasterValues(
-    'billing.payment_mode',
-    PAYMENT_MODES.map(m => ({ value: m, label: m }))
-  );
+  const { options: purchaseCategoryOptions } = useMasterValues('inventory.purchase_category');
+  const { options: paymentModeOptions } = useMasterValues('billing.payment_mode');
 
   const [vendorId,         setVendorId]         = useState('');
   const [storeId,          setStoreId]          = useState('');

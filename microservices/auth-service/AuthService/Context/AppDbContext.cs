@@ -165,6 +165,9 @@ namespace AuthService.Context
 
         // OPD Visit & Billing System (Phase 1 OPD Workflow)
         public DbSet<Visit> Visits { get; set; }
+        public DbSet<VisitStationEvent> VisitStationEvents { get; set; }
+        public DbSet<OptometrySegmentExam> OptometrySegmentExams { get; set; }
+        public DbSet<OptometryVisitExam> OptometryVisitExams { get; set; }
         public DbSet<OpdBill> OpdBills { get; set; }
         public DbSet<OpdBillPayment> OpdBillPayments { get; set; }
         public DbSet<BillingRule> BillingRules { get; set; }
@@ -194,6 +197,7 @@ namespace AuthService.Context
         public DbSet<CounselorPackage> CounselorPackages { get; set; }
         public DbSet<CounselorPackageItem> CounselorPackageItems { get; set; }
         public DbSet<PackageDiscountApproval> PackageDiscountApprovals { get; set; }
+        public DbSet<CounsellingPackageTemplate> CounsellingPackageTemplates { get; set; }
 
         // Module 3.2: Counseling Workflow (Feb 23, 2026)
         public DbSet<CounselingSession> CounselingSession { get; set; }
@@ -2023,6 +2027,8 @@ namespace AuthService.Context
                 entity.Property(e => e.CurrentStation).HasColumnName("current_station").HasMaxLength(50);
                 entity.Property(e => e.AssignedTo).HasColumnName("assigned_to");
                 entity.Property(e => e.AssignedAt).HasColumnName("assigned_at");
+                entity.Property(e => e.ActiveRoomCode).HasColumnName("active_room_code").HasMaxLength(50);
+                entity.Property(e => e.OptometryPassCount).HasColumnName("optometry_pass_count").HasDefaultValue(0);
                 entity.Property(e => e.CompletedAt).HasColumnName("completed_at");
                 entity.Property(e => e.CompletedBy).HasColumnName("completed_by");
                 entity.Property(e => e.Outcome).HasColumnName("outcome").HasMaxLength(50);
@@ -2047,6 +2053,65 @@ namespace AuthService.Context
                 entity.HasIndex(e => e.TokenNumber);
                 entity.HasIndex(e => e.Status);
                 entity.HasIndex(e => new { e.BranchId, e.TokenSequence, e.CreatedAt });
+            });
+
+            builder.Entity<OptometrySegmentExam>(entity =>
+            {
+                entity.ToTable("optometry_segment_exams");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.VisitId).HasColumnName("visit_id").IsRequired();
+                entity.Property(e => e.PatientId).HasColumnName("patient_id").IsRequired();
+                entity.Property(e => e.SegmentKey).HasColumnName("segment_key").HasMaxLength(64).IsRequired();
+                entity.Property(e => e.Data).HasColumnName("data").IsRequired();
+                entity.Property(e => e.UpdatedBy).HasColumnName("updated_by");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+                entity.HasIndex(e => new { e.VisitId, e.SegmentKey }).IsUnique();
+                entity.HasIndex(e => new { e.TenantId, e.VisitId });
+                entity.HasIndex(e => new { e.PatientId, e.TenantId, e.UpdatedAt });
+            });
+
+            builder.Entity<OptometryVisitExam>(entity =>
+            {
+                entity.ToTable("optometry_visit_exams");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.VisitId).HasColumnName("visit_id").IsRequired();
+                entity.Property(e => e.PatientId).HasColumnName("patient_id").IsRequired();
+                entity.Property(e => e.SnapshotJson).HasColumnName("snapshot_json").HasColumnType("jsonb").IsRequired();
+                entity.Property(e => e.CompletedAt).HasColumnName("completed_at");
+                entity.Property(e => e.CompletedBy).HasColumnName("completed_by");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+                entity.HasIndex(e => e.VisitId).IsUnique();
+                entity.HasIndex(e => new { e.PatientId, e.TenantId, e.UpdatedAt });
+            });
+
+            builder.Entity<VisitStationEvent>(entity =>
+            {
+                entity.ToTable("visit_station_events");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.BranchId).HasColumnName("branch_id").IsRequired();
+                entity.Property(e => e.VisitId).HasColumnName("visit_id").IsRequired();
+                entity.Property(e => e.PatientId).HasColumnName("patient_id").IsRequired();
+                entity.Property(e => e.Station).HasColumnName("station").HasMaxLength(50).IsRequired();
+                entity.Property(e => e.EventType).HasColumnName("event_type").HasMaxLength(30).IsRequired();
+                entity.Property(e => e.PassNumber).HasColumnName("pass_number").HasDefaultValue(1);
+                entity.Property(e => e.ReasonCode).HasColumnName("reason_code").HasMaxLength(50);
+                entity.Property(e => e.ReasonNotes).HasColumnName("reason_notes");
+                entity.Property(e => e.AssignedToUserId).HasColumnName("assigned_to_user_id");
+                entity.Property(e => e.RoomCode).HasColumnName("room_code").HasMaxLength(50);
+                entity.Property(e => e.QueueItemId).HasColumnName("queue_item_id");
+                entity.Property(e => e.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
+                entity.HasIndex(e => new { e.VisitId, e.Station, e.CreatedAt });
+                entity.HasIndex(e => new { e.BranchId, e.Station, e.CreatedAt });
             });
 
             builder.Entity<OpdBill>(entity =>
@@ -2768,6 +2833,15 @@ namespace AuthService.Context
                 entity.ToTable("post_op_visit");
                 // DB uses schedule_id; the model class attr says post_op_care_schedule_id
                 entity.Property(e => e.PostOpCareScheduleId).HasColumnName("schedule_id");
+            });
+
+            builder.Entity<CounsellingPackageTemplate>(entity =>
+            {
+                entity.ToTable("counselling_package_templates");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.TenantId, e.Code }).IsUnique()
+                    .HasDatabaseName("uq_counselling_pkg_tpl_code");
+                entity.HasQueryFilter(e => e.DeletedAt == null);
             });
 
             // ============================================================================

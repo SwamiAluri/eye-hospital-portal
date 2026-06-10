@@ -40,16 +40,22 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/lib/auth-store';
+import { queueDisplayApi } from '@/lib/api/queue-display.api';
+import { visitsApi } from '@/lib/api/visits.api';
 
 interface QueuePatient {
   id: string;
+  visitId?: string;
   queueNumber: number;
   patientId: string;
+  tokenNumber: string;
   patientName: string;
   appointmentTime: string;
   appointmentType: string;
   department: string;
   doctor: string;
+  station: string;
   status: 'waiting' | 'in-consultation' | 'completed' | 'no-show' | 'emergency';
   priority: 'emergency' | 'urgent' | 'routine';
   checkedInAt?: string;
@@ -70,6 +76,8 @@ interface DepartmentQueue {
 }
 
 export default function QueueManagementPage() {
+  const { user } = useAuthStore();
+  const branchId = user?.branchId;
   const [patients, setPatients] = useState<QueuePatient[]>([]);
   const [departmentQueues, setDepartmentQueues] = useState<DepartmentQueue[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
@@ -88,118 +96,67 @@ export default function QueueManagementPage() {
   const loadQueueData = async () => {
     setLoading(true);
     try {
-      // TODO: Replace with actual API call
-      // const response = await queueApi.getCurrentQueue();
-      
-      // Mock data
-      const mockPatients: QueuePatient[] = [
-        {
-          id: '1',
-          queueNumber: 101,
-          patientId: 'PT-2024-0015',
-          patientName: 'John Smith',
-          appointmentTime: '09:00 AM',
-          appointmentType: 'Comprehensive Eye Exam',
-          department: 'General Ophthalmology',
-          doctor: 'Dr. Sarah Johnson',
-          status: 'waiting',
-          priority: 'routine',
-          checkedInAt: '2026-01-28T08:55:00',
-          waitTime: 25,
-          phone: '555-0101',
-          age: 45,
-          gender: 'Male',
-          chiefComplaint: 'Blurry vision for distance'
-        },
-        {
-          id: '2',
-          queueNumber: 102,
-          patientId: 'PT-2024-0023',
-          patientName: 'Mary Johnson',
-          appointmentTime: '09:15 AM',
-          appointmentType: 'Diabetic Retinopathy Screening',
-          department: 'Retina Clinic',
-          doctor: 'Dr. Michael Chen',
-          status: 'in-consultation',
-          priority: 'urgent',
-          checkedInAt: '2026-01-28T09:10:00',
-          consultationStartedAt: '2026-01-28T09:20:00',
-          waitTime: 10,
-          phone: '555-0102',
-          age: 62,
-          gender: 'Female',
-          chiefComplaint: 'Diabetic retinopathy follow-up'
-        },
-        {
-          id: '3',
-          queueNumber: 999,
-          patientId: 'PT-2024-0056',
-          patientName: 'Robert Davis',
-          appointmentTime: 'Walk-in',
-          appointmentType: 'Emergency',
-          department: 'Emergency',
-          doctor: 'Dr. Emily Rodriguez',
-          status: 'emergency',
-          priority: 'emergency',
-          checkedInAt: '2026-01-28T09:35:00',
-          waitTime: 2,
-          phone: '555-0103',
-          age: 38,
-          gender: 'Male',
-          chiefComplaint: 'Sudden vision loss in right eye'
-        },
-        {
-          id: '4',
-          queueNumber: 103,
-          patientId: 'PT-2024-0089',
-          patientName: 'Lisa Anderson',
-          appointmentTime: '09:30 AM',
-          appointmentType: 'Glaucoma Follow-up',
-          department: 'Glaucoma Clinic',
-          doctor: 'Dr. James Wilson',
-          status: 'waiting',
-          priority: 'routine',
-          checkedInAt: '2026-01-28T09:25:00',
-          waitTime: 12,
-          phone: '555-0104',
-          age: 58,
-          gender: 'Female',
-          chiefComplaint: 'IOP check and medication review'
-        },
-        {
-          id: '5',
-          queueNumber: 100,
-          patientId: 'PT-2024-0012',
-          patientName: 'David Brown',
-          appointmentTime: '08:45 AM',
-          appointmentType: 'Cataract Evaluation',
-          department: 'Cataract Clinic',
-          doctor: 'Dr. Patricia Lee',
-          status: 'completed',
-          priority: 'routine',
-          checkedInAt: '2026-01-28T08:40:00',
-          consultationStartedAt: '2026-01-28T08:45:00',
-          completedAt: '2026-01-28T09:15:00',
-          waitTime: 5,
-          phone: '555-0105',
-          age: 70,
-          gender: 'Male',
-          chiefComplaint: 'Cataract assessment for surgery planning'
-        }
-      ];
+      if (!branchId) {
+        setPatients([]);
+        setDepartmentQueues([]);
+        return;
+      }
 
-      setPatients(mockPatients);
+      const payload = await queueDisplayApi.getBranchDisplay({ branchId, mode: 'branch', interval: 10 });
 
-      // Calculate department queues
-      const deptQueues: DepartmentQueue[] = [
-        { department: 'General Ophthalmology', waiting: 2, inConsultation: 1, averageWaitTime: 18 },
-        { department: 'Retina Clinic', waiting: 0, inConsultation: 1, averageWaitTime: 10 },
-        { department: 'Glaucoma Clinic', waiting: 1, inConsultation: 0, averageWaitTime: 12 },
-        { department: 'Cataract Clinic', waiting: 0, inConsultation: 0, averageWaitTime: 5 },
-        { department: 'Emergency', waiting: 0, inConsultation: 1, averageWaitTime: 2 }
-      ];
+      const toPriority = (u: string): QueuePatient['priority'] => {
+        const v = (u || '').toLowerCase();
+        if (v.includes('emerg')) return 'emergency';
+        if (v.includes('urgent')) return 'urgent';
+        return 'routine';
+      };
 
-      setDepartmentQueues(deptQueues);
+      const mapped: QueuePatient[] = [];
+      const deptMap = new Map<string, QueuePatient[]>();
+
+      payload.slides.forEach((slide) => {
+        const dept = slide.displayLabel || slide.stationLabel || slide.station;
+        const doctor = slide.staffName || '—';
+
+        const add = (p: any, status: QueuePatient['status']) => {
+          const row: QueuePatient = {
+            id: `${slide.station}-${slide.roomCode}-${p.tokenNumber}-${status}`,
+            visitId: p.visitId ?? p.VisitId,
+            queueNumber: Number(p.passNumber ?? 0),
+            patientId: String(p.patientId ?? p.PatientId ?? ''),
+            tokenNumber: String(p.tokenNumber ?? ''),
+            patientName: String(p.patientName ?? ''),
+            appointmentTime: '—',
+            appointmentType: String(p.reasonLabel ?? slide.stationLabel ?? slide.station ?? ''),
+            department: dept,
+            doctor,
+            station: String(slide.station ?? ''),
+            status,
+            priority: toPriority(String(p.urgency ?? 'Routine')),
+            phone: '',
+            age: 0,
+            gender: String(p.gender ?? '—'),
+            chiefComplaint: undefined,
+          };
+          mapped.push(row);
+          const list = deptMap.get(dept) ?? [];
+          list.push(row);
+          deptMap.set(dept, list);
+        };
+
+        if (slide.nowServing) add(slide.nowServing, 'in-consultation');
+        slide.nextQueue?.forEach((p: any) => add(p, 'waiting'));
+      });
+
+      setPatients(mapped);
+      setDepartmentQueues(
+        Array.from(deptMap.entries()).map(([department, list]) => ({
+          department,
+          waiting: list.filter((p) => p.status === 'waiting').length,
+          inConsultation: list.filter((p) => p.status === 'in-consultation').length,
+          averageWaitTime: 0,
+        })),
+      );
 
     } catch (error) {
       console.error('Failed to load queue data:', error);
@@ -216,21 +173,45 @@ export default function QueueManagementPage() {
   };
 
   const handleStartConsultation = (patient: QueuePatient) => {
-    // TODO: API call to start consultation
-    toast.success(`Consultation started for ${patient.patientName}`);
-    loadQueueData();
+    if (!patient.visitId) {
+      toast.error('Visit ID not available for this queue item');
+      return;
+    }
+    visitsApi
+      .sendTo({ visitId: patient.visitId, station: patient.station || 'doctor' })
+      .then(() => {
+        toast.success(`Sent ${patient.patientName} to ${patient.station || 'doctor'}`);
+        loadQueueData();
+      })
+      .catch(() => toast.error('Failed to route to station'));
   };
 
   const handleCompleteConsultation = (patient: QueuePatient) => {
-    // TODO: API call to complete consultation
-    toast.success(`Consultation completed for ${patient.patientName}`);
-    loadQueueData();
+    if (!patient.visitId) {
+      toast.error('Visit ID not available for this queue item');
+      return;
+    }
+    visitsApi
+      .completeVisit({ visitId: patient.visitId })
+      .then(() => {
+        toast.success(`Visit completed for ${patient.patientName}`);
+        loadQueueData();
+      })
+      .catch(() => toast.error('Failed to complete visit'));
   };
 
   const handleMarkNoShow = (patient: QueuePatient) => {
-    // TODO: API call to mark as no-show
-    toast.info(`${patient.patientName} marked as no-show`);
-    loadQueueData();
+    if (!patient.visitId) {
+      toast.error('Visit ID not available for this queue item');
+      return;
+    }
+    visitsApi
+      .markNoShow(patient.visitId)
+      .then(() => {
+        toast.info(`${patient.patientName} marked as no-show`);
+        loadQueueData();
+      })
+      .catch(() => toast.error('Failed to mark no-show'));
   };
 
   const getStatusBadge = (status: string) => {
@@ -267,7 +248,7 @@ export default function QueueManagementPage() {
     const matchesDepartment = selectedDepartment === 'all' || patient.department === selectedDepartment;
     const matchesStatus = selectedStatus === 'all' || patient.status === selectedStatus;
     const matchesSearch = patient.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         patient.patientId.toLowerCase().includes(searchQuery.toLowerCase());
+                         patient.tokenNumber.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesDepartment && matchesStatus && matchesSearch;
   });
 
@@ -474,7 +455,7 @@ export default function QueueManagementPage() {
                           </div>
                           <div className="grid grid-cols-4 gap-4 text-sm text-muted-foreground">
                             <div>
-                              <span className="font-medium">ID:</span> {patient.patientId}
+                              <span className="font-medium">Token:</span> {patient.tokenNumber || '—'}
                             </div>
                             <div>
                               <span className="font-medium">Time:</span> {patient.appointmentTime}
@@ -556,8 +537,8 @@ export default function QueueManagementPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Patient ID</Label>
-                  <p className="font-medium">{selectedPatient.patientId}</p>
+                  <Label>Token</Label>
+                  <p className="font-medium">{selectedPatient.tokenNumber || '—'}</p>
                 </div>
                 <div>
                   <Label>Phone</Label>

@@ -45,11 +45,14 @@ import {
 } from '@/components/ui/popover';
 import { Plus, Trash2, Search, IndianRupee, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useBillItemTypes } from '@/hooks/use-billing-masters';
 
 export interface BillItem {
   serviceCatalogId: string;
   serviceCode: string;
   serviceName: string;
+  itemTypeCode?: string;
+  itemTypeLabel?: string;
   quantity: number;
   unitPrice: number;
   discountPercent: number;
@@ -75,15 +78,6 @@ export interface BillSummary {
   grandTotal: number;
 }
 
-const PAYMENT_METHODS = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'card', label: 'Card' },
-  { value: 'upi', label: 'UPI' },
-  { value: 'online', label: 'Online' },
-  { value: 'insurance', label: 'Insurance' },
-  { value: 'credit', label: 'Credit' },
-];
-
 export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
   isOpen,
   onClose,
@@ -92,6 +86,7 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
   patientName,
 }) => {
   const [items, setItems] = useState<BillItem[]>(initialItems);
+  const { types: billItemTypes } = useBillItemTypes();
   const [services, setServices] = useState<ServiceCatalogItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -103,6 +98,7 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
     quantity: 1,
     discountPercent: 0,
     notes: '',
+    itemTypeCode: '',
   });
 
   useEffect(() => {
@@ -110,6 +106,12 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
       loadServices();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (billItemTypes.length > 0 && !newItem.itemTypeCode) {
+      setNewItem((prev) => ({ ...prev, itemTypeCode: billItemTypes[0].value }));
+    }
+  }, [billItemTypes, newItem.itemTypeCode]);
 
   const loadServices = async () => {
     try {
@@ -195,10 +197,15 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
       selectedService.taxRate
     );
 
+    const itemType =
+      billItemTypes.find((t) => t.value === newItem.itemTypeCode) ?? billItemTypes[0];
+
     const billItem: BillItem = {
       serviceCatalogId: selectedService.id,
       serviceCode: selectedService.code,
       serviceName: selectedService.name,
+      itemTypeCode: itemType?.value,
+      itemTypeLabel: itemType?.label,
       quantity: newItem.quantity,
       unitPrice: selectedService.basePrice,
       discountPercent: newItem.discountPercent,
@@ -217,6 +224,7 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
       quantity: 1,
       discountPercent: 0,
       notes: '',
+      itemTypeCode: billItemTypes[0]?.value ?? '',
     });
     setServicePopoverOpen(false);
     toast.success('Item added to bill');
@@ -381,8 +389,28 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
                 )}
               </div>
 
+              {/* Item Type */}
+              <div className="col-span-3">
+                <Label>Item Type</Label>
+                <Select
+                  value={newItem.itemTypeCode || billItemTypes[0]?.value}
+                  onValueChange={(v) => setNewItem({ ...newItem, itemTypeCode: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select item type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {billItemTypes.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Quantity */}
-              <div className="col-span-2">
+              <div className="col-span-1">
                 <Label>Quantity</Label>
                 <Input
                   type="number"
@@ -395,7 +423,7 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
               </div>
 
               {/* Discount */}
-              <div className="col-span-2">
+              <div className="col-span-1">
                 <Label>Discount %</Label>
                 <Input
                   type="number"
@@ -414,7 +442,7 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
               </div>
 
               {/* Add Button */}
-              <div className="col-span-3 flex items-end">
+              <div className="col-span-2 flex items-end">
                 <Button onClick={handleAddItem} className="w-full">
                   <Plus className="h-4 w-4 mr-2" />
                   Add Item
@@ -450,6 +478,7 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Service</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead className="text-right">Unit Price</TableHead>
                     <TableHead className="text-center">Qty</TableHead>
                     <TableHead className="text-right">Discount %</TableHead>
@@ -474,6 +503,11 @@ export const ItemizedBillingDialog: React.FC<ItemizedBillingDialogProps> = ({
                             </div>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {item.itemTypeLabel ?? '—'}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         ₹{item.unitPrice.toFixed(2)}

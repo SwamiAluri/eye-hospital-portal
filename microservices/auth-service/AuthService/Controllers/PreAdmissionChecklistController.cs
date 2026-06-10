@@ -13,9 +13,15 @@ using AuthService.Models.Domain;
 
 namespace AuthService.Controllers
 {
+    /// <summary>
+    /// DEPRECATED (S0): Replaced by ip-management Outpatient Safety Checklist.
+    /// Use GET/POST /api/ip-management/counsellor/sessions/{sessionId}/outpatient-checklist
+    /// Migration 66 tables (pre_admission_checklist_*) are retained read-only for legacy data.
+    /// </summary>
     [Authorize]
     [ApiController]
     [Route("api/pre-admission-checklist")]
+    [Obsolete("Deprecated in S0. Use ip-management counsellor outpatient-checklist API instead.")]
     public class PreAdmissionChecklistController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -133,32 +139,7 @@ namespace AuthService.Controllers
             try
             {
                 var tenantId = GetTenantId();
-
-                var completions = await _context.OtAdmissionChecklistCompletions
-                    .Where(c => c.ScheduleId == scheduleId && c.TenantId == tenantId && c.DeletedAt == null)
-                    .Join(_context.PreAdmissionChecklistItems,
-                        c => c.ItemId,
-                        i => i.Id,
-                        (c, i) => new
-                        {
-                            completionId = c.Id,
-                            itemId = c.ItemId,
-                            templateId = c.TemplateId,
-                            itemKey = i.ItemKey,
-                            itemLabel = i.ItemLabel,
-                            departmentOwner = i.DepartmentOwner,
-                            departmentColor = i.DepartmentColor,
-                            isMandatory = i.IsMandatory,
-                            isBlocking = i.IsBlocking,
-                            isComplete = c.IsComplete,
-                            completedAt = c.CompletedAt,
-                            completedByDept = c.CompletedByDept,
-                            documentUrl = c.DocumentUrl,
-                            notes = c.Notes,
-                        })
-                    .ToListAsync();
-
-                return Ok(new { scheduleId, completions });
+                return Ok(await BuildCompletionResponseAsync(scheduleId, tenantId));
             }
             catch (Exception ex)
             {
@@ -167,73 +148,73 @@ namespace AuthService.Controllers
             }
         }
 
+        /// <summary>S8 bridge — resolve ot_finalize_schedule from counselling session id.</summary>
+        [HttpGet("completion/by-session/{sessionId:guid}")]
+        [RequirePermission("counseling_sessions.read")]
+        public async Task<IActionResult> GetCompletionBySession(Guid sessionId)
+        {
+            try
+            {
+                var tenantId = GetTenantId();
+                var schedule = await _context.OtFinalizeSchedules
+                    .Where(o => o.CounsellingSessionId == sessionId
+                             && o.TenantId == tenantId
+                             && o.DeletedAt == null)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (schedule == null)
+                    return Ok(new { scheduleId = (Guid?)null, completions = Array.Empty<object>() });
+
+                var payload = await BuildCompletionResponseAsync(schedule.Id, tenantId);
+                return Ok(payload);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving legacy checklist for session {SessionId}", sessionId);
+                return StatusCode(500, new { message = "Error retrieving completion", error = ex.Message });
+            }
+        }
+
+        private async Task<object> BuildCompletionResponseAsync(Guid scheduleId, Guid tenantId)
+        {
+            var completions = await _context.OtAdmissionChecklistCompletions
+                .Where(c => c.ScheduleId == scheduleId && c.TenantId == tenantId && c.DeletedAt == null)
+                .Join(_context.PreAdmissionChecklistItems,
+                    c => c.ItemId,
+                    i => i.Id,
+                    (c, i) => new
+                    {
+                        completionId = c.Id,
+                        itemId = c.ItemId,
+                        templateId = c.TemplateId,
+                        itemKey = i.ItemKey,
+                        itemLabel = i.ItemLabel,
+                        departmentOwner = i.DepartmentOwner,
+                        departmentColor = i.DepartmentColor,
+                        isMandatory = i.IsMandatory,
+                        isBlocking = i.IsBlocking,
+                        isComplete = c.IsComplete,
+                        completedAt = c.CompletedAt,
+                        completedByDept = c.CompletedByDept,
+                        documentUrl = c.DocumentUrl,
+                        notes = c.Notes,
+                    })
+                .ToListAsync();
+
+            return new { scheduleId, completions };
+        }
+
         // ── PATCH completion — mark/unmark items ─────────────────────────────
 
         [HttpPatch("completion/{scheduleId}")]
         [RequirePermission("counseling_sessions.update")]
         public async Task<IActionResult> UpdateCompletion(Guid scheduleId, [FromBody] UpdateChecklistCompletionRequest request)
         {
-            try
+            return StatusCode(410, new
             {
-                var tenantId = GetTenantId();
-                var userId = GetCurrentUserId();
-                var now = DateTime.UtcNow;
-
-                foreach (var update in request.Updates)
-                {
-                    var existing = await _context.OtAdmissionChecklistCompletions
-                        .FirstOrDefaultAsync(c => c.ScheduleId == scheduleId
-                                               && c.ItemId == update.ItemId
-                                               && c.TenantId == tenantId
-                                               && c.DeletedAt == null);
-
-                    if (existing == null)
-                    {
-                        // Need template_id — derive from item
-                        var item = await _context.PreAdmissionChecklistItems
-                            .FirstOrDefaultAsync(i => i.Id == update.ItemId && i.TenantId == tenantId);
-                        if (item == null) continue;
-
-                        existing = new OtAdmissionChecklistCompletion
-                        {
-                            Id = Guid.NewGuid(),
-                            TenantId = tenantId,
-                            ScheduleId = scheduleId,
-                            ItemId = update.ItemId,
-                            TemplateId = item.TemplateId,
-                            CreatedByUserId = userId,
-                            CreatedAt = now,
-                        };
-                        _context.OtAdmissionChecklistCompletions.Add(existing);
-                    }
-
-                    existing.IsComplete = update.IsComplete;
-                    existing.UpdatedAt = now;
-                    existing.UpdatedByUserId = userId;
-                    existing.Notes = update.Notes ?? existing.Notes;
-                    existing.CompletedByDept = update.CompletedByDept ?? existing.CompletedByDept;
-                    existing.DocumentUrl = update.DocumentUrl ?? existing.DocumentUrl;
-
-                    if (update.IsComplete && !existing.CompletedAt.HasValue)
-                    {
-                        existing.CompletedAt = now;
-                        existing.CompletedByUserId = userId;
-                    }
-                    else if (!update.IsComplete)
-                    {
-                        existing.CompletedAt = null;
-                        existing.CompletedByUserId = null;
-                    }
-                }
-
-                await _context.SaveChangesAsync();
-                return Ok(new { scheduleId, message = "Checklist updated", updatedAt = now });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating checklist completion for schedule {ScheduleId}", scheduleId);
-                return StatusCode(500, new { message = "Error updating completion", error = ex.Message });
-            }
+                error = "Deprecated. Use ip-management counsellor outpatient-checklist API instead.",
+            });
         }
 
         // ── GET step-grouped workflow for a schedule ──────────────────────────
@@ -331,159 +312,10 @@ namespace AuthService.Controllers
             int stepNumber,
             [FromBody] UpdateWorkflowStepRequest request)
         {
-            try
+            return StatusCode(410, new
             {
-                var tenantId = GetTenantId();
-                var userId = GetCurrentUserId();
-                var now = DateTime.UtcNow;
-
-                var stepItems = await _context.PreAdmissionChecklistItems
-                    .Where(i => i.TenantId == tenantId && i.WorkflowStep == stepNumber
-                            && i.IsActive && i.DeletedAt == null)
-                    .ToListAsync();
-
-                if (!stepItems.Any())
-                    return NotFound(new { message = $"No items found for step {stepNumber}" });
-
-                var updatedItemIds = new List<Guid>();
-
-                if (request.ItemUpdates != null && request.ItemUpdates.Any())
-                {
-                    foreach (var upd in request.ItemUpdates)
-                    {
-                        var item = stepItems.FirstOrDefault(i => i.Id == upd.ItemId);
-                        if (item == null) continue;
-
-                        var existing = await _context.OtAdmissionChecklistCompletions
-                            .FirstOrDefaultAsync(c => c.ScheduleId == scheduleId
-                                                   && c.ItemId == upd.ItemId
-                                                   && c.TenantId == tenantId
-                                                   && c.DeletedAt == null);
-
-                        if (existing == null)
-                        {
-                            existing = new OtAdmissionChecklistCompletion
-                            {
-                                Id = Guid.NewGuid(),
-                                TenantId = tenantId,
-                                ScheduleId = scheduleId,
-                                ItemId = upd.ItemId,
-                                TemplateId = item.TemplateId,
-                                CreatedByUserId = userId,
-                                CreatedAt = now,
-                            };
-                            _context.OtAdmissionChecklistCompletions.Add(existing);
-                        }
-
-                        existing.IsComplete = upd.IsComplete;
-                        existing.UpdatedAt = now;
-                        existing.UpdatedByUserId = userId;
-                        if (upd.Notes != null) existing.Notes = upd.Notes;
-                        if (upd.CompletedByDept != null) existing.CompletedByDept = upd.CompletedByDept;
-                        if (upd.DocumentUrl != null) existing.DocumentUrl = upd.DocumentUrl;
-
-                        if (upd.IsComplete && !existing.CompletedAt.HasValue)
-                        {
-                            existing.CompletedAt = now;
-                            existing.CompletedByUserId = userId;
-                        }
-                        else if (!upd.IsComplete)
-                        {
-                            existing.CompletedAt = null;
-                            existing.CompletedByUserId = null;
-                        }
-
-                        updatedItemIds.Add(upd.ItemId);
-                    }
-                }
-                else if (request.MarkAllComplete.HasValue)
-                {
-                    foreach (var item in stepItems.Where(i => i.IsMandatory))
-                    {
-                        var existing = await _context.OtAdmissionChecklistCompletions
-                            .FirstOrDefaultAsync(c => c.ScheduleId == scheduleId
-                                                   && c.ItemId == item.Id
-                                                   && c.TenantId == tenantId
-                                                   && c.DeletedAt == null);
-
-                        if (existing == null)
-                        {
-                            existing = new OtAdmissionChecklistCompletion
-                            {
-                                Id = Guid.NewGuid(),
-                                TenantId = tenantId,
-                                ScheduleId = scheduleId,
-                                ItemId = item.Id,
-                                TemplateId = item.TemplateId,
-                                CreatedByUserId = userId,
-                                CreatedAt = now,
-                            };
-                            _context.OtAdmissionChecklistCompletions.Add(existing);
-                        }
-
-                        existing.IsComplete = request.MarkAllComplete.Value;
-                        existing.UpdatedAt = now;
-                        existing.UpdatedByUserId = userId;
-
-                        if (request.MarkAllComplete.Value && !existing.CompletedAt.HasValue)
-                        {
-                            existing.CompletedAt = now;
-                            existing.CompletedByUserId = userId;
-                        }
-                        else if (!request.MarkAllComplete.Value)
-                        {
-                            existing.CompletedAt = null;
-                            existing.CompletedByUserId = null;
-                        }
-
-                        if (request.Notes != null) existing.Notes = request.Notes;
-                        updatedItemIds.Add(item.Id);
-                    }
-                }
-
-                // Update schedule-level denormalised summary
-                var schedule = await _context.OTSchedules
-                    .FirstOrDefaultAsync(s => s.Id == scheduleId && s.TenantId == tenantId && s.DeletedAt == null);
-
-                await _context.SaveChangesAsync();
-
-                if (schedule != null)
-                {
-                    var allStepItemsSummary = await _context.PreAdmissionChecklistItems
-                        .Where(i => i.TenantId == tenantId && i.IsActive && i.DeletedAt == null && i.WorkflowStep != null)
-                        .Select(i => new { i.Id, i.WorkflowStep, i.IsMandatory })
-                        .ToListAsync();
-
-                    var doneIds = await _context.OtAdmissionChecklistCompletions
-                        .Where(c => c.ScheduleId == scheduleId && c.TenantId == tenantId && c.DeletedAt == null && c.IsComplete)
-                        .Select(c => c.ItemId)
-                        .ToListAsync();
-
-                    var completedStepCount = allStepItemsSummary
-                        .GroupBy(x => x.WorkflowStep)
-                        .Count(g => g.Where(x => x.IsMandatory).All(x => doneIds.Contains(x.Id)));
-
-                    schedule.WorkflowStepsCompleted = completedStepCount;
-                    schedule.WorkflowLastUpdatedAt = now;
-                    schedule.UpdatedAt = now;
-                    schedule.UpdatedByUserId = userId;
-
-                    await _context.SaveChangesAsync();
-                }
-
-                return Ok(new
-                {
-                    scheduleId,
-                    stepNumber,
-                    updatedItems = updatedItemIds.Count,
-                    message = "Workflow step updated"
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating workflow step {StepNumber} for schedule {ScheduleId}", stepNumber, scheduleId);
-                return StatusCode(500, new { message = "Error updating workflow step", error = ex.Message });
-            }
+                error = "Deprecated. Use ip-management counsellor outpatient-checklist API instead.",
+            });
         }
 
         // ── Admin: list templates ─────────────────────────────────────────────
@@ -518,65 +350,10 @@ namespace AuthService.Controllers
         [RequirePermission("admin.manage")]
         public async Task<IActionResult> CreateTemplate([FromBody] CreateTemplateRequest request)
         {
-            try
+            return StatusCode(410, new
             {
-                var tenantId = GetTenantId();
-                var userId = GetCurrentUserId();
-                var now = DateTime.UtcNow;
-
-                var template = new PreAdmissionChecklistTemplate
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = tenantId,
-                    TemplateName = request.TemplateName,
-                    Description = request.Description,
-                    PatientType = request.PatientType,
-                    SurgeryCategory = request.SurgeryCategory,
-                    MinPatientAge = request.MinPatientAge,
-                    MaxPatientAge = request.MaxPatientAge,
-                    AppliesToEye = request.AppliesToEye,
-                    DisplayOrder = request.DisplayOrder,
-                    IsActive = true,
-                    CreatedByUserId = userId,
-                    UpdatedByUserId = userId,
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                };
-                _context.PreAdmissionChecklistTemplates.Add(template);
-
-                foreach (var (itemReq, idx) in request.Items.Select((r, i) => (r, i)))
-                {
-                    _context.PreAdmissionChecklistItems.Add(new PreAdmissionChecklistItem
-                    {
-                        Id = Guid.NewGuid(),
-                        TenantId = tenantId,
-                        TemplateId = template.Id,
-                        ItemKey = itemReq.ItemKey,
-                        ItemLabel = itemReq.ItemLabel,
-                        Description = itemReq.Description,
-                        DepartmentOwner = itemReq.DepartmentOwner,
-                        DepartmentColor = itemReq.DepartmentColor,
-                        IsMandatory = itemReq.IsMandatory,
-                        IsBlocking = itemReq.IsBlocking,
-                        AppliesIfAgeBelow = itemReq.AppliesIfAgeBelow,
-                        RequiresDocument = itemReq.RequiresDocument,
-                        DisplayOrder = itemReq.DisplayOrder ?? idx,
-                        IsActive = true,
-                        CreatedByUserId = userId,
-                        UpdatedByUserId = userId,
-                        CreatedAt = now,
-                        UpdatedAt = now,
-                    });
-                }
-
-                await _context.SaveChangesAsync();
-                return StatusCode(201, new { templateId = template.Id, message = "Template created" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating checklist template");
-                return StatusCode(500, new { message = "Error creating template", error = ex.Message });
-            }
+                error = "Deprecated. Use ip-management counsellor outpatient-checklist API instead.",
+            });
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

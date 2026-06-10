@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * @deprecated S0 — Replaced by CounsellorOutpatientChecklist + ip-management API.
+ * Migration 66 pre-admission-checklist endpoints are deprecated.
+ * Use ipManagementApi.getCounsellorOutpatientChecklist / saveCounsellorOutpatientCompletion.
+ */
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getApi } from '@/lib/api';
 
@@ -92,6 +98,20 @@ export function usePreAdmissionCompletion(scheduleId: string | undefined) {
     queryFn: async () => {
       const api = getApi();
       const res = await api.get(`/pre-admission-checklist/completion/${scheduleId}`);
+      return res.data;
+    },
+  });
+}
+
+/** Bridge legacy pre_admission data via counselling session id (S8). */
+export function usePreAdmissionCompletionBySession(sessionId: string | undefined) {
+  return useQuery<{ scheduleId: string | null; completions: CompletionEntry[] }>({
+    queryKey: ['pre-admission-completion-by-session', sessionId],
+    enabled: !!sessionId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const api = getApi();
+      const res = await api.get(`/pre-admission-checklist/completion/by-session/${sessionId}`);
       return res.data;
     },
   });

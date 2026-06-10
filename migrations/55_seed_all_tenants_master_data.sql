@@ -287,11 +287,13 @@ BEGIN
         ON CONFLICT (tenant_id, entity_type, code) DO NOTHING;
 
         INSERT INTO master.master_value (tenant_id, group_key, entity_type, code, label, sort_order) VALUES
-            (rec.id, 'counsellor', 'counsellor.surgery_package', 'BASIC',    'Basic Package',    1),
-            (rec.id, 'counsellor', 'counsellor.surgery_package', 'STANDARD', 'Standard Package', 2),
-            (rec.id, 'counsellor', 'counsellor.surgery_package', 'PREMIUM',  'Premium Package',  3),
-            (rec.id, 'counsellor', 'counsellor.surgery_package', 'CORPORATE','Corporate Package', 4),
-            (rec.id, 'counsellor', 'counsellor.surgery_package', 'GOVT',     'Government Scheme',5)
+            (rec.id, 'counsellor', 'counsellor.surgery_package', 'PHACO_STD',    'Phaco Standard',   1),
+            (rec.id, 'counsellor', 'counsellor.surgery_package', 'PHACO_PREM',   'Phaco Premium',    2),
+            (rec.id, 'counsellor', 'counsellor.surgery_package', 'LASIK_BASIC',  'LASIK Basic',      3),
+            (rec.id, 'counsellor', 'counsellor.surgery_package', 'LASIK_ADV',    'LASIK Advanced',   4),
+            (rec.id, 'counsellor', 'counsellor.surgery_package', 'RETINA_PKG',   'Retina Package',   5),
+            (rec.id, 'counsellor', 'counsellor.surgery_package', 'CORNEA_PKG',   'Cornea Package',   6),
+            (rec.id, 'counsellor', 'counsellor.surgery_package', 'GLAUCOMA_PKG', 'Glaucoma Package', 7)
         ON CONFLICT (tenant_id, entity_type, code) DO NOTHING;
 
         INSERT INTO master.master_value (tenant_id, group_key, entity_type, code, label, sort_order) VALUES

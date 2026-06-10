@@ -8,6 +8,7 @@ import { useHasPermission } from '@/hooks/use-permissions';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { toast } from 'react-hot-toast';
 import DoctorExaminationForm from '@/components/doctors-desk/DoctorComprehensiveExam';
+import SendToOptometryButton from '@/components/clinical/SendToOptometryButton';
 import { optometrySummaryApi } from '@/lib/api/optometry.api';
 import { patientsEnhancedApi } from '@/lib/api/patients-enhanced.api';
 import AlertBanner from '@/components/doctors-desk/AlertBanner';
@@ -192,6 +193,7 @@ function DoctorDeskPageContent() {
             </p>
           </div>
         </div>
+        <SendToOptometryButton patientId={patientId} defaultReasonCode="DOCTOR_REQUESTED" />
       </div>
 
       {/* Patient Information Card */}
@@ -266,6 +268,7 @@ function DoctorDeskPageContent() {
       {/* Doctor's Examination Form */}
       <DoctorExaminationForm
         patientId={patientId}
+        visitId={optometryData?.visitId ?? optometryData?.id ?? null}
         patientData={patientData}
         optometryData={optometryData}
         onSave={handleSave}

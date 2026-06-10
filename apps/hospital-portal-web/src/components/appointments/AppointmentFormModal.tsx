@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, User, Users, FileText } from 'lucide-react';
 import { Appointment, CreateAppointmentDto, appointmentsApi } from '@/lib/api/appointments.api';
 import { getApi } from '@/lib/api';
+import { useMasterValues } from '@/hooks/use-master-values';
+import { defaultMasterCode } from '@/lib/master-data/appointment-master';
 
 interface AppointmentFormModalProps {
   appointment?: Appointment;
@@ -49,7 +51,12 @@ export default function AppointmentFormModal({
   );
   const [startTime, setStartTime] = useState(appointment?.startTime || '09:00');
   const [duration, setDuration] = useState(appointment?.duration || 30);
-  const [appointmentType, setAppointmentType] = useState(appointment?.appointmentType || 'consultation');
+  const { options: appointmentTypeOptions } = useMasterValues('appointment.type');
+  const { options: consultationTypeOptions } = useMasterValues('appointment.consultation_type');
+  const { options: priorityOptions } = useMasterValues('appointment.priority');
+  const [appointmentType, setAppointmentType] = useState(appointment?.appointmentType || '');
+  const [consultationType, setConsultationType] = useState(appointment?.consultationType || '');
+  const [priority, setPriority] = useState('');
   const [reasonForVisit, setReasonForVisit] = useState(appointment?.reasonForVisit || '');
   const [notes, setNotes] = useState(appointment?.notes || '');
   
@@ -63,6 +70,23 @@ export default function AppointmentFormModal({
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!appointment) {
+      if (!appointmentType && appointmentTypeOptions.length > 0) {
+        setAppointmentType(defaultMasterCode(appointmentTypeOptions, 'OPD'));
+      }
+      if (!priority && priorityOptions.length > 0) {
+        setPriority(defaultMasterCode(priorityOptions, 'ROUTINE'));
+      }
+      if (!consultationType && consultationTypeOptions.length > 0) {
+        setConsultationType(defaultMasterCode(consultationTypeOptions, 'FIRST_VISIT'));
+      }
+    } else {
+      if (appointment.appointmentType) setAppointmentType(appointment.appointmentType);
+      if (appointment.consultationType) setConsultationType(appointment.consultationType);
+    }
+  }, [appointment, appointmentTypeOptions, consultationTypeOptions, priorityOptions, appointmentType, consultationType, priority]);
 
   const loadData = async () => {
     try {
@@ -106,6 +130,8 @@ export default function AppointmentFormModal({
         startTime,
         duration,
         appointmentType,
+        consultationType: consultationType || undefined,
+        priority: priority || undefined,
         reasonForVisit: reasonForVisit || undefined,
         notes: notes || undefined
       };
@@ -300,11 +326,43 @@ export default function AppointmentFormModal({
                 onChange={(e) => setAppointmentType(e.target.value)}
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
               >
-                <option value="consultation">Consultation</option>
-                <option value="follow-up">Follow-up</option>
-                <option value="emergency">Emergency</option>
-                <option value="routine-checkup">Routine Checkup</option>
-                <option value="procedure">Procedure</option>
+                <option value="">{appointmentTypeOptions.length === 0 ? 'No types configured' : 'Select type'}</option>
+                {appointmentTypeOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Consultation Type
+              </label>
+              <select
+                value={consultationType}
+                onChange={(e) => setConsultationType(e.target.value)}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">{consultationTypeOptions.length === 0 ? 'No types configured' : 'Select consultation type'}</option>
+                {consultationTypeOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Priority
+              </label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">{priorityOptions.length === 0 ? 'No priorities configured' : 'Select priority'}</option>
+                {priorityOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </select>
             </div>
           </div>

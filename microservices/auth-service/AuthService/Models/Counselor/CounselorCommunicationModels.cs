@@ -165,6 +165,10 @@ namespace AuthService.Models.Counselor
 
         /// <summary>Optional notes appended to the session's AdditionalNotes.</summary>
         public string? Notes { get; set; }
+
+        /// <summary>Master code from counsellor.session_type for the re-queued round.</summary>
+        [MaxLength(30)]
+        public string? SessionType { get; set; }
     }
 
     // ============================================================================

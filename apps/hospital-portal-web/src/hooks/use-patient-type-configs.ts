@@ -1,13 +1,11 @@
-// Patient Type Configuration Hooks - React Query hooks for patient type configs
-import { useQuery, UseQueryOptions } from '@tanstack/react-query';
-import {
-  patientTypeConfigsApi,
-  type PatientTypeConfig,
-} from '@/lib/api/patient-type-configs.api';
-
-// ============================================================================
-// Query Keys
-// ============================================================================
+/**
+ * @deprecated Use `usePatientTypeMaster` from `@/hooks/use-patient-type-master`.
+ * Reads from Master Data (`patient.patient_type`), not the legacy Patient Type Configs API.
+ */
+import { useMemo } from 'react';
+import type { PatientTypeConfig } from '@/lib/api/patient-type-configs.api';
+import { usePatientTypeMaster, usePatientTypeMasterConfig } from '@/hooks/use-patient-type-master';
+import { findPatientTypeConfig } from '@/lib/master-data/patient-type-master';
 
 export const patientTypeConfigKeys = {
   all: ['patient-type-configs'] as const,
@@ -16,128 +14,68 @@ export const patientTypeConfigKeys = {
   validate: (patientType: string) => [...patientTypeConfigKeys.all, 'validate', patientType] as const,
 };
 
-// ============================================================================
-// Query Hooks
-// ============================================================================
+type LegacyQueryResult<T> = {
+  data: T | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+};
 
-/**
- * Get all active patient type configurations
- * 
- * Returns all 8 patient types: Cash, Insurance, CoPay, ESH, CGHS, Arograshree, SGHS, Camp
- * 
- * @example
- * const { data: configs, isLoading } = usePatientTypeConfigs();
- * 
- * configs?.forEach(config => {
- *   console.log(config.displayName, config.patientType);
- * });
- */
-export function usePatientTypeConfigs(
-  options?: Omit<UseQueryOptions<PatientTypeConfig[]>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: patientTypeConfigKeys.lists(),
-    queryFn: () => patientTypeConfigsApi.getAll(),
-    staleTime: 10 * 60 * 1000, // 10 minutes (configs rarely change)
-    gcTime: 30 * 60 * 1000, // 30 minutes
-    ...options,
-  });
+/** @deprecated */
+export function usePatientTypeConfigs(): LegacyQueryResult<PatientTypeConfig[]> {
+  const { configs, loading, error } = usePatientTypeMaster();
+  return {
+    data: configs,
+    isLoading: loading,
+    isError: error,
+    error: error ? new Error('Failed to load patient type rules from Master Data') : null,
+  };
 }
 
-/**
- * Get configuration for a specific patient type
- * 
- * @param patientType - One of: Cash, Insurance, CoPay, ESH, CGHS, Arograshree, SGHS, Camp
- * 
- * @example
- * const { data: config, isLoading } = usePatientTypeConfig('Cash');
- * 
- * if (config?.configuration.requiresAdvancePayment) {
- *   const advance = totalAmount * config.configuration.advancePercentage / 100;
- *   console.log(`Advance Required: ${advance}`);
- * }
- */
-export function usePatientTypeConfig(
-  patientType: string,
-  options?: Omit<UseQueryOptions<PatientTypeConfig>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: patientTypeConfigKeys.config(patientType),
-    queryFn: () => patientTypeConfigsApi.getByType(patientType),
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes
-    enabled: !!patientType, // Only fetch if patientType is provided
-    ...options,
-  });
+/** @deprecated */
+export function usePatientTypeConfig(patientType: string): LegacyQueryResult<PatientTypeConfig> {
+  const { config, loading, error } = usePatientTypeMasterConfig(patientType);
+  return {
+    data: config,
+    isLoading: loading,
+    isError: error || (!loading && !!patientType && !config),
+    error: error ? new Error('Failed to load patient type rule') : null,
+  };
 }
 
-/**
- * Validate a patient type name
- * 
- * @param patientType - Patient type to validate
- * 
- * @example
- * const { data: validation } = useValidatePatientType('InvalidType');
- * 
- * if (!validation?.isValid) {
- *   toast.error(validation?.message || 'Invalid patient type');
- * }
- */
-export function useValidatePatientType(
-  patientType: string,
-  options?: Omit<UseQueryOptions<{ isValid: boolean; message?: string }>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: patientTypeConfigKeys.validate(patientType),
-    queryFn: () => patientTypeConfigsApi.validate(patientType),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    enabled: !!patientType, // Only validate if patientType is provided
-    ...options,
-  });
+/** @deprecated */
+export function useValidatePatientType(patientType: string): LegacyQueryResult<{ isValid: boolean; message?: string }> {
+  const { configs, loading, error } = usePatientTypeMaster();
+  const data = useMemo(() => {
+    const isValid = !!findPatientTypeConfig(configs, patientType);
+    return { isValid, message: isValid ? undefined : `Invalid patient type: ${patientType}` };
+  }, [configs, patientType]);
+  return { data, isLoading: loading, isError: error, error: error ? new Error('Validation failed') : null };
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Get display-friendly patient type name
- */
 export function getPatientTypeDisplayName(patientType: string): string {
   const displayNames: Record<string, string> = {
-    'Cash': 'Cash Payment',
-    'Insurance': 'Insurance (Full Coverage)',
-    'CoPay': 'Insurance (Co-Payment)',
-    'ESH': 'ESH Scheme',
-    'CGHS': 'CGHS Scheme',
-    'Arograshree': 'Arograshree Scheme',
-    'SGHS': 'State Government Scheme',
-    'Camp': 'Camp Sponsored'
+    Cash: 'Cash Payment',
+    Insurance: 'Insurance (Full Coverage)',
+    CoPay: 'Insurance (Co-Payment)',
+    ESH: 'ESH Scheme',
+    CGHS: 'CGHS Scheme',
+    Arograshree: 'Arograshree Scheme',
+    SGHS: 'State Government Scheme',
+    Camp: 'Camp Sponsored',
   };
   return displayNames[patientType] || patientType;
 }
 
-/**
- * Check if patient type requires advance payment
- */
 export function requiresAdvancePayment(config?: PatientTypeConfig): boolean {
   return config?.configuration?.requiresAdvancePayment ?? false;
 }
 
-/**
- * Get advance payment percentage
- */
 export function getAdvancePercentage(config?: PatientTypeConfig): number {
   return config?.configuration?.advancePercentage ?? 0;
 }
 
-/**
- * Calculate advance payment amount
- */
 export function calculateAdvanceAmount(packageAmount: number, config?: PatientTypeConfig): number {
-  if (!requiresAdvancePayment(config)) {
-    return 0;
-  }
-  const percentage = getAdvancePercentage(config);
-  return (packageAmount * percentage) / 100;
+  if (!requiresAdvancePayment(config)) return 0;
+  return (packageAmount * getAdvancePercentage(config)) / 100;
 }

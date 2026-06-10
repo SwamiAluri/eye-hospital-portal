@@ -38,6 +38,11 @@ public class IpManagementDbContext : DbContext
     public DbSet<PreOpDocument>          PreOpDocuments           { get; set; }
     public DbSet<PreOpSectionClearance>  PreOpSectionClearances   { get; set; }
     public DbSet<PreOpFollowUpTask>      PreOpFollowUpTasks        { get; set; }
+    public DbSet<CounsellorChecklistCompletion> CounsellorChecklistCompletions { get; set; }
+    public DbSet<PreOpMedicationLog>            PreOpMedicationLogs            { get; set; }
+    public DbSet<SurgicalSafetyChecklist>     SurgicalSafetyChecklists       { get; set; }
+    public DbSet<PacAssessment>               PacAssessments                 { get; set; }
+    public DbSet<AnaesthesiaMonitoring>       AnaesthesiaMonitorings         { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -115,6 +120,14 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.AttendantPhone).HasColumnName("attendant_phone");
             e.Property(p => p.AttendantRelationship).HasColumnName("attendant_relationship");
             e.Property(p => p.AdmittedAt).HasColumnName("admitted_at");
+            e.Property(p => p.WardCheckInAt).HasColumnName("ward_check_in_at");
+            e.Property(p => p.InformedOtTeamAt).HasColumnName("informed_ot_team_at");
+            e.Property(p => p.XylocaineSensitivityResult).HasColumnName("xylocaine_sensitivity_result");
+            e.Property(p => p.MedicationLogSurgeryNotes).HasColumnName("medication_log_surgery_notes");
+            e.Property(p => p.WardPostopIolChecks).HasColumnName("ward_postop_iol_checks");
+            e.Property(p => p.SentToOtAt).HasColumnName("sent_to_ot_at");
+            e.Property(p => p.ReceivedFromOtAt).HasColumnName("received_from_ot_at");
+            e.Property(p => p.WardCheckoutAt).HasColumnName("ward_checkout_at");
             e.Property(p => p.SurgeryStartedAt).HasColumnName("surgery_started_at");
             e.Property(p => p.SurgeryEndedAt).HasColumnName("surgery_ended_at");
             e.Property(p => p.DischargedAt).HasColumnName("discharged_at");
@@ -133,6 +146,10 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.DischargeOverrideReason).HasColumnName("discharge_override_reason");
             e.Property(p => p.DischargeOverrideBy).HasColumnName("discharge_override_by");
             e.Property(p => p.OtReturnReason).HasColumnName("ot_return_reason");
+            e.Property(p => p.ChecklistPhaseStatus).HasColumnName("checklist_phase_status");
+            e.Property(p => p.WhoSupervisorOverrideApplied).HasColumnName("who_supervisor_override_applied");
+            e.Property(p => p.WhoSupervisorOverrideBy).HasColumnName("who_supervisor_override_by");
+            e.Property(p => p.WhoSupervisorOverrideAt).HasColumnName("who_supervisor_override_at");
             e.Property(p => p.PackageAmount).HasColumnName("package_amount");
             e.Property(p => p.TotalAdvances).HasColumnName("total_advances");
             e.Property(p => p.TotalPaid).HasColumnName("total_paid");
@@ -455,6 +472,149 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.SurgeryTypeFilter).HasColumnName("surgery_type_filter");
             e.Property(p => p.DisplayOrder).HasColumnName("display_order");
             e.Property(p => p.IsActive).HasColumnName("is_active");
+            e.Property(p => p.FormCode).HasColumnName("form_code");
+            e.Property(p => p.FormContext).HasColumnName("form_context");
+            e.Property(p => p.ResponsibleDepartmentCode).HasColumnName("responsible_department_code");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.Property(p => p.Status).HasColumnName("status");
+        });
+
+        // ── CounsellorChecklistCompletion ──────────────────────────────────
+        modelBuilder.Entity<CounsellorChecklistCompletion>(e =>
+        {
+            e.ToTable("counsellor_checklist_completions");
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.CounselingSessionId).HasColumnName("counseling_session_id");
+            e.Property(p => p.ItemId).HasColumnName("item_id");
+            e.Property(p => p.IsCompleted).HasColumnName("is_completed");
+            e.Property(p => p.IsBypassed).HasColumnName("is_bypassed");
+            e.Property(p => p.BypassReason).HasColumnName("bypass_reason");
+            e.Property(p => p.Notes).HasColumnName("notes");
+            e.Property(p => p.CompletedByUserId).HasColumnName("completed_by_user_id");
+            e.Property(p => p.CompletedByRole).HasColumnName("completed_by_role");
+            e.Property(p => p.CompletedAt).HasColumnName("completed_at");
+            e.Property(p => p.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.Property(p => p.Status).HasColumnName("status");
+        });
+
+        // ── SurgicalSafetyChecklist ────────────────────────────────────────
+        modelBuilder.Entity<SurgicalSafetyChecklist>(e =>
+        {
+            e.ToTable("surgical_safety_checklist");
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.PatientJourneyId).HasColumnName("patient_journey_id");
+            e.Property(p => p.IdentityConfirmed).HasColumnName("identity_confirmed");
+            e.Property(p => p.EyeRe).HasColumnName("eye_re");
+            e.Property(p => p.EyeLe).HasColumnName("eye_le");
+            e.Property(p => p.TopicalAntibioticsUsed).HasColumnName("topical_antibiotics_used");
+            e.Property(p => p.SurgeryType).HasColumnName("surgery_type");
+            e.Property(p => p.BillingVerifiedOverride).HasColumnName("billing_verified_override");
+            e.Property(p => p.AscanVerified).HasColumnName("ascan_verified");
+            e.Property(p => p.AllergyKnown).HasColumnName("allergy_known");
+            e.Property(p => p.AllergyDetails).HasColumnName("allergy_details");
+            e.Property(p => p.ConsentFormChecked).HasColumnName("consent_form_checked");
+            e.Property(p => p.FitnessConfirmed).HasColumnName("fitness_confirmed");
+            e.Property(p => p.BeforeAnaesthesiaCompletedAt).HasColumnName("before_anaesthesia_completed_at");
+            e.Property(p => p.BeforeAnaesthesiaCompletedBy).HasColumnName("before_anaesthesia_completed_by");
+            e.Property(p => p.WhoPatientIdentity).HasColumnName("who_patient_identity");
+            e.Property(p => p.WhoCorrectEye).HasColumnName("who_correct_eye");
+            e.Property(p => p.WhoCorrectProcedure).HasColumnName("who_correct_procedure");
+            e.Property(p => p.WhoConsentConfirmed).HasColumnName("who_consent_confirmed");
+            e.Property(p => p.WhoSurgeonUserId).HasColumnName("who_surgeon_user_id");
+            e.Property(p => p.WhoNurseUserId).HasColumnName("who_nurse_user_id");
+            e.Property(p => p.WhoCompletedAt).HasColumnName("who_completed_at");
+            e.Property(p => p.ProcedureNameRecorded).HasColumnName("procedure_name_recorded");
+            e.Property(p => p.PostopMedicationInstructed).HasColumnName("postop_medication_instructed");
+            e.Property(p => p.PostopPositionInstructed).HasColumnName("postop_position_instructed");
+            e.Property(p => p.AfterSurgeryCompletedAt).HasColumnName("after_surgery_completed_at");
+            e.Property(p => p.AfterSurgeryCompletedBy).HasColumnName("after_surgery_completed_by");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.Property(p => p.Status).HasColumnName("status");
+        });
+
+        // ── PacAssessment ──────────────────────────────────────────────────
+        modelBuilder.Entity<PacAssessment>(e =>
+        {
+            e.ToTable("pac_assessment");
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.PatientJourneyId).HasColumnName("patient_journey_id");
+            e.Property(p => p.AssessedAt).HasColumnName("assessed_at");
+            e.Property(p => p.PreOpDiagnosis).HasColumnName("pre_op_diagnosis");
+            e.Property(p => p.Bp).HasColumnName("bp");
+            e.Property(p => p.Hr).HasColumnName("hr");
+            e.Property(p => p.PhysicalStatusAsa).HasColumnName("physical_status_asa");
+            e.Property(p => p.Investigations).HasColumnName("investigations");
+            e.Property(p => p.Allergies).HasColumnName("allergies");
+            e.Property(p => p.SystemicReview).HasColumnName("systemic_review");
+            e.Property(p => p.PastAnaestheticHistory).HasColumnName("past_anaesthetic_history");
+            e.Property(p => p.AirwayExam).HasColumnName("airway_exam");
+            e.Property(p => p.AnaesthesiaPlan).HasColumnName("anaesthesia_plan");
+            e.Property(p => p.PeriOpExplained).HasColumnName("peri_op_explained");
+            e.Property(p => p.ConsentType).HasColumnName("consent_type");
+            e.Property(p => p.CurrentMedications).HasColumnName("current_medications");
+            e.Property(p => p.PreOpConsultations).HasColumnName("pre_op_consultations");
+            e.Property(p => p.MedicationsAdvised).HasColumnName("medications_advised");
+            e.Property(p => p.InvestigationsAdvised).HasColumnName("investigations_advised");
+            e.Property(p => p.CompletedByDesignation).HasColumnName("completed_by_designation");
+            e.Property(p => p.AssessmentStatus).HasColumnName("assessment_status");
+            e.Property(p => p.CompletedByUserId).HasColumnName("completed_by_user_id");
+            e.Property(p => p.CompletedAt).HasColumnName("completed_at");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.Property(p => p.Status).HasColumnName("status");
+        });
+
+        // ── AnaesthesiaMonitoring ──────────────────────────────────────────
+        modelBuilder.Entity<AnaesthesiaMonitoring>(e =>
+        {
+            e.ToTable("anaesthesia_monitoring");
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.PatientJourneyId).HasColumnName("patient_journey_id");
+            e.Property(p => p.PreOpPulse).HasColumnName("pre_op_pulse");
+            e.Property(p => p.PreOpBp).HasColumnName("pre_op_bp");
+            e.Property(p => p.PreOpSpo2).HasColumnName("pre_op_spo2");
+            e.Property(p => p.PreOpConsentConfirmed).HasColumnName("pre_op_consent_confirmed");
+            e.Property(p => p.PreOpReviewAt).HasColumnName("pre_op_review_at");
+            e.Property(p => p.MonitoringReadings).HasColumnName("monitoring_readings");
+            e.Property(p => p.DischargePr).HasColumnName("discharge_pr");
+            e.Property(p => p.DischargeBp).HasColumnName("discharge_bp");
+            e.Property(p => p.GeneralConditionNormal).HasColumnName("general_condition_normal");
+            e.Property(p => p.DischargeRemarks).HasColumnName("discharge_remarks");
+            e.Property(p => p.DischargeClearedBy).HasColumnName("discharge_cleared_by");
+            e.Property(p => p.DischargeClearedAt).HasColumnName("discharge_cleared_at");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.Property(p => p.Status).HasColumnName("status");
+        });
+
+        // ── PreOpMedicationLog ─────────────────────────────────────────────
+        modelBuilder.Entity<PreOpMedicationLog>(e =>
+        {
+            e.ToTable("pre_op_medication_log");
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.PatientJourneyId).HasColumnName("patient_journey_id");
+            e.Property(p => p.MedicationId).HasColumnName("medication_id");
+            e.Property(p => p.MedicineName).HasColumnName("medicine_name");
+            e.Property(p => p.DoseNumber).HasColumnName("dose_number");
+            e.Property(p => p.AdministeredAt).HasColumnName("administered_at");
+            e.Property(p => p.AdministeredByUserId).HasColumnName("administered_by_user_id");
+            e.Property(p => p.Notes).HasColumnName("notes");
+            e.Property(p => p.DisplayOrder).HasColumnName("display_order");
             e.Property(p => p.CreatedAt).HasColumnName("created_at");
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
             e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
@@ -499,7 +659,11 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.Notes).HasColumnName("notes");
             e.Property(p => p.DocumentId).HasColumnName("document_id");
             e.Property(p => p.CompletedByUserId).HasColumnName("completed_by_user_id");
+            e.Property(p => p.CompletedByRole).HasColumnName("completed_by_role");
             e.Property(p => p.CompletedAt).HasColumnName("completed_at");
+            e.Property(p => p.Source).HasColumnName("source");
+            e.Property(p => p.CopiedAt).HasColumnName("copied_at");
+            e.Property(p => p.CounsellorCompletionId).HasColumnName("counsellor_completion_id");
             e.Property(p => p.CreatedByUserId).HasColumnName("created_by_user_id");
             e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
             e.Property(p => p.CreatedAt).HasColumnName("created_at");

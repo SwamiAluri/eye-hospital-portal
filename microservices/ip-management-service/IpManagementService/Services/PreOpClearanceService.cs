@@ -22,15 +22,18 @@ public class PreOpClearanceService
     private readonly IpManagementDbContext    _db;
     private readonly IAzureBlobStorageService _blob;
     private readonly IPreOpNotificationClient _notify;
+    private readonly CounsellorChecklistService _counsellorChecklist;
 
     public PreOpClearanceService(
         IpManagementDbContext    db,
         IAzureBlobStorageService blob,
-        IPreOpNotificationClient notify)
+        IPreOpNotificationClient notify,
+        CounsellorChecklistService counsellorChecklist)
     {
         _db     = db;
         _blob   = blob;
         _notify = notify;
+        _counsellorChecklist = counsellorChecklist;
     }
 
     // ── Section Items ──────────────────────────────────────────────────────────
@@ -63,6 +66,17 @@ public class PreOpClearanceService
     }
 
     // ── Clearance ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Ensures clearance exists and counsellor P0 completions are copied to ward.
+    /// Call when a journey lands in Expected (list/detail/onboard) — not only on first ward tab open.
+    /// </summary>
+    public async Task EnsureJourneyOnboardedAsync(Guid journeyId, Guid tenantId, Guid userId)
+    {
+        await GetOrInitClearanceAsync(
+            journeyId, tenantId, userId,
+            new InitPreOpClearanceRequest(null, null));
+    }
 
     /// <summary>
     /// Returns the clearance for this journey, creating it if it does not exist.
@@ -134,9 +148,14 @@ public class PreOpClearanceService
             // Filter by payment mode if applicable
             var paymentMode = req.PaymentModeSnapshot;
             var relevantItems = catalogItems
-                .Where(i => i.PatientTypeFilter == null
-                            || (paymentMode != null && paymentMode
-                                .Equals(i.PatientTypeFilter, StringComparison.OrdinalIgnoreCase)))
+                .Where(i => i.FormContext != CounsellorChecklistService.OutpatientFormContext
+                            && i.FormCode != WardChecklistService.WardFormCode
+                            && i.FormCode != WardInvestigationChecklistService.InvestigationFormCode
+                            && i.FormCode != WardPostOpChecklistService.WardPostOpFormCode
+                            && i.FormCode != WardPostOpChecklistService.WardPostOpSafetyFormCode
+                            && (i.PatientTypeFilter == null
+                                || (paymentMode != null && paymentMode
+                                    .Equals(i.PatientTypeFilter, StringComparison.OrdinalIgnoreCase))))
                 .ToList();
 
             foreach (var item in relevantItems)
@@ -158,6 +177,15 @@ public class PreOpClearanceService
             }
 
             await _db.SaveChangesAsync();
+
+            // Copy counsellor outpatient checklist into ward completions (non-blocking)
+            var journey = await _db.PatientJourneys
+                .FirstOrDefaultAsync(j => j.Id == journeyId && j.TenantId == tenantId && j.DeletedAt == null);
+            if (journey?.CounselingSessionId is Guid sessionId)
+            {
+                await _counsellorChecklist.CopyOutpatientCompletionsToClearanceAsync(
+                    sessionId, clearance.Id, tenantId, userId);
+            }
         }
 
         return MapClearance(clearance);
@@ -200,13 +228,19 @@ public class PreOpClearanceService
             .ToListAsync();
 
         var completionDtos = completions
+            .Where(x => x.item.FormCode != WardChecklistService.WardFormCode
+                        && x.item.FormCode != WardInvestigationChecklistService.InvestigationFormCode
+                        && x.item.FormCode != CounsellorChecklistService.OutpatientFormCode
+                        && x.item.FormCode != WardPostOpChecklistService.WardPostOpFormCode
+                        && x.item.FormCode != WardPostOpChecklistService.WardPostOpSafetyFormCode)
             .Select(x => new PreOpCompletionDto(
                 x.cp.Id, x.cp.ClearanceId, x.cp.ItemId,
                 x.item.ItemKey, x.item.ItemLabel, x.item.Category,
                 x.item.IsBlocking, x.item.RequiresDocument,
                 x.cp.IsCompleted, x.cp.IsBypassed, x.cp.BypassReason,
                 x.cp.Notes, x.cp.DocumentId,
-                x.cp.CompletedByUserId, x.cp.CompletedAt, x.cp.UpdatedAt))
+                x.cp.CompletedByUserId, x.cp.CompletedAt, x.cp.UpdatedAt,
+                x.item.FormCode, x.cp.Source))
             .ToList();
 
         var docDtos = documents.Select(MapDocument).ToList();
@@ -239,7 +273,8 @@ public class PreOpClearanceService
     /// <summary>Saves completion status for a single checklist item.</summary>
     public async Task<PreOpCompletionDto> SaveCompletionAsync(
         Guid journeyId, Guid tenantId, Guid userId,
-        Guid itemId, SavePreOpCompletionRequest req)
+        Guid itemId, SavePreOpCompletionRequest req,
+        string? completedByRole = null)
     {
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
 
@@ -248,6 +283,8 @@ public class PreOpClearanceService
                                       && c.ItemId     == itemId
                                       && c.DeletedAt  == null);
 
+        var done = req.IsCompleted || req.IsBypassed;
+
         if (existing is not null)
         {
             existing.IsCompleted       = req.IsCompleted;
@@ -255,8 +292,11 @@ public class PreOpClearanceService
             existing.BypassReason      = req.BypassReason;
             existing.Notes             = req.Notes;
             existing.DocumentId        = req.DocumentId ?? existing.DocumentId;
-            existing.CompletedByUserId = userId;
-            existing.CompletedAt       = req.IsCompleted || req.IsBypassed ? DateTime.UtcNow : null;
+            existing.CompletedByUserId = done ? userId : null;
+            existing.CompletedAt       = done ? DateTime.UtcNow : null;
+            existing.CompletedByRole   = done ? completedByRole : null;
+            if (done && existing.Source == "copied_from_counsellor")
+                existing.Source = "ward";
             existing.UpdatedByUserId   = userId;
             existing.UpdatedAt         = DateTime.UtcNow;
         }
@@ -273,8 +313,10 @@ public class PreOpClearanceService
                 BypassReason       = req.BypassReason,
                 Notes              = req.Notes,
                 DocumentId         = req.DocumentId,
-                CompletedByUserId  = userId,
-                CompletedAt        = req.IsCompleted || req.IsBypassed ? DateTime.UtcNow : null,
+                CompletedByUserId  = done ? userId : null,
+                CompletedAt        = done ? DateTime.UtcNow : null,
+                CompletedByRole    = done ? completedByRole : null,
+                Source             = "ward",
                 CreatedByUserId    = userId,
                 UpdatedByUserId    = userId,
                 CreatedAt          = DateTime.UtcNow,
@@ -296,7 +338,8 @@ public class PreOpClearanceService
             item.IsBlocking, item.RequiresDocument,
             existing.IsCompleted, existing.IsBypassed, existing.BypassReason,
             existing.Notes, existing.DocumentId,
-            existing.CompletedByUserId, existing.CompletedAt, existing.UpdatedAt);
+            existing.CompletedByUserId, existing.CompletedAt, existing.UpdatedAt,
+            item.FormCode, existing.Source);
     }
 
     /// <summary>Batch-update completions in a single round-trip.</summary>

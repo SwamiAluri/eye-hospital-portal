@@ -4,7 +4,11 @@ namespace AuthService.Services.Interfaces;
 
 public interface IExaminationDraftService
 {
-    Task<ExaminationDraft?> GetDraftAsync(Guid patientId, Guid doctorId, Guid tenantId);
+    Task<ExaminationDraft?> GetDraftAsync(
+        Guid patientId,
+        Guid doctorId,
+        Guid tenantId,
+        Guid? visitId = null);
     Task<ExaminationDraft> SaveDraftAsync(ExaminationDraft draft);
     Task<bool> DeleteDraftAsync(Guid draftId, Guid tenantId);
     Task<List<ExaminationDraft>> ListDraftsAsync(Guid doctorId, Guid tenantId);

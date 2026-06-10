@@ -1,4 +1,5 @@
 using AuthService.Authorization;
+using AuthService.DTOs.Queue;
 using AuthService.Services;
 using AuthService.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -12,15 +13,18 @@ namespace AuthService.Controllers
     public class QueueController : ControllerBase
     {
         private readonly IQueueService _queueService;
+        private readonly IQueueDisplayService _queueDisplayService;
         private readonly IQueueNotificationService _notificationService;
         private readonly ILogger<QueueController> _logger;
 
         public QueueController(
-            IQueueService queueService, 
+            IQueueService queueService,
+            IQueueDisplayService queueDisplayService,
             IQueueNotificationService notificationService,
             ILogger<QueueController> logger)
         {
             _queueService = queueService;
+            _queueDisplayService = queueDisplayService;
             _notificationService = notificationService;
             _logger = logger;
         }
@@ -44,7 +48,7 @@ namespace AuthService.Controllers
         }
 
         /// <summary>
-        /// Get queue display data for TV screens
+        /// Get queue display data for TV screens (single queue type — legacy)
         /// </summary>
         [HttpGet("display")]
         public async Task<ActionResult<QueueDisplayData>> GetQueueDisplay(
@@ -64,6 +68,37 @@ namespace AuthService.Controllers
             {
                 _logger.LogError(ex, "Error fetching queue display data");
                 return StatusCode(500, "Error fetching queue display data");
+            }
+        }
+
+        /// <summary>
+        /// Branch / station / room queue display for kiosk TVs (carousel)
+        /// </summary>
+        [HttpGet("display/branch")]
+        public async Task<ActionResult<QueueDisplayBranchPayloadDto>> GetBranchQueueDisplay(
+            [FromQuery] Guid branchId,
+            [FromQuery] string mode = "branch",
+            [FromQuery] string? station = null,
+            [FromQuery] string? roomCode = null,
+            [FromQuery] int interval = 10)
+        {
+            try
+            {
+                var tenantIdClaim = User.FindFirst("TenantId")?.Value ?? User.FindFirst("tenant_id")?.Value;
+                if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+                {
+                    return Unauthorized("Tenant not found");
+                }
+
+                var result = await _queueDisplayService.GetBranchDisplayAsync(
+                    tenantId, branchId, mode, station, roomCode, interval);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching branch queue display for {BranchId}", branchId);
+                return StatusCode(500, "Error fetching branch queue display");
             }
         }
 

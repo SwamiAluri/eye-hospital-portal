@@ -1,33 +1,49 @@
 import type { CombinedPaymentType, WaitingListStatus } from '@/types/counsellors-desk';
+import type { MasterOption } from '@/hooks/use-master-values';
+import type { PatientTypeConfig } from '@/lib/api/patient-type-configs.api';
+import { findPatientTypeConfig, toLegacyPatientType } from '@/lib/master-data/patient-type-master';
 
-export const INSURANCE_COMPANY_FALLBACK = [
-  'Star Health', 'HDFC Ergo', 'New India Assurance', 'United India',
-  'Max Bupa', 'Care Health', 'SBI General', 'Oriental Insurance', 'ECHS', 'CGHS',
-].map(name => ({ value: name, label: name }));
+/** Resolve stored package label/code to master option code for Select value. */
+export function resolvePackageSelectValue(
+  packageName: string,
+  options: MasterOption[],
+): string | undefined {
+  if (!packageName) return undefined;
+  const byLabel = options.find((o) => o.label === packageName);
+  if (byLabel) return byLabel.value;
+  const byCode = options.find((o) => o.value === packageName);
+  if (byCode) return byCode.value;
+  return undefined;
+}
 
-export const PACKAGE_OPTIONS = [
-  'Phaco Standard', 'Phaco Premium', 'LASIK Basic', 'LASIK Advanced',
-  'Retina Package', 'Cornea Package', 'Glaucoma Package',
-];
-
-export const INSURANCE_PAYMENT_TYPES: CombinedPaymentType[] = ['Insurance', 'CoPay', 'CGHS'];
+export const INSURANCE_PAYMENT_TYPES: CombinedPaymentType[] = ['Insurance', 'CoPay', 'CGHS', 'TPA', 'SGHS', 'ESH', 'Arograshree', 'Railway'];
 
 export const COVERAGE_PAYMENT_TYPES = [
   'Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme',
 ] as const;
 
+/** Whether counsellor session should show insurance company picker (B1.4 — master-driven when configs supplied). */
+export function requiresInsuranceCompany(
+  paymentType: CombinedPaymentType | string,
+  configs?: PatientTypeConfig[],
+): boolean {
+  if (!paymentType) return false;
+  const legacy = toLegacyPatientType(paymentType) as CombinedPaymentType;
+  const config = findPatientTypeConfig(configs, legacy);
+  if (config?.configuration.requiresPreApproval) return true;
+  return INSURANCE_PAYMENT_TYPES.includes(legacy);
+}
+
 export function derivePaymentType(paymentMode: string, patientType: string): CombinedPaymentType | '' {
-  const modeMap: Record<string, CombinedPaymentType> = {
-    Cash: 'Cash', Card: 'Card', UPI: 'UPI',
-    Insurance: 'Insurance', TPA: 'Insurance',
-    Free: 'Free', Package: 'Package',
-    CGHS: 'CGHS', SGHS: 'SGHS', ESH: 'ESH',
-    Railway: 'Railway', Camp: 'Camp', Arograshree: 'Arograshree', CoPay: 'CoPay',
-  };
-  if (paymentMode && modeMap[paymentMode]) return modeMap[paymentMode];
+  if (paymentMode) {
+    const fromMode = toLegacyPatientType(paymentMode);
+    if (fromMode === 'TPA') return 'Insurance';
+    if (fromMode) return fromMode as CombinedPaymentType;
+  }
   if (patientType === 'Staff') return 'Staff';
-  if (patientType === 'Foreigner') return 'ForeignNational';
-  return '';
+  if (patientType === 'Foreigner' || patientType.toUpperCase() === 'FOREIGNER') return 'ForeignNational';
+  const fromPatient = toLegacyPatientType(patientType);
+  return (fromPatient as CombinedPaymentType) || '';
 }
 
 export const STATUS_BADGE_MAP = {

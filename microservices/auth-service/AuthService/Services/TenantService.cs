@@ -1,5 +1,6 @@
 using AuthService.Context;
 using AuthService.Models.Domain;
+using AuthService.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace AuthService.Services;
@@ -7,11 +8,19 @@ namespace AuthService.Services;
 public class TenantService : ITenantService
 {
     private readonly AppDbContext _context;
+    private readonly IMasterValueService _masterValueService;
+    private readonly IServiceCatalogMasterSyncService _catalogMasterSyncService;
     private readonly ILogger<TenantService> _logger;
 
-    public TenantService(AppDbContext context, ILogger<TenantService> logger)
+    public TenantService(
+        AppDbContext context,
+        IMasterValueService masterValueService,
+        IServiceCatalogMasterSyncService catalogMasterSyncService,
+        ILogger<TenantService> logger)
     {
         _context = context;
+        _masterValueService = masterValueService;
+        _catalogMasterSyncService = catalogMasterSyncService;
         _logger = logger;
     }
 
@@ -30,7 +39,27 @@ public class TenantService : ITenantService
 
         _context.Tenants.Add(tenant);
         await _context.SaveChangesAsync();
-        
+
+        try
+        {
+            await _masterValueService.SeedDefaultsForTenantAsync(tenant.Id, Guid.Empty);
+            _logger.LogInformation("Seeded default master values for new tenant {TenantId}", tenant.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to seed master values for new tenant {TenantId}", tenant.Id);
+        }
+
+        try
+        {
+            await _catalogMasterSyncService.SyncTenantAsync(tenant.Id, Guid.Empty);
+            _logger.LogInformation("Synced service catalog to master data for new tenant {TenantId}", tenant.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to sync service catalog for new tenant {TenantId}", tenant.Id);
+        }
+
         return tenant;
     }
 

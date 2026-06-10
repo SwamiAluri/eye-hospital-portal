@@ -777,15 +777,21 @@ try
     
     // OPD Visit & Billing Services (Phase 1 OPD Workflow - Jan 2026)
     builder.Services.AddScoped<IOpdBillService, OpdBillService>();
+    builder.Services.AddScoped<IOptometryQueueService, OptometryQueueService>();
+    builder.Services.AddScoped<IOptometrySegmentExamService, OptometrySegmentExamService>();
+    builder.Services.AddScoped<IOptometryPatientHistoryService, OptometryPatientHistoryService>();
     builder.Services.AddScoped<IVisitService, VisitService>();
     builder.Services.AddScoped<IRefundService, RefundService>();
     
     // Day 4: Itemized Billing Services (Feb 6, 2026)
     builder.Services.AddScoped<IServiceCatalogService, ServiceCatalogService>();
+    builder.Services.AddScoped<IServiceCatalogAdminService, ServiceCatalogAdminService>();
+    builder.Services.AddScoped<IServiceCatalogMasterSyncService, ServiceCatalogMasterSyncService>();
     builder.Services.AddScoped<IBillItemService, BillItemService>();
     
     // Module 3: Counseling & Surgery Package Management Services (Feb 15, 2026)
     builder.Services.AddScoped<IPackageManagementService, PackageManagementService>();
+    builder.Services.AddScoped<ICounsellingPackageTemplateService, CounsellingPackageTemplateService>();
     builder.Services.AddScoped<ICounselingWorkflowService, CounselingWorkflowService>();
     builder.Services.AddScoped<ICounselorCommunicationService, CounselorCommunicationService>(); // Comm logs, callbacks, overdue (Phase B)
     builder.Services.AddScoped<IDeptCoordinationService, DeptCoordinationService>(); // Dept coordination requests (Mar 16, 2026)
@@ -810,6 +816,10 @@ try
     
     // Module 4: Front Office/OPD Management Services (Feb 3, 2026)
     builder.Services.AddScoped<IQueueService, QueueService>();
+    builder.Services.AddScoped<IQueueDisplayService, QueueDisplayOrchestrator>();
+    builder.Services.AddScoped<IQueueDisplayNotifier, QueueDisplayNotifier>();
+    builder.Services.AddScoped<ICounselingDisplayAdapter, AuthService.Services.QueueDisplay.CounselingDisplayAdapter>();
+    builder.Services.AddScoped<IVisitStationDisplayAdapter, AuthService.Services.QueueDisplay.VisitStationDisplayAdapter>();
     builder.Services.AddScoped<IQueueNotificationService, QueueNotificationService>(); // SignalR real-time notifications
     builder.Services.AddScoped<IVisitorService, VisitorService>();
     builder.Services.AddScoped<IProcedureService, ProcedureService>();

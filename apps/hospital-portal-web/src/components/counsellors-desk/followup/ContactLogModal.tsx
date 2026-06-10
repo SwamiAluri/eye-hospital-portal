@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Phone, MessageSquare, Mail, Calendar, Clock } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Phone, MessageSquare, Mail, Calendar, Clock, User } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
+import { useCounsellorMasterOptions } from '@/hooks/use-counsellor-master-options';
+import { commChannelCodeToApi } from '@/lib/counsellors-desk/counsellor-master-maps';
+import type { LucideIcon } from 'lucide-react';
 
 interface ContactLogModalProps {
   isOpen: boolean;
@@ -14,21 +17,27 @@ interface ContactLogModalProps {
   onLogged: () => void;
 }
 
-const CHANNELS = [
-  { id: 'Phone',    label: 'Phone',    icon: Phone },
-  { id: 'WhatsApp', label: 'WhatsApp', icon: MessageSquare },
-  { id: 'SMS',      label: 'SMS',      icon: MessageSquare },
-  { id: 'Email',    label: 'Email',    icon: Mail },
-] as const;
+const CHANNEL_ICONS: Record<string, LucideIcon> = {
+  PHONE: Phone,
+  SMS: MessageSquare,
+  WHATSAPP: MessageSquare,
+  EMAIL: Mail,
+  IN_PERSON: User,
+};
 
-type Channel = (typeof CHANNELS)[number]['id'];
+const FALLBACK_CHANNELS = [
+  { value: 'PHONE', label: 'Phone Call' },
+  { value: 'WHATSAPP', label: 'WhatsApp' },
+  { value: 'SMS', label: 'SMS' },
+  { value: 'EMAIL', label: 'Email' },
+];
 
 const OUTCOMES = [
-  { id: 'Answered',    label: 'Answered',     color: 'border-emerald-400 bg-emerald-50 text-emerald-700' },
-  { id: 'NoAnswer',    label: 'No Answer',    color: 'border-amber-400 bg-amber-50 text-amber-700' },
-  { id: 'Busy',        label: 'Busy',         color: 'border-orange-400 bg-orange-50 text-orange-700' },
+  { id: 'Answered', label: 'Answered', color: 'border-emerald-400 bg-emerald-50 text-emerald-700' },
+  { id: 'NoAnswer', label: 'No Answer', color: 'border-amber-400 bg-amber-50 text-amber-700' },
+  { id: 'Busy', label: 'Busy', color: 'border-orange-400 bg-orange-50 text-orange-700' },
   { id: 'LeftMessage', label: 'Left Message', color: 'border-sky-400 bg-sky-50 text-sky-700' },
-  { id: 'Declined',    label: 'Declined',     color: 'border-red-400 bg-red-50 text-red-700' },
+  { id: 'Declined', label: 'Declined', color: 'border-red-400 bg-red-50 text-red-700' },
 ] as const;
 
 type Outcome = (typeof OUTCOMES)[number]['id'];
@@ -41,23 +50,51 @@ export default function ContactLogModal({
   phone,
   onLogged,
 }: ContactLogModalProps) {
-  const [channel, setChannel]               = useState<Channel>('Phone');
-  const [outcome, setOutcome]               = useState<Outcome>('Answered');
-  const [notes, setNotes]                   = useState('');
-  const [callDuration, setCallDuration]     = useState('');
+  const { commChannelOptions, callbackTypeOptions } = useCounsellorMasterOptions();
+
+  const channelChoices = useMemo(
+    () =>
+      commChannelOptions.length > 0
+        ? commChannelOptions.map((o) => ({ value: o.value, label: o.label }))
+        : FALLBACK_CHANNELS,
+    [commChannelOptions],
+  );
+
+  const callbackChoices = useMemo(
+    () =>
+      callbackTypeOptions.length > 0
+        ? callbackTypeOptions
+        : [{ value: 'SCHEDULED', label: 'Scheduled Callback' }],
+    [callbackTypeOptions],
+  );
+
+  const [channelCode, setChannelCode] = useState('PHONE');
+  const [callbackTypeCode, setCallbackTypeCode] = useState('SCHEDULED');
+  const [outcome, setOutcome] = useState<Outcome>('Answered');
+  const [notes, setNotes] = useState('');
+  const [callDuration, setCallDuration] = useState('');
   const [scheduleCallback, setScheduleCallback] = useState(false);
-  const [callbackDate, setCallbackDate]     = useState('');
-  const [saving, setSaving]                 = useState(false);
-  const [error, setError]                   = useState<string | null>(null);
+  const [callbackDate, setCallbackDate] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (channelChoices.length > 0) setChannelCode(channelChoices[0].value);
+    if (callbackChoices.length > 0) setCallbackTypeCode(callbackChoices[0].value);
+  }, [isOpen, channelChoices, callbackChoices]);
 
   if (!isOpen) return null;
+
+  const apiChannel = commChannelCodeToApi(channelCode);
+  const showDuration = apiChannel === 'Phone' || apiChannel === 'WhatsApp';
 
   const handleSubmit = async () => {
     setSaving(true);
     setError(null);
     try {
       await counsellorsDeskApi.logCommunication(sessionId, {
-        channel,
+        channel: apiChannel,
         direction: 'Outbound',
         communicationAt: new Date().toISOString(),
         outcome,
@@ -69,7 +106,8 @@ export default function ContactLogModal({
         await counsellorsDeskApi.scheduleCallback(sessionId, {
           callbackDate,
           callbackReason: notes || 'Follow-up call scheduled',
-          preferredChannel: channel,
+          preferredChannel: apiChannel,
+          callbackType: callbackTypeCode,
         });
       }
 
@@ -85,7 +123,8 @@ export default function ContactLogModal({
   };
 
   const resetForm = () => {
-    setChannel('Phone');
+    setChannelCode(channelChoices[0]?.value ?? 'PHONE');
+    setCallbackTypeCode(callbackChoices[0]?.value ?? 'SCHEDULED');
     setOutcome('Answered');
     setNotes('');
     setCallDuration('');
@@ -105,8 +144,6 @@ export default function ContactLogModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={handleClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-
-        {/* Gradient Header */}
         <div className="px-5 py-4 bg-gradient-to-r from-blue-600 to-indigo-600">
           <div className="flex items-center justify-between">
             <div>
@@ -132,18 +169,20 @@ export default function ContactLogModal({
             </div>
           )}
 
-          {/* Channel */}
           <div>
-            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Channel</label>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Channel
+            </label>
             <div className="flex gap-1.5 flex-wrap">
-              {CHANNELS.map((c) => {
-                const Icon = c.icon;
+              {channelChoices.map((c) => {
+                const Icon = CHANNEL_ICONS[c.value.toUpperCase()] ?? MessageSquare;
                 return (
                   <button
-                    key={c.id}
-                    onClick={() => setChannel(c.id)}
+                    key={c.value}
+                    type="button"
+                    onClick={() => setChannelCode(c.value)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
-                      channel === c.id
+                      channelCode === c.value
                         ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
                         : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
                     }`}
@@ -156,13 +195,15 @@ export default function ContactLogModal({
             </div>
           </div>
 
-          {/* Outcome */}
           <div>
-            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Outcome</label>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Outcome
+            </label>
             <div className="flex flex-wrap gap-1.5">
               {OUTCOMES.map((o) => (
                 <button
                   key={o.id}
+                  type="button"
                   onClick={() => setOutcome(o.id)}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
                     outcome === o.id ? o.color : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
@@ -174,8 +215,7 @@ export default function ContactLogModal({
             </div>
           </div>
 
-          {/* Duration — phone/whatsapp only */}
-          {(channel === 'Phone' || channel === 'WhatsApp') && (
+          {showDuration && (
             <div className="flex items-center gap-3">
               <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
               <div className="flex items-center gap-2">
@@ -194,9 +234,10 @@ export default function ContactLogModal({
             </div>
           )}
 
-          {/* Notes */}
           <div>
-            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Notes</label>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Notes
+            </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -206,8 +247,7 @@ export default function ContactLogModal({
             />
           </div>
 
-          {/* Schedule Callback */}
-          <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+          <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-3">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -221,7 +261,21 @@ export default function ContactLogModal({
               </span>
             </label>
             {scheduleCallback && (
-              <div className="mt-2">
+              <>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Callback type</label>
+                  <select
+                    value={callbackTypeCode}
+                    onChange={(e) => setCallbackTypeCode(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    {callbackChoices.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <input
                   type="date"
                   value={callbackDate}
@@ -229,12 +283,11 @@ export default function ContactLogModal({
                   min={new Date().toISOString().split('T')[0]}
                   className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
-              </div>
+              </>
             )}
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/80">
           {selectedOutcome && (
             <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold ${selectedOutcome.color}`}>
@@ -243,13 +296,15 @@ export default function ContactLogModal({
           )}
           <div className="flex gap-2 ml-auto">
             <button
+              type="button"
               onClick={handleClose}
               className="px-3 py-1.5 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Cancel
             </button>
             <button
-              onClick={handleSubmit}
+              type="button"
+              onClick={() => void handleSubmit()}
               disabled={saving}
               className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
             >

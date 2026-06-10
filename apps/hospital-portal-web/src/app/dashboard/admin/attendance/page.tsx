@@ -1,5 +1,8 @@
 'use client'
 
+import { useState } from 'react'
+import { useShiftTypes } from '@/hooks/use-hr-masters'
+import { useDepartmentMaster } from '@/hooks/use-system-masters'
 import { Breadcrumb } from '@/components/ui/breadcrumb'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,6 +12,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Download, Upload, Calendar, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 
 export default function AttendancePage() {
+  const { types: shiftTypes } = useShiftTypes()
+  const { departments } = useDepartmentMaster()
+  const [shiftFilter, setShiftFilter] = useState('all')
+  const [departmentFilter, setDepartmentFilter] = useState('all')
+
   return (
     <div className="p-8 bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -95,16 +103,26 @@ export default function AttendancePage() {
                 placeholder="Search employees..."
                 className="md:w-64"
               />
-              <Select>
+              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
                 <SelectTrigger className="md:w-48">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Departments</SelectItem>
-                  <SelectItem value="ophthalmology">Ophthalmology</SelectItem>
-                  <SelectItem value="optometry">Optometry</SelectItem>
-                  <SelectItem value="admin">Administration</SelectItem>
-                  <SelectItem value="nursing">Nursing</SelectItem>
+                  {departments.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={shiftFilter} onValueChange={setShiftFilter}>
+                <SelectTrigger className="md:w-48">
+                  <SelectValue placeholder="Shift type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Shifts</SelectItem>
+                  {shiftTypes.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Select>

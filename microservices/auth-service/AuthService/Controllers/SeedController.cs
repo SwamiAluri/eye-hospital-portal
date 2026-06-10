@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using AuthService.Models.Identity;
 using AuthService.Context;
 using AuthService.Models.Domain;
+using AuthService.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace AuthService.Controllers
@@ -15,12 +16,18 @@ namespace AuthService.Controllers
         private readonly UserManager<AppUser> _userManager;
         private readonly RoleManager<AppRole> _roleManager;
         private readonly AppDbContext _context;
+        private readonly IOptometryQueueService _optometryQueueService;
 
-        public SeedController(UserManager<AppUser> userManager, RoleManager<AppRole> roleManager, AppDbContext context)
+        public SeedController(
+            UserManager<AppUser> userManager,
+            RoleManager<AppRole> roleManager,
+            AppDbContext context,
+            IOptometryQueueService optometryQueueService)
         {
             _userManager = userManager;
             _roleManager = roleManager;
             _context = context;
+            _optometryQueueService = optometryQueueService;
         }
 
         [HttpPost("create-admin")]
@@ -486,6 +493,300 @@ END $$;
                     stackTrace = ex.StackTrace
                 });
             }
+        }
+
+        /// <summary>
+        /// Seed demo patients in the optometry queue (development/demo).
+        /// Pass ?reset=true to clear today's optometry visits for the branch first.
+        /// </summary>
+        [HttpPost("optometry-queue")]
+        public async Task<IActionResult> SeedOptometryQueue([FromQuery] bool reset = false)
+        {
+            try
+            {
+                var adminUser = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Email == "admin@test.com");
+                if (adminUser == null)
+                {
+                    return BadRequest(new { message = "admin@test.com user not found" });
+                }
+
+                var tenant = await _context.Tenants.FindAsync(adminUser.TenantId);
+                if (tenant == null)
+                {
+                    return BadRequest(new { message = "No tenant found" });
+                }
+
+                var branch = await _context.Branches
+                    .Where(b => b.TenantId == tenant.Id && b.DeletedAt == null)
+                    .OrderByDescending(b => b.Name == "Downtown Hospital")
+                    .ThenBy(b => b.Name)
+                    .FirstOrDefaultAsync();
+                if (branch == null)
+                {
+                    return BadRequest(new { message = "No branch found" });
+                }
+
+                var today = DateTime.UtcNow.Date;
+                var adminUserId = adminUser.Id;
+                var doctorId = adminUserId;
+
+                if (reset)
+                {
+                    var toRemove = await _context.Visits
+                        .Where(v =>
+                            v.BranchId == branch.Id &&
+                            v.CurrentStation == "optometrist" &&
+                            v.CheckedInAt.HasValue &&
+                            v.CheckedInAt.Value.Date == today)
+                        .ToListAsync();
+                    if (toRemove.Count > 0)
+                    {
+                        _context.Visits.RemoveRange(toRemove);
+                        await _context.SaveChangesAsync();
+                    }
+                }
+
+                var patientList = await _context.Patients
+                    .Where(p => p.TenantId == tenant.Id && p.DeletedAt == null)
+                    .OrderBy(p => p.CreatedAt)
+                    .Take(8)
+                    .ToListAsync();
+
+                var demoIndex = patientList.Count;
+                while (patientList.Count < 8)
+                {
+                    demoIndex++;
+                    var demoPatient = new Patient
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = tenant.Id,
+                        BranchId = branch.Id,
+                        MedicalRecordNumber = $"OPTO-DEMO-{demoIndex:D2}",
+                        FirstName = "Demo",
+                        LastName = $"Opto {demoIndex}",
+                        DateOfBirth = DateTime.UtcNow.AddYears(-35 - demoIndex),
+                        Gender = demoIndex % 2 == 0 ? "Female" : "Male",
+                        Status = "Active",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    };
+                    _context.Patients.Add(demoPatient);
+                    patientList.Add(demoPatient);
+                }
+                await _context.SaveChangesAsync();
+
+                var scenarios = new[]
+                {
+                    new { Complaint = "Blurred vision, difficulty reading", Priority = "normal", Emergency = false, Reason = "INITIAL_REFRACTION", State = "InProgress" },
+                    new { Complaint = "Sudden vision loss in left eye, floaters", Priority = "urgent", Emergency = true, Reason = "INITIAL_REFRACTION", State = "Waiting" },
+                    new { Complaint = "Eye pain, headache, halos around lights", Priority = "urgent", Emergency = false, Reason = "INITIAL_REFRACTION", State = "Waiting" },
+                    new { Complaint = "Routine eye check-up", Priority = "normal", Emergency = false, Reason = "INITIAL_REFRACTION", State = "Waiting" },
+                    new { Complaint = "Annual diabetic eye screening", Priority = "normal", Emergency = false, Reason = "INITIAL_REFRACTION", State = "Waiting" },
+                    new { Complaint = "Post-op follow-up refraction", Priority = "normal", Emergency = false, Reason = "INITIAL_REFRACTION", State = "Completed" },
+                    new { Complaint = "Cataract evaluation — referred to doctor", Priority = "normal", Emergency = false, Reason = "INITIAL_REFRACTION", State = "Referred" },
+                    new { Complaint = "Repeat refraction after OCT", Priority = "normal", Emergency = false, Reason = "POST_INVESTIGATION", State = "ReturnWaiting" },
+                };
+
+                var created = new List<string>();
+                var seq = await _context.Visits
+                    .Where(v => v.BranchId == branch.Id && v.CheckedInAt.HasValue && v.CheckedInAt.Value.Date == today)
+                    .CountAsync();
+
+                var branchPrefix = !string.IsNullOrEmpty(branch.BranchCode)
+                    ? branch.BranchCode.ToUpper()[..Math.Min(3, branch.BranchCode.Length)]
+                    : "GEN";
+
+                for (var i = 0; i < Math.Min(patientList.Count, scenarios.Length); i++)
+                {
+                    var patient = patientList[i];
+                    var demo = scenarios[i];
+
+                    var existingVisit = await _context.Visits
+                        .FirstOrDefaultAsync(v =>
+                            v.PatientId == patient.Id &&
+                            v.BranchId == branch.Id &&
+                            v.DeletedAt == null &&
+                            v.CurrentStation == "optometrist" &&
+                            v.CheckedInAt.HasValue &&
+                            v.CheckedInAt.Value.Date == today);
+
+                    if (existingVisit != null)
+                    {
+                        created.Add($"Skipped (exists): {patient.FirstName} {patient.LastName} [{demo.State}]");
+                        continue;
+                    }
+
+                    seq++;
+                    var appointment = await EnsureDemoAppointmentAsync(tenant.Id, patient.Id, doctorId, today, i, demo.Priority, demo.Complaint);
+                    var token = $"{branchPrefix}-{today:yyyyMMdd}-{seq:D3}";
+
+                    var visit = new Visit
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = tenant.Id,
+                        PatientId = patient.Id,
+                        AppointmentId = appointment.Id,
+                        BranchId = branch.Id,
+                        DepartmentId = appointment.DepartmentId,
+                        VisitType = demo.Reason == "POST_INVESTIGATION" ? "follow_up" : "new",
+                        VisitCategory = "paid",
+                        Status = "with_optometrist",
+                        TokenNumber = token,
+                        TokenSequence = seq,
+                        CheckedInAt = DateTime.UtcNow.AddMinutes(-20 + i * 2),
+                        CurrentStation = "optometrist",
+                        IsEmergency = demo.Emergency,
+                        Notes = demo.Complaint,
+                        OptometryPassCount = demo.State == "ReturnWaiting" ? 2 : 1,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedByUserId = adminUserId,
+                    };
+
+                    _context.Visits.Add(visit);
+                    await _context.SaveChangesAsync();
+
+                    switch (demo.State)
+                    {
+                        case "ReturnWaiting":
+                            await _optometryQueueService.RecordStationEventAsync(
+                                tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "queued", adminUserId,
+                                reasonCode: "INITIAL_REFRACTION", reasonNotes: "First pass completed earlier");
+                            await _optometryQueueService.RecordStationEventAsync(
+                                tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "started", adminUserId,
+                                roomCode: "OPT-2", assignedToUserId: adminUserId);
+                            await _optometryQueueService.RecordStationEventAsync(
+                                tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "completed", adminUserId);
+                            await _optometryQueueService.RecordStationEventAsync(
+                                tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "queued", adminUserId,
+                                reasonCode: demo.Reason, reasonNotes: demo.Complaint);
+                            break;
+
+                        default:
+                            await _optometryQueueService.RecordStationEventAsync(
+                                tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "queued", adminUserId,
+                                reasonCode: demo.Reason, reasonNotes: demo.Complaint);
+                            break;
+                    }
+
+                    if (demo.State == "InProgress")
+                    {
+                        visit.AssignedTo = adminUserId;
+                        visit.AssignedAt = DateTime.UtcNow;
+                        visit.ActiveRoomCode = "OPT-1";
+                        await _context.SaveChangesAsync();
+                        await _optometryQueueService.RecordStationEventAsync(
+                            tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "started", adminUserId,
+                            roomCode: "OPT-1", assignedToUserId: adminUserId);
+
+                        var draftData = """{"visualAcuityData":{"distanceOD":"6/9","distanceOS":"6/12"},"tonometryData":{"iopOD":16,"iopOS":18}}""";
+                        _context.ExaminationDrafts.Add(new ExaminationDraft
+                        {
+                            Id = Guid.NewGuid(),
+                            PatientId = patient.Id,
+                            DoctorId = adminUserId,
+                            TenantId = tenant.Id,
+                            VisitId = visit.Id,
+                            Timestamp = DateTime.UtcNow,
+                            ExpiresAt = DateTime.UtcNow.AddHours(24),
+                            Data = draftData,
+                            CompletionPercentage = 40,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                        });
+                        await _context.SaveChangesAsync();
+                    }
+                    else if (demo.State == "Completed")
+                    {
+                        await _optometryQueueService.RecordStationEventAsync(
+                            tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "started", adminUserId,
+                            roomCode: "OPT-2", assignedToUserId: adminUserId);
+                        visit.AssignedTo = null;
+                        visit.AssignedAt = null;
+                        visit.ActiveRoomCode = null;
+                        await _context.SaveChangesAsync();
+                        await _optometryQueueService.RecordStationEventAsync(
+                            tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "completed", adminUserId);
+                    }
+                    else if (demo.State == "Referred")
+                    {
+                        await _optometryQueueService.RecordStationEventAsync(
+                            tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "started", adminUserId,
+                            roomCode: "OPT-1", assignedToUserId: adminUserId);
+                        visit.AssignedTo = null;
+                        visit.AssignedAt = null;
+                        visit.ActiveRoomCode = null;
+                        await _context.SaveChangesAsync();
+                        await _optometryQueueService.RecordStationEventAsync(
+                            tenant.Id, branch.Id, visit.Id, patient.Id, "optometrist", "referred", adminUserId,
+                            reasonNotes: "Referred for cataract evaluation");
+                    }
+
+                    created.Add($"{token}: {patient.FirstName} {patient.LastName} [{demo.State}]");
+                }
+
+                return Ok(new
+                {
+                    success = true,
+                    message = $"Seeded {created.Count} optometry queue entries",
+                    branchId = branch.Id,
+                    reset,
+                    entries = created,
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = ex.Message,
+                    details = ex.InnerException?.Message,
+                    hint = "Run migrations/56 and 57 if schema is missing",
+                });
+            }
+        }
+
+        private async Task<Appointment> EnsureDemoAppointmentAsync(
+            Guid tenantId,
+            Guid patientId,
+            Guid doctorId,
+            DateTime today,
+            int slotIndex,
+            string priority,
+            string complaint)
+        {
+            var appointment = await _context.Appointments
+                .Where(a => a.PatientId == patientId && a.DeletedAt == null && a.AppointmentDate.Date == today)
+                .FirstOrDefaultAsync();
+
+            if (appointment != null)
+            {
+                appointment.Priority = priority;
+                appointment.ReasonForVisit = complaint;
+                appointment.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return appointment;
+            }
+
+            appointment = new Appointment
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                PatientId = patientId,
+                DoctorId = doctorId,
+                AppointmentDate = today,
+                StartTime = new TimeSpan(9 + slotIndex, 0, 0),
+                AppointmentType = "consultation",
+                DurationMinutes = 15,
+                Priority = priority,
+                Status = "checked_in",
+                ReasonForVisit = complaint,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            _context.Appointments.Add(appointment);
+            await _context.SaveChangesAsync();
+            return appointment;
         }
     }
 }

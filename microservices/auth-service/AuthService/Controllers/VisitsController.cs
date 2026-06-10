@@ -159,6 +159,30 @@ public class VisitsController : ControllerBase
     }
 
     /// <summary>
+    /// Send appointment to station even if check-in hasn't happened yet.
+    /// This ensures a Visit exists and then routes it.
+    /// </summary>
+    [HttpPost("send-to-appointment/{appointmentId:guid}")]
+    public async Task<IActionResult> SendToAppointment(Guid appointmentId, [FromBody] SendToRequestDto request)
+    {
+        try
+        {
+            var userId = GetUserId();
+            var visit = await _visitService.SendToByAppointmentAsync(appointmentId, request, userId);
+            if (visit == null)
+            {
+                return NotFound(new { message = "Appointment/visit not found or branch not configured" });
+            }
+            return Ok(visit);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending appointment {AppointmentId} to {Station}", appointmentId, request.Station);
+            return StatusCode(500, new { message = "Failed to route appointment", error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Assign visit to a specific staff member
     /// </summary>
     [HttpPost("{visitId:guid}/assign/{staffId:guid}")]

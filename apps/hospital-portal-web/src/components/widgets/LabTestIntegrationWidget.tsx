@@ -12,6 +12,7 @@ import {
 import { WidgetProps } from '@/lib/widgets/widget-types';
 import { getApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useSpecimenTypes } from '@/hooks/use-lab-masters';
 
 interface CatalogTest {
   id: string;
@@ -62,6 +63,8 @@ const LabTestIntegrationWidget: React.FC<WidgetProps> = ({
   const [urgency, setUrgency] = useState<'routine' | 'urgent' | 'stat'>('routine');
   const [orderNotes, setOrderNotes] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
+  const [specimenFilter, setSpecimenFilter] = useState<string>('All');
+  const { labels: specimenTypes } = useSpecimenTypes();
   const [panelOpen, setPanelOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -152,9 +155,14 @@ const LabTestIntegrationWidget: React.FC<WidgetProps> = ({
   };
 
   const categories = ['All', ...Array.from(new Set(catalog.map(t => t.category))).sort()];
-  const filteredCatalog = categoryFilter === 'All'
-    ? catalog
-    : catalog.filter(t => t.category === categoryFilter);
+  const specimenFilters = ['All', ...specimenTypes];
+  const filteredCatalog = catalog.filter((t) => {
+    const categoryOk = categoryFilter === 'All' || t.category === categoryFilter;
+    const specimenOk =
+      specimenFilter === 'All' ||
+      t.sampleType.toLowerCase().includes(specimenFilter.toLowerCase());
+    return categoryOk && specimenOk;
+  });
 
   const selectedTests = catalog.filter(t => selectedIds.has(t.id));
   const totalPrice = selectedTests.reduce((s, t) => s + t.price, 0);
@@ -218,7 +226,7 @@ const LabTestIntegrationWidget: React.FC<WidgetProps> = ({
             </div>
           ) : (
             <>
-              {/* Category filters */}
+              {/* Category + specimen filters */}
               <div className="px-3 py-2 flex gap-1.5 flex-wrap border-b border-gray-100">
                 <Filter className="h-3.5 w-3.5 text-gray-400 self-center flex-shrink-0" />
                 {categories.map(cat => (
@@ -233,6 +241,23 @@ const LabTestIntegrationWidget: React.FC<WidgetProps> = ({
                     )}
                   >
                     {cat}
+                  </button>
+                ))}
+              </div>
+              <div className="px-3 py-2 flex gap-1.5 flex-wrap border-b border-gray-100">
+                <span className="text-[10px] font-semibold text-gray-400 self-center uppercase tracking-wide">Specimen</span>
+                {specimenFilters.map((spec) => (
+                  <button
+                    key={spec}
+                    onClick={() => setSpecimenFilter(spec)}
+                    className={cn(
+                      'text-xs px-2.5 py-1 rounded-full border font-medium transition-colors',
+                      specimenFilter === spec
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'
+                    )}
+                  >
+                    {spec}
                   </button>
                 ))}
               </div>
