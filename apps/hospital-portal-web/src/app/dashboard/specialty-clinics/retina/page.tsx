@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Eye,
@@ -14,99 +14,52 @@ import {
   FileText,
 } from 'lucide-react';
 import { useHasPermission } from '@/hooks/use-permissions';
+import { useSpecialtyClinicPatients } from '@/hooks/use-specialty-clinic-patients';
+import { mapLookupToSpecialtyQueueRow } from '@/lib/specialty-clinics/lookup-queue-mappers';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { toast } from 'react-hot-toast';
 
 function RetinaClinicPageContent() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [patientQueue, setPatientQueue] = useState<any[]>([]);
-  const [statistics, setStatistics] = useState({
-    totalPatients: 0,
-    urgentCases: 0,
-    injectionsToday: 0,
-    newDR: 0,
-  });
+  const lookupQuery = useSpecialtyClinicPatients('RETINA');
+  const loading = lookupQuery.isLoading;
 
   const canEdit = useHasPermission('CLINICAL:RETINA:EDIT');
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        
-        // TODO: Replace with actual API calls
-        // const queue = await retinaApi.getPatientQueue();
-        // const stats = await retinaApi.getStatistics();
-        
-        // Mock data
-        const mockQueue = [
-          {
-            id: '1',
-            name: 'Ramesh Kumar',
-            mrn: 'MRN001234',
-            age: 65,
-            gender: 'Male',
-            diagnosis: 'Proliferative Diabetic Retinopathy',
-            urgency: 'Urgent',
-            lastVisit: '2026-01-15',
-            nextInjection: '2026-01-28',
-            drGrade: 'Severe NPDR',
-            visualAcuityOD: '6/24',
-            visualAcuityOS: '6/18',
-            hasCME: true,
-          },
-          {
-            id: '2',
-            name: 'Lakshmi Devi',
-            mrn: 'MRN002345',
-            age: 72,
-            gender: 'Female',
-            diagnosis: 'Wet AMD',
-            urgency: 'Emergency',
-            lastVisit: '2026-01-20',
-            nextInjection: '2026-01-27',
-            drGrade: 'N/A',
-            visualAcuityOD: '6/60',
-            visualAcuityOS: '6/36',
-            hasCME: false,
-          },
-          {
-            id: '3',
-            name: 'Suresh Babu',
-            mrn: 'MRN003456',
-            age: 58,
-            gender: 'Male',
-            diagnosis: 'Moderate NPDR with DME',
-            urgency: 'Routine',
-            lastVisit: '2026-01-10',
-            nextInjection: '2026-02-10',
-            drGrade: 'Moderate NPDR',
-            visualAcuityOD: '6/18',
-            visualAcuityOS: '6/12',
-            hasCME: true,
-          },
-        ];
+  const patientQueue = useMemo(() => {
+    if (lookupQuery.isError) {
+      toast.error('Failed to load retina queue');
+      return [];
+    }
+    return (lookupQuery.data?.items ?? []).map((row) => {
+      const base = mapLookupToSpecialtyQueueRow(row);
+      return {
+        id: base.id,
+        name: base.name,
+        mrn: base.mrn,
+        age: base.age ?? 0,
+        gender: base.gender || '—',
+        diagnosis: base.reasonForVisit || '—',
+        urgency: base.priority,
+        lastVisit: base.lastVisitAt?.slice(0, 10) ?? '—',
+        nextInjection: '—',
+        drGrade: '—',
+        visualAcuityOD: '—',
+        visualAcuityOS: '—',
+        hasCME: false,
+      };
+    });
+  }, [lookupQuery.data?.items, lookupQuery.isError]);
 
-        const mockStats = {
-          totalPatients: 24,
-          urgentCases: 3,
-          injectionsToday: 8,
-          newDR: 2,
-        };
-
-        setPatientQueue(mockQueue);
-        setStatistics(mockStats);
-      } catch (error) {
-        console.error('Failed to load retina clinic data:', error);
-        toast.error('Failed to load patient data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
-  }, []);
+  const statistics = useMemo(
+    () => ({
+      totalPatients: patientQueue.length,
+      urgentCases: patientQueue.filter((p) => p.urgency === 'Urgent').length,
+      injectionsToday: 0,
+      newDR: 0,
+    }),
+    [patientQueue],
+  );
 
   const getUrgencyColor = (urgency: string) => {
     switch (urgency) {

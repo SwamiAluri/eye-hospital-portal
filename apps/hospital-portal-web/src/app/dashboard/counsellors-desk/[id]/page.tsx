@@ -17,12 +17,14 @@ export default function CounsellingSessionPage() {
     | null;
 
   return (
-    <CounsellingSessionProvider
-      sessionId={sessionId}
-      initialTab={tabParam}
-      initialSubtab={subtabParam}
-    >
-      <CounsellingSessionPageContent />
-    </CounsellingSessionProvider>
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <CounsellingSessionProvider
+        sessionId={sessionId}
+        initialTab={tabParam}
+        initialSubtab={subtabParam}
+      >
+        <CounsellingSessionPageContent />
+      </CounsellingSessionProvider>
+    </div>
   );
 }

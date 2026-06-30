@@ -11,6 +11,7 @@ namespace IpManagementService.Functions;
 /// <summary>
 /// Routes:
 ///   GET  /api/ip-management/pre-op/section-items?paymentMode=Insurance
+///   GET  /api/ip-management/journeys/{id:guid}/pre-op/readiness
 ///   POST /api/ip-management/journeys/{id:guid}/pre-op/clearance/init
 ///   GET  /api/ip-management/journeys/{id:guid}/pre-op/clearance
 ///   POST /api/ip-management/journeys/{id:guid}/pre-op/completions/{itemId:guid}
@@ -28,6 +29,7 @@ namespace IpManagementService.Functions;
 public class PreOpFunctions
 {
     private readonly PreOpClearanceService _preOp;
+    private readonly PreOpReadinessService _readiness;
     private readonly JwtService           _jwt;
 
     private static readonly JsonSerializerOptions Json = new()
@@ -37,10 +39,11 @@ public class PreOpFunctions
         WriteIndented          = false,
     };
 
-    public PreOpFunctions(PreOpClearanceService preOp, JwtService jwt)
+    public PreOpFunctions(PreOpClearanceService preOp, PreOpReadinessService readiness, JwtService jwt)
     {
-        _preOp = preOp;
-        _jwt   = jwt;
+        _preOp      = preOp;
+        _readiness  = readiness;
+        _jwt        = jwt;
     }
 
     private void RequireWardEdit(HttpRequestData req) =>
@@ -64,6 +67,27 @@ public class PreOpFunctions
 
             var items = await _preOp.GetSectionItemsAsync(tid, paymentMode);
             return await Ok(req, items);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex)                   { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("GetPreOpReadiness")]
+    public async Task<HttpResponseData> GetPreOpReadiness(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+            Route = "ip-management/journeys/{id:guid}/pre-op/readiness")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var qs = ParseQs(req.Url.Query);
+            var paymentMode = qs.TryGetValue("paymentMode", out var pm) ? pm : null;
+
+            var rollup = await _readiness.GetReadinessAsync(id, tid, userId, paymentMode);
+            if (rollup is null) return await NotFound(req, $"Journey {id} not found.");
+            return await Ok(req, rollup);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
         catch (Exception ex)                   { return await InternalError(req, ex.Message); }
@@ -128,9 +152,10 @@ public class PreOpFunctions
             RequireWardEdit(req);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
+            var role = _jwt.PrimaryRole(req);
             var body = await JsonSerializer.DeserializeAsync<SavePreOpCompletionRequest>(req.Body, Json)
                        ?? throw new ArgumentException("Body required.");
-            var result = await _preOp.SaveCompletionAsync(id, tid, userId, itemId, body);
+            var result = await _preOp.SaveCompletionAsync(id, tid, userId, itemId, body, role);
             return await Ok(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
@@ -159,6 +184,64 @@ public class PreOpFunctions
         catch (KeyNotFoundException ex)         { return await NotFound(req, ex.Message); }
         catch (ArgumentException ex)            { return await BadRequest(req, ex.Message); }
         catch (Exception ex)                   { return await InternalError(req, ex.Message); }
+    }
+
+    // ── Consent capture ──────────────────────────────────────────────────────────
+
+    [Function("CaptureConsent")]
+    public async Task<HttpResponseData> CaptureConsent(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+            Route = "ip-management/journeys/{id:guid}/pre-op/consent/{itemId:guid}/capture")]
+        HttpRequestData req, Guid id, Guid itemId)
+    {
+        try
+        {
+            RequireWardEdit(req);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid  = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<CaptureConsentRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _preOp.CaptureConsentAsync(id, tid, userId, itemId, body);
+            if (result is null) return await NotFound(req, $"No pre-op clearance for journey {id}.");
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex)         { return await NotFound(req, ex.Message); }
+        catch (ArgumentException ex)            { return await BadRequest(req, ex.Message); }
+        catch (InvalidOperationException ex)    { return await Conflict(req, ex.Message); }
+        catch (Exception ex)
+        {
+            var inner = ex.InnerException?.Message;
+            return await InternalError(req, inner is not null ? $"{ex.Message} | {inner}" : ex.Message);
+        }
+    }
+
+    [Function("RevokeConsent")]
+    public async Task<HttpResponseData> RevokeConsent(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+            Route = "ip-management/journeys/{id:guid}/pre-op/consent/{itemId:guid}/revoke")]
+        HttpRequestData req, Guid id, Guid itemId)
+    {
+        try
+        {
+            RequireWardEdit(req);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid  = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<RevokeConsentRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _preOp.RevokeConsentAsync(id, tid, userId, itemId, body);
+            if (result is null) return await NotFound(req, $"No pre-op clearance for journey {id}.");
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex)         { return await NotFound(req, ex.Message); }
+        catch (ArgumentException ex)            { return await BadRequest(req, ex.Message); }
+        catch (InvalidOperationException ex)    { return await Conflict(req, ex.Message); }
+        catch (Exception ex)
+        {
+            var inner = ex.InnerException?.Message;
+            return await InternalError(req, inner is not null ? $"{ex.Message} | {inner}" : ex.Message);
+        }
     }
 
     // ── Pre-Op Vitals ──────────────────────────────────────────────────────────

@@ -19,8 +19,8 @@ import {
   PatientJourneyRowDto,
 } from '@/lib/api/ip-management.api';
 import { StatusBadge } from '@/components/counsellors-desk/StatusBadge';
-import { PreOpTab } from '@/components/ip-management/PreOpTab';
-import { useUserDepartment } from '@/hooks/useUserDepartment';
+import { JourneyPreOpSummary } from '@/components/ip-management/JourneyPreOpSummary';
+import { JourneyPostOpSummary } from '@/components/ip-management/JourneyPostOpSummary';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -201,6 +201,8 @@ function AddTransactionModal({ onClose, onSave }: {
 
 // ─── JourneyModal Props ───────────────────────────────────────────────────────
 
+export type JourneyDeepLinkTarget = 'preop-workspace' | 'postop-workspace';
+
 export interface JourneyModalProps {
   journeyId: string;
   /** Used to pick the opening tab and show optimistic state while data loads */
@@ -210,6 +212,8 @@ export interface JourneyModalProps {
   onClose: () => void;
   /** Called whenever a state-changing action (Mark Ready, Discharge, etc.) completes */
   onStateChange?: (updated: Partial<PatientJourneyRowDto>) => void;
+  /** Deep link into ward workspace shells (Phase 3 G7) */
+  onDeepLink?: (target: JourneyDeepLinkTarget) => void;
 }
 
 // ─── JourneyModal ─────────────────────────────────────────────────────────────
@@ -220,8 +224,8 @@ export default function JourneyModal({
   patientName,
   onClose,
   onStateChange,
+  onDeepLink,
 }: JourneyModalProps) {
-  const { primaryDeptCode: currentUserDeptCode } = useUserDepartment();
   const [journey, setJourney] = useState<PatientJourneyDetailDto | null>(null);
   const [billing, setBilling] = useState<BillingTransactionDto[]>([]);
   const [intraOp, setIntraOp] = useState<IntraOpNoteDto | null>(null);
@@ -404,7 +408,10 @@ export default function JourneyModal({
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
+          data-testid="journey-modal"
+        >
 
           {/* ── Sticky Header ───────────────────────────────────────────── */}
           <div className="shrink-0 bg-white border-b border-gray-200">
@@ -494,7 +501,11 @@ export default function JourneyModal({
             {/* Row 3: Tab bar */}
             <div className="flex overflow-x-auto px-5 gap-0 border-t border-gray-100">
               {TABS.map(tab => (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                <button
+                  key={tab.id}
+                  type="button"
+                  data-testid={`journey-tab-${tab.id}`}
+                  onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap
                     ${activeTab === tab.id
                       ? 'border-blue-600 text-blue-700 bg-blue-50/50'
@@ -665,11 +676,12 @@ export default function JourneyModal({
 
                 {/* ── PRE-OP ─────────────────────────────────────────────── */}
                 {activeTab === 'preop' && (
-                  <PreOpTab
+                  <JourneyPreOpSummary
                     journeyId={journeyId}
+                    counselingSessionId={journey.counselingSessionId}
+                    paymentMode={journey.paymentMode}
                     clinicalState={journey.clinicalState}
-                    branchId={journey.branchId}
-                    currentUserDeptCode={currentUserDeptCode}
+                    onOpenWorkspace={onDeepLink ? () => onDeepLink('preop-workspace') : undefined}
                   />
                 )}
 
@@ -828,6 +840,12 @@ export default function JourneyModal({
                 {/* ── POST-OP ────────────────────────────────────────────── */}
                 {activeTab === 'postop' && (
                   <div className="space-y-4">
+                    <JourneyPostOpSummary
+                      journeyId={journeyId}
+                      clinicalState={journey.clinicalState}
+                      onOpenWorkspace={onDeepLink ? () => onDeepLink('postop-workspace') : undefined}
+                    />
+
                     <SectionCard title="Post-Op Status" icon={<Activity className="h-4 w-4" />}>
                       <InfoRow label="Clinical State" value={journey.clinicalState} />
                       <InfoRow label="Post-Op State" value={journey.postOpState ?? '—'} />

@@ -1,29 +1,43 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, Eye, FileImage } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { imagingApi, type ImagingOrderResponse } from '@/lib/api/imaging.api';
 
 interface ImagingWidgetProps {
   patientId: string;
   onViewImaging?: () => void;
 }
 
-// Mock data - Replace with ImagingController when available
-const mockImagingData = {
-  recent: [
-    { id: '1', type: 'OCT', date: '2026-02-10', eye: 'OD' },
-    { id: '2', type: 'Fundus Photo', date: '2026-02-10', eye: 'OS' },
-    { id: '3', type: 'Visual Field', date: '2026-01-15', eye: 'OU' },
-  ],
-  total: 15,
-};
-
 export const ImagingWidget: React.FC<ImagingWidgetProps> = ({ patientId, onViewImaging }) => {
-  // TODO: Fetch from ImagingController when available
-  const data = mockImagingData;
+  const [orders, setOrders] = useState<ImagingOrderResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void imagingApi
+      .getPatientOrders(patientId)
+      .then((rows) => {
+        if (!cancelled) setOrders(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setOrders([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [patientId]);
+
+  const recent = [...orders]
+    .sort((a, b) => new Date(b.orderedAt).getTime() - new Date(a.orderedAt).getTime())
+    .slice(0, 3);
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -33,35 +47,45 @@ export const ImagingWidget: React.FC<ImagingWidgetProps> = ({ patientId, onViewI
             <Image className="w-5 h-5 text-cyan-600" />
             Imaging & Scans
           </span>
-          <Badge variant="secondary">{data.total} Total</Badge>
+          <Badge variant="secondary">{orders.length} Total</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Recent Scans */}
-        <div>
-          <h4 className="text-sm font-semibold text-gray-700 mb-2">Recent Scans</h4>
-          {data.recent.length > 0 ? (
-            <div className="space-y-2">
-              {data.recent.map((scan) => (
-                <div key={scan.id} className="p-2 bg-gray-50 rounded flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileImage className="w-4 h-4 text-cyan-600" />
-                    <div>
-                      <p className="text-sm font-medium">{scan.type}</p>
-                      <p className="text-xs text-gray-500">{new Date(scan.date).toLocaleDateString()}</p>
+        {loading ? (
+          <div className="h-20 bg-gray-50 rounded-lg animate-pulse" />
+        ) : (
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">Recent Scans</h4>
+            {recent.length > 0 ? (
+              <div className="space-y-2">
+                {recent.map((scan) => (
+                  <div
+                    key={scan.id}
+                    className="p-2 bg-gray-50 rounded flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileImage className="w-4 h-4 text-cyan-600" />
+                      <div>
+                        <p className="text-sm font-medium">{scan.imagingType}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(scan.orderedAt).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
+                    {scan.laterality && (
+                      <Badge variant="outline" className="text-xs">
+                        <Eye className="w-3 h-3 mr-1" />
+                        {scan.laterality}
+                      </Badge>
+                    )}
                   </div>
-                  <Badge variant="outline" className="text-xs">
-                    <Eye className="w-3 h-3 mr-1" />
-                    {scan.eye}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500">No imaging history</p>
-          )}
-        </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No imaging orders on file</p>
+            )}
+          </div>
+        )}
 
         {onViewImaging && (
           <Button variant="outline" size="sm" className="w-full" onClick={onViewImaging}>

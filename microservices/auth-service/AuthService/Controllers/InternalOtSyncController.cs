@@ -41,7 +41,13 @@ public class InternalOtSyncController : ControllerBase
         string ActorUserId
     );
 
-    // ── Endpoint ──────────────────────────────────────────────────────────────
+    public record ReleaseForRebookRequest(
+        Guid   OtScheduleId,
+        Guid   TenantId,
+        string ActorUserId
+    );
+
+    // ── Endpoints ──────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Transitions ot_finalize_schedule.status → SurgeryDone.
@@ -75,6 +81,45 @@ public class InternalOtSyncController : ControllerBase
             // rolled back because of an OT sync failure.
             _logger.LogError(ex,
                 "OT sync surgery-done failed for scheduleId={Id}.", req.OtScheduleId);
+            return Ok(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Releases an OTPrepared slot back to Confirmed for ward cancel-today rebook.
+    /// </summary>
+    [HttpPost("release-for-rebook")]
+    public async Task<IActionResult> ReleaseForRebook([FromBody] ReleaseForRebookRequest req)
+    {
+        if (!IsAuthorized())
+            return Unauthorized(new { error = "Invalid or missing internal API key." });
+
+        if (req is null || req.OtScheduleId == Guid.Empty || req.TenantId == Guid.Empty)
+            return BadRequest(new { error = "OtScheduleId and TenantId are required." });
+
+        try
+        {
+            var result = await _otFinalizeService.ReopenAsync(
+                req.OtScheduleId,
+                req.TenantId,
+                Guid.TryParse(req.ActorUserId, out var uid) ? uid : Guid.Empty);
+
+            _logger.LogInformation(
+                "OT sync release-for-rebook: scheduleId={Id} status={Status}",
+                req.OtScheduleId, result?.Status ?? "not-found");
+
+            return Ok(new { success = true, status = result?.Status });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex,
+                "OT sync release-for-rebook skipped for scheduleId={Id}.", req.OtScheduleId);
+            return Ok(new { success = false, error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "OT sync release-for-rebook failed for scheduleId={Id}.", req.OtScheduleId);
             return Ok(new { success = false, error = ex.Message });
         }
     }

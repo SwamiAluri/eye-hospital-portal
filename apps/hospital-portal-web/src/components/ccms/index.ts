@@ -25,7 +25,6 @@ export { InsuranceDetailsCard } from './InsuranceDetailsCard';
 export { CaseDocumentsPanel } from './CaseDocumentsPanel';
 export { CaseDocumentsWorkspace } from './CaseDocumentsWorkspace';
 export { CaseActivityTimeline } from './CaseActivityTimeline';
-export { ComposeCommunicationModal } from './ComposeCommunicationModal';
 export { ClaimPacketPreview } from './ClaimPacketPreview';
 export { SettlementReceipt } from './SettlementReceipt';
 export { ClarificationPanel } from './ClarificationPanel';

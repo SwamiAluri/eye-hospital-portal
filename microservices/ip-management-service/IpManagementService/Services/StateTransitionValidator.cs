@@ -23,6 +23,9 @@ public static class StateTransitionValidator
         [ClinicalState.PostOp]           = new() { ClinicalState.ReadyForDischarge },
         [ClinicalState.ReadyForDischarge]= new() { ClinicalState.Discharged },
         [ClinicalState.Discharged]       = new(),
+        // Cancelled-surgery off-ramp (Phase 1): single exit is Rebook → Expected.
+        // Entry is via CancelTodaySurgeryAsync (ValidateCancelToday), not the forward graph.
+        [ClinicalState.CancelledSurgery] = new() { ClinicalState.Expected },
     };
 
     // ── OT state ───────────────────────────────────────────────────────────────
@@ -71,6 +74,29 @@ public static class StateTransitionValidator
 
     public static void ValidatePostOp(string from, string to)
         => Validate("PostOpState", PostOpAllowed, from, to);
+
+    /// <summary>Additive cancel-today edges (G1) — does not modify forward clinical graph.</summary>
+    public static void ValidateCancelToday(string fromClinical, string otState)
+    {
+        var allowedClinical = new HashSet<string>
+        {
+            ClinicalState.Expected,
+            ClinicalState.Admitted,
+            ClinicalState.ReadyForSurgery,
+            ClinicalState.SentToOT,
+        };
+
+        if (!allowedClinical.Contains(fromClinical))
+            throw new InvalidOperationException(
+                $"[CancelToday] Cannot cancel from clinical state '{fromClinical}'.");
+
+        if (fromClinical == ClinicalState.SentToOT
+            && otState is not (OtState.NotSent or OtState.SentToOT))
+        {
+            throw new InvalidOperationException(
+                "[CancelToday] Cannot cancel after OT has accepted the patient.");
+        }
+    }
 
     private static void Validate(
         string dimension,

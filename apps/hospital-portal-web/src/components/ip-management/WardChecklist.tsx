@@ -8,7 +8,9 @@ import {
   WardChecklistDto,
 } from '@/lib/api/ip-management.api';
 import { useWardChecklistHints } from '@/hooks/use-ward-checklist-hints';
+import { useWardForm2SyncHints } from '@/hooks/use-ward-form2-sync-hints';
 import { hintForItem } from '@/lib/ip-checklist/outpatient-integration';
+import { WARD_PREOP_TEST_IDS } from '@/lib/ip-management/ward-preop-test-ids';
 
 export interface WardChecklistProps {
   journeyId: string;
@@ -37,6 +39,18 @@ function financialLabel(state: string, balanceDue: number | null | undefined, em
   return state || 'NotCreated';
 }
 
+function mergeHints(
+  integration: ReturnType<typeof useWardChecklistHints>['hints'],
+  sync: ReturnType<typeof useWardForm2SyncHints>['hints'],
+) {
+  const byKey = new Map(integration.map(h => [h.itemKey, h]));
+  for (const h of sync) {
+    const existing = byKey.get(h.itemKey);
+    if (!existing || h.suggestedComplete) byKey.set(h.itemKey, h);
+  }
+  return Array.from(byKey.values());
+}
+
 export function WardChecklist({
   journeyId,
   paymentMode,
@@ -51,9 +65,14 @@ export function WardChecklist({
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
 
   const itemKeys = useMemo(() => checklist?.items.map(i => i.itemKey) ?? [], [checklist?.items]);
-  const { hints } = useWardChecklistHints(
+  const { hints: integrationHints } = useWardChecklistHints(
     { patientId, sessionId, financialState, balanceDue, emergencyFcApplied: checklist?.emergencyFcApplied },
     itemKeys,
+  );
+  const { hints: syncHints, reload: reloadSyncHints } = useWardForm2SyncHints({ journeyId, itemKeys });
+  const hints = useMemo(
+    () => mergeHints(integrationHints, syncHints),
+    [integrationHints, syncHints],
   );
 
   const load = useCallback(async () => {
@@ -61,7 +80,8 @@ export function WardChecklist({
     const data = await ipManagementApi.getWardChecklist(journeyId, paymentMode);
     setChecklist(data);
     setLoading(false);
-  }, [journeyId, paymentMode]);
+    reloadSyncHints();
+  }, [journeyId, paymentMode, reloadSyncHints]);
 
   useEffect(() => {
     load();
@@ -75,8 +95,25 @@ export function WardChecklist({
     });
     if (updated) {
       setChecklist(updated);
+      reloadSyncHints();
     } else {
       toast.error('Failed to save ward checklist item');
+    }
+    setSavingItemId(null);
+  }
+
+  async function applySuggestion(itemId: string) {
+    if (readOnly) return;
+    setSavingItemId(itemId);
+    const updated = await ipManagementApi.saveWardChecklistCompletion(journeyId, itemId, {
+      isCompleted: true,
+    });
+    if (updated) {
+      setChecklist(updated);
+      reloadSyncHints();
+      toast.success('Checklist item marked complete');
+    } else {
+      toast.error('Failed to apply suggestion');
     }
     setSavingItemId(null);
   }
@@ -102,9 +139,9 @@ export function WardChecklist({
   const pct = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-testid={WARD_PREOP_TEST_IDS.sectionWardSafety}>
       <div className="flex items-center justify-between rounded-lg bg-teal-50 border border-teal-200 px-3 py-2">
-        <span className="text-sm font-semibold text-teal-900">Ward Checklist (Form 2)</span>
+        <span className="text-sm font-semibold text-teal-900">Ward Safety Checklist</span>
         <span className="text-sm font-medium text-teal-800">
           {completedItems}/{totalItems} complete
           <span className="text-teal-600 ml-1">({pct}%)</span>
@@ -112,8 +149,8 @@ export function WardChecklist({
       </div>
 
       <p className="text-xs text-gray-500">
-        Informational only — does not block ward admission. Counsellor outpatient items are copied
-        automatically when pre-op clearance starts.
+        Items auto-tick from §1 investigations, vitals, PAC, and §2 consent when those steps complete.
+        Dilatation requires nurse confirmation after med log entry.
       </p>
 
       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -136,7 +173,9 @@ export function WardChecklist({
           const done = item.isCompleted || item.isBypassed;
           const isSaving = savingItemId === item.itemId;
           const copied = item.source === 'copied_from_counsellor';
+          const autoSynced = (item.notes ?? '').toLowerCase().includes('auto-synced');
           const hint = hintForItem(hints, item.itemKey);
+          const showApply = !readOnly && !done && hint?.suggestedComplete;
 
           return (
             <li
@@ -179,6 +218,11 @@ export function WardChecklist({
                       Counsellor
                     </span>
                   )}
+                  {autoSynced && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                      <Sparkles className="h-2.5 w-2.5" /> Auto-synced
+                    </span>
+                  )}
                   {hint && (
                     <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium rounded px-1.5 py-0.5 border ${
                       hint.suggestedComplete
@@ -192,10 +236,26 @@ export function WardChecklist({
                 {item.description && (
                   <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
                 )}
+                {hint?.detail && (
+                  <p className="text-[10px] text-gray-500 mt-0.5">{hint.detail}</p>
+                )}
+                {autoSynced && item.notes && (
+                  <p className="text-[10px] text-indigo-600 mt-0.5">{item.notes}</p>
+                )}
                 {copied && item.completedByRole && (
                   <p className="text-[10px] mt-1 text-slate-500">
                     Fellow / role: {item.completedByRole}
                   </p>
+                )}
+                {showApply && (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => applySuggestion(item.itemId)}
+                    className="mt-1.5 text-[11px] font-medium text-teal-700 hover:text-teal-900 underline disabled:opacity-50"
+                  >
+                    Mark complete from suggestion
+                  </button>
                 )}
               </div>
             </li>

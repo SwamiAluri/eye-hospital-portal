@@ -83,6 +83,46 @@ export interface PatientJourneyRowDto {
   otReturnReason: string | null;
   counselingSessionId: string | null;
   otDetailsSaved: boolean;
+  pendingRebook?: boolean;
+  surgeryCancelledAt?: string | null;
+  surgeryCancelReason?: string | null;
+  cancelledFromState?: string | null;
+  isPatientMerged?: boolean;
+  canonicalPatientId?: string | null;
+  canonicalUhid?: string | null;
+  p2ClearanceCompleted?: number | null;
+  p2ClearanceTotal?: number | null;
+  p2ClearanceNeedsAttention?: boolean | null;
+  // Readiness / dashboard summary (Phase 2)
+  anaesthetistName?: string | null;
+  operationTheatreName?: string | null;
+  investigationsVerified?: number | null;
+  investigationsTotal?: number | null;
+  unverifiedCriticalCount?: number;
+  pacCompleted?: boolean;
+  readinessCompleted?: number;
+  readinessTotal?: number;
+  surgeonName?: string | null;
+}
+
+export interface WardDashboardFacetsDto {
+  otRooms: string[];
+  anaesthetists: string[];
+  payers: string[];
+  surgeons: string[];
+}
+
+export interface WardDashboardSummaryDto {
+  stageCounts: Record<string, number>;
+  otLoadToday: number;
+  pacPending: number;
+  criticalLabs: number;
+  financialPending: number;
+  delayed: number;
+  cancelledToday: number;
+  rebookRequired: number;
+  emergencyCount: number;
+  facets: WardDashboardFacetsDto;
 }
 
 export interface PatientJourneyDetailDto extends PatientJourneyRowDto {
@@ -127,6 +167,11 @@ export interface PatientJourneyDetailDto extends PatientJourneyRowDto {
   dischargeOverrideApplied?: boolean;
   whoSupervisorOverrideApplied?: boolean;
   checklistPhaseStatus?: Record<string, boolean> | null;
+  investigationPhaseSummary?: {
+    verifiedCount: number;
+    totalApplicable: number;
+    unverifiedCritical: string[];
+  } | null;
   transitionWarnings?: ChecklistGateWarningDto[] | null;
   createdAt: string;
   updatedAt: string;
@@ -563,6 +608,35 @@ export interface SaveCounsellorCompletionRequest {
   notes?: string;
 }
 
+export interface CounsellorPreOpInvestigationItemDto {
+  itemId: string;
+  itemKey: string;
+  wardTargetKey: string;
+  itemLabel: string;
+  description: string | null;
+  displayOrder: number;
+  resultValue: string | null;
+  resultUnit: string | null;
+  entryStatus: string;
+  notes: string | null;
+  enteredAt: string | null;
+  defaultUnit: string | null;
+  valueType: string | null;
+}
+
+export interface CounsellorPreOpInvestigationChecklistDto {
+  counselingSessionId: string;
+  totalItems: number;
+  draftItems: number;
+  items: CounsellorPreOpInvestigationItemDto[];
+}
+
+export interface SaveCounsellorInvestigationResultRequest {
+  resultValue: string;
+  resultUnit?: string;
+  notes?: string;
+}
+
 // ─── Ward Checklist (S1 — Form 2) ────────────────────────────────────────────
 
 export interface WardChecklistItemDto {
@@ -577,6 +651,8 @@ export interface WardChecklistItemDto {
   completedAt: string | null;
   source: string | null;
   completedByRole?: string | null;
+  /** False when the catalog scopes this item out for the journey's surgery/patient type. */
+  appliesToJourney?: boolean;
 }
 
 export interface WardChecklistDto {
@@ -664,6 +740,26 @@ export interface WardInvestigationItemDto {
   completedAt: string | null;
   source: string | null;
   appliesToJourney: boolean;
+  resultValue: string | null;
+  resultUnit: string | null;
+  referenceRange: string | null;
+  resultFlag: string | null;
+  resultSource: string | null;
+  entryStatus: string;
+  enteredByUserId: string | null;
+  enteredAt: string | null;
+  verifiedByUserId: string | null;
+  verifiedAt: string | null;
+  documentId: string | null;
+  documentFileName: string | null;
+  documentPreviewUrl: string | null;
+  externalReportNote: string | null;
+  isCritical: boolean;
+  counsellorDraft: boolean;
+  defaultUnit: string | null;
+  valueType: string | null;
+  enteredByName: string | null;
+  verifiedByName: string | null;
 }
 
 export interface WardInvestigationChecklistDto {
@@ -672,6 +768,83 @@ export interface WardInvestigationChecklistDto {
   completedItems: number;
   anaesthesiaType: string | null;
   items: WardInvestigationItemDto[];
+  unverifiedCriticalKeys: string[];
+}
+
+/** Normalizes ward investigation checklist payloads (camelCase or PascalCase). */
+function normalizeWardInvestigationChecklist(
+  raw: WardInvestigationChecklistDto | null | undefined,
+): WardInvestigationChecklistDto | null {
+  if (!raw) return null;
+  const legacy = raw as WardInvestigationChecklistDto & {
+    JourneyId?: string;
+    TotalItems?: number;
+    CompletedItems?: number;
+    AnaesthesiaType?: string | null;
+    Items?: WardInvestigationItemDto[];
+    UnverifiedCriticalKeys?: string[];
+  };
+  const keys =
+    legacy.unverifiedCriticalKeys
+    ?? legacy.UnverifiedCriticalKeys
+    ?? [];
+  return {
+    journeyId: String(legacy.journeyId ?? legacy.JourneyId ?? ''),
+    totalItems: legacy.totalItems ?? legacy.TotalItems ?? 0,
+    completedItems: legacy.completedItems ?? legacy.CompletedItems ?? 0,
+    anaesthesiaType: legacy.anaesthesiaType ?? legacy.AnaesthesiaType ?? null,
+    items: legacy.items ?? legacy.Items ?? [],
+    unverifiedCriticalKeys: Array.isArray(keys) ? keys : [],
+  };
+}
+
+export interface SaveWardInvestigationResultRequest {
+  resultValue: string;
+  resultUnit?: string | null;
+  referenceRange?: string | null;
+  resultFlag?: string | null;
+  resultSource?: string | null;
+  externalReportNote?: string | null;
+  notes?: string | null;
+}
+
+export interface VerifyWardInvestigationRequest {
+  notes?: string | null;
+}
+
+export interface UploadInvestigationDocumentRequest {
+  documentType: string;
+  fileName: string;
+  contentType: string;
+  fileData: string;
+}
+
+export interface InvestigationDocumentDto {
+  documentId: string;
+  fileName: string;
+  fileUrl: string;
+  contentType: string | null;
+  fileSizeBytes: number | null;
+  isVerified: boolean;
+}
+
+export interface WardInvestigationSummaryDto {
+  journeyId: string;
+  items: Array<{
+    itemKey: string;
+    itemLabel: string;
+    resultValue: string | null;
+    resultUnit: string | null;
+    entryStatus: string;
+    isCritical: boolean;
+    appliesToJourney: boolean;
+  }>;
+  unverifiedCriticalKeys: string[];
+}
+
+export interface CompletePacAssessmentResultDto {
+  assessment: PacAssessmentDto;
+  unverifiedCriticalWarnings: string[];
 }
 
 export interface WardPostOpItemDto {
@@ -792,6 +965,102 @@ export interface SaveAfterSurgeryRequest {
   procedureNameRecorded: boolean;
   postopMedicationInstructed: boolean;
   postopPositionInstructed: boolean;
+}
+
+const DEFAULT_SURGICAL_SAFETY_GATES: SurgicalSafetyGateDto = {
+  billingGateSatisfied: false,
+  billingVerifiedAuto: false,
+  emergencyFcApplied: false,
+  balanceDue: null,
+  financialState: 'Unknown',
+  beforeAnaesthesiaComplete: false,
+  whoTimeoutComplete: false,
+  afterSurgeryComplete: false,
+  warnings: [],
+};
+
+const DEFAULT_BEFORE_ANAESTHESIA: BeforeAnaesthesiaSectionDto = {
+  identityConfirmed: false,
+  eyeRe: false,
+  eyeLe: false,
+  topicalAntibioticsUsed: false,
+  surgeryType: null,
+  billingVerifiedOverride: false,
+  ascanVerified: false,
+  allergyKnown: false,
+  allergyDetails: null,
+  consentFormChecked: false,
+  fitnessConfirmed: false,
+  completedAt: null,
+};
+
+const DEFAULT_WHO_TIMEOUT: WhoTimeoutSectionDto = {
+  patientIdentity: false,
+  correctEye: false,
+  correctProcedure: false,
+  consentConfirmed: false,
+  surgeonUserId: null,
+  nurseUserId: null,
+  completedAt: null,
+};
+
+const DEFAULT_AFTER_SURGERY: AfterSurgerySectionDto = {
+  procedureNameRecorded: false,
+  postopMedicationInstructed: false,
+  postopPositionInstructed: false,
+  completedAt: null,
+};
+
+function normalizeSurgicalSafetyGates(
+  raw: SurgicalSafetyGateDto | Record<string, unknown> | null | undefined,
+): SurgicalSafetyGateDto {
+  if (!raw || typeof raw !== 'object') return DEFAULT_SURGICAL_SAFETY_GATES;
+  const g = raw as Record<string, unknown>;
+  const warnings = Array.isArray(g.warnings)
+    ? (g.warnings as string[])
+    : Array.isArray(g.Warnings)
+      ? (g.Warnings as string[])
+      : [];
+  const balance = g.balanceDue ?? g.BalanceDue;
+  return {
+    billingGateSatisfied: Boolean(g.billingGateSatisfied ?? g.BillingGateSatisfied ?? false),
+    billingVerifiedAuto: Boolean(g.billingVerifiedAuto ?? g.BillingVerifiedAuto ?? false),
+    emergencyFcApplied: Boolean(g.emergencyFcApplied ?? g.EmergencyFcApplied ?? false),
+    balanceDue: balance == null ? null : Number(balance),
+    financialState: String(g.financialState ?? g.FinancialState ?? 'Unknown'),
+    beforeAnaesthesiaComplete: Boolean(
+      g.beforeAnaesthesiaComplete ?? g.BeforeAnaesthesiaComplete ?? false,
+    ),
+    whoTimeoutComplete: Boolean(g.whoTimeoutComplete ?? g.WhoTimeoutComplete ?? false),
+    afterSurgeryComplete: Boolean(g.afterSurgeryComplete ?? g.AfterSurgeryComplete ?? false),
+    warnings,
+  };
+}
+
+/** Normalizes surgical safety checklist payloads (camelCase or PascalCase). */
+function normalizeSurgicalSafetyChecklist(
+  raw: SurgicalSafetyChecklistDto | null | undefined,
+): SurgicalSafetyChecklistDto | null {
+  if (!raw) return null;
+  const legacy = raw as SurgicalSafetyChecklistDto & {
+    Gates?: SurgicalSafetyGateDto;
+    BeforeAnaesthesia?: BeforeAnaesthesiaSectionDto;
+    WhoTimeout?: WhoTimeoutSectionDto;
+    AfterSurgery?: AfterSurgerySectionDto;
+    JourneyId?: string;
+    EyeOperated?: string | null;
+    ProcedureName?: string | null;
+  };
+
+  return {
+    journeyId: String(legacy.journeyId ?? legacy.JourneyId ?? ''),
+    eyeOperated: legacy.eyeOperated ?? legacy.EyeOperated ?? null,
+    procedureName: legacy.procedureName ?? legacy.ProcedureName ?? null,
+    beforeAnaesthesia: legacy.beforeAnaesthesia ?? legacy.BeforeAnaesthesia ?? DEFAULT_BEFORE_ANAESTHESIA,
+    whoTimeout: legacy.whoTimeout ?? legacy.WhoTimeout ?? DEFAULT_WHO_TIMEOUT,
+    afterSurgery: legacy.afterSurgery ?? legacy.AfterSurgery ?? DEFAULT_AFTER_SURGERY,
+    gates: normalizeSurgicalSafetyGates(legacy.gates ?? legacy.Gates),
+  };
 }
 
 // ─── PAC Assessment (S4 — Form 3) ─────────────────────────────────────────────
@@ -1045,6 +1314,20 @@ export interface SaveDischargeClearanceRequest {
   remarks?: string | null;
 }
 
+/** Ensures `readings` is always an array (camelCase or PascalCase API payloads). */
+function normalizeAnaesthesiaMonitoring(
+  raw: AnaesthesiaMonitoringDto | null | undefined,
+): AnaesthesiaMonitoringDto | null {
+  if (!raw) return null;
+  const legacy = raw as AnaesthesiaMonitoringDto & { Readings?: MonitoringReadingDto[] };
+  const readings = Array.isArray(legacy.readings)
+    ? legacy.readings
+    : Array.isArray(legacy.Readings)
+      ? legacy.Readings
+      : [];
+  return { ...raw, readings };
+}
+
 // ─── Audit Log Types ──────────────────────────────────────────────────────────
 
 export interface JourneyAuditLogDto {
@@ -1109,6 +1392,12 @@ export interface PreOpCompletionDto {
   updatedAt: string;
   formCode?: string | null;
   source?: string | null;
+  /** Fasting & Medication v2 — typed result + attribution. */
+  resultValue?: string | null;
+  resultUnit?: string | null;
+  entryStatus?: string | null;
+  enteredAt?: string | null;
+  completedByRole?: string | null;
 }
 
 export interface PreOpDocumentDto {
@@ -1153,6 +1442,8 @@ export interface PreOpSectionClearanceDto {
   updatedAt: string;
   urgency: string;            // Low | Normal | High | Urgent
   rejectionReason: string | null;
+  /** Computed UI rollup from backend (G3 / R4.2). */
+  sectionDisplayStatus?: string | null;
 }
 
 export interface RespondToSectionRequest {
@@ -1186,6 +1477,24 @@ export interface ConfirmSectionRequest {
   confirmationNotes?: string;
 }
 
+/** Structured medico-legal signatory record, keyed to a consent completion by completionId. */
+export interface PreOpConsentDetailDto {
+  id: string;
+  completionId: string;
+  patientSigned: boolean;
+  witnessName: string | null;
+  witnessRelation: string | null;
+  surgeonUserId: string | null;
+  surgeonName: string | null;
+  consentVersion: string | null;
+  method: string;
+  signedAt: string | null;
+  capturedByUserId: string | null;
+  capturedByName: string | null;
+  revokedAt: string | null;
+  revokedReason: string | null;
+}
+
 export interface PreOpClearanceDetailDto {
   clearance: PreOpClearanceDto;
   completions: PreOpCompletionDto[];
@@ -1197,6 +1506,26 @@ export interface PreOpClearanceDetailDto {
   readyToAdmit: boolean;
   /** Empty array means all sections are NotRequested — treat gracefully, no error */
   sectionClearances: PreOpSectionClearanceDto[];
+  /** Structured consent signatory records, matched to completions by completionId. */
+  consentDetails: PreOpConsentDetailDto[];
+}
+
+/** Per-step readiness from GET …/pre-op/readiness (Phase 8). */
+export interface StepReadinessApiDto {
+  key: string;
+  completed: number;
+  total: number;
+  blocking: number;
+  status: string;
+  locked: boolean;
+  hasCount: boolean;
+}
+
+export interface PreOpReadinessApiDto {
+  steps: StepReadinessApiDto[];
+  readySteps: number;
+  countableSteps: number;
+  blockers: number;
 }
 
 // Pre-Op request types
@@ -1212,10 +1541,43 @@ export interface SavePreOpCompletionRequest {
   bypassReason?: string;
   notes?: string;
   documentId?: string;
+  /**
+   * Typed result. For `last_food_time` send the ISO intake timestamp in `resultValue`
+   * and the intake type (`clear` | `light` | `solid`) in `resultUnit`; the server
+   * derives `fasting_hours` + `fasting_confirmed` from it.
+   */
+  resultValue?: string;
+  resultUnit?: string;
 }
 
 export interface BatchSavePreOpCompletionsRequest {
   items: SavePreOpCompletionRequest[];
+}
+
+export interface CaptureConsentRequest {
+  patientSigned: boolean;
+  witnessName?: string | null;
+  witnessRelation?: string | null;
+  surgeonUserId?: string | null;
+  consentVersion?: string | null;
+  method?: string | null;
+  signedAt?: string | null;
+  documentId?: string | null;
+  notes?: string | null;
+}
+
+export interface RevokeConsentRequest {
+  reason: string;
+}
+
+/** Live insurance pre-auth status (read-only) projected from the CCMS coverage case. */
+export interface PreauthStatusDto {
+  allowed: boolean;
+  warningLevel: string; // none | info | warning | block
+  warningMessage: string | null;
+  blockReason: string | null;
+  preAuthNumber: string | null;
+  approvedAmount: number | null;
 }
 
 export interface AddPreOpVitalRequest {
@@ -1343,6 +1705,34 @@ export const ipManagementApi = {
     } catch (e) {
       console.warn('[ip-management] admitPatient failed', e);
       return null;
+    }
+  },
+
+  async cancelTodaySurgery(id: string, reason: string): Promise<PatientJourneyDetailDto | null> {
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(
+        `/ip-management/journeys/${id}/cancel-today-surgery`,
+        { reason },
+      );
+      return r.data;
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: string } })?.response?.data;
+      console.warn('[ip-management] cancelTodaySurgery failed', e);
+      throw new Error(typeof msg === 'string' ? msg : 'Could not cancel today\'s surgery.');
+    }
+  },
+
+  /** Ward off-ramp recovery: CancelledSurgery → Expected (explicit rebook). */
+  async rebookCancelledSurgery(id: string): Promise<PatientJourneyDetailDto | null> {
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(
+        `/ip-management/journeys/${id}/rebook`,
+      );
+      return r.data;
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: string } })?.response?.data;
+      console.warn('[ip-management] rebookCancelledSurgery failed', e);
+      throw new Error(typeof msg === 'string' ? msg : 'Could not rebook this patient.');
     }
   },
 
@@ -1827,6 +2217,23 @@ export const ipManagementApi = {
     }
   },
 
+  /** Server-authoritative readiness rollup (Phase 8) — powers modal + ward list. */
+  async getPreOpReadiness(
+    journeyId: string,
+    paymentMode?: string,
+  ): Promise<PreOpReadinessApiDto | null> {
+    try {
+      const r = await getClient().get<PreOpReadinessApiDto>(
+        `/ip-management/journeys/${journeyId}/pre-op/readiness`,
+        { params: paymentMode ? { paymentMode } : undefined },
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getPreOpReadiness failed', e);
+      return null;
+    }
+  },
+
   async savePreOpCompletion(
     journeyId: string, itemId: string, req: SavePreOpCompletionRequest
   ): Promise<PreOpCompletionDto | null> {
@@ -1836,6 +2243,33 @@ export const ipManagementApi = {
       return r.data;
     } catch (e) {
       console.warn('[ip-management] savePreOpCompletion failed', e);
+      return null;
+    }
+  },
+
+  async captureConsent(
+    journeyId: string, itemId: string, req: CaptureConsentRequest
+  ): Promise<PreOpClearanceDetailDto> {
+    const r = await getClient().post<PreOpClearanceDetailDto>(
+      `/ip-management/journeys/${journeyId}/pre-op/consent/${itemId}/capture`, req);
+    return r.data;
+  },
+
+  async revokeConsent(
+    journeyId: string, itemId: string, req: RevokeConsentRequest
+  ): Promise<PreOpClearanceDetailDto> {
+    const r = await getClient().post<PreOpClearanceDetailDto>(
+      `/ip-management/journeys/${journeyId}/pre-op/consent/${itemId}/revoke`, req);
+    return r.data;
+  },
+
+  async getPreauthStatus(journeyId: string): Promise<PreauthStatusDto | null> {
+    try {
+      const r = await getClient().get<PreauthStatusDto>(
+        `/ip-management/journeys/${journeyId}/financial/preauth-status`);
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getPreauthStatus failed', e);
       return null;
     }
   },
@@ -2040,7 +2474,7 @@ export const ipManagementApi = {
       const r = await getClient().get<WardInvestigationChecklistDto>(
         `/ip-management/journeys/${journeyId}/ward-investigation-checklist`,
       );
-      return r.data;
+      return normalizeWardInvestigationChecklist(r.data);
     } catch (e) {
       console.warn('[ip-management] getWardInvestigationChecklist failed', e);
       return null;
@@ -2057,9 +2491,87 @@ export const ipManagementApi = {
         `/ip-management/journeys/${journeyId}/ward-investigation-checklist/completions/${itemId}`,
         req,
       );
-      return r.data;
+      return normalizeWardInvestigationChecklist(r.data);
     } catch (e) {
       console.warn('[ip-management] saveWardInvestigationCompletion failed', e);
+      return null;
+    }
+  },
+
+  async saveWardInvestigationResult(
+    journeyId: string,
+    itemId: string,
+    req: SaveWardInvestigationResultRequest,
+  ): Promise<WardInvestigationChecklistDto | null> {
+    try {
+      const r = await getClient().put<WardInvestigationChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-investigation-checklist/completions/${itemId}/result`,
+        req,
+      );
+      return normalizeWardInvestigationChecklist(r.data);
+    } catch (e) {
+      console.warn('[ip-management] saveWardInvestigationResult failed', e);
+      return null;
+    }
+  },
+
+  async verifyWardInvestigation(
+    journeyId: string,
+    itemId: string,
+    req: VerifyWardInvestigationRequest = {},
+  ): Promise<WardInvestigationChecklistDto | null> {
+    try {
+      const r = await getClient().post<WardInvestigationChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-investigation-checklist/completions/${itemId}/verify`,
+        req,
+      );
+      return normalizeWardInvestigationChecklist(r.data);
+    } catch (e) {
+      console.warn('[ip-management] verifyWardInvestigation failed', e);
+      return null;
+    }
+  },
+
+  async uploadWardInvestigationDocument(
+    journeyId: string,
+    itemId: string,
+    req: UploadInvestigationDocumentRequest,
+  ): Promise<WardInvestigationChecklistDto | null> {
+    try {
+      const r = await getClient().post<WardInvestigationChecklistDto>(
+        `/ip-management/journeys/${journeyId}/ward-investigation-checklist/completions/${itemId}/document`,
+        req,
+      );
+      return normalizeWardInvestigationChecklist(r.data);
+    } catch (e) {
+      console.warn('[ip-management] uploadWardInvestigationDocument failed', e);
+      return null;
+    }
+  },
+
+  async getWardInvestigationDocument(
+    journeyId: string,
+    itemId: string,
+  ): Promise<InvestigationDocumentDto | null> {
+    try {
+      const r = await getClient().get<InvestigationDocumentDto>(
+        `/ip-management/journeys/${journeyId}/ward-investigation-checklist/completions/${itemId}/document`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getWardInvestigationDocument failed', e);
+      return null;
+    }
+  },
+
+  async getWardInvestigationSummary(journeyId: string): Promise<WardInvestigationSummaryDto | null> {
+    try {
+      const r = await getClient().get<WardInvestigationSummaryDto>(
+        `/ip-management/journeys/${journeyId}/ward-investigation-checklist/summary`,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getWardInvestigationSummary failed', e);
       return null;
     }
   },
@@ -2210,7 +2722,7 @@ export const ipManagementApi = {
       const r = await getClient().get<SurgicalSafetyChecklistDto>(
         `/ip-management/journeys/${journeyId}/surgical-safety`,
       );
-      return r.data;
+      return normalizeSurgicalSafetyChecklist(r.data);
     } catch (e) {
       console.warn('[ip-management] getSurgicalSafetyChecklist failed', e);
       return null;
@@ -2226,7 +2738,7 @@ export const ipManagementApi = {
         `/ip-management/journeys/${journeyId}/surgical-safety/before-anaesthesia`,
         req,
       );
-      return r.data;
+      return normalizeSurgicalSafetyChecklist(r.data);
     } catch (e) {
       console.warn('[ip-management] saveBeforeAnaesthesia failed', e);
       return null;
@@ -2242,7 +2754,7 @@ export const ipManagementApi = {
         `/ip-management/journeys/${journeyId}/surgical-safety/who-timeout`,
         req,
       );
-      return r.data;
+      return normalizeSurgicalSafetyChecklist(r.data);
     } catch (e) {
       console.warn('[ip-management] saveWhoTimeout failed', e);
       return null;
@@ -2258,7 +2770,7 @@ export const ipManagementApi = {
         `/ip-management/journeys/${journeyId}/surgical-safety/after-surgery`,
         req,
       );
-      return r.data;
+      return normalizeSurgicalSafetyChecklist(r.data);
     } catch (e) {
       console.warn('[ip-management] saveAfterSurgery failed', e);
       return null;
@@ -2294,12 +2806,16 @@ export const ipManagementApi = {
     }
   },
 
-  async completePacAssessment(journeyId: string): Promise<PacAssessmentDto | null> {
+  async completePacAssessment(journeyId: string): Promise<CompletePacAssessmentResultDto | null> {
     try {
-      const r = await getClient().post<PacAssessmentDto>(
+      const r = await getClient().post<CompletePacAssessmentResultDto>(
         `/ip-management/journeys/${journeyId}/pac-assessment/complete`,
       );
-      return normalizePacAssessment(r.data);
+      if (!r.data) return null;
+      return {
+        assessment: normalizePacAssessment(r.data.assessment),
+        unverifiedCriticalWarnings: r.data.unverifiedCriticalWarnings ?? [],
+      };
     } catch (e) {
       console.warn('[ip-management] completePacAssessment failed', e);
       return null;
@@ -2312,7 +2828,7 @@ export const ipManagementApi = {
       const r = await getClient().get<AnaesthesiaMonitoringDto>(
         `/ip-management/journeys/${journeyId}/anaesthesia-monitoring`,
       );
-      return r.data;
+      return normalizeAnaesthesiaMonitoring(r.data);
     } catch (e) {
       console.warn('[ip-management] getAnaesthesiaMonitoring failed', e);
       return null;
@@ -2328,7 +2844,7 @@ export const ipManagementApi = {
         `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/pre-op-review`,
         req,
       );
-      return r.data;
+      return normalizeAnaesthesiaMonitoring(r.data);
     } catch (e) {
       console.warn('[ip-management] savePreOpReview failed', e);
       return null;
@@ -2344,7 +2860,7 @@ export const ipManagementApi = {
         `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/readings`,
         req,
       );
-      return r.data;
+      return normalizeAnaesthesiaMonitoring(r.data);
     } catch (e) {
       console.warn('[ip-management] addMonitoringReading failed', e);
       return null;
@@ -2361,7 +2877,7 @@ export const ipManagementApi = {
         `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/readings/${readingId}`,
         req,
       );
-      return r.data;
+      return normalizeAnaesthesiaMonitoring(r.data);
     } catch (e) {
       console.warn('[ip-management] updateMonitoringReading failed', e);
       return null;
@@ -2376,7 +2892,7 @@ export const ipManagementApi = {
       const r = await getClient().delete<AnaesthesiaMonitoringDto>(
         `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/readings/${readingId}`,
       );
-      return r.data;
+      return normalizeAnaesthesiaMonitoring(r.data);
     } catch (e) {
       console.warn('[ip-management] removeMonitoringReading failed', e);
       return null;
@@ -2392,7 +2908,7 @@ export const ipManagementApi = {
         `/ip-management/journeys/${journeyId}/anaesthesia-monitoring/discharge-clearance`,
         req,
       );
-      return r.data;
+      return normalizeAnaesthesiaMonitoring(r.data);
     } catch (e) {
       console.warn('[ip-management] saveDischargeClearance failed', e);
       return null;
@@ -2427,6 +2943,35 @@ export const ipManagementApi = {
     }
   },
 
+  async getCounsellorPreOpInvestigations(
+    sessionId: string,
+  ): Promise<CounsellorPreOpInvestigationChecklistDto | null> {
+    try {
+      const r = await getClient().get<CounsellorPreOpInvestigationChecklistDto>(
+        `/ip-management/counsellor/sessions/${sessionId}/pre-op-investigations`);
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getCounsellorPreOpInvestigations failed', e);
+      return null;
+    }
+  },
+
+  async saveCounsellorPreOpInvestigationResult(
+    sessionId: string,
+    itemId: string,
+    req: SaveCounsellorInvestigationResultRequest,
+  ): Promise<CounsellorPreOpInvestigationChecklistDto | null> {
+    try {
+      const r = await getClient().post<CounsellorPreOpInvestigationChecklistDto>(
+        `/ip-management/counsellor/sessions/${sessionId}/pre-op-investigations/${itemId}`,
+        req);
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] saveCounsellorPreOpInvestigationResult failed', e);
+      return null;
+    }
+  },
+
   // ── Audit Log ──────────────────────────────────────────────────────────────
   async getJourneyAudit(journeyId: string): Promise<JourneyAuditLogDto[]> {
     try {
@@ -2457,4 +3002,18 @@ export async function fetchWardData(branchId: string): Promise<{
     journeys: Array.isArray(journeyRes.data) ? journeyRes.data : [],
     wards: Array.isArray(wardRes.data) ? wardRes.data : [],
   };
+}
+
+/** Phase 2: server-computed ward KPI counts + filter facets. */
+export async function fetchWardDashboardSummary(
+  branchId: string,
+  date?: string,
+): Promise<WardDashboardSummaryDto | null> {
+  const params: Record<string, string> = { branchId };
+  if (date) params.date = date;
+  const res = await getClient().get<WardDashboardSummaryDto>(
+    '/ip-management/journeys/dashboard-summary',
+    { params },
+  );
+  return res.data ?? null;
 }

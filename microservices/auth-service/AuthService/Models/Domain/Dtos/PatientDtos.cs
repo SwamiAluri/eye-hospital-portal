@@ -290,3 +290,9 @@ public class PatientResponse
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
+
+public class MergePatientsRequest
+{
+    [Required]
+    public Guid DuplicatePatientId { get; set; }
+}

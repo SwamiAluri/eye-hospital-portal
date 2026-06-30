@@ -27,10 +27,11 @@ export function LabReportsTab({ patientId }: LabReportsTabProps) {
         status: statusFilter || undefined,
         category: categoryFilter || undefined,
       });
-      setReports(response.data || []);
-    } catch (err: any) {
+      const rows = Array.isArray(response.data) ? response.data : [];
+      setReports(rows);
+    } catch (err: unknown) {
       console.error('Error loading lab reports:', err);
-      setError('Failed to load lab reports.');
+      setError('Lab reports are temporarily unavailable.');
       setReports([]);
     } finally {
       setLoading(false);

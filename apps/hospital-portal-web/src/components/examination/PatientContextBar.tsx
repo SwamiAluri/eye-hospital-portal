@@ -183,6 +183,7 @@ export function PatientContextBar({
               type="button"
               onClick={onSaveExam}
               disabled={isSaving || !canEdit}
+              data-testid="patient-encounter-save"
               className="px-3 py-1.5 text-xs font-semibold border-2 border-emerald-600 text-emerald-700 rounded-md hover:bg-emerald-50 disabled:opacity-50 min-h-[44px] sm:min-h-0"
             >
               {isSaving ? 'Saving…' : 'Save exam'}

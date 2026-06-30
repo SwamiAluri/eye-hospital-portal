@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import 'react-day-picker/style.css';
+
 @import '../components/counsellors-desk/session/counselling-session-theme.css';
 
 /* Dark Mode Utilities */
@@ -392,4 +394,20 @@ body {
 
 .telugu {
   font-family: var(--font-telugu), 'Noto Sans Telugu', sans-serif;
+}
+
+/*
+ * Reduced-motion support (WCAG 2.2 — 2.3.3 Animation from Interactions).
+ * Honors the OS "reduce motion" preference: near-instant transitions/animations
+ * and no smooth-scroll, while keeping content fully functional.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

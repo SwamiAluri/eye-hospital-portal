@@ -1,93 +1,49 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Layers, Users, Calendar, CheckCircle, Calculator, Eye } from 'lucide-react';
 import { useHasPermission } from '@/hooks/use-permissions';
+import { useSpecialtyClinicPatients } from '@/hooks/use-specialty-clinic-patients';
+import { mapLookupToSpecialtyQueueRow } from '@/lib/specialty-clinics/lookup-queue-mappers';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { toast } from 'react-hot-toast';
 
 function CataractClinicPageContent() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [patients, setPatients] = useState<any[]>([]);
+  const lookupQuery = useSpecialtyClinicPatients('CATARACT');
+  const loading = lookupQuery.isLoading;
 
   const canEdit = useHasPermission('CLINICAL:CATARACT:EDIT');
 
-  useEffect(() => {
-    const loadPatients = async () => {
-      try {
-        setLoading(true);
-        
-        // TODO: Replace with actual API call
-        const mockPatients = [
-          {
-            id: 'cat001',
-            name: 'Lakshmi Devi',
-            mrn: 'MRN006789',
-            age: 68,
-            gender: 'Female',
-            lensGradeOD: 'NO3.5 C2.1 P0',
-            lensGradeOS: 'NO4.2 C1.8 P0.5',
-            vaOD: '6/60',
-            vaOS: 'CF at 2m',
-            iolPowerOD: 22.0,
-            iolPowerOS: 21.5,
-            biometryDone: true,
-            iolCalculated: true,
-            surgeryDate: '2026-02-05',
-            priority: 'Urgent',
-            surgicalEye: 'OS',
-          },
-          {
-            id: 'cat002',
-            name: 'Ravi Kumar',
-            mrn: 'MRN007234',
-            age: 72,
-            gender: 'Male',
-            lensGradeOD: 'NO2.8 C1.2 P0',
-            lensGradeOS: 'NO2.5 C1.5 P0',
-            vaOD: '6/24',
-            vaOS: '6/18',
-            iolPowerOD: 23.5,
-            iolPowerOS: 23.0,
-            biometryDone: true,
-            iolCalculated: true,
-            surgeryDate: null,
-            priority: 'Routine',
-            surgicalEye: 'OD',
-          },
-          {
-            id: 'cat003',
-            name: 'Sunita Sharma',
-            mrn: 'MRN008156',
-            age: 75,
-            gender: 'Female',
-            lensGradeOD: 'NO5.8 C3.5 P2.1',
-            lensGradeOS: 'NO6.2 C4.1 P1.8',
-            vaOD: 'HM',
-            vaOS: 'PL+',
-            iolPowerOD: null,
-            iolPowerOS: null,
-            biometryDone: false,
-            iolCalculated: false,
-            surgeryDate: null,
-            priority: 'Emergency',
-            surgicalEye: 'OU',
-          },
-        ];
-
-        setPatients(mockPatients);
-      } catch (error) {
-        console.error('Failed to load cataract patients:', error);
-        toast.error('Failed to load patients');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadPatients();
-  }, []);
+  const patients = useMemo(() => {
+    if (lookupQuery.isError) {
+      toast.error('Failed to load cataract queue');
+      return [];
+    }
+    return (lookupQuery.data?.items ?? []).map((row) => {
+      const base = mapLookupToSpecialtyQueueRow(row);
+      return {
+        id: base.id,
+        name: base.name,
+        mrn: base.mrn,
+        age: base.age ?? 0,
+        gender: base.gender || '—',
+        lensGradeOD: '—',
+        lensGradeOS: '—',
+        vaOD: '—',
+        vaOS: '—',
+        iolPowerOD: null as number | null,
+        iolPowerOS: null as number | null,
+        biometryDone: false,
+        iolCalculated: false,
+        surgeryDate: null as string | null,
+        priority: base.priority,
+        surgicalEye: '—',
+        reasonForVisit: base.reasonForVisit,
+      };
+    });
+  }, [lookupQuery.data?.items, lookupQuery.isError]);
 
   const stats = {
     totalPatients: patients.length,

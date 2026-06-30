@@ -26,3 +26,32 @@ public record SaveCounsellorCompletionRequest(
     string?  BypassReason,
     string?  Notes
 );
+
+public record CounsellorPreOpInvestigationItemDto(
+    Guid     ItemId,
+    string   ItemKey,
+    string   WardTargetKey,
+    string   ItemLabel,
+    string?  Description,
+    int      DisplayOrder,
+    string?  ResultValue,
+    string?  ResultUnit,
+    string   EntryStatus,
+    string?  Notes,
+    DateTime? EnteredAt,
+    string?  DefaultUnit,
+    string?  ValueType
+);
+
+public record CounsellorPreOpInvestigationChecklistDto(
+    Guid     CounselingSessionId,
+    int      TotalItems,
+    int      DraftItems,
+    List<CounsellorPreOpInvestigationItemDto> Items
+);
+
+public record SaveCounsellorInvestigationResultRequest(
+    string   ResultValue,
+    string?  ResultUnit,
+    string?  Notes
+);

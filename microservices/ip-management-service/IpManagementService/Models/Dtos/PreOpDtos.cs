@@ -55,7 +55,14 @@ public record PreOpCompletionDto(
     DateTime? CompletedAt,
     DateTime UpdatedAt,
     string?  FormCode,
-    string?  Source
+    string?  Source,
+    // Fasting & Medication v2 — typed result columns + attribution (data governance).
+    // Appended with defaults so existing positional constructors stay valid.
+    string?  ResultValue = null,
+    string?  ResultUnit = null,
+    string?  EntryStatus = null,
+    DateTime? EnteredAt = null,
+    string?  CompletedByRole = null
 );
 
 // ─── Pre-Op Document ──────────────────────────────────────────────────────────
@@ -76,6 +83,30 @@ public record PreOpDocumentDto(
     DateTime CreatedAt
 );
 
+// ─── Pre-Op Consent Detail (medico-legal signatory record) ────────────────────
+
+/// <summary>
+/// Structured signatory record for a Consent-category completion (1:1). Keyed to
+/// the completion via <see cref="CompletionId"/>; the frontend matches it to the
+/// matching <see cref="PreOpCompletionDto"/> to surface "signed by · when".
+/// </summary>
+public record PreOpConsentDetailDto(
+    Guid      Id,
+    Guid      CompletionId,
+    bool      PatientSigned,
+    string?   WitnessName,
+    string?   WitnessRelation,
+    Guid?     SurgeonUserId,
+    string?   SurgeonName,
+    string?   ConsentVersion,
+    string    Method,
+    DateTime? SignedAt,
+    Guid?     CapturedByUserId,
+    string?   CapturedByName,
+    DateTime? RevokedAt,
+    string?   RevokedReason
+);
+
 // ─── Aggregated View ──────────────────────────────────────────────────────────
 
 /// <summary>
@@ -93,7 +124,9 @@ public record PreOpClearanceDetailDto(
     int                          BlockingIncomplete,
     bool                         ReadyToAdmit,
     // Per-section dept coordination (empty array = all NotRequested)
-    List<PreOpSectionClearanceDto> SectionClearances
+    List<PreOpSectionClearanceDto> SectionClearances,
+    // Structured consent signatory records, keyed by CompletionId (Phase consent-redesign)
+    List<PreOpConsentDetailDto>  ConsentDetails
 );
 
 // ─── Requests ─────────────────────────────────────────────────────────────────
@@ -111,12 +144,42 @@ public record SavePreOpCompletionRequest(
     bool     IsBypassed,
     string?  BypassReason,
     string?  Notes,
-    Guid?    DocumentId
+    Guid?    DocumentId,
+    // Typed result columns (optional; defaults keep existing 6-arg call sites valid).
+    // For `last_food_time` this carries the ISO intake timestamp (ResultValue) and the
+    // intake type (ResultUnit: clear|light|solid) used to derive fasting confirmation.
+    string?  ResultValue = null,
+    string?  ResultUnit = null
 );
 
 /// <summary>Batch-save completions in one request.</summary>
 public record BatchSavePreOpCompletionsRequest(
     List<SavePreOpCompletionRequest> Items
+);
+
+/// <summary>
+/// Capture a structured consent signatory record and mark the consent completion done.
+/// Surgical consent requires a linked signed document (DocumentId).
+/// </summary>
+public record CaptureConsentRequest(
+    bool      PatientSigned,
+    string?   WitnessName,
+    string?   WitnessRelation,
+    Guid?     SurgeonUserId,
+    string?   ConsentVersion,
+    string?   Method,
+    DateTime? SignedAt,
+    Guid?     DocumentId,
+    string?   Notes
+);
+
+/// <summary>
+/// Withdraw a previously captured consent (patient / guardian right to revoke).
+/// Clears the completion and stamps the medico-legal revoke columns. A reason is
+/// mandatory for the audit trail.
+/// </summary>
+public record RevokeConsentRequest(
+    string    Reason
 );
 
 /// <summary>Request body for recording pre-op vitals (subset of full vitals).</summary>
@@ -201,7 +264,9 @@ public record PreOpSectionClearanceDto(
     DateTime  CreatedAt,
     DateTime  UpdatedAt,
     string    Urgency         = "Normal",
-    string?   RejectionReason = null
+    string?   RejectionReason = null,
+    /// <summary>Computed UI rollup (G3 / R4.2) — mirrors FE SectionDisplayStatus.</summary>
+    string?   SectionDisplayStatus = null
 );
 
 /// <summary>Ward nurse requests a section from the responsible department.</summary>

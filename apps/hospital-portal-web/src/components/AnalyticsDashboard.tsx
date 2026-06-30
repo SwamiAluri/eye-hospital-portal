@@ -144,6 +144,13 @@ const hourlyAppointments = (): ChartDataPoint[] => [
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
+const PATIENT_REGISTRATION_DATA = generatePatientRegistrationData();
+const APPOINTMENTS_BY_DEPARTMENT_DATA = appointmentsByDepartment();
+const PATIENT_DEMOGRAPHICS_DATA = patientDemographics();
+const REVENUE_BY_MONTH_DATA = revenueByMonth();
+const APPOINTMENT_STATUS_DATA = appointmentStatusData();
+const HOURLY_APPOINTMENTS_DATA = hourlyAppointments();
+
 export function AnalyticsDashboard() {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('month');
   const [showFilters, setShowFilters] = useState(false);
@@ -307,7 +314,7 @@ export function AnalyticsDashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={generatePatientRegistrationData()}>
+              <LineChart data={PATIENT_REGISTRATION_DATA}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="name" stroke="#6b7280" />
                 <YAxis stroke="#6b7280" />
@@ -335,7 +342,7 @@ export function AnalyticsDashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={revenueByMonth()}>
+              <AreaChart data={REVENUE_BY_MONTH_DATA}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="name" stroke="#6b7280" />
                 <YAxis stroke="#6b7280" />
@@ -375,7 +382,7 @@ export function AnalyticsDashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={appointmentsByDepartment()}>
+              <BarChart data={APPOINTMENTS_BY_DEPARTMENT_DATA}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="name" stroke="#6b7280" angle={-45} textAnchor="end" height={100} />
                 <YAxis stroke="#6b7280" />
@@ -397,7 +404,7 @@ export function AnalyticsDashboard() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={patientDemographics()}
+                  data={PATIENT_DEMOGRAPHICS_DATA}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -406,7 +413,7 @@ export function AnalyticsDashboard() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {patientDemographics().map((entry, index) => (
+                  {PATIENT_DEMOGRAPHICS_DATA.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -429,7 +436,7 @@ export function AnalyticsDashboard() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={appointmentStatusData()}
+                  data={APPOINTMENT_STATUS_DATA}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -438,7 +445,7 @@ export function AnalyticsDashboard() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {appointmentStatusData().map((entry, index) => (
+                  {APPOINTMENT_STATUS_DATA.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -456,13 +463,13 @@ export function AnalyticsDashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={hourlyAppointments()}>
+              <BarChart data={HOURLY_APPOINTMENTS_DATA}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="name" stroke="#6b7280" />
                 <YAxis stroke="#6b7280" />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="appointments" fill="#3b82f6" name="Appointments" radius={[8, 8, 0, 0]}>
-                  {hourlyAppointments().map((entry, index) => (
+                  {HOURLY_APPOINTMENTS_DATA.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
                       fill={entry.appointments > 40 ? '#10b981' : entry.appointments > 30 ? '#3b82f6' : '#f59e0b'}
@@ -497,7 +504,7 @@ export function AnalyticsDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {appointmentsByDepartment().map((dept, index) => {
+                {APPOINTMENTS_BY_DEPARTMENT_DATA.map((dept, index) => {
                   const avgRevenue = dept.revenue / dept.appointments;
                   const growth = Math.random() * 20 - 5; // Mock growth data
 

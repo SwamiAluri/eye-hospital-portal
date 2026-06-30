@@ -20,6 +20,13 @@ public class PatientsController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly ILogger<PatientsController> _logger;
     private readonly IPatientDuplicateDetectionService _duplicateDetectionService;
+    private readonly IPatientLookupService _patientLookupService;
+    private readonly IPatientOmniSearchService _patientOmniSearchService;
+    private readonly IPatientSummaryService _patientSummaryService;
+    private readonly IPatientSummaryPdfService _patientSummaryPdfService;
+    private readonly IAuditService _auditService;
+    private readonly IPatientMergeService _patientMergeService;
+    private readonly IPatientRecentViewsService _recentViewsService;
     private readonly AppDbContext _context;
 
     public PatientsController(
@@ -28,6 +35,13 @@ public class PatientsController : ControllerBase
         IConfiguration configuration,
         ILogger<PatientsController> logger,
         IPatientDuplicateDetectionService duplicateDetectionService,
+        IPatientLookupService patientLookupService,
+        IPatientOmniSearchService patientOmniSearchService,
+        IPatientSummaryService patientSummaryService,
+        IPatientSummaryPdfService patientSummaryPdfService,
+        IAuditService auditService,
+        IPatientMergeService patientMergeService,
+        IPatientRecentViewsService recentViewsService,
         AppDbContext context)
     {
         _patientService = patientService;
@@ -35,7 +49,271 @@ public class PatientsController : ControllerBase
         _configuration = configuration;
         _logger = logger;
         _duplicateDetectionService = duplicateDetectionService;
+        _patientLookupService = patientLookupService;
+        _patientOmniSearchService = patientOmniSearchService;
+        _patientSummaryService = patientSummaryService;
+        _patientSummaryPdfService = patientSummaryPdfService;
+        _auditService = auditService;
+        _patientMergeService = patientMergeService;
+        _recentViewsService = recentViewsService;
         _context = context;
+    }
+
+    private static List<string> ParseCsvList(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? new List<string>()
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private PatientLookupQuery BuildLookupQuery(
+        Guid tenantId, Guid branchId, Guid userId,
+        string? q, string tab, int page, int pageSize, string sortBy, string sortDir,
+        bool favoritesOnly, bool assignedToMe,
+        string? engagementTypes, string? programCodes, string? patientTypes,
+        string? gender, string? mrn, string? phone,
+        DateTime? dobFrom, DateTime? dobTo, DateTime? appointmentFrom, DateTime? appointmentTo,
+        string? name = null, string? diagnosis = null, Guid? providerId = null,
+        Guid? departmentId = null, string? wardName = null,
+        DateTime? admissionFrom = null, DateTime? admissionTo = null) =>
+        new()
+        {
+            TenantId = tenantId,
+            BranchId = branchId,
+            UserId = userId,
+            Q = q,
+            Tab = tab,
+            Page = page,
+            PageSize = pageSize,
+            SortBy = sortBy,
+            SortDir = sortDir,
+            FavoritesOnly = favoritesOnly,
+            AssignedToMe = assignedToMe,
+            EngagementTypes = ParseCsvList(engagementTypes),
+            ProgramCodes = ParseCsvList(programCodes),
+            PatientTypes = ParseCsvList(patientTypes),
+            Gender = gender,
+            Mrn = mrn,
+            Phone = phone,
+            DobFrom = dobFrom,
+            DobTo = dobTo,
+            AppointmentFrom = appointmentFrom,
+            AppointmentTo = appointmentTo,
+            Name = name,
+            Diagnosis = diagnosis,
+            ProviderId = providerId,
+            DepartmentId = departmentId,
+            WardName = wardName,
+            AdmissionFrom = admissionFrom,
+            AdmissionTo = admissionTo,
+        };
+
+    private bool TryGetTenantAndUser(out Guid tenantId, out Guid userId)
+    {
+        tenantId = Guid.Empty;
+        userId = Guid.Empty;
+        var tenantClaim = User.FindFirst("TenantId")?.Value;
+        if (string.IsNullOrEmpty(tenantClaim) || !Guid.TryParse(tenantClaim, out tenantId))
+            return false;
+        var userClaim = User.FindFirst("sub")?.Value
+            ?? User.FindFirst("user_id")?.Value
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userClaim) || !Guid.TryParse(userClaim, out userId))
+            return false;
+        return true;
+    }
+
+    /// <summary>Patient Hub — typeahead suggest (branch-scoped).</summary>
+    [HttpGet("suggest")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<List<PatientSuggestRowDto>>> SuggestPatients(
+        [FromQuery] Guid branchId,
+        [FromQuery] string q,
+        [FromQuery] int limit = 10)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var rows = await _patientLookupService.SuggestAsync(tenantId, branchId, userId, q, limit);
+        return Ok(rows);
+    }
+
+    /// <summary>Patient Hub — multi-scope omnisearch (Ctrl+K).</summary>
+    [HttpGet("omni-search")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<List<PatientOmniSearchHitDto>>> OmniSearch(
+        [FromQuery] Guid branchId,
+        [FromQuery] string scope = "patients",
+        [FromQuery] string? q = null,
+        [FromQuery] int limit = 15)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var rows = await _patientOmniSearchService.SearchAsync(
+            tenantId,
+            branchId,
+            userId,
+            scope,
+            q ?? "",
+            limit);
+        return Ok(rows);
+    }
+
+    /// <summary>Patient Hub — paginated lookup list.</summary>
+    [HttpGet("lookup")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<PatientLookupPageDto>> LookupPatients(
+        [FromQuery] Guid branchId,
+        [FromQuery] string? q = null,
+        [FromQuery] string tab = "all",
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25,
+        [FromQuery] string sortBy = "name",
+        [FromQuery] string sortDir = "asc",
+        [FromQuery] bool favoritesOnly = false,
+        [FromQuery] bool assignedToMe = false,
+        [FromQuery] string? engagementTypes = null,
+        [FromQuery] string? programCodes = null,
+        [FromQuery] string? patientTypes = null,
+        [FromQuery] string? gender = null,
+        [FromQuery] string? mrn = null,
+        [FromQuery] string? phone = null,
+        [FromQuery] DateTime? dobFrom = null,
+        [FromQuery] DateTime? dobTo = null,
+        [FromQuery] DateTime? appointmentFrom = null,
+        [FromQuery] DateTime? appointmentTo = null,
+        [FromQuery] string? name = null,
+        [FromQuery] string? diagnosis = null,
+        [FromQuery] Guid? providerId = null,
+        [FromQuery] Guid? departmentId = null,
+        [FromQuery] string? wardName = null,
+        [FromQuery] DateTime? admissionFrom = null,
+        [FromQuery] DateTime? admissionTo = null)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var result = await _patientLookupService.LookupAsync(BuildLookupQuery(
+            tenantId, branchId, userId, q, tab, page, pageSize, sortBy, sortDir,
+            favoritesOnly, assignedToMe, engagementTypes, programCodes, patientTypes,
+            gender, mrn, phone, dobFrom, dobTo, appointmentFrom, appointmentTo,
+            name, diagnosis, providerId, departmentId, wardName, admissionFrom, admissionTo));
+        return Ok(result);
+    }
+
+    /// <summary>Patient Hub — CSV export for current filters.</summary>
+    [HttpGet("lookup/export")]
+    [RequirePermission("patient.export")]
+    public async Task<IActionResult> ExportLookup(
+        [FromQuery] Guid branchId,
+        [FromQuery] string? q = null,
+        [FromQuery] string tab = "all",
+        [FromQuery] string sortBy = "name",
+        [FromQuery] string sortDir = "asc",
+        [FromQuery] bool favoritesOnly = false,
+        [FromQuery] bool assignedToMe = false,
+        [FromQuery] string? engagementTypes = null,
+        [FromQuery] string? programCodes = null,
+        [FromQuery] string? patientTypes = null,
+        [FromQuery] string? gender = null,
+        [FromQuery] string? mrn = null,
+        [FromQuery] string? phone = null,
+        [FromQuery] DateTime? dobFrom = null,
+        [FromQuery] DateTime? dobTo = null,
+        [FromQuery] DateTime? appointmentFrom = null,
+        [FromQuery] DateTime? appointmentTo = null,
+        [FromQuery] string? name = null,
+        [FromQuery] string? diagnosis = null,
+        [FromQuery] Guid? providerId = null,
+        [FromQuery] Guid? departmentId = null,
+        [FromQuery] string? wardName = null,
+        [FromQuery] DateTime? admissionFrom = null,
+        [FromQuery] DateTime? admissionTo = null,
+        [FromQuery] string format = "csv")
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        if (!string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Only csv format is supported" });
+
+        var bytes = await _patientLookupService.ExportCsvAsync(BuildLookupQuery(
+            tenantId, branchId, userId, q, tab, 1, 5000, sortBy, sortDir,
+            favoritesOnly, assignedToMe, engagementTypes, programCodes, patientTypes,
+            gender, mrn, phone, dobFrom, dobTo, appointmentFrom, appointmentTo,
+            name, diagnosis, providerId, departmentId, wardName, admissionFrom, admissionTo));
+
+        await _auditService.LogDataAccessAsync(userId, "PatientLookup", branchId, "EXPORT_CSV", "PHI");
+
+        return File(bytes, "text/csv", $"patients-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
+    }
+
+    /// <summary>Patient Hub — classification tab counts.</summary>
+    [HttpGet("lookup/stats")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<PatientLookupStatsDto>> LookupStats([FromQuery] Guid branchId)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var stats = await _patientLookupService.GetStatsAsync(tenantId, branchId, userId);
+        return Ok(stats);
+    }
+
+    /// <summary>Patient Hub — recently viewed patients for current user.</summary>
+    [HttpGet("recent-views")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<List<PatientRecentViewDto>>> GetRecentViews([FromQuery] int limit = 6)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var rows = await _recentViewsService.GetRecentAsync(tenantId, userId, limit);
+        return Ok(rows);
+    }
+
+    /// <summary>Patient Hub — record a patient preview/profile view.</summary>
+    [HttpPost("{id}/recent-view")]
+    [RequirePermission("patient.view")]
+    public async Task<IActionResult> RecordRecentView(Guid id)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var exists = await _context.Patients.AnyAsync(p => p.Id == id && p.TenantId == tenantId && p.DeletedAt == null);
+        if (!exists) return NotFound();
+
+        await _recentViewsService.RecordViewAsync(tenantId, userId, id);
+        return NoContent();
+    }
+
+    /// <summary>Patient Hub — PHI access audit (preview drawer, etc.).</summary>
+    [HttpPost("{id}/phi-access")]
+    [RequirePermission("patient.view")]
+    public async Task<IActionResult> LogPhiAccess(Guid id, [FromBody] PhiAccessRequestDto? body)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var exists = await _context.Patients.AnyAsync(p => p.Id == id && p.TenantId == tenantId && p.DeletedAt == null);
+        if (!exists) return NotFound();
+
+        var context = string.IsNullOrWhiteSpace(body?.Context) ? "preview" : body!.Context.Trim();
+        await _auditService.LogDataAccessAsync(userId, "Patient", id, "VIEW_PHI", "PHI");
+        if (!string.Equals(context, "preview", StringComparison.OrdinalIgnoreCase))
+            await _auditService.LogAsync(userId, "VIEW_PHI", "Patient", id, context);
+        return NoContent();
+    }
+
+    /// <summary>Toggle patient favorite for current user.</summary>
+    [HttpPut("{id}/favorite")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<object>> ToggleFavorite(Guid id)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var isFavorite = await _patientLookupService.ToggleFavoriteAsync(tenantId, userId, id);
+        return Ok(new { isFavorite });
     }
 
     [HttpGet]
@@ -80,6 +358,116 @@ public class PatientsController : ControllerBase
         return Ok(MapToResponse(patient));
     }
 
+    /// <summary>Merge duplicate patient records into primary (admin).</summary>
+    [HttpPost("{primaryId}/merge")]
+    [RequirePermission("patient.update")]
+    public async Task<ActionResult<PatientResponse>> MergePatients(
+        Guid primaryId,
+        [FromBody] MergePatientsRequest request)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        if (request.DuplicatePatientId == Guid.Empty)
+            return BadRequest(new { error = "duplicatePatientId is required" });
+
+        try
+        {
+            var merged = await _patientMergeService.MergePatientsAsync(
+                tenantId, primaryId, request.DuplicatePatientId, userId);
+            if (merged == null)
+                return NotFound(new { error = "One or both patients were not found" });
+
+            await _auditService.LogAsync(
+                userId,
+                "PATIENT_MERGE",
+                "Patient",
+                primaryId,
+                $"Merged duplicate {request.DuplicatePatientId} into {primaryId}");
+
+            return Ok(MapToResponse(merged));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("{id}/summary")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<PatientSummaryDto>> GetPatientSummary(
+        Guid id, [FromQuery] Guid branchId, [FromQuery] bool skipPhiAudit = false)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        var summary = await _patientSummaryService.GetSummaryAsync(tenantId, branchId, id);
+        if (summary == null) return NotFound();
+
+        if (!skipPhiAudit)
+            await _auditService.LogDataAccessAsync(userId, "Patient", id, "VIEW_PHI", "PHI");
+        return Ok(summary);
+    }
+
+    [HttpGet("{id}/visits/recent")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<List<PatientRecentVisitDto>>> GetRecentVisits(
+        Guid id, [FromQuery] Guid branchId, [FromQuery] int limit = 5)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out _))
+            return Unauthorized();
+
+        var visits = await _patientSummaryService.GetRecentVisitsAsync(tenantId, branchId, id, limit);
+        return Ok(visits);
+    }
+
+    [HttpGet("{id}/data-quality")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<PatientDataQualityDto>> GetDataQuality(Guid id)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out _))
+            return Unauthorized();
+
+        return Ok(await _patientSummaryService.GetDataQualityAsync(tenantId, id));
+    }
+
+    [HttpGet("{id}/vitals/staleness")]
+    [RequirePermission("patient.view")]
+    public async Task<ActionResult<PatientVitalsStalenessDto>> GetVitalsStaleness(Guid id)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out _))
+            return Unauthorized();
+
+        return Ok(await _patientSummaryService.GetVitalsStalenessAsync(tenantId, id));
+    }
+
+    /// <summary>Patient Hub — export patient summary as PDF.</summary>
+    [HttpGet("{id}/summary/export")]
+    [RequirePermission("patient.export")]
+    public async Task<IActionResult> ExportPatientSummary(
+        Guid id,
+        [FromQuery] Guid branchId,
+        [FromQuery] string format = "pdf")
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out var userId))
+            return Unauthorized();
+
+        if (!string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Only pdf format is supported" });
+
+        var generatedBy = User.FindFirst("email")?.Value
+            ?? User.Identity?.Name
+            ?? userId.ToString();
+
+        var bytes = await _patientSummaryPdfService.GenerateAsync(tenantId, branchId, id, generatedBy);
+        if (bytes == null) return NotFound();
+
+        await _auditService.LogDataAccessAsync(userId, "Patient", id, "EXPORT_PDF", "PHI");
+
+        var fileName = $"patient-summary-{id:N}-{DateTime.UtcNow:yyyyMMdd}.pdf";
+        return File(bytes, "application/pdf", fileName);
+    }
+
     /// <summary>
     /// Check for duplicate patients before creating a new patient
     /// </summary>
@@ -92,8 +480,8 @@ public class PatientsController : ControllerBase
 
         var result = await _duplicateDetectionService.CheckDuplicatesAsync(
             request,
-            Guid.Parse(tenantId)
-        );
+            Guid.Parse(tenantId),
+            request.ExcludePatientId);
 
         return Ok(result);
     }

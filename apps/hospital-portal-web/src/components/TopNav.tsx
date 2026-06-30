@@ -3,6 +3,7 @@
 import { useAuthStore } from '@/lib/auth-store';
 import { logoutEverywhere } from '@/lib/logout-everywhere';
 import LiveActivityFeed from '@/components/LiveActivityFeed';
+import { BranchSwitcher } from '@/components/patients/lookup/BranchSwitcher';
 import { LogOut, Menu } from 'lucide-react';
 
 interface TopNavProps {
@@ -26,6 +27,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
         >
           <Menu size={20} />
         </button>
+        {user && <BranchSwitcher />}
       </div>
 
       <div className="flex items-center gap-4">

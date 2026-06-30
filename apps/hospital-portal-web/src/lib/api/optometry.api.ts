@@ -1,4 +1,5 @@
 import { getApi } from '../api';
+import { searchDirectoryPatients } from '@/lib/optometry/optometry-patient-search';
 
 // ==========================================
 // Optometrist Queue & Workflow API
@@ -256,18 +257,14 @@ export const optometryQueueApi = {
   },
 
   searchPatients: async (branchId: string, q: string, limit = 20): Promise<OptometryPatientSearchRow[]> => {
-    const response = await getApi().get<OptometryPatientSearchRow[]>(
-      '/visits/queue/optometrist/patients/search',
-      { params: { branchId, q, limit } },
-    );
-    const rows = response.data ?? [];
+    const rows = await searchDirectoryPatients(branchId, q, limit);
     return rows.map((row) => ({
-      id: String((row as { id?: string; Id?: string }).id ?? (row as { Id?: string }).Id ?? ''),
-      patientName: row.patientName ?? (row as { PatientName?: string }).PatientName ?? '',
-      mrn: row.mrn ?? (row as { Mrn?: string }).Mrn ?? '',
-      phone: row.phone ?? (row as { Phone?: string | null }).Phone ?? null,
-      gender: row.gender ?? (row as { Gender?: string | null }).Gender ?? null,
-      dateOfBirth: row.dateOfBirth ?? (row as { DateOfBirth?: string | null }).DateOfBirth ?? null,
+      id: row.id,
+      patientName: row.patientName,
+      mrn: row.mrn,
+      phone: row.phone ?? null,
+      gender: row.gender ?? null,
+      dateOfBirth: row.dateOfBirth ?? null,
     }));
   },
 

@@ -44,6 +44,9 @@ export function mergeEstimateIntoBlob(
   if (estimate.bundleSavings !== undefined) next.bundleSavings = estimate.bundleSavings;
   if (estimate.finalPayableAmount !== undefined) {
     next.finalPayableAmount = estimate.finalPayableAmount;
+    if (estimate.finalPayableAmount > 0) {
+      next.rate = estimate.finalPayableAmount;
+    }
   }
 
   return next;

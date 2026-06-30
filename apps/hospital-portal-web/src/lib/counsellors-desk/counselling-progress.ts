@@ -1,6 +1,7 @@
 import type { DecisionType, ScheduleData } from '@/types/counsellors-desk';
 
 import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 
 import type { CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
 
@@ -38,11 +39,11 @@ export const COUNSELLING_PHASES: CounsellingPhaseDefinition[] = [
 
     id: 'estimate',
 
-    label: 'Build Quote',
+    label: counsellingCopy.buildQuote,
 
     shortLabel: 'Quote',
 
-    description: 'Procedure & investigations',
+    description: 'Procedure, package & investigations',
 
     testId: counsellingTestIds.phase('estimate'),
 
@@ -52,11 +53,11 @@ export const COUNSELLING_PHASES: CounsellingPhaseDefinition[] = [
 
     id: 'decision',
 
-    label: 'Patient Decision',
+    label: counsellingCopy.patientDecision,
 
     shortLabel: 'Decision',
 
-    description: 'Payment & decision',
+    description: 'Payment, decision & schedule',
 
     testId: counsellingTestIds.phase('decision'),
 
@@ -66,11 +67,10 @@ export const COUNSELLING_PHASES: CounsellingPhaseDefinition[] = [
 
     id: 'wrapup',
 
-    label: 'Wrap-up',
+    label: counsellingCopy.sessionNotes,
+    shortLabel: 'Notes',
 
-    shortLabel: 'Wrap-up',
-
-    description: 'Notes & follow-up',
+    description: 'Notes & session options',
 
     testId: counsellingTestIds.phase('wrapup'),
 

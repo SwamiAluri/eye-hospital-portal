@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 using IpManagementService.Data;
 
@@ -25,10 +26,25 @@ public class CounsellorChecklistService
 {
 
     public const string OutpatientFormCode    = "OUTPATIENT_SAFETY";
-
     public const string OutpatientFormContext = "counsellor";
 
+    public const string InvestigationFormCode    = "COUNSELLOR_INVESTIGATION_PREOP";
+    public const string InvestigationFormContext = "counsellor_investigation";
 
+    /// <summary>Counsellor pre-op investigation item_key → ward §1 item_key (1:1).</summary>
+    public static readonly IReadOnlyDictionary<string, string> CounsellorInvestigationToWardItemKeys =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["couns_preop_blood_sugar"]       = "blood_sugar",
+            ["couns_preop_serum_creatinine"]  = "serum_creatinine",
+            ["couns_preop_blood_urea"]        = "blood_urea",
+            ["couns_preop_hiv_done"]          = "hiv_done",
+            ["couns_preop_hba1c_done"]        = "hba1c_done",
+            ["couns_preop_hemoglobin"]        = "hemoglobin",
+            ["couns_preop_ascan_done"]        = "ascan_done",
+            ["couns_preop_hbsag_done"]        = "hbsag_done",
+            ["couns_preop_hcv_done"]          = "hcv_done",
+        };
 
     /// <summary>Outpatient item_key → ward / investigation item_keys for semantic copy.</summary>
 
@@ -251,10 +267,104 @@ public class CounsellorChecklistService
 
 
         return await GetOutpatientChecklistAsync(counselingSessionId, tenantId);
-
     }
 
+    public async Task<CounsellorPreOpInvestigationChecklistDto> GetPreOpInvestigationChecklistAsync(
+        Guid counselingSessionId, Guid tenantId)
+    {
+        var items = await GetInvestigationCatalogAsync(tenantId);
 
+        var completions = await _db.CounsellorChecklistCompletions
+            .Where(c => c.CounselingSessionId == counselingSessionId
+                        && c.TenantId == tenantId
+                        && c.DeletedAt == null)
+            .ToDictionaryAsync(c => c.ItemId);
+
+        var dtos = items.Select(item =>
+        {
+            completions.TryGetValue(item.Id, out var comp);
+            var wardKey = InvestigationItemConfigHelper.GetWardTargetKey(item.ItemConfig, item.ItemKey)
+                ?? CounsellorInvestigationToWardItemKeys.GetValueOrDefault(item.ItemKey, item.ItemKey);
+
+            return new CounsellorPreOpInvestigationItemDto(
+                item.Id,
+                item.ItemKey,
+                wardKey,
+                item.ItemLabel,
+                item.Description,
+                item.DisplayOrder,
+                comp?.ResultValue,
+                comp?.ResultUnit,
+                comp?.EntryStatus ?? "draft",
+                comp?.Notes,
+                comp?.UpdatedAt,
+                InvestigationItemConfigHelper.GetDefaultUnit(item.ItemConfig),
+                InvestigationItemConfigHelper.GetValueType(item.ItemConfig));
+        }).ToList();
+
+        var draftCount = dtos.Count(i => !string.IsNullOrWhiteSpace(i.ResultValue));
+
+        return new CounsellorPreOpInvestigationChecklistDto(
+            counselingSessionId,
+            dtos.Count,
+            draftCount,
+            dtos);
+    }
+
+    public async Task<CounsellorPreOpInvestigationChecklistDto> SaveInvestigationResultAsync(
+        Guid counselingSessionId,
+        Guid itemId,
+        Guid tenantId,
+        Guid userId,
+        SaveCounsellorInvestigationResultRequest req)
+    {
+        var item = await _db.PreOpSectionItems
+            .FirstOrDefaultAsync(i => i.Id == itemId
+                                      && i.FormCode == InvestigationFormCode
+                                      && i.DeletedAt == null
+                                      && i.IsActive)
+            ?? throw new KeyNotFoundException($"Counsellor investigation item {itemId} not found.");
+
+        var existing = await _db.CounsellorChecklistCompletions
+            .FirstOrDefaultAsync(c => c.CounselingSessionId == counselingSessionId
+                                      && c.ItemId == itemId
+                                      && c.TenantId == tenantId
+                                      && c.DeletedAt == null);
+
+        var now = DateTime.UtcNow;
+        var hasValue = !string.IsNullOrWhiteSpace(req.ResultValue);
+
+        if (existing is null)
+        {
+            existing = new CounsellorChecklistCompletion
+            {
+                Id                  = Guid.NewGuid(),
+                TenantId            = tenantId,
+                CounselingSessionId = counselingSessionId,
+                ItemId              = itemId,
+                CreatedByUserId     = userId,
+                CreatedAt           = now,
+                Status              = "active",
+            };
+            _db.CounsellorChecklistCompletions.Add(existing);
+        }
+
+        existing.ResultValue     = hasValue ? req.ResultValue.Trim() : null;
+        existing.ResultUnit      = hasValue ? req.ResultUnit?.Trim() : null;
+        existing.EntryStatus     = "draft";
+        existing.Notes           = req.Notes?.Trim();
+        existing.IsCompleted     = hasValue;
+        existing.IsBypassed      = false;
+        existing.BypassReason    = null;
+        existing.CompletedByUserId = hasValue ? userId : null;
+        existing.CompletedAt     = hasValue ? now : null;
+        existing.UpdatedByUserId = userId;
+        existing.UpdatedAt       = now;
+
+        await _db.SaveChangesAsync();
+
+        return await GetPreOpInvestigationChecklistAsync(counselingSessionId, tenantId);
+    }
 
     /// <summary>
 
@@ -288,7 +398,7 @@ public class CounsellorChecklistService
 
                   && cc.DeletedAt == null
 
-                  && (cc.IsCompleted || cc.IsBypassed)
+                  && (cc.IsCompleted || cc.IsBypassed || !string.IsNullOrWhiteSpace(cc.ResultValue))
 
             select new { cc, item }
 
@@ -324,6 +434,10 @@ public class CounsellorChecklistService
 
         {
 
+            if (ward.EntryStatus is "entered" or "verified")
+
+                return;
+
             if (ward.Source == "ward" && (ward.IsCompleted || ward.IsBypassed))
 
                 return;
@@ -337,6 +451,15 @@ public class CounsellorChecklistService
             ward.BypassReason           = cc.BypassReason;
 
             ward.Notes                  = cc.Notes;
+
+            if (!string.IsNullOrWhiteSpace(cc.ResultValue))
+            {
+                ward.ResultValue   = cc.ResultValue;
+                ward.ResultUnit    = cc.ResultUnit;
+                ward.EntryStatus   = "draft";
+                ward.ResultSource  = "counsellor";
+                ward.IsCompleted   = cc.IsCompleted || !string.IsNullOrWhiteSpace(cc.ResultValue);
+            }
 
             ward.CompletedByUserId      = cc.CompletedByUserId;
 
@@ -470,13 +593,85 @@ public class CounsellorChecklistService
 
         }
 
+        // Counsellor pre-op investigation drafts → ward §1 (1:1 by item key)
+        var investigationTargetKeys = counsellorCompletions
+            .Where(r => CounsellorInvestigationToWardItemKeys.ContainsKey(r.item.ItemKey)
+                        && !string.IsNullOrWhiteSpace(r.cc.ResultValue))
+            .Select(r => CounsellorInvestigationToWardItemKeys[r.item.ItemKey])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
+        if (investigationTargetKeys.Count > 0)
+        {
+            var investigationTargets = await _db.PreOpSectionItems
+                .Where(i => investigationTargetKeys.Contains(i.ItemKey)
+                            && i.FormCode == WardInvestigationChecklistService.InvestigationFormCode
+                            && i.DeletedAt == null
+                            && i.IsActive)
+                .ToListAsync();
 
-        await _db.SaveChangesAsync();
+            foreach (var row in counsellorCompletions)
+            {
+                if (string.IsNullOrWhiteSpace(row.cc.ResultValue)
+                    || !CounsellorInvestigationToWardItemKeys.TryGetValue(row.item.ItemKey, out var wardKey))
+                    continue;
 
+                var target = investigationTargets.FirstOrDefault(t =>
+                    t.ItemKey.Equals(wardKey, StringComparison.OrdinalIgnoreCase));
+                if (target is null) continue;
+
+                if (!wardByItemId.TryGetValue(target.Id, out var ward))
+                {
+                    ward = new PreOpCompletion
+                    {
+                        Id              = Guid.NewGuid(),
+                        TenantId        = tenantId,
+                        ClearanceId     = clearanceId,
+                        ItemId          = target.Id,
+                        IsCompleted     = false,
+                        IsBypassed      = false,
+                        Source          = "ward",
+                        CreatedByUserId = userId,
+                        UpdatedByUserId = userId,
+                        CreatedAt       = now,
+                        UpdatedAt       = now,
+                        Status          = "active",
+                    };
+                    _db.PreOpCompletions.Add(ward);
+                    wardByItemId[target.Id] = ward;
+                }
+
+                ApplyCopy(ward, row.cc);
+            }
+        }
+
+        // RACE: this runs on every investigation/clearance read (init + RefreshCounsellorCopies)
+        // for counselled patients, and inserts mapped ward/§1 completion rows. Concurrent readers
+        // (investigations panel + readiness rollup) can both insert the same (clearance_id, item_id)
+        // → 23505 on uq_preop_completion. Discard the loser's duplicate work; the winner already
+        // applied the same copy and BuildDtoAsync re-reads the committed rows.
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException is PostgresException pg && pg.SqlState == "23505")
+        {
+            _db.ChangeTracker.Clear();
+        }
     }
 
-
+    private async Task<List<PreOpSectionItem>> GetInvestigationCatalogAsync(Guid tenantId)
+    {
+        return await _db.PreOpSectionItems
+            .Where(i => i.FormCode == InvestigationFormCode
+                        && i.FormContext == InvestigationFormContext
+                        && (i.TenantId == null || i.TenantId == tenantId)
+                        && i.DeletedAt == null
+                        && i.IsActive)
+            .OrderBy(i => i.DisplayOrder)
+            .ToListAsync();
+    }
 
     private async Task<List<PreOpSectionItem>> GetOutpatientCatalogAsync(Guid tenantId)
 

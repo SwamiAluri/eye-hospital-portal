@@ -137,9 +137,9 @@ export function StepperIndicator({
       data-loading={loading ? 'true' : undefined}
       className={cn(
         'group/indicator relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-all',
-        completed && 'border-teal-600 bg-teal-600 text-white',
-        active && !completed && 'border-teal-600 bg-white text-teal-700',
-        !active && !completed && 'border-slate-200 bg-white text-slate-500',
+        completed && 'border-primary bg-primary text-primary-foreground',
+        active && !completed && 'border-primary bg-card text-primary',
+        !active && !completed && 'border-border bg-muted text-muted-foreground',
         className,
       )}
       {...props}
@@ -166,7 +166,7 @@ export function StepperSeparator({ className, ...props }: React.HTMLAttributes<H
     <div
       aria-hidden
       className={cn(
-        'bg-slate-200',
+        'bg-border',
         orientation === 'horizontal' ? 'mx-1 h-0.5 min-w-[1rem] flex-1' : 'ml-4 h-6 w-0.5',
         className,
       )}
@@ -182,7 +182,7 @@ export function StepperTitle({
   return (
     <span
       className={cn(
-        'max-w-[6rem] truncate text-[11px] font-medium text-slate-600 sm:max-w-none sm:text-xs',
+        'max-w-[6rem] truncate text-[11px] font-medium text-muted-foreground sm:max-w-none sm:text-xs',
         className,
       )}
       {...props}

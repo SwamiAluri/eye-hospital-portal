@@ -25,7 +25,8 @@ public class ChecklistIntegrationService
             return new IntegrationWebhookResultDto(req.JourneyId, 0, Array.Empty<string>());
 
         var keys = InvestigationKeywordRegistry.MatchLisKeys(req.TestCode ?? "", req.TestName ?? "");
-        return await CompleteInvestigationItemsAsync(tenantId, userId, req.JourneyId, keys);
+        return await CompleteInvestigationItemsAsync(
+            tenantId, userId, req.JourneyId, keys, req.TestResult, req.TestUnit, req.TestName);
     }
 
     public async Task<IntegrationWebhookResultDto> ProcessImagingResultAsync(
@@ -35,11 +36,13 @@ public class ChecklistIntegrationService
             return new IntegrationWebhookResultDto(req.JourneyId, 0, Array.Empty<string>());
 
         var keys = InvestigationKeywordRegistry.MatchImagingKeys(req.Modality ?? "", req.StudyType ?? "");
-        return await CompleteInvestigationItemsAsync(tenantId, userId, req.JourneyId, keys);
+        return await CompleteInvestigationItemsAsync(
+            tenantId, userId, req.JourneyId, keys, req.ReportSummary, null, req.StudyType);
     }
 
     private async Task<IntegrationWebhookResultDto> CompleteInvestigationItemsAsync(
-        Guid tenantId, Guid userId, Guid journeyId, IReadOnlyList<string> itemKeys)
+        Guid tenantId, Guid userId, Guid journeyId, IReadOnlyList<string> itemKeys,
+        string? resultValue, string? resultUnit, string? note)
     {
         if (itemKeys.Count == 0)
             return new IntegrationWebhookResultDto(journeyId, 0, Array.Empty<string>());
@@ -55,6 +58,7 @@ public class ChecklistIntegrationService
             .Where(i => i.FormCode == WardInvestigationChecklistService.InvestigationFormCode
                         && itemKeys.Contains(i.ItemKey)
                         && i.IsActive
+                        && i.Status == "active"
                         && i.DeletedAt == null)
             .ToListAsync();
 
@@ -65,12 +69,14 @@ public class ChecklistIntegrationService
                 .FirstOrDefaultAsync(c => c.ClearanceId == clearance.Id
                                           && c.ItemId == item.Id
                                           && c.DeletedAt == null);
-            if (completion is { IsCompleted: true }) continue;
+            if (completion is { IsCompleted: true, EntryStatus: "verified" }) continue;
 
-            await _investigation.SaveCompletionAsync(
+            await _investigation.ApplyIntegrationResultAsync(
                 journeyId, item.Id, tenantId, userId,
-                new SaveWardInvestigationCompletionRequest(true, false, null,
-                    "Auto-completed from integration webhook"));
+                resultValue ?? "Completed",
+                resultUnit,
+                null,
+                note ?? "Auto-completed from integration webhook");
             updated.Add(item.ItemKey);
         }
 

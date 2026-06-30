@@ -133,6 +133,12 @@ public class VisitPolicyFunctions
             await resp.WriteStringAsync(ex.Message);
             return resp;
         }
+        catch (InvalidOperationException ex)
+        {
+            var resp = req.CreateResponse(HttpStatusCode.Conflict);
+            await resp.WriteStringAsync(ex.Message);
+            return resp;
+        }
     }
 
     // ── PUT update under case ─────────────────────────────────────────────────

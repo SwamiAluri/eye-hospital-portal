@@ -119,13 +119,13 @@ export function DocumentChecklist({
               <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                 {isUploaded && onPreview && (
                   <button type="button" onClick={() => onPreview(slot)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title="Preview">
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-counselling-primary hover:bg-counselling-accent transition-colors" title="Preview">
                     <Eye className="w-3.5 h-3.5" />
                   </button>
                 )}
                 {isUploaded && (
                   <a href={slot.uploadedUrl} target="_blank" rel="noreferrer"
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title="Open">
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-counselling-primary hover:bg-counselling-accent transition-colors" title="Open">
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}
@@ -137,9 +137,9 @@ export function DocumentChecklist({
                   </button>
                 )}
                 {showScanButton && onUpload && (
-                  <label className="cursor-pointer p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title="Scan">
+                  <label className="cursor-pointer p-1.5 rounded-lg text-gray-400 hover:text-counselling-primary hover:bg-counselling-accent transition-colors" title="Scan">
                     {uploading === slot.key
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin text-counselling-primary" />
                       : <Camera className="w-3.5 h-3.5" />}
                     <input type="file" className="hidden" accept={slot.accept ?? 'image/*,application/pdf'}
                       capture="environment" disabled={uploading !== null}
@@ -151,8 +151,8 @@ export function DocumentChecklist({
                     isUploaded
                       ? 'text-gray-500 bg-gray-100 hover:bg-gray-200'
                       : isRequired
-                      ? 'text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm'
-                      : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
+                      ? 'text-white bg-counselling-primary hover:bg-counselling-primary/90 shadow-sm'
+                      : 'text-counselling-primary bg-counselling-accent hover:bg-counselling-accent/80'
                   }`}>
                     {uploading === slot.key ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
                     {isUploaded ? 'Replace' : 'Upload'}
@@ -168,12 +168,12 @@ export function DocumentChecklist({
               <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
                 {onPreview && (
                   <button type="button" onClick={() => onPreview(slot)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50" title="Preview">
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-counselling-primary hover:bg-counselling-accent" title="Preview">
                     <Eye className="w-3.5 h-3.5" />
                   </button>
                 )}
                 <a href={slot.uploadedUrl} target="_blank" rel="noreferrer"
-                  className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
+                  className="text-xs text-counselling-primary hover:underline flex items-center gap-1">
                   <ExternalLink className="w-3.5 h-3.5" /> View
                 </a>
               </div>

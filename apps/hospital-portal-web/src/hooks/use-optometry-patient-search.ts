@@ -7,7 +7,7 @@ import {
 } from '@/lib/optometry/optometry-patient-search';
 
 const DEBOUNCE_MS = 500;
-const MIN_CHARS = 3;
+const MIN_CHARS = 2;
 
 function resolveSearchError(err: unknown): string {
   const status = (err as { response?: { status?: number; data?: { message?: string } } })?.response?.status;

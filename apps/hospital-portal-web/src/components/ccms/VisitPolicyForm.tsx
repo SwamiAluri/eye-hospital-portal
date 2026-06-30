@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Shield, Save } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import {
@@ -10,10 +11,15 @@ import {
 import { useTpaProviderMaster } from '@/hooks/use-insurance-masters';
 import { MasterValuesSelect } from '@/components/master-data/MasterValuesSelect';
 import { relationshipApiValue, relationshipMasterCode } from '@/lib/ccms/relationship-api-map';
+import { coverageTestIds } from '@/lib/counsellors-desk/coverage-test-ids';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 
 interface Props {
   caseId: string;
   existing?: VisitPolicy | null;
+  existingPolicies?: VisitPolicy[];
+  /** True when adding a policy beyond the auto-created primary. */
+  isAdditionalPolicy?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -31,7 +37,11 @@ function Field({
   );
 }
 
-export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
+export function VisitPolicyForm({
+  caseId, existing, existingPolicies = [], isAdditionalPolicy = false, onClose, onSaved,
+}: Props) {
+  const [mounted, setMounted] = useState(false);
+  React.useEffect(() => setMounted(true), []);
   const [busy, setBusy] = useState(false);
 
   const [policyNumber,          setPolicyNumber]          = useState(existing?.policyNumber ?? '');
@@ -54,6 +64,17 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!policyNumber.trim()) { toast.error('Policy number is required'); return; }
+
+    const normalized = policyNumber.trim().toLowerCase();
+    const duplicate = existingPolicies.find(
+      (p) => p.id !== existing?.id && p.policyNumber?.trim().toLowerCase() === normalized,
+    );
+    if (duplicate) {
+      toast.error(
+        `Policy already on this visit — ${policyNumber.trim()} exists. Edit the existing policy instead.`,
+      );
+      return;
+    }
 
     setBusy(true);
     try {
@@ -80,8 +101,14 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
         toast.success('Policy added');
       }
       onSaved();
-    } catch {
-      toast.error('Failed to save policy');
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number; data?: string } })?.response?.status;
+      const message = (err as { response?: { data?: string } })?.response?.data;
+      if (status === 409 && message) {
+        toast.error(message);
+      } else {
+        toast.error('Failed to save policy');
+      }
     } finally {
       setBusy(false);
     }
@@ -90,8 +117,12 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
   const inp = 'w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400/30 placeholder:text-gray-300';
   const sel = inp + ' bg-white';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+  const primaryLabel = isAdditionalPolicy && !existing
+    ? counsellingCopy.confirmPrimaryVisitPolicy
+    : 'Set as Primary Policy';
+
+  const modal = (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -107,11 +138,16 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+        <form id="policy-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Policy Number" required>
-              <input value={policyNumber} onChange={e => setPolicyNumber(e.target.value)}
-                className={inp} placeholder="INS-2024-001" />
+              <input
+                value={policyNumber}
+                onChange={e => setPolicyNumber(e.target.value)}
+                data-testid={coverageTestIds.visitPolicyNumber}
+                className={inp}
+                placeholder="INS-2024-001"
+              />
             </Field>
             <Field label="Card Number">
               <input value={cardNumber} onChange={e => setCardNumber(e.target.value)}
@@ -184,7 +220,7 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
               <input type="checkbox" checked={isPrimary}
                 onChange={e => setIsPrimary(e.target.checked)}
                 className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-              Set as Primary Policy
+              {primaryLabel}
             </label>
           </div>
         </form>
@@ -195,9 +231,13 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
             className="px-4 py-2 text-xs font-semibold rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">
             Cancel
           </button>
-          <button type="submit" form="policy-form" disabled={busy}
-            onClick={handleSubmit}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+          <button
+            type="submit"
+            form="policy-form"
+            disabled={busy}
+            data-testid={coverageTestIds.visitPolicySave}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
             <Save className="w-3.5 h-3.5" />
             {busy ? 'Saving…' : existing ? 'Save Changes' : 'Add Policy'}
           </button>
@@ -205,4 +245,7 @@ export function VisitPolicyForm({ caseId, existing, onClose, onSaved }: Props) {
       </div>
     </div>
   );
+
+  if (!mounted || typeof document === 'undefined') return null;
+  return createPortal(modal, document.body);
 }

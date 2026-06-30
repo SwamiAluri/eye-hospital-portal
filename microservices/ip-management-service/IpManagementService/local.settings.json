@@ -6,7 +6,7 @@
     "Jwt__Issuer": "EyeHospitalAuth",
     "Jwt__Audience": "EyeHospitalAPI",
     "Jwt__Key": "your-secret-key-min-32-characters-change-this",
-    "AzureBlobStorage__ConnectionString": "<AZURE_BLOB_CONNECTION_STRING>",
+    "AzureBlobStorage__ConnectionString": "UseDevelopmentStorage=true",
     "AzureBlobStorage__ContainerName": "preop-documents",
     "AuthService__BaseUrl": "http://localhost:5073",
     "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",

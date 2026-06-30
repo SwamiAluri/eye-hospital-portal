@@ -47,6 +47,7 @@ namespace AuthService.Services
             Guid tenantId, 
             Guid? excludePatientId = null)
         {
+            excludePatientId ??= request.ExcludePatientId;
             _logger.LogInformation(
                 "Checking duplicates for patient: {FirstName} {LastName}, DOB: {DOB}, Tenant: {TenantId}",
                 request.FirstName, request.LastName, request.DateOfBirth, tenantId
@@ -102,13 +103,16 @@ namespace AuthService.Services
             Guid? excludePatientId,
             List<PatientDuplicateMatch> matches)
         {
+            if (!request.DateOfBirth.HasValue) return;
+
+            var dob = request.DateOfBirth.Value.Date;
             var exactMatches = await _context.Patients
                 .Where(p => p.TenantId == tenantId && p.DeletedAt == null)
-                .Where(p => p.Id != excludePatientId) // Exclude current patient if updating
+                .Where(p => p.Id != excludePatientId)
                 .Where(p => 
                     p.FirstName.ToLower() == request.FirstName.ToLower() &&
                     p.LastName.ToLower() == request.LastName.ToLower() &&
-                    p.DateOfBirth.Date == request.DateOfBirth.Date
+                    p.DateOfBirth.Date == dob
                 )
                 .ToListAsync();
 
@@ -224,12 +228,14 @@ namespace AuthService.Services
             Guid? excludePatientId,
             List<PatientDuplicateMatch> matches)
         {
-            // Get all patients with same DOB for fuzzy matching
+            if (!request.DateOfBirth.HasValue) return;
+
+            var dob = request.DateOfBirth.Value.Date;
             var matchedIds = matches.Select(m => m.Id).ToList();
             var sameDobPatients = await _context.Patients
                 .Where(p => p.TenantId == tenantId && p.DeletedAt == null)
                 .Where(p => p.Id != excludePatientId)
-                .Where(p => p.DateOfBirth.Date == request.DateOfBirth.Date)
+                .Where(p => p.DateOfBirth.Date == dob)
                 .Where(p => !matchedIds.Contains(p.Id))
                 .ToListAsync();
 
@@ -318,7 +324,7 @@ namespace AuthService.Services
             if (request.LastName?.ToLower() != existing.LastName?.ToLower())
                 differences.Add($"Last Name: '{request.LastName}' vs '{existing.LastName}'");
             
-            if (request.DateOfBirth.Date != existing.DateOfBirth.Date)
+            if (request.DateOfBirth.HasValue && request.DateOfBirth.Value.Date != existing.DateOfBirth.Date)
                 differences.Add($"DOB: {request.DateOfBirth:yyyy-MM-dd} vs {existing.DateOfBirth:yyyy-MM-dd}");
             
             if (request.ContactNumber != existing.ContactNumber)

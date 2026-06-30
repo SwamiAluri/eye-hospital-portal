@@ -58,9 +58,23 @@ export {
 export { EmptyState as CounsellingEmptyState } from '@/components/ui/EmptyState';
 export { CounsellingTextarea, type CounsellingTextareaProps } from './CounsellingTextarea';
 export { CounsellingPhaseTrigger, type CounsellingPhaseTriggerProps } from './CounsellingPhaseTrigger';
+export {
+  CounsellingStepper,
+  CounsellingStepperItem,
+  CounsellingStepperTrigger,
+  CounsellingStepperIndicator,
+  CounsellingStepperTitle,
+  CounsellingStepperDescription,
+  CounsellingStepperSeparator,
+} from './CounsellingStepper';
 export { CounsellingCheckbox, type CounsellingCheckboxProps } from './CounsellingCheckbox';
 export { CounsellingLabel, type CounsellingLabelProps } from './CounsellingLabel';
-export { CounsellingDatePicker, type CounsellingDatePickerProps } from './CounsellingDatePicker';
+export {
+  CounsellingDatePicker,
+  type CounsellingDatePickerProps,
+  type CounsellingDatePickerVariant,
+} from './CounsellingDatePicker';
+export { SessionDatePicker, type SessionDatePickerProps, type SessionDatePickerVariant } from './SessionDatePicker';
 export {
   CounsellingGlassRadioGroup,
   type CounsellingGlassRadioGroupProps,
@@ -70,7 +84,7 @@ export {
   Popover as CounsellingPopover,
   PopoverTrigger as CounsellingPopoverTrigger,
   PopoverContent as CounsellingPopoverContent,
-} from '@/components/ui/popover';
+} from './CounsellingPopover';
 export {
   Command as CounsellingCommand,
   CommandInput as CounsellingCommandInput,

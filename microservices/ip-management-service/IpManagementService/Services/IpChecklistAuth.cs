@@ -7,6 +7,8 @@ namespace IpManagementService.Services;
 public static class IpChecklistAuth
 {
     public const string PermWardEdit      = "ward.checklist.edit";
+    public const string PermInvestigationEnter = "ward.investigation.enter";
+    public const string PermInvestigationVerify = "ward.investigation.verify";
     public const string PermOtSign        = "ot.safety.sign";
     public const string PermPacEdit       = "anaesthesia.pac.edit";
     public const string PermMonitoringEdit = "anaesthesia.monitoring.edit";
@@ -41,6 +43,23 @@ public static class IpChecklistAuth
         if (perms.Count > 0 && !HasPermission(perms, permissionCode))
             throw new UnauthorizedAccessException($"Missing permission: {permissionCode}");
     }
+
+    public static void RequirePermissionOrFallback(
+        HttpRequestData request, JwtService jwt, string primary, string fallback)
+    {
+        var principal = jwt.ValidatePrincipal(request);
+        var perms     = ExtractPermissions(principal);
+        if (perms.Count == 0) return;
+        if (HasPermission(perms, primary) || HasPermission(perms, fallback))
+            return;
+        throw new UnauthorizedAccessException($"Missing permission: {primary} or {fallback}");
+    }
+
+    public static void RequireInvestigationEnter(HttpRequestData request, JwtService jwt)
+        => RequirePermissionOrFallback(request, jwt, PermInvestigationEnter, PermWardEdit);
+
+    public static void RequireInvestigationVerify(HttpRequestData request, JwtService jwt)
+        => RequirePermissionOrFallback(request, jwt, PermInvestigationVerify, PermWardEdit);
 
     /** Ward transitions or OT staff may advance clinical state. */
     public static void RequireClinicalTransition(HttpRequestData request, JwtService jwt)

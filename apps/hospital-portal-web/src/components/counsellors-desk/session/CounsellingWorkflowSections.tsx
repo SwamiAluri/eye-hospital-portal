@@ -6,6 +6,7 @@ import { Calendar, Clock, Heart, ThumbsDown, Timer } from 'lucide-react';
 import { requiresInsuranceCompany, formatTime } from '@/lib/counsellors-desk/session-utils';
 import { usePaymentCoverageOptions } from '@/hooks/use-payment-coverage-options';
 import type { CombinedPaymentType, DecisionType, ScheduleData } from '@/types/counsellors-desk';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { counsellingSectionIds, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
   CounsellingAccordion,
@@ -14,7 +15,7 @@ import {
   CounsellingAccordionTrigger,
   CounsellingButton,
   CounsellingCard,
-  CounsellingDatePicker,
+  SessionDatePicker,
   CounsellingInput,
   CounsellingLabel,
   CounsellingRadioGroup,
@@ -31,15 +32,7 @@ import {
 } from '@/components/counsellors-desk/session/primitives';
 import { cn } from '@/lib/utils';
 
-function SectionHeader({
-  step,
-  title,
-  subtitle,
-}: {
-  step: number;
-  title: string;
-  subtitle?: string;
-}) {
+function SectionHeader({ step, title }: { step: number; title: string }) {
   return (
     <div className="mb-4">
       <h3 className="flex items-center gap-2 text-sm font-semibold text-counselling-foreground">
@@ -48,7 +41,6 @@ function SectionHeader({
         </span>
         {title}
       </h3>
-      {subtitle && <p className="mt-0.5 text-xs text-counselling-muted-foreground">{subtitle}</p>}
     </div>
   );
 }
@@ -56,31 +48,26 @@ function SectionHeader({
 const DECISION_OPTIONS: {
   value: DecisionType;
   label: string;
-  description: string;
   icon: typeof Calendar;
 }[] = [
   {
     value: 'DateForSurgery',
-    label: 'Date for surgery',
-    description: 'Agreed — schedule surgery',
+    label: counsellingCopy.dateForSurgery,
     icon: Calendar,
   },
   {
     value: 'Interested',
-    label: 'Interested',
-    description: 'Positive outcome',
+    label: counsellingCopy.interested,
     icon: Heart,
   },
   {
     value: 'NotInterested',
-    label: 'Not interested',
-    description: 'Declined — follow up later',
+    label: counsellingCopy.notInterested,
     icon: ThumbsDown,
   },
   {
     value: 'NeedsTime',
-    label: 'Needs time',
-    description: 'Requires another session',
+    label: counsellingCopy.needsTime,
     icon: Timer,
   },
 ];
@@ -127,7 +114,7 @@ export function CounsellingPaymentSection({
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[12rem] flex-1">
           <CounsellingLabel className="mb-1 block text-xs font-medium">
-            Payment type <span className="text-red-500">*</span>
+            {counsellingCopy.paymentType} <span className="text-red-500">*</span>
           </CounsellingLabel>
             <CounsellingSelect
               value={paymentType || undefined}
@@ -157,7 +144,7 @@ export function CounsellingPaymentSection({
 
         {requiresInsuranceCompany(paymentType as CombinedPaymentType) && (
           <div className="min-w-[12rem] flex-1">
-            <CounsellingLabel className="mb-1 block text-xs font-medium">Insurance company</CounsellingLabel>
+            <CounsellingLabel className="mb-1 block text-xs font-medium">{counsellingCopy.insuranceCompany}</CounsellingLabel>
               <CounsellingSelect
                 value={insuranceCompany || undefined}
                 onValueChange={(v) => {
@@ -166,7 +153,10 @@ export function CounsellingPaymentSection({
                 }}
                 disabled={isReadOnly}
               >
-                <CounsellingSelectTrigger className="h-11 w-full">
+                <CounsellingSelectTrigger
+                  className="h-11 w-full"
+                  data-testid="counselling-insurance-company"
+                >
                   <CounsellingSelectValue placeholder="Select insurer" />
                 </CounsellingSelectTrigger>
                 <CounsellingSelectContent>
@@ -183,7 +173,7 @@ export function CounsellingPaymentSection({
 
       {paymentType === 'Free' && (
         <div>
-          <CounsellingLabel className="mb-1 block text-xs font-medium">Free surgery reason</CounsellingLabel>
+          <CounsellingLabel className="mb-1 block text-xs font-medium">{counsellingCopy.freeSurgeryReason}</CounsellingLabel>
             <CounsellingInput
               type="text"
               placeholder="Reason for complimentary surgery"
@@ -212,11 +202,7 @@ export function CounsellingPaymentSection({
       id={counsellingSectionIds.payment}
       className="rounded-xl border border-counselling-border bg-counselling-card p-4 shadow-sm scroll-mt-24"
     >
-      <SectionHeader
-        step={3}
-        title="Payment"
-        subtitle="Funding source and insurer details."
-      />
+      <SectionHeader step={3} title={counsellingCopy.payment} />
       {body}
     </section>
   );
@@ -262,7 +248,7 @@ export function CounsellingDecisionSection({
         disabled={isReadOnly}
         className="grid gap-2 sm:grid-cols-2"
       >
-        {DECISION_OPTIONS.map(({ value, label, description, icon: Icon }) => {
+        {DECISION_OPTIONS.map(({ value, label, icon: Icon }) => {
           const selected = decision === value;
           return (
             <label
@@ -291,7 +277,6 @@ export function CounsellingDecisionSection({
                   <p className={`text-sm font-semibold ${selected ? 'text-counselling-accent-foreground' : 'text-counselling-foreground'}`}>
                     {label}
                   </p>
-                  <p className="text-[10px] text-counselling-muted-foreground">{description}</p>
                 </div>
               </CounsellingCard>
             </label>
@@ -303,7 +288,7 @@ export function CounsellingDecisionSection({
         <div className="mt-4 space-y-3 border-t border-counselling-border pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
-              Follow-up required
+              {counsellingCopy.followUpRequired}
             </span>
             <span className="text-xs text-counselling-muted-foreground">
               {decision === 'NeedsTime'
@@ -313,7 +298,7 @@ export function CounsellingDecisionSection({
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <CounsellingLabel className="mb-1 block text-xs font-medium">Follow-up reason</CounsellingLabel>
+              <CounsellingLabel className="mb-1 block text-xs font-medium">{counsellingCopy.followUpReason}</CounsellingLabel>
               <CounsellingSelect
                 value={followUpReason || undefined}
                 onValueChange={(v) => {
@@ -335,8 +320,9 @@ export function CounsellingDecisionSection({
               </CounsellingSelect>
             </div>
             <div>
-              <CounsellingLabel className="mb-1 block text-xs font-medium">Follow-up date</CounsellingLabel>
-              <CounsellingDatePicker
+              <CounsellingLabel className="mb-1 block text-xs font-medium">{counsellingCopy.followUpDate}</CounsellingLabel>
+              <SessionDatePicker
+                variant="compact"
                 value={followUpDate}
                 minDate={followUpMinDate}
                 disabled={isReadOnly}
@@ -351,9 +337,14 @@ export function CounsellingDecisionSection({
         </div>
       )}
 
-      {(decision === 'DateForSurgery' || decision === 'Interested') && !schedule && (
+      {decision === 'DateForSurgery' && !schedule && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          A surgery schedule is required for this decision — complete the Schedule section below.
+          Surgery schedule required — add date and doctor below.
+        </p>
+      )}
+      {decision === 'Interested' && !schedule && (
+        <p className="mt-3 text-xs text-counselling-muted-foreground">
+          Add a tentative surgery schedule below (optional).
         </p>
       )}
     </>
@@ -372,7 +363,7 @@ export function CounsellingDecisionSection({
       id={counsellingSectionIds.decision}
       className="rounded-xl border border-counselling-border bg-counselling-card p-4 shadow-sm scroll-mt-24"
     >
-      <SectionHeader step={4} title="Decision" subtitle="Patient counselling outcome for this visit." />
+      <SectionHeader step={4} title={counsellingCopy.decision} />
       {body}
     </section>
   );
@@ -444,11 +435,7 @@ export function CounsellingScheduleSection({
       id={counsellingSectionIds.schedule}
       className="rounded-xl border border-counselling-border bg-counselling-card p-4 shadow-sm scroll-mt-24"
     >
-      <SectionHeader
-        step={5}
-        title="Schedule"
-        subtitle="Tentative surgery date, time, theatre, and surgeon."
-      />
+      <SectionHeader step={5} title={counsellingCopy.schedule} />
       {body}
     </section>
   );
@@ -545,11 +532,7 @@ export function CounsellingNotesSection({
       className="overflow-hidden rounded-xl border border-counselling-border bg-counselling-card shadow-sm scroll-mt-24"
     >
       <div className="border-b border-counselling-border px-4 pt-3">
-        <SectionHeader
-          step={6}
-          title="Notes"
-          subtitle="Internal notes and patient-facing remarks."
-        />
+        <SectionHeader step={6} title={counsellingCopy.notes} />
       </div>
       <div className="px-4">{body}</div>
     </section>
@@ -638,11 +621,7 @@ export function CounsellingAdditionalOptionsSection({
       id={counsellingSectionIds.options}
       className="rounded-xl border border-counselling-border bg-counselling-card p-4 shadow-sm scroll-mt-24"
     >
-      <SectionHeader
-        step={7}
-        title="Additional options"
-        subtitle="Flags for downstream workflows."
-      />
+      <SectionHeader step={7} title={counsellingCopy.additionalOptions} />
       {body}
     </section>
   );

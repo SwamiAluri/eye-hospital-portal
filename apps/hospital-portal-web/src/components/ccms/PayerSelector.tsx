@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { type InsurancePayer } from '../../lib/api/ccms/ccms-master-data.api';
 import { useCcmsAlignedPayers } from '@/hooks/use-ccms-case';
 
@@ -12,6 +12,8 @@ interface Props {
   className?: string;
   /** When true, only payers with a CCMS row are listed (default). */
   configuredOnly?: boolean;
+  /** Counselling master-data insurers when CCMS list is empty or loading. */
+  fallbackPayers?: InsurancePayer[];
 }
 
 export function PayerSelector({
@@ -21,14 +23,45 @@ export function PayerSelector({
   disabled,
   className,
   configuredOnly = true,
+  fallbackPayers = [],
 }: Props) {
   const { aligned, selectable, isLoading } = useCcmsAlignedPayers();
-  const options = configuredOnly ? selectable : aligned;
+  const ccmsOptions = configuredOnly ? selectable : aligned;
+
+  const options = useMemo(() => {
+    const merged = [...ccmsOptions];
+    for (const fb of fallbackPayers) {
+      const id = fb.id?.trim();
+      if (!id) continue;
+      if (merged.some((p) => p.ccmsId === id || p.providerCode === id)) continue;
+      merged.push({
+        providerCode: fb.providerCode ?? id,
+        name: fb.name,
+        ccmsId: id,
+        selectable: true,
+        ccmsPayer: fb,
+      });
+    }
+    if (value && !merged.some((p) => p.ccmsId === value)) {
+      const label =
+        fallbackPayers.find((p) => p.id === value)?.name ??
+        ccmsOptions.find((p) => p.ccmsId === value)?.name ??
+        value;
+      merged.unshift({
+        providerCode: value,
+        name: label,
+        ccmsId: value,
+        selectable: true,
+        ccmsPayer: fallbackPayers.find((p) => p.id === value) ?? null,
+      });
+    }
+    return merged;
+  }, [ccmsOptions, fallbackPayers, value]);
 
   if (isLoading && options.length === 0) {
     return (
       <select disabled className={`${className} opacity-50`}>
-        <option>Loading payers…</option>
+        <option>Loading…</option>
       </select>
     );
   }
@@ -37,8 +70,9 @@ export function PayerSelector({
     <select
       value={value}
       onChange={(e) => {
-        const entry = options.find((p) => p.ccmsId === e.target.value) ?? null;
-        onChange(e.target.value, entry?.ccmsPayer ?? null);
+        const id = e.target.value;
+        const entry = options.find((p) => p.ccmsId === id) ?? null;
+        onChange(id, entry?.ccmsPayer ?? fallbackPayers.find((p) => p.id === id) ?? null);
       }}
       disabled={disabled || options.length === 0}
       className={className}
@@ -46,13 +80,12 @@ export function PayerSelector({
       <option value="">{options.length === 0 ? 'No insurers configured' : placeholder}</option>
       {options.map((p) => (
         <option
-          key={p.providerCode}
+          key={`${p.providerCode}-${p.ccmsId}`}
           value={p.ccmsId ?? ''}
           disabled={!p.selectable}
         >
           {p.name}
           {p.ccmsPayer?.shortCode ? ` (${p.ccmsPayer.shortCode})` : ''}
-          {!p.selectable ? ' — not configured in CCMS' : ''}
         </option>
       ))}
     </select>

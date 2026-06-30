@@ -81,6 +81,7 @@ export interface CoverageCase {
   // Financial summary fields (from summary DTO — populated from counsellor draft)
   estimatedAmount?: number;
   patientPayableAmount?: number;
+  policyNumber?: string;
 }
 
 export interface CreateCoverageCaseRequest {
@@ -99,6 +100,8 @@ export interface CreateCoverageCaseRequest {
   membershipNumber?: string;
   policyNumber?: string;
   estimatedAmount?: number;
+  insurerName?: string;
+  counsellorDraftJson?: string;
   patientName?: string;
 }
 
@@ -132,6 +135,7 @@ export interface UpdateCoverageCaseRequest {
   clinicalNotes?: string;
   paymentType?: string;
   isDraft?: boolean;
+  counsellorDraftJson?: string;
 }
 
 export interface SubmitToClaimsRequest {

@@ -77,6 +77,52 @@ public class CounsellorChecklistFunctions
         catch (Exception ex)                   { return await InternalError(req, ex.Message); }
     }
 
+    [Function("GetCounsellorPreOpInvestigations")]
+    public async Task<HttpResponseData> GetPreOpInvestigations(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+            Route = "ip-management/counsellor/sessions/{sessionId:guid}/pre-op-investigations")]
+        HttpRequestData req,
+        Guid sessionId)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid           = _jwt.ExtractTenantId(req, tenantId);
+
+            var result = await _svc.GetPreOpInvestigationChecklistAsync(sessionId, tid);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex)                   { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("SaveCounsellorPreOpInvestigationResult")]
+    public async Task<HttpResponseData> SavePreOpInvestigationResult(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+            Route = "ip-management/counsellor/sessions/{sessionId:guid}/pre-op-investigations/{itemId:guid}")]
+        HttpRequestData req,
+        Guid sessionId,
+        Guid itemId)
+    {
+        try
+        {
+            IpChecklistAuth.RequirePermission(req, _jwt, "counsellor.outpatient_checklist.edit");
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid                = _jwt.ExtractTenantId(req, tenantId);
+
+            var body = await JsonSerializer.DeserializeAsync<SaveCounsellorInvestigationResultRequest>(
+                           req.Body, Json)
+                       ?? throw new ArgumentException("Request body is required.");
+
+            var result = await _svc.SaveInvestigationResultAsync(sessionId, itemId, tid, userId, body);
+            return await Ok(req, result);
+        }
+        catch (KeyNotFoundException ex)        { return await NotFound(req, ex.Message); }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (ArgumentException ex)           { return await BadRequest(req, ex.Message); }
+        catch (Exception ex)                   { return await InternalError(req, ex.Message); }
+    }
+
     private static async Task<HttpResponseData> Ok(HttpRequestData req, object body)
     {
         var res = req.CreateResponse(HttpStatusCode.OK);

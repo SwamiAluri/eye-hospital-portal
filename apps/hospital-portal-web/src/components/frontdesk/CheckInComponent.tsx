@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react';
 import type { ReactElement } from 'react';
 import { Search, UserCheck, AlertCircle, CheckCircle2, XCircle, Shield } from 'lucide-react';
 import { getApi } from '@/lib/api';
+import { useBranchContext } from '@/hooks/use-branch-context';
+import {
+  searchPatientsUnified,
+  unifiedHitToPatient,
+} from '@/lib/patients/unified-patient-search';
 
 interface Patient {
   id: string;
@@ -33,6 +38,7 @@ interface EmergencyOverride {
 }
 
 export default function CheckInComponent() {
+  const { branchId } = useBranchContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [patient, setPatient] = useState<Patient | null>(null);
   const [validation, setValidation] = useState<CheckInValidation | null>(null);
@@ -51,7 +57,7 @@ export default function CheckInComponent() {
   // Auto-search when user types 3+ characters
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
-      if (searchTerm.trim().length >= 3) {
+      if (searchTerm.trim().length >= 2) {
         handleSearch();
       } else if (searchTerm.trim().length === 0) {
         // Clear results when search is cleared
@@ -63,39 +69,34 @@ export default function CheckInComponent() {
     return () => clearTimeout(debounceTimer);
   }, [searchTerm]);
 
-  // Search patient - Search across all fields
+  // Search patient via unified suggest (branch-scoped)
   const handleSearch = async () => {
-    if (!searchTerm.trim() || searchTerm.trim().length < 3) return;
+    if (!searchTerm.trim() || searchTerm.trim().length < 2) return;
+    if (!branchId) {
+      alert('Select a branch before searching for patients.');
+      return;
+    }
 
     setLoading(true);
     setPatient(null);
     setValidation(null);
     
     try {
-      const api = getApi();
       const term = searchTerm.trim();
-      
-      // Try multiple search strategies
-      const searchPromises = [
-        api.get(`/patients/search`, { params: { searchTerm: term, searchType: 'mrn' } }).catch(() => ({ data: [] })),
-        api.get(`/patients/search`, { params: { searchTerm: term, searchType: 'mobile' } }).catch(() => ({ data: [] })),
-        api.get(`/patients/search`, { params: { searchTerm: term, searchType: 'name' } }).catch(() => ({ data: [] })),
-        api.get(`/patients/search`, { params: { searchTerm: term, searchType: 'email' } }).catch(() => ({ data: [] }))
-      ];
-      
-      const results = await Promise.all(searchPromises);
-      
-      // Find first non-empty result
-      let foundPatient = null;
-      for (const response of results) {
-        if (response.data && response.data.length > 0) {
-          foundPatient = response.data[0];
-          break;
-        }
-      }
+      const hits = await searchPatientsUnified(branchId, term, 5);
+      const foundPatient = hits[0] ? unifiedHitToPatient(hits[0]) : null;
 
       if (foundPatient) {
-        setPatient(foundPatient);
+        setPatient({
+          id: foundPatient.id,
+          firstName: foundPatient.firstName,
+          lastName: foundPatient.lastName,
+          medicalRecordNumber: foundPatient.medicalRecordNumber,
+          contactNumber: foundPatient.contactNumber || foundPatient.phone || '',
+          dateOfBirth: foundPatient.dateOfBirth,
+          photoUrl: foundPatient.photoUrl,
+          bloodGroup: foundPatient.bloodGroup,
+        });
         
         // Validate check-in eligibility
         await validateCheckIn(foundPatient.id);
@@ -104,9 +105,10 @@ export default function CheckInComponent() {
         setPatient(null);
         setValidation(null);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to search patient:', error);
-      alert('Failed to search patient: ' + (error.response?.data?.message || error.message));
+      const err = error as { response?: { data?: { message?: string } }; message?: string };
+      alert('Failed to search patient: ' + (err.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }

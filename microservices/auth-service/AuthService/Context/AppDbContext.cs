@@ -67,6 +67,9 @@ namespace AuthService.Context
         public DbSet<ActivationAuditLog> ActivationAuditLogs { get; set; }
         public DbSet<UserAttribute> UserAttributes { get; set; }
         public DbSet<Patient> Patients { get; set; }
+        public DbSet<PatientFavorite> PatientFavorites { get; set; }
+        public DbSet<PatientRecentView> PatientRecentViews { get; set; }
+        public DbSet<UserChartLayout> UserChartLayouts { get; set; }
         public DbSet<PatientVitalSigns> PatientVitalSigns { get; set; }
         public DbSet<ClinicalExamination> ClinicalExaminations { get; set; }
         public DbSet<ExaminationDraft> ExaminationDrafts { get; set; }

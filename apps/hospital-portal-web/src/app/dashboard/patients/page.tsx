@@ -1,7 +1,17 @@
 'use client';
 
-import PatientDirectoryHub from '@/components/patients/PatientDirectoryHub';
+import dynamic from 'next/dynamic';
+import { Suspense } from 'react';
+
+const PatientHubPage = dynamic(
+  () => import('@/components/patients/lookup/PatientHubPage'),
+  { ssr: false },
+);
 
 export default function PatientsPage() {
-  return <PatientDirectoryHub />;
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading patients…</div>}>
+      <PatientHubPage />
+    </Suspense>
+  );
 }

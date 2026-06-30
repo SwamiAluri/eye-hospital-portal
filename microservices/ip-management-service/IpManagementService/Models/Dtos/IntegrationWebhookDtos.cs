@@ -4,13 +4,16 @@ public record LisIntegrationWebhookRequest(
     Guid    JourneyId,
     string? TestCode,
     string? TestName,
-    string? Status = "Completed");
+    string? Status = "Completed",
+    string? TestResult = null,
+    string? TestUnit = null);
 
 public record ImagingIntegrationWebhookRequest(
     Guid    JourneyId,
     string? Modality,
     string? StudyType,
-    string? Status = "Completed");
+    string? Status = "Completed",
+    string? ReportSummary = null);
 
 public record IntegrationWebhookResultDto(
     Guid     JourneyId,

@@ -16,6 +16,10 @@ public class CounsellorChecklistCompletion
     public string?  BypassReason          { get; set; }
     public string?  Notes                 { get; set; }
 
+    public string?  ResultValue           { get; set; }
+    public string?  ResultUnit            { get; set; }
+    public string   EntryStatus           { get; set; } = "draft";
+
     public Guid?    CompletedByUserId     { get; set; }
     public string?  CompletedByRole       { get; set; }
     public DateTime? CompletedAt          { get; set; }

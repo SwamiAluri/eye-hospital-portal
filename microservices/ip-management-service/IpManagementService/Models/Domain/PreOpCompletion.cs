@@ -17,6 +17,18 @@ public class PreOpCompletion
 
     public string?  Notes                 { get; set; }
 
+    public string?  ResultValue           { get; set; }
+    public string?  ResultUnit            { get; set; }
+    public string?  ReferenceRange        { get; set; }
+    public string?  ResultFlag            { get; set; }
+    public string?  ResultSource          { get; set; }
+    public string   EntryStatus           { get; set; } = "draft";
+    public Guid?    EnteredByUserId       { get; set; }
+    public DateTime? EnteredAt            { get; set; }
+    public Guid?    VerifiedByUserId      { get; set; }
+    public DateTime? VerifiedAt           { get; set; }
+    public string?  ExternalReportNote    { get; set; }
+
     /// <summary>Linked pre_op_document row for items where RequiresDocument is true.</summary>
     public Guid?    DocumentId            { get; set; }
 

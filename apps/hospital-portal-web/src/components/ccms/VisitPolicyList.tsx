@@ -12,6 +12,8 @@ import { parseCounsellorDraft } from '@/lib/api/ccms/parse-counsellor-draft';
 import { hasDbPrimaryVisitPolicy, buildVisitPolicyFromDraft } from '@/lib/ccms/ccms-visit-policy-prereq';
 import { ccmsKeys, useCcmsCasePolicies } from '@/hooks/use-ccms-case';
 import { VisitPolicyForm } from './VisitPolicyForm';
+import { coverageTestIds } from '@/lib/counsellors-desk/coverage-test-ids';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 
 interface Props {
   caseId?: string;
@@ -134,18 +136,18 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
       {policies.map(p => (
         <div key={p.id}
           className={`rounded-xl border p-3 flex items-start justify-between gap-3 ${
-            p.isPrimary ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'
+            p.isPrimary ? 'bg-counselling-accent border-counselling-primary/30' : 'bg-counselling-card border-counselling-border'
           }`}
         >
           <div className="flex items-start gap-2 min-w-0">
-            <div className={`mt-0.5 p-1.5 rounded-lg ${p.isPrimary ? 'bg-indigo-100' : 'bg-gray-100'}`}>
-              <Shield className={`w-3.5 h-3.5 ${p.isPrimary ? 'text-indigo-600' : 'text-gray-500'}`} />
+            <div className={`mt-0.5 p-1.5 rounded-lg ${p.isPrimary ? 'bg-counselling-accent' : 'bg-counselling-muted'}`}>
+              <Shield className={`w-3.5 h-3.5 ${p.isPrimary ? 'text-counselling-primary' : 'text-counselling-muted-foreground'}`} />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-bold text-gray-900 truncate">{p.policyNumber}</span>
                 {p.isPrimary && (
-                  <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-600 text-white uppercase tracking-widest">
+                  <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-counselling-primary text-white uppercase tracking-widest">
                     Primary
                   </span>
                 )}
@@ -186,9 +188,12 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
         <div className="bg-gray-50 rounded-xl border border-dashed border-gray-200 py-6 text-center space-y-2">
           <Shield className="w-7 h-7 text-gray-300 mx-auto mb-2" />
           <p className="text-xs text-gray-500">No visit policies saved in CCMS yet.</p>
+          <p className="text-[11px] text-counselling-muted-foreground px-4">
+            {counsellingCopy.firstPolicyOnSaveDraft}
+          </p>
           {draft?.policyNumber && (
             <p className="text-[11px] text-amber-700 px-4">
-              Counsellor draft has policy <span className="font-mono font-semibold">{draft.policyNumber}</span> — import it below to enable pre-auth.
+              Counsellor draft has policy <span className="font-mono font-semibold">{draft.policyNumber}</span> — save the policy draft to create it.
             </p>
           )}
         </div>
@@ -206,10 +211,14 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
         </button>
       )}
 
-      {!readOnly && caseId && (
-        <button onClick={() => { setEditing(null); setShowForm(true); }}
-          className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-indigo-600 border border-dashed border-indigo-200 rounded-xl hover:bg-indigo-50 transition-colors">
-          <Plus className="w-3.5 h-3.5" />Add Policy
+      {!readOnly && caseId && policies.length > 0 && (
+        <button
+          type="button"
+          data-testid={coverageTestIds.visitPolicyAdd}
+          onClick={() => { setEditing(null); setShowForm(true); }}
+          className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-counselling-primary border border-dashed border-counselling-primary/30 rounded-xl hover:bg-counselling-accent transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />{counsellingCopy.addAnotherPolicy}
         </button>
       )}
 
@@ -217,6 +226,8 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
         <VisitPolicyForm
           caseId={caseId}
           existing={editing}
+          existingPolicies={policies}
+          isAdditionalPolicy={!editing && policies.length > 0}
           onClose={() => { setShowForm(false); setEditing(null); }}
           onSaved={() => { setShowForm(false); setEditing(null); void reload(); onChanged?.(); }}
         />

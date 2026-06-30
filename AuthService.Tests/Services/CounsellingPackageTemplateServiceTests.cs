@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using AuthService.Tests;
 using AuthService.Context;
 using AuthService.Models.Counselor;
 using AuthService.Models.Domain;
@@ -22,11 +23,7 @@ namespace AuthService.Tests.Services
 
         public CounsellingPackageTemplateServiceTests()
         {
-            var options = new DbContextOptionsBuilder<AppDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-
-            _context = new AppDbContext(options);
+            _context = TestDbContextFactory.CreateInMemory();
             _service = new CounsellingPackageTemplateService(_context, NullLogger<CounsellingPackageTemplateService>.Instance);
         }
 

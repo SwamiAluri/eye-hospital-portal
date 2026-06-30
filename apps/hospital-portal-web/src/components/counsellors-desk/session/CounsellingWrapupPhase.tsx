@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
   CounsellingBadge,
@@ -11,8 +12,11 @@ import {
   CounsellingTextarea,
 } from '@/components/counsellors-desk/session/primitives';
 import { CounsellingAdditionalOptionsSection } from '@/components/counsellors-desk/session/CounsellingWorkflowSections';
+import { CounsellingPreOpInvestigationsPanel } from '@/components/counsellors-desk/session/CounsellingPreOpInvestigationsPanel';
 
 export interface CounsellingWrapupPhaseProps {
+  phaseNav?: ReactNode;
+  counselingSessionId: string;
   counsellorNotes: string;
   setCounsellorNotes: (v: string) => void;
   patientRemarks: string;
@@ -30,6 +34,8 @@ export interface CounsellingWrapupPhaseProps {
 }
 
 export function CounsellingWrapupPhase({
+  phaseNav,
+  counselingSessionId,
   counsellorNotes,
   setCounsellorNotes,
   patientRemarks,
@@ -77,6 +83,17 @@ export function CounsellingWrapupPhase({
 
   return (
     <div className="flex flex-col gap-5 pb-4">
+      {phaseNav ? (
+        <CounsellingCard className={counsellingSessionTokens.card}>
+          <CounsellingCardContent className={`${counsellingSessionTokens.cardBody} pt-4`}>
+            {phaseNav}
+          </CounsellingCardContent>
+        </CounsellingCard>
+      ) : null}
+      <CounsellingPreOpInvestigationsPanel
+        counselingSessionId={counselingSessionId}
+        readOnly={isReadOnly}
+      />
       <CounsellingCard className={counsellingSessionTokens.card}>
         <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
           <div className="flex items-center gap-2">

@@ -1,12 +1,13 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import type { CombinedPaymentType, DecisionType, ScheduleData } from '@/types/counsellors-desk';
 import { isCoveragePaymentType } from '@/lib/counsellors-desk/counselling-progress';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
   CounsellingCard,
   CounsellingCardContent,
-  CounsellingCardDescription,
   CounsellingCardHeader,
   CounsellingCardTitle,
   CounsellingButton,
@@ -18,6 +19,7 @@ import {
 } from '@/components/counsellors-desk/session/CounsellingWorkflowSections';
 
 export interface CounsellingDecisionPhaseProps {
+  phaseNav?: ReactNode;
   paymentType: CombinedPaymentType | '';
   setPaymentType: (v: CombinedPaymentType | '') => void;
   insuranceCompany: string;
@@ -39,6 +41,7 @@ export interface CounsellingDecisionPhaseProps {
 }
 
 export function CounsellingDecisionPhase({
+  phaseNav,
   paymentType,
   setPaymentType,
   insuranceCompany,
@@ -58,19 +61,23 @@ export function CounsellingDecisionPhase({
   markDirty,
   onOpenCoverageTab,
 }: CounsellingDecisionPhaseProps) {
-  const showSchedule = decision === 'DateForSurgery';
+  const showSchedule = decision === 'DateForSurgery' || decision === 'Interested';
   const showCoverageBanner = paymentType && isCoveragePaymentType(paymentType);
 
   return (
-    <div className="flex flex-col gap-5 pb-4">
+    <div className="flex flex-col gap-3 pb-4">
+      {phaseNav ? (
+        <CounsellingCard className={counsellingSessionTokens.card}>
+          <CounsellingCardContent className={`${counsellingSessionTokens.cardBody} pt-4`}>
+            {phaseNav}
+          </CounsellingCardContent>
+        </CounsellingCard>
+      ) : null}
       <CounsellingCard className={counsellingSessionTokens.card}>
         <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
           <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-            Payment &amp; coverage
+            {counsellingCopy.paymentAndCoverage}
           </CounsellingCardTitle>
-          <CounsellingCardDescription className={counsellingSessionTokens.sectionSubtitle}>
-            How the patient will pay for this procedure.
-          </CounsellingCardDescription>
         </CounsellingCardHeader>
         <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
           <CounsellingPaymentSection
@@ -93,7 +100,7 @@ export function CounsellingDecisionPhase({
                 onClick={onOpenCoverageTab}
                 data-testid={counsellingTestIds.btnOpenCoverage}
               >
-                Coverage &amp; Pre-Auth
+                {counsellingCopy.coverageAndPreAuth}
               </CounsellingButton>
             </div>
           ) : null}
@@ -103,11 +110,8 @@ export function CounsellingDecisionPhase({
       <CounsellingCard className={counsellingSessionTokens.card}>
         <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
           <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-            Patient decision
+            {counsellingCopy.patientDecisionTitle}
           </CounsellingCardTitle>
-          <CounsellingCardDescription className={counsellingSessionTokens.sectionSubtitle}>
-            Record the outcome of this counselling visit.
-          </CounsellingCardDescription>
         </CounsellingCardHeader>
         <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
           <CounsellingDecisionSection
@@ -129,11 +133,8 @@ export function CounsellingDecisionPhase({
         <CounsellingCard className={counsellingSessionTokens.card}>
           <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
             <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-              Surgery schedule
+              {counsellingCopy.surgerySchedule}
             </CounsellingCardTitle>
-            <CounsellingCardDescription className={counsellingSessionTokens.sectionSubtitle}>
-              Required when the patient agrees to a surgery date.
-            </CounsellingCardDescription>
           </CounsellingCardHeader>
           <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
             <CounsellingScheduleSection

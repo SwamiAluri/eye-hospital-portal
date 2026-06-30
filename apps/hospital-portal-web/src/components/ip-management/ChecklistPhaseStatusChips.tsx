@@ -1,5 +1,11 @@
 'use client';
 
+export interface InvestigationPhaseSummary {
+  verifiedCount: number;
+  totalApplicable: number;
+  unverifiedCritical: string[];
+}
+
 const PHASE_LABELS: Record<string, string> = {
   ward_investigation_complete: 'P1 Investigation',
   ward_checklist_complete: 'P2 Ward',
@@ -14,9 +20,23 @@ const PHASE_LABELS: Record<string, string> = {
 
 export interface ChecklistPhaseStatusChipsProps {
   phaseStatus?: Record<string, boolean> | null;
+  investigationSummary?: InvestigationPhaseSummary | null;
 }
 
-export function ChecklistPhaseStatusChips({ phaseStatus }: ChecklistPhaseStatusChipsProps) {
+function formatChipLabel(key: string, done: boolean, investigationSummary?: InvestigationPhaseSummary | null): string {
+  const base = PHASE_LABELS[key] ?? key;
+  if (key === 'ward_investigation_complete' && investigationSummary && investigationSummary.totalApplicable > 0) {
+    const { verifiedCount, totalApplicable, unverifiedCritical } = investigationSummary;
+    const count = `${verifiedCount}/${totalApplicable} verified`;
+    if (unverifiedCritical.length > 0) {
+      return `${base}: ${count} (${unverifiedCritical.length} critical)`;
+    }
+    return `${base}: ${done ? '✓' : count}`;
+  }
+  return `${base}: ${done ? '✓' : '—'}`;
+}
+
+export function ChecklistPhaseStatusChips({ phaseStatus, investigationSummary }: ChecklistPhaseStatusChipsProps) {
   if (!phaseStatus || Object.keys(phaseStatus).length === 0) return null;
 
   const entries = Object.entries(phaseStatus)
@@ -36,7 +56,7 @@ export function ChecklistPhaseStatusChips({ phaseStatus }: ChecklistPhaseStatusC
               : 'bg-gray-50 text-gray-500 border-gray-200'
           }`}
         >
-          {PHASE_LABELS[key]}: {done ? '✓' : '—'}
+          {formatChipLabel(key, done, investigationSummary)}
         </span>
       ))}
     </div>

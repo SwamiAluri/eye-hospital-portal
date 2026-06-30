@@ -85,10 +85,10 @@ export function CounsellingQuotePanel({
 
   return (
     <>
-      <aside className="hidden lg:sticky lg:top-0 lg:flex lg:max-h-full lg:min-h-0 lg:min-w-0 lg:flex-[1_1_45%] lg:shrink-0 lg:self-start lg:flex-col">
+      <aside className="hidden min-h-0 lg:flex lg:min-h-0 lg:min-w-0 lg:flex-[1_1_45%] lg:shrink-0 lg:flex-col lg:overflow-hidden">
         <CounsellingCard
           data-testid={counsellingTestIds.quotePanel}
-          className={`${counsellingSessionTokens.card} flex w-full max-h-full min-h-0 flex-col overflow-hidden`}
+          className={`${counsellingSessionTokens.card} flex min-h-0 w-full flex-1 flex-col overflow-hidden`}
         >
           <CounsellingCardHeader className={`${counsellingSessionTokens.cardHeader} shrink-0`}>
             <CounsellingCardTitle className="flex items-center gap-2 text-sm font-semibold text-counselling-foreground">
@@ -97,7 +97,7 @@ export function CounsellingQuotePanel({
             </CounsellingCardTitle>
           </CounsellingCardHeader>
           <CounsellingCardContent className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-            <div className="min-h-0 max-h-full flex-1 overflow-y-auto overscroll-contain px-5 pb-5 scrollbar-hide">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 scrollbar-hide">
               <CounsellingQuoteSummary {...summaryProps} />
             </div>
           </CounsellingCardContent>

@@ -103,7 +103,7 @@ export default function DashboardLayout({
         </div>
 
         {/* Right column: TopNav + main content */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 gap-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden">
           {!isImmersive && (
             <div className="rounded-2xl overflow-hidden shadow-md flex-shrink-0">
               <TopNav onMenuClick={openSidebar} />
@@ -112,7 +112,9 @@ export default function DashboardLayout({
           <main
             id="main-content"
             tabIndex={-1}
-            className={`flex-1 min-h-0 rounded-2xl bg-white shadow-sm outline-none ${isNoPad ? 'overflow-hidden' : 'overflow-auto'}`}
+            className={`min-h-0 flex-1 rounded-2xl bg-white shadow-sm outline-none ${
+              isNoPad ? 'flex flex-col overflow-hidden' : 'overflow-auto'
+            }`}
             role="main"
             aria-label="Main content"
           >

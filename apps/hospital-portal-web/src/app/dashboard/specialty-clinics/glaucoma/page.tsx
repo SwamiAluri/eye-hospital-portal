@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Eye,
@@ -13,104 +13,55 @@ import {
   Target,
 } from 'lucide-react';
 import { useHasPermission } from '@/hooks/use-permissions';
+import { useSpecialtyClinicPatients } from '@/hooks/use-specialty-clinic-patients';
+import { mapLookupToSpecialtyQueueRow } from '@/lib/specialty-clinics/lookup-queue-mappers';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { toast } from 'react-hot-toast';
 
 function GlaucomaClinicPageContent() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [patientQueue, setPatientQueue] = useState<any[]>([]);
-  const [statistics, setStatistics] = useState({
-    totalPatients: 0,
-    highIOP: 0,
-    vfProgression: 0,
-    newDiagnoses: 0,
-  });
+  const lookupQuery = useSpecialtyClinicPatients('GLAUCOMA');
+  const loading = lookupQuery.isLoading;
 
   const canEdit = useHasPermission('CLINICAL:GLAUCOMA:EDIT');
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        
-        // TODO: Replace with actual API calls
-        const mockQueue = [
-          {
-            id: '1',
-            name: 'Suresh Babu',
-            mrn: 'MRN004567',
-            age: 72,
-            gender: 'Male',
-            diagnosis: 'Primary Open Angle Glaucoma',
-            urgency: 'Urgent',
-            iopOD: 38,
-            iopOS: 36,
-            targetIOP: 14,
-            cdRatioOD: 0.8,
-            cdRatioOS: 0.7,
-            mdOD: -12.5,
-            mdOS: -8.3,
-            lastVisit: '2026-01-20',
-            medications: 3,
-          },
-          {
-            id: '2',
-            name: 'Priya Sharma',
-            mrn: 'MRN005678',
-            age: 65,
-            gender: 'Female',
-            diagnosis: 'Normal Tension Glaucoma',
-            urgency: 'Routine',
-            iopOD: 16,
-            iopOS: 15,
-            targetIOP: 12,
-            cdRatioOD: 0.6,
-            cdRatioOS: 0.6,
-            mdOD: -5.2,
-            mdOS: -4.8,
-            lastVisit: '2026-01-10',
-            medications: 2,
-          },
-          {
-            id: '3',
-            name: 'Rajesh Kumar',
-            mrn: 'MRN006789',
-            age: 58,
-            gender: 'Male',
-            diagnosis: 'Acute Angle Closure Glaucoma',
-            urgency: 'Emergency',
-            iopOD: 52,
-            iopOS: 18,
-            targetIOP: 16,
-            cdRatioOD: 0.5,
-            cdRatioOS: 0.4,
-            mdOD: -2.1,
-            mdOS: -0.5,
-            lastVisit: '2026-01-26',
-            medications: 4,
-          },
-        ];
+  const patientQueue = useMemo(() => {
+    if (lookupQuery.isError) {
+      toast.error('Failed to load glaucoma queue');
+      return [];
+    }
+    return (lookupQuery.data?.items ?? []).map((row) => {
+      const base = mapLookupToSpecialtyQueueRow(row);
+      return {
+        id: base.id,
+        name: base.name,
+        mrn: base.mrn,
+        age: base.age ?? 0,
+        gender: base.gender || '—',
+        diagnosis: base.reasonForVisit || '—',
+        urgency: base.priority,
+        iopOD: null as number | null,
+        iopOS: null as number | null,
+        targetIOP: null as number | null,
+        cdRatioOD: null as number | null,
+        cdRatioOS: null as number | null,
+        mdOD: null as number | null,
+        mdOS: null as number | null,
+        lastVisit: base.lastVisitAt?.slice(0, 10) ?? '—',
+        medications: 0,
+      };
+    });
+  }, [lookupQuery.data?.items, lookupQuery.isError]);
 
-        const mockStats = {
-          totalPatients: 18,
-          highIOP: 3,
-          vfProgression: 2,
-          newDiagnoses: 1,
-        };
-
-        setPatientQueue(mockQueue);
-        setStatistics(mockStats);
-      } catch (error) {
-        console.error('Failed to load glaucoma clinic data:', error);
-        toast.error('Failed to load patient data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
-  }, []);
+  const statistics = useMemo(
+    () => ({
+      totalPatients: patientQueue.length,
+      highIOP: patientQueue.filter((p) => p.urgency === 'Urgent').length,
+      vfProgression: 0,
+      newDiagnoses: 0,
+    }),
+    [patientQueue],
+  );
 
   const getUrgencyColor = (urgency: string) => {
     switch (urgency) {
@@ -306,6 +257,12 @@ function GlaucomaClinicPageContent() {
 
                 {/* Clinical Summary Grid */}
                 <div className="mt-4 grid grid-cols-5 gap-3">
+                  {patient.iopOD == null || patient.targetIOP == null ? (
+                    <div className="col-span-5 rounded-md border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                      IOP, VF, and medication details load from the patient chart when documented.
+                    </div>
+                  ) : (
+                    <>
                   {/* IOP */}
                   <div className={`rounded-md p-3 border ${getIOPColor(Math.max(patient.iopOD, patient.iopOS), patient.targetIOP)}`}>
                     <p className="text-xs font-semibold mb-1">IOP (mmHg)</p>
@@ -358,6 +315,8 @@ function GlaucomaClinicPageContent() {
                     <p className="text-2xl font-bold text-yellow-900">{patient.medications}</p>
                     <p className="text-xs text-yellow-700 mt-1">Active drugs</p>
                   </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Action Button */}

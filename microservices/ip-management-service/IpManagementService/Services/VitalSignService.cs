@@ -8,10 +8,17 @@ namespace IpManagementService.Services;
 public class VitalSignService
 {
     private readonly IpManagementDbContext _db;
+    private readonly WardChecklistAutoSyncService _wardSync;
+    private readonly JourneyMutationGuardService _mutationGuard;
 
-    public VitalSignService(IpManagementDbContext db)
+    public VitalSignService(
+        IpManagementDbContext db,
+        WardChecklistAutoSyncService wardSync,
+        JourneyMutationGuardService mutationGuard)
     {
-        _db = db;
+        _db            = db;
+        _wardSync      = wardSync;
+        _mutationGuard = mutationGuard;
     }
 
     // ── Vital Signs ────────────────────────────────────────────────────────────
@@ -34,6 +41,7 @@ public class VitalSignService
     public async Task<VitalSignDto> AddVitalAsync(
         Guid journeyId, Guid tenantId, Guid userId, AddVitalSignRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var vital = new VitalSign
         {
             Id                      = Guid.NewGuid(),
@@ -56,6 +64,8 @@ public class VitalSignService
         };
         _db.VitalSigns.Add(vital);
         await _db.SaveChangesAsync();
+
+        await _wardSync.SyncVitalsCheckedAsync(journeyId, tenantId, userId);
 
         return new VitalSignDto(
             vital.Id, vital.JourneyId, vital.RecordedAt,
@@ -83,6 +93,7 @@ public class VitalSignService
     public async Task<NurseRecordDto> AddNurseRecordAsync(
         Guid journeyId, Guid tenantId, Guid userId, AddNurseRecordRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var record = new NurseRecord
         {
             Id                 = Guid.NewGuid(),
@@ -115,6 +126,7 @@ public class VitalSignService
     public async Task<VitalSignDto> UpdateVitalAsync(
         Guid journeyId, Guid vitalId, Guid tenantId, UpdateVitalSignRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var vital = await _db.VitalSigns
             .FirstOrDefaultAsync(v => v.Id == vitalId && v.JourneyId == journeyId
                                       && v.TenantId == tenantId && v.DeletedAt == null)
@@ -144,6 +156,7 @@ public class VitalSignService
     public async Task<NurseRecordDto> UpdateNurseRecordAsync(
         Guid journeyId, Guid recordId, Guid tenantId, UpdateNurseRecordRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var record = await _db.NurseRecords
             .FirstOrDefaultAsync(r => r.Id == recordId && r.JourneyId == journeyId
                                       && r.TenantId == tenantId && r.DeletedAt == null)

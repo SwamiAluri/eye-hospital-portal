@@ -18,16 +18,25 @@ public class PacAssessmentService
 
     private readonly IpManagementDbContext           _db;
     private readonly PreOpClearanceService           _preOp;
-    private readonly ChecklistPhaseStatusService   _phaseStatus;
+    private readonly ChecklistPhaseStatusService       _phaseStatus;
+    private readonly WardInvestigationChecklistService _investigation;
+    private readonly WardChecklistAutoSyncService      _wardSync;
+    private readonly JourneyMutationGuardService       _mutationGuard;
 
     public PacAssessmentService(
         IpManagementDbContext db,
         PreOpClearanceService preOp,
-        ChecklistPhaseStatusService phaseStatus)
+        ChecklistPhaseStatusService phaseStatus,
+        WardInvestigationChecklistService investigation,
+        WardChecklistAutoSyncService wardSync,
+        JourneyMutationGuardService mutationGuard)
     {
-        _db          = db;
-        _preOp       = preOp;
-        _phaseStatus = phaseStatus;
+        _db            = db;
+        _preOp         = preOp;
+        _phaseStatus   = phaseStatus;
+        _investigation = investigation;
+        _wardSync      = wardSync;
+        _mutationGuard = mutationGuard;
     }
 
     public async Task<PacAssessmentDto> GetAssessmentAsync(Guid journeyId, Guid tenantId)
@@ -40,6 +49,7 @@ public class PacAssessmentService
     public async Task<PacAssessmentDto> SaveAssessmentAsync(
         Guid journeyId, Guid tenantId, Guid userId, SavePacAssessmentRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var journey = await RequireJourneyAsync(journeyId, tenantId);
         var row     = await GetOrInitAsync(journey, tenantId);
 
@@ -53,9 +63,10 @@ public class PacAssessmentService
         return await BuildDtoAsync(journey, row);
     }
 
-    public async Task<PacAssessmentDto> CompleteAssessmentAsync(
+    public async Task<CompletePacAssessmentResultDto> CompleteAssessmentAsync(
         Guid journeyId, Guid tenantId, Guid userId)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var journey = await RequireJourneyAsync(journeyId, tenantId);
         var row     = await GetOrInitAsync(journey, tenantId);
 
@@ -70,10 +81,14 @@ public class PacAssessmentService
         row.UpdatedAt           = now;
 
         await _db.SaveChangesAsync();
-        await SyncWardPacItemAsync(journeyId, tenantId, userId, true);
+        await _wardSync.SyncItemAsync(
+            journeyId, tenantId, userId, WardChecklistAutoSyncService.PacDoneKey, true,
+            "Auto-synced from PAC assessment");
         await _phaseStatus.UpdateAsync(journeyId, tenantId, d => d["pac_completed"] = true);
 
-        return await BuildDtoAsync(journey, row);
+        var assessment = await BuildDtoAsync(journey, row);
+        var warnings   = await _investigation.GetUnverifiedCriticalWarningsAsync(journeyId, tenantId, userId);
+        return new CompletePacAssessmentResultDto(assessment, warnings);
     }
 
     public async Task<bool> IsCompletedAsync(Guid journeyId, Guid tenantId)
@@ -85,25 +100,10 @@ public class PacAssessmentService
         return row?.AssessmentStatus == "Completed";
     }
 
-    private async Task SyncWardPacItemAsync(
-        Guid journeyId, Guid tenantId, Guid userId, bool completed)
-    {
-        var item = await _db.PreOpSectionItems
-            .FirstOrDefaultAsync(i => i.ItemKey == PacItemKey
-                                      && i.FormCode == WardChecklistService.WardFormCode
-                                      && i.DeletedAt == null);
-        if (item is null) return;
-
-        await _preOp.GetOrInitClearanceAsync(
-            journeyId, tenantId, userId,
-            new InitPreOpClearanceRequest(null, null));
-
-        await _preOp.SaveCompletionAsync(
-            journeyId, tenantId, userId, item.Id,
-            new SavePreOpCompletionRequest(
-                item.Id, completed, false, null,
-                completed ? "Auto-synced from PAC assessment" : null, null));
-    }
+    /// <summary>Read-only §1 investigation summary for the PAC panel.</summary>
+    public Task<WardInvestigationSummaryDto> GetInvestigationSummaryAsync(
+        Guid journeyId, Guid tenantId, Guid userId)
+        => _investigation.GetSummaryAsync(journeyId, tenantId, userId);
 
     private static void ApplySave(PacAssessment row, SavePacAssessmentRequest req)
     {
@@ -112,8 +112,7 @@ public class PacAssessmentService
         if (req.Bp != null) row.Bp = req.Bp;
         if (req.Hr.HasValue) row.Hr = req.Hr;
         if (req.PhysicalStatusAsa.HasValue) row.PhysicalStatusAsa = req.PhysicalStatusAsa;
-        if (req.Investigations != null)
-            row.Investigations = JsonSerializer.Serialize(req.Investigations, JsonOpts);
+        // Investigations grid removed in Phase 7 — §1 ward investigation checklist is source of truth.
         if (req.Allergies != null) row.Allergies = req.Allergies;
         if (req.SystemicReview != null)
             row.SystemicReview = JsonSerializer.Serialize(req.SystemicReview, JsonOpts);

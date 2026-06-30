@@ -2,6 +2,8 @@ import type { CoverageCase } from './ccms-coverage-cases.api';
 
 export interface CounsellorDraftSnapshot {
   insurerName?: string;
+  insuranceProviderId?: string;
+  insuranceCompany?: string;
   paymentType?: string;
   policyNumber?: string;
   membershipNumber?: string;
@@ -29,6 +31,7 @@ export interface CounsellorDraftSnapshot {
   diagnosisCode?: string;
   procedureCode?: string;
   roomClassEntitlement?: string;
+  networkHospitalConfirmed?: boolean;
 }
 
 export function parseCounsellorDraft(json?: string): CounsellorDraftSnapshot | null {

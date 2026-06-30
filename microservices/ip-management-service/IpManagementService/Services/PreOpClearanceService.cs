@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using IpManagementService.Data;
@@ -23,17 +24,23 @@ public class PreOpClearanceService
     private readonly IAzureBlobStorageService _blob;
     private readonly IPreOpNotificationClient _notify;
     private readonly CounsellorChecklistService _counsellorChecklist;
+    private readonly WardChecklistAutoSyncService _wardSync;
+    private readonly JourneyMutationGuardService _mutationGuard;
 
     public PreOpClearanceService(
         IpManagementDbContext    db,
         IAzureBlobStorageService blob,
         IPreOpNotificationClient notify,
-        CounsellorChecklistService counsellorChecklist)
+        CounsellorChecklistService counsellorChecklist,
+        WardChecklistAutoSyncService wardSync,
+        JourneyMutationGuardService mutationGuard)
     {
         _db     = db;
         _blob   = blob;
         _notify = notify;
         _counsellorChecklist = counsellorChecklist;
+        _wardSync = wardSync;
+        _mutationGuard = mutationGuard;
     }
 
     // ── Section Items ──────────────────────────────────────────────────────────
@@ -91,6 +98,14 @@ public class PreOpClearanceService
                                       && c.TenantId == tenantId
                                       && c.DeletedAt == null);
 
+        // Resolve the payer once — prefer the caller's snapshot, else the journey's
+        // own payment_mode (migration 146). Drives payer-specific row seeding.
+        var journey = await _db.PatientJourneys
+            .FirstOrDefaultAsync(j => j.Id == journeyId && j.TenantId == tenantId && j.DeletedAt == null);
+        var effectivePaymentMode = !string.IsNullOrWhiteSpace(req.PaymentModeSnapshot)
+            ? req.PaymentModeSnapshot
+            : journey?.PaymentMode;
+
         if (clearance is null)
         {
             // First time — create the clearance row
@@ -99,7 +114,7 @@ public class PreOpClearanceService
                 Id                  = Guid.NewGuid(),
                 TenantId            = tenantId,
                 JourneyId           = journeyId,
-                PaymentModeSnapshot = req.PaymentModeSnapshot,
+                PaymentModeSnapshot = effectivePaymentMode,
                 InsurancePreauthId  = req.InsurancePreauthId,
                 OverallStatus       = "InProgress",
                 OverallClearance    = false,
@@ -146,7 +161,7 @@ public class PreOpClearanceService
                 .ToListAsync();
 
             // Filter by payment mode if applicable
-            var paymentMode = req.PaymentModeSnapshot;
+            var paymentMode = effectivePaymentMode;
             var relevantItems = catalogItems
                 .Where(i => i.FormContext != CounsellorChecklistService.OutpatientFormContext
                             && i.FormCode != WardChecklistService.WardFormCode
@@ -179,8 +194,6 @@ public class PreOpClearanceService
             await _db.SaveChangesAsync();
 
             // Copy counsellor outpatient checklist into ward completions (non-blocking)
-            var journey = await _db.PatientJourneys
-                .FirstOrDefaultAsync(j => j.Id == journeyId && j.TenantId == tenantId && j.DeletedAt == null);
             if (journey?.CounselingSessionId is Guid sessionId)
             {
                 await _counsellorChecklist.CopyOutpatientCompletionsToClearanceAsync(
@@ -188,7 +201,162 @@ public class PreOpClearanceService
             }
         }
 
+        // Seed any payer-specific rows that are missing — covers in-flight journeys
+        // whose clearance was created before the payer was known (idempotent).
+        await EnsurePayerItemsSeededAsync(clearance, tenantId, userId, effectivePaymentMode);
+
+        // Auto-track the department-owned Financial rows from canonical signals so the
+        // ward never hand-enters them (payer ← counselling, advance ← billing).
+        await EnsureFinancialDerivedAsync(clearance, journey, tenantId, userId);
+
         return MapClearance(clearance);
+    }
+
+    // Department-owned Financial rows that are derived from canonical signals, never
+    // ticked by the ward: payment mode (counselling/registration) + advance (billing).
+    private const string PaymentModeConfirmedKey = "payment_mode_confirmed";
+    private const string AdvancePaidKey          = "advance_paid";
+
+    /// <summary>
+    /// Reconciles the two department-fed Financial completions with the journey's
+    /// canonical financial signals so the ward sees a read-only, always-correct status:
+    ///   • payment_mode_confirmed ← journey.PaymentMode is set (counselling/registration)
+    ///   • advance_paid           ← journey.TotalAdvances/TotalPaid &gt; 0 (billing)
+    /// Idempotent; runs on every clearance init/refresh.
+    /// </summary>
+    private async Task EnsureFinancialDerivedAsync(
+        PreOpClearance clearance, PatientJourney? journey, Guid tenantId, Guid userId)
+    {
+        if (journey is null) return;
+
+        var rows = await (
+            from c in _db.PreOpCompletions
+            join i in _db.PreOpSectionItems on c.ItemId equals i.Id
+            where c.ClearanceId == clearance.Id
+                  && c.TenantId == tenantId
+                  && c.DeletedAt == null
+                  && (i.ItemKey == PaymentModeConfirmedKey || i.ItemKey == AdvancePaidKey)
+            select new { Completion = c, i.ItemKey }
+        ).ToListAsync();
+
+        if (rows.Count == 0) return;
+
+        var paymentModeKnown = !string.IsNullOrWhiteSpace(journey.PaymentMode);
+        var advanceReceived  = (journey.TotalAdvances ?? 0m) > 0m || (journey.TotalPaid ?? 0m) > 0m;
+
+        var changed = false;
+        foreach (var r in rows)
+        {
+            var desired = r.ItemKey == PaymentModeConfirmedKey ? paymentModeKnown : advanceReceived;
+            var c = r.Completion;
+            if (c.IsCompleted == desired) continue;
+
+            c.IsCompleted     = desired;
+            c.IsBypassed      = false;
+            c.Source          = "system_derived";
+            c.UpdatedByUserId = userId;
+            c.UpdatedAt       = DateTime.UtcNow;
+            if (desired)
+            {
+                c.CompletedAt   = DateTime.UtcNow;
+                c.CompletedByRole = "system";
+                c.Notes = r.ItemKey == PaymentModeConfirmedKey
+                    ? $"Auto: payer {journey.PaymentMode}"
+                    : "Auto: advance/payment recorded in billing";
+            }
+            else
+            {
+                c.CompletedAt = null;
+            }
+            changed = true;
+        }
+
+        if (changed) await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Idempotently seeds the payer-specific Financial completion rows for a clearance
+    /// once the payment mode is known. Also records the snapshot if it was missing.
+    /// Safe to call on every init — only inserts rows that do not already exist.
+    /// </summary>
+    private async Task EnsurePayerItemsSeededAsync(
+        PreOpClearance clearance, Guid tenantId, Guid userId, string? paymentMode)
+    {
+        if (string.IsNullOrWhiteSpace(paymentMode)) return;
+
+        var changed = false;
+
+        if (string.IsNullOrWhiteSpace(clearance.PaymentModeSnapshot))
+        {
+            clearance.PaymentModeSnapshot = paymentMode;
+            clearance.UpdatedByUserId = userId;
+            clearance.UpdatedAt = DateTime.UtcNow;
+            changed = true;
+        }
+
+        var existingItemIds = await _db.PreOpCompletions
+            .Where(c => c.ClearanceId == clearance.Id && c.DeletedAt == null)
+            .Select(c => c.ItemId)
+            .ToListAsync();
+
+        // Payer-specific catalog items (PatientTypeFilter != null), excluding the
+        // checklists owned by other forms — mirrors the first-seed filter above.
+        var payerItems = await _db.PreOpSectionItems
+            .Where(i => (i.TenantId == null || i.TenantId == tenantId)
+                        && i.DeletedAt == null
+                        && i.IsActive
+                        && i.PatientTypeFilter != null
+                        && i.FormContext != CounsellorChecklistService.OutpatientFormContext
+                        && i.FormCode != WardChecklistService.WardFormCode
+                        && i.FormCode != WardInvestigationChecklistService.InvestigationFormCode
+                        && i.FormCode != WardPostOpChecklistService.WardPostOpFormCode
+                        && i.FormCode != WardPostOpChecklistService.WardPostOpSafetyFormCode)
+            .ToListAsync();
+
+        var toSeed = payerItems
+            .Where(i => paymentMode.Equals(i.PatientTypeFilter, StringComparison.OrdinalIgnoreCase)
+                        && !existingItemIds.Contains(i.Id))
+            .ToList();
+
+        foreach (var item in toSeed)
+        {
+            _db.PreOpCompletions.Add(new PreOpCompletion
+            {
+                Id              = Guid.NewGuid(),
+                TenantId        = tenantId,
+                ClearanceId     = clearance.Id,
+                ItemId          = item.Id,
+                IsCompleted     = false,
+                IsBypassed      = false,
+                CreatedByUserId = userId,
+                UpdatedByUserId = userId,
+                CreatedAt       = DateTime.UtcNow,
+                UpdatedAt       = DateTime.UtcNow,
+                Status          = "active",
+            });
+            changed = true;
+        }
+
+        if (changed) await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Re-applies counsellor outpatient completions onto ward clearance rows (e.g. after counsellor saves a draft).
+    /// </summary>
+    public async Task RefreshCounsellorCopiesAsync(Guid journeyId, Guid tenantId, Guid userId)
+    {
+        var clearance = await _db.PreOpClearances
+            .FirstOrDefaultAsync(c => c.JourneyId == journeyId
+                                      && c.TenantId == tenantId
+                                      && c.DeletedAt == null);
+        if (clearance is null) return;
+
+        var journey = await _db.PatientJourneys
+            .FirstOrDefaultAsync(j => j.Id == journeyId && j.TenantId == tenantId && j.DeletedAt == null);
+        if (journey?.CounselingSessionId is not Guid sessionId) return;
+
+        await _counsellorChecklist.CopyOutpatientCompletionsToClearanceAsync(
+            sessionId, clearance.Id, tenantId, userId);
     }
 
     /// <summary>Returns the full clearance detail with completions, docs, and pre-op vitals.</summary>
@@ -199,6 +367,10 @@ public class PreOpClearanceService
                                       && c.TenantId == tenantId
                                       && c.DeletedAt == null);
         if (clearance is null) return null;
+
+        var journey = await _db.PatientJourneys.AsNoTracking()
+            .FirstOrDefaultAsync(j => j.Id == journeyId && j.TenantId == tenantId && j.DeletedAt == null);
+        var clinicalState = journey?.ClinicalState ?? ClinicalState.Expected;
 
         // Completions joined to item metadata
         var completions = await (
@@ -227,23 +399,34 @@ public class PreOpClearanceService
                 v.RecordedByUserId, v.CreatedAt))
             .ToListAsync();
 
-        var completionDtos = completions
-            .Where(x => x.item.FormCode != WardChecklistService.WardFormCode
-                        && x.item.FormCode != WardInvestigationChecklistService.InvestigationFormCode
-                        && x.item.FormCode != CounsellorChecklistService.OutpatientFormCode
-                        && x.item.FormCode != WardPostOpChecklistService.WardPostOpFormCode
-                        && x.item.FormCode != WardPostOpChecklistService.WardPostOpSafetyFormCode)
-            .Select(x => new PreOpCompletionDto(
-                x.cp.Id, x.cp.ClearanceId, x.cp.ItemId,
-                x.item.ItemKey, x.item.ItemLabel, x.item.Category,
-                x.item.IsBlocking, x.item.RequiresDocument,
-                x.cp.IsCompleted, x.cp.IsBypassed, x.cp.BypassReason,
-                x.cp.Notes, x.cp.DocumentId,
-                x.cp.CompletedByUserId, x.cp.CompletedAt, x.cp.UpdatedAt,
-                x.item.FormCode, x.cp.Source))
-            .ToList();
+        var completionDtos = MapDeptCompletionDtos(completions.Select(x => (x.cp, x.item)));
 
         var docDtos = documents.Select(MapDocument).ToList();
+
+        // Structured consent signatory records (1:1 with consent completions), with
+        // captured-by / surgeon names resolved from the read-only users table.
+        var completionIds = completions.Select(x => x.cp.Id).ToList();
+        var consentRows = await _db.PreOpConsentDetails
+            .Where(d => completionIds.Contains(d.CompletionId))
+            .ToListAsync();
+
+        var consentUserIds = consentRows
+            .SelectMany(d => new[] { d.CapturedByUserId, d.SurgeonUserId })
+            .Where(g => g.HasValue).Select(g => g!.Value).Distinct().ToList();
+        var consentNames = consentUserIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.StaffUsers
+                .Where(u => consentUserIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.FirstName, u.LastName })
+                .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+        string? ConsentName(Guid? id) =>
+            id.HasValue && consentNames.TryGetValue(id.Value, out var n) && !string.IsNullOrWhiteSpace(n) ? n : null;
+
+        var consentDetailDtos = consentRows.Select(d => new PreOpConsentDetailDto(
+            d.Id, d.CompletionId, d.PatientSigned, d.WitnessName, d.WitnessRelation,
+            d.SurgeonUserId, ConsentName(d.SurgeonUserId), d.ConsentVersion, d.Method,
+            d.SignedAt, d.CapturedByUserId, ConsentName(d.CapturedByUserId),
+            d.RevokedAt, d.RevokedReason)).ToList();
 
         // Load section clearances (returns empty list if none requested yet)
         var sectionClearances = await _db.PreOpSectionClearances
@@ -251,7 +434,9 @@ public class PreOpClearanceService
             .OrderBy(s => s.SectionCategory)
             .ToListAsync();
 
-        var sectionClearanceDtos = sectionClearances.Select(s => MapSectionClearance(s, journeyId)).ToList();
+        var sectionClearanceDtos = sectionClearances
+            .Select(s => SectionDisplayStatusHelper.MapSectionClearance(s, journeyId, clinicalState, completionDtos))
+            .ToList();
 
         // Compute summary statistics
         var totalItems        = completionDtos.Count;
@@ -265,7 +450,72 @@ public class PreOpClearanceService
             docDtos,
             preOpVitals,
             totalItems, completedItems, blockingIncomplete, readyToAdmit,
-            sectionClearanceDtos);
+            sectionClearanceDtos, consentDetailDtos);
+    }
+
+    /// <summary>P2 dept-clearance rollup for ward list rows (R4.1).</summary>
+    public async Task<Dictionary<Guid, (int Completed, int Total, bool NeedsAttention)>> GetP2RollupBatchAsync(
+        IReadOnlyList<Guid> journeyIds, Guid tenantId)
+    {
+        if (journeyIds.Count == 0) return new Dictionary<Guid, (int, int, bool)>();
+
+        var journeys = await _db.PatientJourneys.AsNoTracking()
+            .Where(j => journeyIds.Contains(j.Id) && j.TenantId == tenantId && j.DeletedAt == null)
+            .Select(j => new { j.Id, j.ClinicalState })
+            .ToListAsync();
+
+        var eligibleIds = journeys
+            .Where(j => j.ClinicalState is ClinicalState.Expected
+                                     or ClinicalState.Admitted
+                                     or ClinicalState.ReadyForSurgery)
+            .Select(j => j.Id)
+            .ToList();
+
+        if (eligibleIds.Count == 0) return new Dictionary<Guid, (int, int, bool)>();
+
+        var clearances = await _db.PreOpClearances
+            .Where(c => eligibleIds.Contains(c.JourneyId) && c.TenantId == tenantId && c.DeletedAt == null)
+            .ToListAsync();
+
+        var clearanceByJourney = clearances.ToDictionary(c => c.JourneyId);
+        var clearanceIds = clearances.Select(c => c.Id).ToList();
+
+        var sections = await _db.PreOpSectionClearances
+            .Where(s => clearanceIds.Contains(s.ClearanceId) && s.DeletedAt == null)
+            .ToListAsync();
+
+        var completions = await (
+            from cp in _db.PreOpCompletions
+            join item in _db.PreOpSectionItems on cp.ItemId equals item.Id
+            where clearanceIds.Contains(cp.ClearanceId) && cp.DeletedAt == null
+            select new { cp, item }
+        ).ToListAsync();
+
+        var clinicalByJourney = journeys.ToDictionary(j => j.Id, j => j.ClinicalState);
+        var result = new Dictionary<Guid, (int Completed, int Total, bool NeedsAttention)>();
+
+        foreach (var journeyId in eligibleIds)
+        {
+            if (!clearanceByJourney.TryGetValue(journeyId, out var clearance)) continue;
+
+            var clinicalState = clinicalByJourney[journeyId];
+            var completionDtos = MapDeptCompletionDtos(
+                completions
+                    .Where(x => x.cp.ClearanceId == clearance.Id)
+                    .Select(x => (x.cp, x.item)));
+
+            var sectionDtos = sections
+                .Where(s => s.ClearanceId == clearance.Id)
+                .Select(s => SectionDisplayStatusHelper.MapSectionClearance(
+                    s, journeyId, clinicalState, completionDtos))
+                .ToList();
+
+            var rollup = SectionDisplayStatusHelper.ComputeDeptRollup(sectionDtos, completionDtos);
+            if (rollup.Total > 0)
+                result[journeyId] = rollup;
+        }
+
+        return result;
     }
 
     // ── Completions ────────────────────────────────────────────────────────────
@@ -276,6 +526,7 @@ public class PreOpClearanceService
         Guid itemId, SavePreOpCompletionRequest req,
         string? completedByRole = null)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
 
         var existing = await _db.PreOpCompletions
@@ -326,11 +577,31 @@ public class PreOpClearanceService
             _db.PreOpCompletions.Add(existing);
         }
 
+        // Typed result columns (data governance): persist a structured value instead of
+        // overloading Notes. For `last_food_time` this carries the ISO intake timestamp.
+        if (req.ResultValue is not null)
+        {
+            var trimmed = string.IsNullOrWhiteSpace(req.ResultValue) ? null : req.ResultValue.Trim();
+            existing.ResultValue     = trimmed;
+            existing.ResultUnit      = string.IsNullOrWhiteSpace(req.ResultUnit) ? null : req.ResultUnit.Trim();
+            existing.EntryStatus     = trimmed is null ? "draft" : "entered";
+            existing.EnteredByUserId = trimmed is null ? null : userId;
+            existing.EnteredAt       = trimmed is null ? null : DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync();
 
         var item = await _db.PreOpSectionItems
             .FirstOrDefaultAsync(i => i.Id == itemId)
             ?? throw new KeyNotFoundException($"PreOpSectionItem {itemId} not found.");
+
+        // Server-authoritative fasting derivation (D5): entering the single NPO writer
+        // recomputes `fasting_hours` + `fasting_confirmed` so the safety facts are never
+        // trusted from the client. Clearing the time resets both.
+        if (string.Equals(item.ItemKey, FastingLastFoodKey, StringComparison.Ordinal))
+        {
+            await CascadeFastingDerivationAsync(clearance.Id, item, req, tenantId, userId);
+        }
 
         return new PreOpCompletionDto(
             existing.Id, existing.ClearanceId, existing.ItemId,
@@ -339,7 +610,107 @@ public class PreOpClearanceService
             existing.IsCompleted, existing.IsBypassed, existing.BypassReason,
             existing.Notes, existing.DocumentId,
             existing.CompletedByUserId, existing.CompletedAt, existing.UpdatedAt,
-            item.FormCode, existing.Source);
+            item.FormCode, existing.Source,
+            existing.ResultValue, existing.ResultUnit, existing.EntryStatus,
+            existing.EnteredAt, existing.CompletedByRole);
+    }
+
+    // ── Fasting & Medication: server-side derivation (D5) ─────────────────────────
+
+    private const string FastingLastFoodKey      = "last_food_time";
+    private const string FastingHoursKey         = "fasting_hours";
+    private const string FastingConfirmedKey     = "fasting_confirmed";
+    private const double FastingMinHoursDefault  = 6.0;   // light meal (ASA)
+    private const double FastingMaxPlausibleHours = 24.0; // beyond this = stale/typo, never "confirmed"
+
+    /// <summary>ASA-tiered fasting threshold derived from the intake type (ResultUnit).</summary>
+    private static double FastingThresholdFor(string? intakeType) =>
+        (intakeType ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "clear" or "clear_fluids" or "fluids" => 2.0,
+            "solid" or "solids" or "heavy" or "fatty" => 8.0,
+            _ => FastingMinHoursDefault,
+        };
+
+    /// <summary>Recompute and upsert the two derived fasting completions from the NPO writer.</summary>
+    private async Task CascadeFastingDerivationAsync(
+        Guid clearanceId, PreOpSectionItem lastFoodItem,
+        SavePreOpCompletionRequest req, Guid tenantId, Guid userId)
+    {
+        var raw = !string.IsNullOrWhiteSpace(req.ResultValue) ? req.ResultValue : req.Notes;
+        double? hours = null;
+        if (!string.IsNullOrWhiteSpace(raw)
+            && DateTime.TryParse(raw, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeLocal | DateTimeStyles.AdjustToUniversal, out var parsed))
+        {
+            hours = (DateTime.UtcNow - parsed.ToUniversalTime()).TotalHours;
+        }
+
+        var threshold = FastingThresholdFor(req.ResultUnit);
+        var confirmed = hours.HasValue && hours.Value >= threshold && hours.Value <= FastingMaxPlausibleHours;
+
+        await UpsertDerivedCompletionAsync(
+            clearanceId, lastFoodItem, FastingHoursKey, tenantId, userId,
+            isCompleted: hours.HasValue,
+            resultValue: hours.HasValue ? hours.Value.ToString("0.0", CultureInfo.InvariantCulture) : null,
+            resultUnit: hours.HasValue ? "h" : null);
+
+        await UpsertDerivedCompletionAsync(
+            clearanceId, lastFoodItem, FastingConfirmedKey, tenantId, userId,
+            isCompleted: confirmed,
+            resultValue: null, resultUnit: null);
+    }
+
+    /// <summary>Upsert a derived sibling completion (same form/category) for a given item key.</summary>
+    private async Task UpsertDerivedCompletionAsync(
+        Guid clearanceId, PreOpSectionItem sibling, string itemKey,
+        Guid tenantId, Guid userId, bool isCompleted, string? resultValue, string? resultUnit)
+    {
+        var completion = await (
+            from c in _db.PreOpCompletions
+            join i in _db.PreOpSectionItems on c.ItemId equals i.Id
+            where c.ClearanceId == clearanceId && c.DeletedAt == null && i.ItemKey == itemKey
+            select c
+        ).FirstOrDefaultAsync();
+
+        if (completion is null)
+        {
+            var item = await _db.PreOpSectionItems.FirstOrDefaultAsync(i =>
+                i.ItemKey == itemKey
+                && i.Category == sibling.Category
+                && i.FormCode == sibling.FormCode
+                && i.FormContext == sibling.FormContext
+                && i.DeletedAt == null
+                && (i.TenantId == null || i.TenantId == tenantId));
+            if (item is null) return; // derived row not configured for this tenant — skip safely
+
+            completion = new PreOpCompletion
+            {
+                Id              = Guid.NewGuid(),
+                TenantId        = tenantId,
+                ClearanceId     = clearanceId,
+                ItemId          = item.Id,
+                CreatedByUserId = userId,
+                CreatedAt       = DateTime.UtcNow,
+                Status          = "active",
+            };
+            _db.PreOpCompletions.Add(completion);
+        }
+
+        var now = DateTime.UtcNow;
+        completion.IsCompleted       = isCompleted;
+        completion.IsBypassed        = false;
+        completion.ResultValue       = resultValue;
+        completion.ResultUnit        = resultUnit;
+        completion.EntryStatus       = isCompleted ? "entered" : "draft";
+        completion.CompletedByUserId = isCompleted ? userId : null;
+        completion.CompletedAt       = isCompleted ? now : null;
+        completion.CompletedByRole   = isCompleted ? "system" : null;
+        completion.Source            = "derived";
+        completion.UpdatedByUserId   = userId;
+        completion.UpdatedAt         = now;
+
+        await _db.SaveChangesAsync();
     }
 
     /// <summary>Batch-update completions in a single round-trip.</summary>
@@ -352,11 +723,173 @@ public class PreOpClearanceService
         return results;
     }
 
+    // ── Consent capture ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Captures a structured consent signatory record and marks the consent
+    /// completion as done. Surgical consent (item key surgery_consent_signed) requires
+    /// a linked signed document. Returns the refreshed clearance detail.
+    /// </summary>
+    public async Task<PreOpClearanceDetailDto?> CaptureConsentAsync(
+        Guid journeyId, Guid tenantId, Guid userId,
+        Guid itemId, CaptureConsentRequest req,
+        string? completedByRole = null)
+    {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
+        var clearance = await RequireClearanceAsync(journeyId, tenantId);
+
+        var item = await _db.PreOpSectionItems
+            .FirstOrDefaultAsync(i => i.Id == itemId)
+            ?? throw new KeyNotFoundException($"PreOpSectionItem {itemId} not found.");
+
+        if (!string.Equals(item.Category, "Consent", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("This item is not a consent item.");
+
+        var existing = await _db.PreOpCompletions
+            .FirstOrDefaultAsync(c => c.ClearanceId == clearance.Id
+                                      && c.ItemId    == itemId
+                                      && c.DeletedAt == null);
+
+        var documentId = req.DocumentId ?? existing?.DocumentId;
+
+        // Surgical consent must have a signed document on file (medico-legal).
+        if (item.ItemKey == "surgery_consent_signed" && documentId is null)
+            throw new ArgumentException("A signed consent document is required to complete surgical consent.");
+
+        var now = DateTime.UtcNow;
+
+        if (existing is not null)
+        {
+            existing.IsCompleted       = true;
+            existing.IsBypassed        = false;
+            existing.BypassReason      = null;
+            existing.DocumentId        = documentId;
+            existing.Notes             = req.Notes ?? existing.Notes;
+            existing.CompletedByUserId = userId;
+            existing.CompletedByRole   = completedByRole;
+            existing.CompletedAt       = now;
+            if (existing.Source == "copied_from_counsellor") existing.Source = "ward";
+            existing.UpdatedByUserId   = userId;
+            existing.UpdatedAt         = now;
+        }
+        else
+        {
+            existing = new PreOpCompletion
+            {
+                Id                = Guid.NewGuid(),
+                TenantId          = tenantId,
+                ClearanceId       = clearance.Id,
+                ItemId            = itemId,
+                IsCompleted       = true,
+                IsBypassed        = false,
+                DocumentId        = documentId,
+                Notes             = req.Notes,
+                CompletedByUserId = userId,
+                CompletedByRole   = completedByRole,
+                CompletedAt       = now,
+                Source            = "ward",
+                CreatedByUserId   = userId,
+                UpdatedByUserId   = userId,
+                CreatedAt         = now,
+                UpdatedAt         = now,
+                Status            = "active",
+            };
+            _db.PreOpCompletions.Add(existing);
+        }
+
+        // Persist the completion first so the consent-detail FK is satisfiable.
+        await _db.SaveChangesAsync();
+
+        var detailRow = await _db.PreOpConsentDetails
+            .FirstOrDefaultAsync(d => d.CompletionId == existing.Id);
+        if (detailRow is null)
+        {
+            detailRow = new PreOpConsentDetail
+            {
+                Id           = Guid.NewGuid(),
+                TenantId     = tenantId,
+                CompletionId = existing.Id,
+                CreatedAt    = now,
+            };
+            _db.PreOpConsentDetails.Add(detailRow);
+        }
+
+        detailRow.PatientSigned    = req.PatientSigned;
+        detailRow.WitnessName      = string.IsNullOrWhiteSpace(req.WitnessName) ? null : req.WitnessName.Trim();
+        detailRow.WitnessRelation  = string.IsNullOrWhiteSpace(req.WitnessRelation) ? null : req.WitnessRelation.Trim();
+        detailRow.SurgeonUserId    = req.SurgeonUserId;
+        detailRow.ConsentVersion   = string.IsNullOrWhiteSpace(req.ConsentVersion) ? null : req.ConsentVersion.Trim();
+        detailRow.Method           = string.IsNullOrWhiteSpace(req.Method) ? "Upload" : req.Method.Trim();
+        detailRow.SignedAt         = req.SignedAt ?? now;
+        detailRow.CapturedByUserId = userId;
+        // A fresh capture supersedes any prior revocation.
+        detailRow.RevokedAt        = null;
+        detailRow.RevokedReason    = null;
+        detailRow.RevokedByUserId  = null;
+        detailRow.UpdatedAt        = now;
+
+        await _db.SaveChangesAsync();
+
+        return await GetClearanceDetailAsync(journeyId, tenantId);
+    }
+
+    /// <summary>
+    /// Revokes a previously captured consent: clears the completion and stamps the
+    /// medico-legal revoke columns (who / when / why). The derived bedside ticks and
+    /// the admit gate read the completion, so they flip automatically. Returns the
+    /// refreshed clearance detail.
+    /// </summary>
+    public async Task<PreOpClearanceDetailDto?> RevokeConsentAsync(
+        Guid journeyId, Guid tenantId, Guid userId,
+        Guid itemId, RevokeConsentRequest req)
+    {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
+
+        if (string.IsNullOrWhiteSpace(req.Reason))
+            throw new ArgumentException("A reason is required to revoke consent.");
+
+        var clearance = await RequireClearanceAsync(journeyId, tenantId);
+
+        var item = await _db.PreOpSectionItems
+            .FirstOrDefaultAsync(i => i.Id == itemId)
+            ?? throw new KeyNotFoundException($"PreOpSectionItem {itemId} not found.");
+
+        if (!string.Equals(item.Category, "Consent", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("This item is not a consent item.");
+
+        var completion = await _db.PreOpCompletions
+            .FirstOrDefaultAsync(c => c.ClearanceId == clearance.Id
+                                      && c.ItemId    == itemId
+                                      && c.DeletedAt == null)
+            ?? throw new KeyNotFoundException("No consent completion to revoke.");
+
+        var now = DateTime.UtcNow;
+
+        completion.IsCompleted     = false;
+        completion.UpdatedByUserId = userId;
+        completion.UpdatedAt       = now;
+
+        var detailRow = await _db.PreOpConsentDetails
+            .FirstOrDefaultAsync(d => d.CompletionId == completion.Id);
+        if (detailRow is not null)
+        {
+            detailRow.RevokedAt       = now;
+            detailRow.RevokedReason   = req.Reason.Trim();
+            detailRow.RevokedByUserId = userId;
+            detailRow.UpdatedAt       = now;
+        }
+
+        await _db.SaveChangesAsync();
+
+        return await GetClearanceDetailAsync(journeyId, tenantId);
+    }
+
     // ── Pre-Op Vitals ──────────────────────────────────────────────────────────
 
     public async Task<VitalSignDto> AddPreOpVitalAsync(
         Guid journeyId, Guid tenantId, Guid userId, AddPreOpVitalRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var vital = new VitalSign
         {
             Id                     = Guid.NewGuid(),
@@ -400,6 +933,7 @@ public class PreOpClearanceService
         string documentType, string fileName, string contentType,
         Stream fileContent)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
 
         // Build a unique, path-structured blob name to avoid collisions
@@ -438,6 +972,7 @@ public class PreOpClearanceService
         Guid journeyId, Guid tenantId, Guid userId,
         Guid documentId, VerifyPreOpDocumentRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var doc = await _db.PreOpDocuments
             .FirstOrDefaultAsync(d => d.Id == documentId
                                       && d.TenantId == tenantId
@@ -464,6 +999,7 @@ public class PreOpClearanceService
     public async Task<PreOpClearanceDto> ApprovePreOpAsync(
         Guid journeyId, Guid tenantId, Guid userId, ApprovePreOpClearanceRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
         var journey   = await RequireJourneyAsync(journeyId, tenantId);
 
@@ -603,6 +1139,7 @@ public class PreOpClearanceService
     public async Task<PreOpClearanceDto> DeferPreOpAsync(
         Guid journeyId, Guid tenantId, Guid userId, DeferPreOpClearanceRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
 
         clearance.IsDeferred      = true;
@@ -620,6 +1157,7 @@ public class PreOpClearanceService
     public async Task<PreOpSectionClearanceDto> RequestSectionAsync(
         Guid journeyId, Guid tenantId, Guid userId, string category, string urgency = "Normal")
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
 
         var existing = await _db.PreOpSectionClearances
@@ -687,12 +1225,13 @@ public class PreOpClearanceService
             $"Pre-op section '{category}' requires your clearance",
             $"JourneyId: {journeyId}");
 
-        return MapSectionClearance(existing, journeyId);
+        return await MapSectionClearanceForJourneyAsync(existing, journeyId, tenantId);
     }
 
     public async Task<PreOpSectionClearanceDto> RespondToSectionAsync(
         Guid journeyId, Guid tenantId, Guid userId, string category, RespondPreOpSectionRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
 
         var section = await _db.PreOpSectionClearances
@@ -724,12 +1263,13 @@ public class PreOpClearanceService
                 $"{req.ResponseStatus}: {req.ResponseNotes ?? "No notes provided"}");
         }
 
-        return MapSectionClearance(section, journeyId);
+        return await MapSectionClearanceForJourneyAsync(section, journeyId, tenantId);
     }
 
     public async Task<PreOpSectionClearanceDto> ConfirmSectionAsync(
         Guid journeyId, Guid tenantId, Guid userId, string category, ConfirmPreOpSectionRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
 
         var section = await _db.PreOpSectionClearances
@@ -738,6 +1278,8 @@ public class PreOpClearanceService
                                       && s.DeletedAt == null)
             ?? throw new KeyNotFoundException(
                 $"Section '{category}' has not been requested for journey {journeyId}.");
+
+        await AssertNoMandatoryBlockersForSectionAsync(clearance.Id, category);
 
         section.Status             = "WardConfirmed";
         section.ConfirmedByUserId  = userId;
@@ -748,6 +1290,9 @@ public class PreOpClearanceService
 
         await _db.SaveChangesAsync();
 
+        if (string.Equals(category, "Consent", StringComparison.OrdinalIgnoreCase))
+            await _wardSync.SyncConsentSectionConfirmedAsync(journeyId, tenantId, userId);
+
         // Notify the responsible department that the ward has confirmed their section
         _ = _notify.NotifyDepartmentAsync(
             tenantId, null, section.ResponsibleDepartmentCode,
@@ -755,7 +1300,7 @@ public class PreOpClearanceService
             $"Pre-op section '{category}' has been confirmed by ward",
             $"JourneyId: {journeyId}");
 
-        return MapSectionClearance(section, journeyId);
+        return await MapSectionClearanceForJourneyAsync(section, journeyId, tenantId);
     }
 
     // ── Extended state actions ─────────────────────────────────────────────────────
@@ -763,6 +1308,7 @@ public class PreOpClearanceService
     public async Task<PreOpSectionClearanceDto> PutSectionOnHoldAsync(
         Guid journeyId, Guid tenantId, Guid userId, string category, PutSectionOnHoldRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
         var section   = await _db.PreOpSectionClearances
             .FirstOrDefaultAsync(s => s.ClearanceId == clearance.Id
@@ -788,12 +1334,13 @@ public class PreOpClearanceService
             $"Pre-op section '{category}' has been put on hold: {req.Reason}",
             $"JourneyId: {journeyId}");
 
-        return MapSectionClearance(section, journeyId);
+        return await MapSectionClearanceForJourneyAsync(section, journeyId, tenantId);
     }
 
     public async Task<PreOpSectionClearanceDto> RejectSectionAsync(
         Guid journeyId, Guid tenantId, Guid userId, string category, RejectSectionRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
         var section   = await _db.PreOpSectionClearances
             .FirstOrDefaultAsync(s => s.ClearanceId == clearance.Id
@@ -817,12 +1364,13 @@ public class PreOpClearanceService
             $"Pre-op section '{category}' was rejected: {req.RejectionReason}",
             $"JourneyId: {journeyId}");
 
-        return MapSectionClearance(section, journeyId);
+        return await MapSectionClearanceForJourneyAsync(section, journeyId, tenantId);
     }
 
     public async Task<PreOpSectionClearanceDto> RequestMoreInfoAsync(
         Guid journeyId, Guid tenantId, Guid userId, string category, RequestMoreInfoRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
         var section   = await _db.PreOpSectionClearances
             .FirstOrDefaultAsync(s => s.ClearanceId == clearance.Id
@@ -848,12 +1396,13 @@ public class PreOpClearanceService
             $"Pre-op section '{category}' needs more info: {req.InfoNeeded}",
             $"JourneyId: {journeyId}");
 
-        return MapSectionClearance(section, journeyId);
+        return await MapSectionClearanceForJourneyAsync(section, journeyId, tenantId);
     }
 
     public async Task<PreOpSectionClearanceDto> EscalateSectionAsync(
         Guid journeyId, Guid tenantId, Guid userId, string category, EscalateSectionRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
         var section   = await _db.PreOpSectionClearances
             .FirstOrDefaultAsync(s => s.ClearanceId == clearance.Id
@@ -875,7 +1424,7 @@ public class PreOpClearanceService
             $"[ESCALATED] Pre-op section '{category}' requires urgent attention: {req.Reason}",
             $"JourneyId: {journeyId}");
 
-        return MapSectionClearance(section, journeyId);
+        return await MapSectionClearanceForJourneyAsync(section, journeyId, tenantId);
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────────────────
@@ -917,6 +1466,27 @@ public class PreOpClearanceService
         return string.Join("_", name.Split(invalid, StringSplitOptions.RemoveEmptyEntries)).Trim('.');
     }
 
+    private async Task AssertNoMandatoryBlockersForSectionAsync(Guid clearanceId, string category)
+    {
+        var openBlockers = await (
+            from cp in _db.PreOpCompletions
+            join item in _db.PreOpSectionItems on cp.ItemId equals item.Id
+            where cp.ClearanceId == clearanceId
+                  && cp.DeletedAt == null
+                  && item.DeletedAt == null
+                  && item.Category == category
+                  && item.IsBlocking
+                  && !cp.IsCompleted
+                  && !cp.IsBypassed
+            select item.ItemLabel
+        ).ToListAsync();
+
+        if (openBlockers.Count == 0) return;
+
+        throw new InvalidOperationException(
+            $"Cannot confirm section '{category}': {openBlockers.Count} mandatory blocker(s) remain open.");
+    }
+
     private static PreOpClearanceDto MapClearance(PreOpClearance c) => new(
         c.Id, c.JourneyId, c.PaymentModeSnapshot, c.InsurancePreauthId,
         c.OverallStatus, c.OverallClearance, c.IsDeferred, c.DeferredReason,
@@ -932,13 +1502,43 @@ public class PreOpClearanceService
         d.ContentType, d.FileSizeBytes, d.IsVerified, d.VerifiedByUserId,
         d.VerifiedAt, d.Notes, d.UploadedByUserId, d.CreatedAt);
 
-    private static PreOpSectionClearanceDto MapSectionClearance(PreOpSectionClearance s, Guid journeyId) => new(
-        s.Id, s.ClearanceId, journeyId, s.SectionCategory, s.ResponsibleDepartmentCode,
-        s.Status,
-        s.RequestedByUserId, s.RequestedAt,
-        s.RespondedByUserId, s.RespondedAt, s.ResponseNotes,
-        s.IsExternalResponder, s.ExternalResponderName, s.ExternalResponderContact,
-        s.ConfirmedByUserId, s.ConfirmedAt, s.ConfirmationNotes,
-        s.CreatedAt, s.UpdatedAt,
-        s.Urgency, s.RejectionReason);
+    private static List<PreOpCompletionDto> MapDeptCompletionDtos(
+        IEnumerable<(PreOpCompletion cp, PreOpSectionItem item)> completions)
+    {
+        return completions
+            .Where(x => x.item.FormCode != WardChecklistService.WardFormCode
+                        && x.item.FormCode != WardInvestigationChecklistService.InvestigationFormCode
+                        && x.item.FormCode != CounsellorChecklistService.OutpatientFormCode
+                        && x.item.FormCode != WardPostOpChecklistService.WardPostOpFormCode
+                        && x.item.FormCode != WardPostOpChecklistService.WardPostOpSafetyFormCode)
+            .Select(x => new PreOpCompletionDto(
+                x.cp.Id, x.cp.ClearanceId, x.cp.ItemId,
+                x.item.ItemKey, x.item.ItemLabel, x.item.Category,
+                x.item.IsBlocking, x.item.RequiresDocument,
+                x.cp.IsCompleted, x.cp.IsBypassed, x.cp.BypassReason,
+                x.cp.Notes, x.cp.DocumentId,
+                x.cp.CompletedByUserId, x.cp.CompletedAt, x.cp.UpdatedAt,
+                x.item.FormCode, x.cp.Source,
+                x.cp.ResultValue, x.cp.ResultUnit, x.cp.EntryStatus,
+                x.cp.EnteredAt, x.cp.CompletedByRole))
+            .ToList();
+    }
+
+    private async Task<PreOpSectionClearanceDto> MapSectionClearanceForJourneyAsync(
+        PreOpSectionClearance section, Guid journeyId, Guid tenantId)
+    {
+        var journey = await _db.PatientJourneys.AsNoTracking()
+            .FirstOrDefaultAsync(j => j.Id == journeyId && j.TenantId == tenantId && j.DeletedAt == null);
+        var clinicalState = journey?.ClinicalState ?? ClinicalState.Expected;
+
+        var completions = await (
+            from cp in _db.PreOpCompletions
+            join item in _db.PreOpSectionItems on cp.ItemId equals item.Id
+            where cp.ClearanceId == section.ClearanceId && cp.DeletedAt == null
+            select new { cp, item }
+        ).ToListAsync();
+
+        var completionDtos = MapDeptCompletionDtos(completions.Select(x => (x.cp, x.item)));
+        return SectionDisplayStatusHelper.MapSectionClearance(section, journeyId, clinicalState, completionDtos);
+    }
 }

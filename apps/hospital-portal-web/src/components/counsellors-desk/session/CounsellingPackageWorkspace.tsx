@@ -15,7 +15,8 @@ import type { CounsellingPackageTemplate } from '@/types/counselling-estimate';
 import type { MasterCatalogItem } from '@/types/counsellors-desk';
 import type { UseCounsellingEstimateResult } from '@/hooks/use-counselling-estimate';
 import type { CounsellingEyeOption } from '@/lib/counsellors-desk/counselling-eye';
-import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
+import { counsellingTestIds, counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
   CounsellingBadge,
   CounsellingButton,
@@ -86,7 +87,7 @@ export function CounsellingPackageWorkspace({
   onSelectPackage,
   onSwitchToRecommendedProcedure,
 }: CounsellingPackageWorkspaceProps) {
-  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [packageSearch, setPackageSearch] = useState('');
 
   const activeTemplates = useMemo(
@@ -115,12 +116,14 @@ export function CounsellingPackageWorkspace({
 
   const activeTemplateId = estimate.activeTemplate?.id ?? null;
   const hasConflict = hasDoctorRecommendationConflict(recommendedVariantIds, selectedVariantId);
-  const hasActiveFilters = categoryFilter !== 'All' || packageSearch.trim().length > 0;
+  const hasActiveFilters = !!categoryFilter || packageSearch.trim().length > 0;
 
   const filteredPackages = useMemo(() => {
     const q = packageSearch.trim().toLowerCase();
+    if (!categoryFilter && !q) return [];
+
     return activeTemplates.filter((t) => {
-      if (categoryFilter !== 'All' && (t.category ?? 'Other') !== categoryFilter) return false;
+      if (categoryFilter && (t.category ?? 'Other') !== categoryFilter) return false;
       if (!q) return true;
       return (
         t.name.toLowerCase().includes(q) ||
@@ -129,6 +132,8 @@ export function CounsellingPackageWorkspace({
       );
     });
   }, [activeTemplates, categoryFilter, packageSearch]);
+
+  const showBrowseCatalog = !!categoryFilter || packageSearch.trim().length > 0;
 
   const matchingRecommendedPackage = useMemo(() => {
     const recId = recommendedVariantIds[0];
@@ -214,11 +219,7 @@ export function CounsellingPackageWorkspace({
     );
   }
 
-  const browseList = hasActiveFilters
-    ? filteredPackages
-    : suggested.length > 0
-      ? rest
-      : activeTemplates;
+  const browseList = showBrowseCatalog ? filteredPackages : [];
 
   const content = (
     <>
@@ -243,19 +244,20 @@ export function CounsellingPackageWorkspace({
       )}
 
       <div className="rounded-lg border border-counselling-border/60">
-        <div className="flex flex-col gap-2 border-b border-counselling-border/60 p-3 sm:flex-row sm:items-center">
+        <div
+          className={`${counsellingSessionTokens.catalogStickyFilters} flex flex-col gap-2 sm:flex-row sm:items-center`}
+        >
           <div className="sm:w-44">
             <CounsellingLabel className="sr-only">Category</CounsellingLabel>
             <CounsellingSelect
-              value={categoryFilter}
+              value={categoryFilter || undefined}
               onValueChange={setCategoryFilter}
               disabled={isReadOnly}
             >
-              <CounsellingSelectTrigger className="h-10 w-full">
-                <CounsellingSelectValue placeholder="Category" />
+              <CounsellingSelectTrigger className={`${counsellingSessionTokens.catalogInput} w-full`}>
+                <CounsellingSelectValue placeholder={counsellingCopy.procedureCategoryPlaceholder} />
               </CounsellingSelectTrigger>
               <CounsellingSelectContent>
-                <CounsellingSelectItem value="All">All categories</CounsellingSelectItem>
                 {categoryOptions.map((cat) => (
                   <CounsellingSelectItem key={cat} value={cat}>
                     {cat}
@@ -267,15 +269,15 @@ export function CounsellingPackageWorkspace({
           <CounsellingSearchInput
             value={packageSearch}
             onChange={setPackageSearch}
-            placeholder="Search packages by name or code…"
+            placeholder={counsellingCopy.searchPackages}
             disabled={isReadOnly}
             data-testid={counsellingTestIds.packageSearch}
             className="min-w-0 flex-1"
           />
         </div>
 
-        <div className="max-h-[28rem] overflow-y-auto overscroll-contain p-3">
-          {!hasActiveFilters && suggested.length > 0 && (
+        <div className="p-3">
+          {!hasActiveFilters && suggested.length > 0 && showBrowseCatalog && (
             <div className="mb-4">
               <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-800">
                 <Sparkles size={12} />
@@ -287,7 +289,13 @@ export function CounsellingPackageWorkspace({
             </div>
           )}
 
-          {browseList.length === 0 ? (
+          {!showBrowseCatalog ? (
+            <CounsellingEmptyState
+              compact
+              title={counsellingCopy.selectCategoryToBrowse}
+              description={counsellingCopy.selectCategoryToBrowsePackages}
+            />
+          ) : browseList.length === 0 ? (
             <CounsellingEmptyState
               compact
               title="No packages match"

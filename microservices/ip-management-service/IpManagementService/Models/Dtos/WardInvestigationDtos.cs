@@ -11,7 +11,28 @@ public record WardInvestigationItemDto(
     string?  Notes,
     DateTime? CompletedAt,
     string?  Source,
-    bool     AppliesToJourney
+    bool     AppliesToJourney,
+    // Phase 2 — structured result fields
+    string?  ResultValue,
+    string?  ResultUnit,
+    string?  ReferenceRange,
+    string?  ResultFlag,
+    string?  ResultSource,
+    string   EntryStatus,
+    Guid?    EnteredByUserId,
+    DateTime? EnteredAt,
+    Guid?    VerifiedByUserId,
+    DateTime? VerifiedAt,
+    Guid?    DocumentId,
+    string?  DocumentFileName,
+    string?  DocumentPreviewUrl,
+    string?  ExternalReportNote,
+    bool     IsCritical,
+    bool     CounsellorDraft,
+    string?  DefaultUnit,
+    string?  ValueType,
+    string?  EnteredByName,
+    string?  VerifiedByName
 );
 
 public record WardInvestigationChecklistDto(
@@ -19,7 +40,8 @@ public record WardInvestigationChecklistDto(
     int      TotalItems,
     int      CompletedItems,
     string?  AnaesthesiaType,
-    List<WardInvestigationItemDto> Items
+    List<WardInvestigationItemDto> Items,
+    IReadOnlyList<string> UnverifiedCriticalKeys
 );
 
 public record SaveWardInvestigationCompletionRequest(
@@ -27,4 +49,55 @@ public record SaveWardInvestigationCompletionRequest(
     bool?    IsBypassed,
     string?  BypassReason,
     string?  Notes
+);
+
+public record SaveWardInvestigationResultRequest(
+    string   ResultValue,
+    string?  ResultUnit,
+    string?  ReferenceRange,
+    string?  ResultFlag,
+    string?  ResultSource,
+    string?  ExternalReportNote,
+    string?  Notes
+);
+
+public record VerifyWardInvestigationRequest(
+    string?  Notes
+);
+
+public record UploadInvestigationDocumentRequest(
+    string   DocumentType,
+    string   FileName,
+    string   ContentType,
+    string   FileData
+);
+
+public record InvestigationDocumentDto(
+    Guid     DocumentId,
+    string   FileName,
+    string   FileUrl,
+    string?  ContentType,
+    long?    FileSizeBytes,
+    bool     IsVerified
+);
+
+public record WardInvestigationSummaryItemDto(
+    string   ItemKey,
+    string   ItemLabel,
+    string?  ResultValue,
+    string?  ResultUnit,
+    string   EntryStatus,
+    bool     IsCritical,
+    bool     AppliesToJourney
+);
+
+public record WardInvestigationSummaryDto(
+    Guid     JourneyId,
+    IReadOnlyList<WardInvestigationSummaryItemDto> Items,
+    IReadOnlyList<string> UnverifiedCriticalKeys
+);
+
+public record CompletePacAssessmentResultDto(
+    PacAssessmentDto Assessment,
+    IReadOnlyList<string> UnverifiedCriticalWarnings
 );

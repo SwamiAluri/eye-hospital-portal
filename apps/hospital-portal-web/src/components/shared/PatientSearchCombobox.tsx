@@ -5,7 +5,12 @@ import { Search, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { patientApi, type Patient } from '@/lib/api/patients.api';
+import { useBranchContext } from '@/hooks/use-branch-context';
+import { type Patient } from '@/lib/api/patients.api';
+import {
+  searchPatientsUnified,
+  unifiedHitToPatient,
+} from '@/lib/patients/unified-patient-search';
 
 interface Props {
   value?: Patient | null;
@@ -30,6 +35,7 @@ export function PatientSearchCombobox({
   placeholder = 'Search patients by name, MR number, or phone...',
   className = '' 
 }: Props) {
+  const { branchId } = useBranchContext();
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredPatients, setFilteredPatients] = useState<Patient[]>([]);
@@ -46,23 +52,12 @@ export function PatientSearchCombobox({
     
     const timer = setTimeout(async () => {
       try {
-        const response = await patientApi.getAll({ 
-          search: searchQuery, 
-          pageSize: 10 
-        });
-        
-        // Extract data from Axios response
-        const patientData = response.data || response;
-        
-        if (Array.isArray(patientData)) {
-          setFilteredPatients(patientData);
-        } else if (patientData && Array.isArray(patientData.data)) {
-          // Handle { data: [], total: 0 } format
-          setFilteredPatients(patientData.data);
-        } else {
-          console.error('Invalid patient search response:', patientData);
+        if (!branchId) {
           setFilteredPatients([]);
+          return;
         }
+        const hits = await searchPatientsUnified(branchId, searchQuery, 10);
+        setFilteredPatients(hits.map(unifiedHitToPatient));
       } catch (error) {
         console.error('Failed to search patients:', error);
         toast.error('Failed to search patients');
@@ -73,7 +68,7 @@ export function PatientSearchCombobox({
     }, 300); // 300ms debounce
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, branchId]);
 
   const handleSelect = (patient: Patient) => {
     onChange(patient);

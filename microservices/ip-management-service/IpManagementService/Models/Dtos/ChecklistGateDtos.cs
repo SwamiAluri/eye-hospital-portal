@@ -30,3 +30,9 @@ public record ChecklistPhaseStatusDto(
     bool WardPostopComplete,
     bool AnaesthesiaDischargeCleared
 );
+
+public record InvestigationPhaseSummaryDto(
+    int VerifiedCount,
+    int TotalApplicable,
+    IReadOnlyList<string> UnverifiedCritical
+);

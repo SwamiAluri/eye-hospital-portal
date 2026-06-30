@@ -140,7 +140,10 @@ namespace AuthService.Services
                 if (root.TryGetProperty("insuranceCompany", out var ic))
                     insurerName = ic.GetString();
 
-                if (root.TryGetProperty("rate", out var rate) && rate.TryGetDecimal(out var r))
+                if (root.TryGetProperty("finalPayableAmount", out var fpa)
+                    && fpa.TryGetDecimal(out var fp) && fp > 0)
+                    estimate = fp;
+                else if (root.TryGetProperty("rate", out var rate) && rate.TryGetDecimal(out var r) && r > 0)
                     estimate = r;
 
                 if (root.TryGetProperty("insuranceProviderId", out var ip)
@@ -1145,6 +1148,15 @@ namespace AuthService.Services
                         try
                         {
                             var fields = ParseCcmsFieldsFromPackageAddons(capturedPackageAddons);
+                            var draftSeed = JsonSerializer.Serialize(new
+                            {
+                                insurerName = fields.InsurerName,
+                                insuranceCompany = fields.InsurerName,
+                                estimatedAmount = fields.Estimate,
+                                finalPayableAmount = fields.Estimate,
+                                paymentType = capturedPaymentType,
+                                insuranceProviderId = fields.InsuranceProviderId,
+                            });
                             var payload = new
                             {
                                 tenantId = capturedTenantId,
@@ -1163,6 +1175,9 @@ namespace AuthService.Services
                                 legacyPreauthId = (Guid?)null,
                                 sessionPreauthId = (Guid?)null,
                                 actorUserId = capturedUserId,
+                                insurerName = fields.InsurerName,
+                                estimatedAmount = fields.Estimate,
+                                counsellorDraftJson = draftSeed,
                             };
                             var json = JsonSerializer.Serialize(payload);
                             var client = _httpClientFactory.CreateClient();

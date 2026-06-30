@@ -12,5 +12,5 @@ export type CounsellingSegmentedProps<T extends string = string> =
 export function CounsellingSegmented<T extends string = string>(
   props: CounsellingSegmentedProps<T>,
 ) {
-  return <SegmentedButtonGroup {...props} size={props.size ?? 'md'} />;
+  return <SegmentedButtonGroup {...props} size={props.size ?? 'sm'} />;
 }

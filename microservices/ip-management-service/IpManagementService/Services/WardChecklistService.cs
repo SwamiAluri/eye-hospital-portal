@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using IpManagementService.Data;
 using IpManagementService.Models.Domain;
 using IpManagementService.Models.Dtos;
@@ -127,7 +128,20 @@ public class WardChecklistService
         }
 
         if (wardItemIds.Any(id => !existing.Contains(id)))
-            await _db.SaveChangesAsync();
+        {
+            // RACE: concurrent workspace readers (bedside panel + readiness rollup) can both
+            // seed the same (clearance_id, item_id) rows → 23505 on uq_preop_completion.
+            // Discard the duplicate insert; the winner's rows are valid (see BuildDtoAsync).
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+                when (ex.InnerException is PostgresException pg && pg.SqlState == "23505")
+            {
+                _db.ChangeTracker.Clear();
+            }
+        }
     }
 
     private async Task ApplyItemSideEffectsAsync(
@@ -170,13 +184,17 @@ public class WardChecklistService
             x.cp.Notes,
             x.cp.CompletedAt,
             x.cp.Source,
-            x.cp.CompletedByRole)).ToList();
+            x.cp.CompletedByRole,
+            ItemAppliesToJourney(x.item, journey))).ToList();
 
-        var completed = dtos.Count(i => i.IsCompleted || i.IsBypassed);
+        // Totals count only items in scope for this journey, so the readiness denominator
+        // never includes surgery-irrelevant rows (e.g. toric marking on a LASIK case).
+        var applicable = dtos.Where(i => i.AppliesToJourney).ToList();
+        var completed  = applicable.Count(i => i.IsCompleted || i.IsBypassed);
 
         return new WardChecklistDto(
             journey.Id,
-            dtos.Count,
+            applicable.Count,
             completed,
             journey.FinancialState,
             journey.BalanceDue,
@@ -184,6 +202,21 @@ public class WardChecklistService
             journey.WardCheckInAt,
             journey.InformedOtTeamAt,
             dtos);
+    }
+
+    /// <summary>
+    /// Surgery-type scoping (mirrors WardInvestigationChecklistService): an item applies
+    /// unless its <c>SurgeryTypeFilter</c> excludes the journey's procedure. Items without
+    /// a filter apply to every journey.
+    /// </summary>
+    private static bool ItemAppliesToJourney(PreOpSectionItem item, PatientJourney journey)
+    {
+        if (string.IsNullOrWhiteSpace(item.SurgeryTypeFilter)) return true;
+
+        var proc = journey.ProcedureName ?? "";
+        return item.SurgeryTypeFilter
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(f => proc.Contains(f, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<PatientJourney> RequireJourneyAsync(Guid journeyId, Guid tenantId)

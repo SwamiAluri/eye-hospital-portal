@@ -82,6 +82,10 @@ var host = new HostBuilder()
         // Phase 10: Documents
         services.AddScoped<DocumentEngineService>();
 
+        // Phase 3: Policy card OCR
+        services.AddScoped<PolicyExtractionBlobService>();
+        services.AddScoped<IPolicyExtractionService, OpenAiPolicyExtractionService>();
+
         // Phase 11: Communications
         services.AddScoped<CommunicationEngineService>();
         services.AddScoped<CommunicationDispatchService>();

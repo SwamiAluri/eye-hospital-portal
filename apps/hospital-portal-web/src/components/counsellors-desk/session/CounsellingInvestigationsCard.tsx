@@ -1,11 +1,11 @@
 'use client';
 
 import { counsellingSectionIds, counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import {
   CounsellingBadge,
   CounsellingCard,
   CounsellingCardContent,
-  CounsellingCardDescription,
   CounsellingCardHeader,
   CounsellingCardTitle,
 } from '@/components/counsellors-desk/session/primitives';
@@ -30,7 +30,7 @@ export function CounsellingInvestigationsCard(props: CounsellingInvestigationsCa
       <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
         <div className="flex items-center gap-2">
           <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-            Investigations
+            {counsellingCopy.investigations}
           </CounsellingCardTitle>
           <CounsellingBadge variant="outline" className="border-counselling-border text-[10px] text-counselling-muted-foreground">
             Optional
@@ -41,9 +41,6 @@ export function CounsellingInvestigationsCard(props: CounsellingInvestigationsCa
             </CounsellingBadge>
           )}
         </div>
-        <CounsellingCardDescription className={counsellingSessionTokens.sectionSubtitle}>
-          Optional add-ons for the estimate.
-        </CounsellingCardDescription>
       </CounsellingCardHeader>
       <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
         <CounsellingInvestigationsWorkspace embedded {...props} />

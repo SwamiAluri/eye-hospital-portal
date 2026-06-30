@@ -89,6 +89,23 @@ public class PacAssessmentFunctions
         catch (Exception ex)                 { return await InternalError(req, ex.Message); }
     }
 
+    [Function("GetPacInvestigationSummary")]
+    public async Task<HttpResponseData> GetInvestigationSummary(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+            Route = "ip-management/journeys/{id:guid}/pac-assessment/investigation-summary")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid                = _jwt.ExtractTenantId(req, tenantId);
+            return await Ok(req, await _svc.GetInvestigationSummaryAsync(id, tid, userId));
+        }
+        catch (KeyNotFoundException ex)        { return await NotFound(req, ex.Message); }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex)                 { return await InternalError(req, ex.Message); }
+    }
+
     private static async Task<HttpResponseData> Ok(HttpRequestData req, object body)
     {
         var res = req.CreateResponse(HttpStatusCode.OK);

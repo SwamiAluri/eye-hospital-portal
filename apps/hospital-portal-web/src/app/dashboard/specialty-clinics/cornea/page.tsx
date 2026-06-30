@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Eye,
@@ -15,6 +15,9 @@ import {
   Layers,
 } from 'lucide-react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { useSpecialtyClinicPatients } from '@/hooks/use-specialty-clinic-patients';
+import { mapLookupToSpecialtyQueueRow } from '@/lib/specialty-clinics/lookup-queue-mappers';
+import { toast } from 'react-hot-toast';
 
 interface CorneaPatient {
   id: string;
@@ -31,7 +34,7 @@ interface CorneaPatient {
   nextAction: string;
   OD: {
     keratometry: { K1: number; K2: number };
-    pachymetry: number; // Central corneal thickness in microns
+    pachymetry: number;
     status: string;
   };
   OS: {
@@ -44,94 +47,59 @@ interface CorneaPatient {
 function CorneaClinicPageContent() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
+  const lookupQuery = useSpecialtyClinicPatients('CORNEA');
 
-  // Mock data - In production, fetch from API
-  const mockPatients: CorneaPatient[] = [
-    {
-      id: '1',
-      name: 'Rahul Mehta',
-      mrn: 'MRN-789456',
-      age: 24,
-      gender: 'M',
-      visitReason: 'Keratoconus - Cross-linking Evaluation',
-      priority: 'URGENT',
-      topographyStatus: 'Done',
-      keratoconusStage: 'Stage 2 (Moderate)',
-      cornealCondition: 'Keratoconus OU',
-      lastVisit: '2026-01-20',
-      nextAction: 'CXL Surgery Scheduled',
-      OD: {
-        keratometry: { K1: 48.5, K2: 52.3 },
-        pachymetry: 465,
-        status: 'Progression detected',
-      },
-      OS: {
-        keratometry: { K1: 47.8, K2: 51.5 },
-        pachymetry: 478,
-        status: 'Stable',
-      },
-    },
-    {
-      id: '2',
-      name: 'Priya Sharma',
-      mrn: 'MRN-654321',
-      age: 58,
-      gender: 'F',
-      visitReason: 'Corneal Dystrophy - PKP Planning',
-      priority: 'ROUTINE',
-      topographyStatus: 'Done',
-      keratoconusStage: null,
-      cornealCondition: "Fuchs' Dystrophy OD",
-      lastVisit: '2026-01-15',
-      nextAction: 'Donor tissue matching',
-      OD: {
-        keratometry: { K1: 44.2, K2: 45.8 },
-        pachymetry: 625,
-        status: 'Corneal edema',
-      },
-      OS: {
-        keratometry: { K1: 43.5, K2: 44.9 },
-        pachymetry: 542,
-        status: 'Normal',
-      },
-    },
-    {
-      id: '3',
-      name: 'Amit Kumar',
-      mrn: 'MRN-987654',
-      age: 42,
-      gender: 'M',
-      visitReason: 'Bacterial Keratitis - Treatment Monitoring',
-      priority: 'EMERGENCY',
-      topographyStatus: 'Pending',
-      keratoconusStage: null,
-      cornealCondition: 'Infectious Keratitis OS',
-      lastVisit: '2026-01-27',
-      nextAction: 'Culture results pending',
-      OD: {
-        keratometry: { K1: 43.0, K2: 44.5 },
-        pachymetry: 532,
-        status: 'Normal',
-      },
-      OS: {
-        keratometry: { K1: 42.5, K2: 44.0 },
-        pachymetry: 495,
-        status: 'Central ulcer 3.5mm',
-      },
-    },
-  ];
+  const patients: CorneaPatient[] = useMemo(() => {
+    if (lookupQuery.isError) {
+      toast.error('Failed to load cornea queue');
+      return [];
+    }
+    return (lookupQuery.data?.items ?? []).map((row) => {
+      const base = mapLookupToSpecialtyQueueRow(row);
+      const priority =
+        base.priority === 'Urgent'
+          ? ('URGENT' as const)
+          : ('ROUTINE' as const);
+      return {
+        id: base.id,
+        name: base.name,
+        mrn: base.mrn,
+        age: base.age ?? 0,
+        gender: base.gender?.[0]?.toUpperCase() ?? '—',
+        visitReason: base.reasonForVisit || 'Cornea clinic visit',
+        priority,
+        topographyStatus: 'Pending' as const,
+        keratoconusStage: null,
+        cornealCondition: 'See patient chart',
+        lastVisit: base.lastVisitAt?.slice(0, 10) ?? '—',
+        nextAction: 'Open chart',
+        OD: {
+          keratometry: { K1: 0, K2: 0 },
+          pachymetry: 0,
+          status: '—',
+        },
+        OS: {
+          keratometry: { K1: 0, K2: 0 },
+          pachymetry: 0,
+          status: '—',
+        },
+      };
+    });
+  }, [lookupQuery.data?.items, lookupQuery.isError]);
 
-  const filteredPatients = mockPatients.filter(
+  const loading = lookupQuery.isLoading;
+
+  const filteredPatients = patients.filter(
     (patient) =>
       patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       patient.mrn.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const stats = {
-    totalPatients: mockPatients.length,
-    keratoconusCases: mockPatients.filter((p) => p.keratoconusStage).length,
-    topographyPending: mockPatients.filter((p) => p.topographyStatus === 'Pending').length,
-    urgentCases: mockPatients.filter((p) => p.priority === 'URGENT' || p.priority === 'EMERGENCY')
+    totalPatients: patients.length,
+    keratoconusCases: patients.filter((p) => p.keratoconusStage).length,
+    topographyPending: patients.filter((p) => p.topographyStatus === 'Pending').length,
+    urgentCases: patients.filter((p) => p.priority === 'URGENT' || p.priority === 'EMERGENCY')
       .length,
   };
 
@@ -156,6 +124,14 @@ function CorneaClinicPageContent() {
         return 'text-gray-600';
     }
   };
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">

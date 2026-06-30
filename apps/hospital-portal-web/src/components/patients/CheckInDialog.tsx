@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, LogIn, Users, User, FileText, Calendar } from 'lucide-react';
+import { getApi } from '@/lib/api';
+import { departmentsApi, type Department } from '@/lib/api/departments.api';
 
 interface CheckInDialogProps {
   isOpen: boolean;
@@ -19,20 +21,11 @@ export interface CheckInData {
   appointmentId?: string;
 }
 
-const mockDepartments = [
-  { id: 'dept-001', name: 'Ophthalmology' },
-  { id: 'dept-002', name: 'Optometry' },
-  { id: 'dept-003', name: 'Retina Clinic' },
-  { id: 'dept-004', name: 'Glaucoma Clinic' },
-  { id: 'dept-005', name: 'Pediatric Ophthalmology' }
-];
-
-const mockDoctors = [
-  { id: 'doc-001', name: 'Dr. Johnson', department: 'dept-001' },
-  { id: 'doc-002', name: 'Dr. Anderson', department: 'dept-002' },
-  { id: 'doc-003', name: 'Dr. Smith', department: 'dept-001' },
-  { id: 'doc-004', name: 'Dr. Wilson', department: 'dept-003' }
-];
+interface DoctorOption {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
 
 export const CheckInDialog: React.FC<CheckInDialogProps> = ({
   isOpen,
@@ -47,10 +40,68 @@ export const CheckInDialog: React.FC<CheckInDialogProps> = ({
     checkInType: 'walk-in',
     reasonForVisit: ''
   });
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(false);
+  const [doctorsLoading, setDoctorsLoading] = useState(false);
 
-  const filteredDoctors = formData.departmentId
-    ? mockDoctors.filter(d => d.department === formData.departmentId)
-    : mockDoctors;
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      setDepartmentsLoading(true);
+      try {
+        const depts = await departmentsApi.getAll();
+        if (!cancelled) setDepartments(depts ?? []);
+      } catch {
+        if (!cancelled) setDepartments([]);
+      } finally {
+        if (!cancelled) setDepartmentsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!formData.departmentId) {
+      setDoctors([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setDoctorsLoading(true);
+      try {
+        const { data } = await getApi().get<DoctorOption[]>('/users', {
+          params: {
+            departmentId: formData.departmentId,
+            userType: 'Doctor',
+            status: 'Active',
+          },
+        });
+        if (!cancelled) setDoctors(data ?? []);
+      } catch {
+        if (!cancelled) setDoctors([]);
+      } finally {
+        if (!cancelled) setDoctorsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.departmentId]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setFormData({
+        departmentId: '',
+        doctorId: '',
+        checkInType: 'walk-in',
+        reasonForVisit: '',
+      });
+    }
+  }, [isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +113,6 @@ export const CheckInDialog: React.FC<CheckInDialogProps> = ({
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center gap-3">
             <div className="bg-blue-100 p-2 rounded-lg">
@@ -81,9 +131,7 @@ export const CheckInDialog: React.FC<CheckInDialogProps> = ({
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Check-In Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Calendar className="w-4 h-4 inline mr-1" />
@@ -117,7 +165,6 @@ export const CheckInDialog: React.FC<CheckInDialogProps> = ({
             </div>
           </div>
 
-          {/* Department Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Users className="w-4 h-4 inline mr-1" />
@@ -126,17 +173,23 @@ export const CheckInDialog: React.FC<CheckInDialogProps> = ({
             <select
               required
               value={formData.departmentId}
-              onChange={(e) => setFormData({ ...formData, departmentId: e.target.value, doctorId: '' })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onChange={(e) =>
+                setFormData({ ...formData, departmentId: e.target.value, doctorId: '' })
+              }
+              disabled={departmentsLoading}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
             >
-              <option value="">Select Department</option>
-              {mockDepartments.map(dept => (
-                <option key={dept.id} value={dept.id}>{dept.name}</option>
+              <option value="">
+                {departmentsLoading ? 'Loading departments…' : 'Select Department'}
+              </option>
+              {departments.map((dept) => (
+                <option key={dept.id} value={dept.id}>
+                  {dept.departmentName}
+                </option>
               ))}
             </select>
           </div>
 
-          {/* Doctor Selection (Optional) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <User className="w-4 h-4 inline mr-1" />
@@ -145,17 +198,24 @@ export const CheckInDialog: React.FC<CheckInDialogProps> = ({
             <select
               value={formData.doctorId}
               onChange={(e) => setFormData({ ...formData, doctorId: e.target.value })}
-              disabled={!formData.departmentId}
+              disabled={!formData.departmentId || doctorsLoading}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
             >
-              <option value="">Any Available Doctor</option>
-              {filteredDoctors.map(doc => (
-                <option key={doc.id} value={doc.id}>{doc.name}</option>
+              <option value="">
+                {!formData.departmentId
+                  ? 'Select department first'
+                  : doctorsLoading
+                    ? 'Loading doctors…'
+                    : 'Any Available Doctor'}
+              </option>
+              {doctors.map((doc) => (
+                <option key={doc.id} value={doc.id}>
+                  Dr. {doc.firstName} {doc.lastName}
+                </option>
               ))}
             </select>
           </div>
 
-          {/* Reason for Visit */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <FileText className="w-4 h-4 inline mr-1" />
@@ -171,7 +231,6 @@ export const CheckInDialog: React.FC<CheckInDialogProps> = ({
             />
           </div>
 
-          {/* Actions */}
           <div className="flex gap-3 pt-4">
             <button
               type="button"

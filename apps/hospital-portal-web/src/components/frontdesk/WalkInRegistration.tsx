@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Users, UserPlus, Calendar, Zap, Search, ArrowRight } from 'lucide-react';
 import { getApi } from '@/lib/api';
 import PatientFormModal from '@/components/patients/PatientFormModal';
+import { useBranchContext } from '@/hooks/use-branch-context';
+import { searchPatientsUnified } from '@/lib/patients/unified-patient-search';
 
 interface Patient {
   id: string;
@@ -32,6 +34,7 @@ interface Doctor {
 
 export default function WalkInRegistration() {
   const router = useRouter();
+  const { branchId } = useBranchContext();
   
   // Patient Type Selection
   const [patientType, setPatientType] = useState<'existing' | 'new' | null>(null);
@@ -61,62 +64,27 @@ export default function WalkInRegistration() {
       alert('Please enter search term');
       return;
     }
+    if (!branchId) {
+      alert('Select a branch before searching for patients.');
+      return;
+    }
 
     setSearching(true);
     setSearchResults([]);
     try {
-      const api = getApi();
-      const term = searchTerm.trim();
-      
-      // Try multiple search strategies
-      const searchPromises = [];
-      
-      // Search by name
-      searchPromises.push(
-        api.get(`/patients/search`, { params: { searchTerm: term, searchType: 'name' } })
-          .catch(() => ({ data: [] }))
-      );
-      
-      // Search by MRN
-      searchPromises.push(
-        api.get(`/patients/search`, { params: { searchTerm: term, searchType: 'mrn' } })
-          .catch(() => ({ data: [] }))
-      );
-      
-      // Search by mobile
-      searchPromises.push(
-        api.get(`/patients/search`, { params: { searchTerm: term, searchType: 'mobile' } })
-          .catch(() => ({ data: [] }))
-      );
-      
-      // Search by email
-      searchPromises.push(
-        api.get(`/patients/search`, { params: { searchTerm: term, searchType: 'email' } })
-          .catch(() => ({ data: [] }))
-      );
-      
-      // Execute all searches in parallel
-      const results = await Promise.all(searchPromises);
-      
-      // Combine and deduplicate results
-      const allPatients: Patient[] = [];
-      const seenIds = new Set<string>();
-      
-      results.forEach(response => {
-        if (response.data && Array.isArray(response.data)) {
-          response.data.forEach((patient: Patient) => {
-            if (!seenIds.has(patient.id)) {
-              seenIds.add(patient.id);
-              allPatients.push(patient);
-            }
-          });
-        }
-      });
+      const hits = await searchPatientsUnified(branchId, searchTerm.trim(), 25);
+      const allPatients: Patient[] = hits.map((hit) => ({
+        id: hit.id,
+        firstName: hit.firstName,
+        lastName: hit.lastName,
+        medicalRecordNumber: hit.mrn,
+        contactNumber: hit.phone ?? '',
+        dateOfBirth: hit.dateOfBirth ?? '',
+        gender: hit.gender ?? '',
+      }));
 
       if (allPatients.length > 0) {
         setSearchResults(allPatients);
-        
-        // Auto-select if only one result
         if (allPatients.length === 1) {
           setSelectedPatient(allPatients[0]);
           await loadDepartments();
@@ -125,7 +93,7 @@ export default function WalkInRegistration() {
         alert('No patient found. Please try different search criteria or register as new patient.');
         setSearchResults([]);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to search patient:', error);
       alert('Failed to search patient. Please try again.');
     } finally {

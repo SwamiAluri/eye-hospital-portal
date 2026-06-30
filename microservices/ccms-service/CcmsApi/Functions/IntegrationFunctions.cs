@@ -79,7 +79,8 @@ public class IntegrationFunctions
         CounsellingCompletedPayload? body;
         try
         {
-            body = await JsonSerializer.DeserializeAsync<CounsellingCompletedPayload>(req.Body);
+            body = await JsonSerializer.DeserializeAsync<CounsellingCompletedPayload>(
+                req.Body, Services.HttpRequestDataExtensions.DeserializeOpts);
         }
         catch
         {
@@ -124,7 +125,10 @@ public class IntegrationFunctions
                     GovernmentSchemeId: body.GovernmentSchemeId,
                     CoveragePackageId:  body.PackageId,
                     LegacyPreauthId:    body.LegacyPreauthId,
-                    SessionPreauthId:   body.SessionPreauthId
+                    SessionPreauthId:   body.SessionPreauthId,
+                    InsurerName:        body.InsurerName,
+                    EstimatedAmount:    body.EstimatedAmount,
+                    CounsellorDraftJson: body.CounsellorDraftJson
                 );
 
                 await _caseService.CreateAsync(body.TenantId, body.ActorUserId ?? Guid.Empty, createReq);
@@ -384,7 +388,10 @@ public record CounsellingCompletedPayload(
     Guid?   PackageId,
     Guid?   LegacyPreauthId,
     Guid?   SessionPreauthId,
-    Guid?   ActorUserId
+    Guid?   ActorUserId,
+    string? InsurerName = null,
+    decimal? EstimatedAmount = null,
+    string? CounsellorDraftJson = null
 );
 
 public record JourneyEventPayload(

@@ -72,6 +72,26 @@ public class VisitPolicyService
         policy.CreatedByUserId = actorId;
         policy.UpdatedByUserId = actorId;
 
+        if (!string.IsNullOrWhiteSpace(policy.PolicyNumber))
+        {
+            var normalized = policy.PolicyNumber.Trim().ToLowerInvariant();
+            var ownerCaseId = policy.CoverageCase_Id;
+            var ownerSessionId = policy.SessionId;
+
+            var isDuplicate = await _db.VisitInsurancePolicies.AnyAsync(p =>
+                p.DeletedAt == null
+                && p.PolicyNumber != null
+                && p.PolicyNumber.ToLower() == normalized
+                && (ownerCaseId.HasValue
+                    ? p.CoverageCase_Id == ownerCaseId
+                    : ownerSessionId.HasValue && p.SessionId == ownerSessionId),
+                ct);
+
+            if (isDuplicate)
+                throw new InvalidOperationException(
+                    $"A policy with number '{policy.PolicyNumber}' already exists for this visit.");
+        }
+
         // If this is marked primary, clear existing primary flag for the same owner.
         if (policy.IsPrimary)
             await ClearPrimaryFlagAsync(policy.SessionId, policy.CoverageCase_Id, null, ct);

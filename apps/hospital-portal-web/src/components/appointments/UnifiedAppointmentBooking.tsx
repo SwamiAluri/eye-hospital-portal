@@ -3,6 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Phone, X, Upload, Camera, Send, UserPlus, CheckCircle, CreditCard } from 'lucide-react';
 import { getApi } from '@/lib/api';
+import { useBranchContext } from '@/hooks/use-branch-context';
+import {
+  searchPatientsUnified,
+  unifiedHitToPatient,
+} from '@/lib/patients/unified-patient-search';
 import { useMasterValues } from '@/hooks/use-master-values';
 import { defaultMasterCode } from '@/lib/master-data/appointment-master';
 import { useRouter } from 'next/navigation';
@@ -66,6 +71,7 @@ interface UnifiedAppointmentBookingProps {
 export default function UnifiedAppointmentBooking({ onClose, onSuccess }: UnifiedAppointmentBookingProps) {
   const router = useRouter();
   const api = getApi();
+  const { branchId } = useBranchContext();
 
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
@@ -131,15 +137,15 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
     }
   }, [quickRegForm.dateOfBirth]);
 
-  // Auto-search after 3 characters
+  // Auto-search after 2 characters
   useEffect(() => {
-    if (searchTerm.trim().length >= 3) {
+    if (searchTerm.trim().length >= 2) {
       const timeoutId = setTimeout(() => {
         handleSearch();
       }, 500); // Debounce for 500ms
       return () => clearTimeout(timeoutId);
     }
-  }, [searchTerm]);
+  }, [searchTerm, branchId]);
 
   const loadAllDoctors = async () => {
     try {
@@ -176,35 +182,28 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
 
   const handleSearch = async () => {
     const term = searchTerm.trim();
-    if (term.length < 3) return;
+    if (term.length < 2) return;
+    if (!branchId) return;
 
     setSearching(true);
     setSearchResults([]);
     setShowQuickReg(false);
 
     try {
-      // Search across all fields in parallel
-      const searchPromises = [
-        api.get('/patients/search', { params: { searchTerm: term, searchType: 'name' } }).catch(() => ({ data: [] })),
-        api.get('/patients/search', { params: { searchTerm: term, searchType: 'mrn' } }).catch(() => ({ data: [] })),
-        api.get('/patients/search', { params: { searchTerm: term, searchType: 'mobile' } }).catch(() => ({ data: [] })),
-        api.get('/patients/search', { params: { searchTerm: term, searchType: 'email' } }).catch(() => ({ data: [] })),
-      ];
-
-      const results = await Promise.all(searchPromises);
-
-      // Deduplicate results by patient ID
-      const allPatients: Patient[] = [];
-      const seenIds = new Set<string>();
-      results.forEach(response => {
-        if (response.data && Array.isArray(response.data)) {
-          response.data.forEach((patient: Patient) => {
-            if (!seenIds.has(patient.id)) {
-              seenIds.add(patient.id);
-              allPatients.push(patient);
-            }
-          });
-        }
+      const hits = await searchPatientsUnified(branchId, term, 20);
+      const allPatients: Patient[] = hits.map((hit) => {
+        const mapped = unifiedHitToPatient(hit);
+        return {
+          id: mapped.id,
+          medicalRecordNumber: mapped.medicalRecordNumber,
+          firstName: mapped.firstName,
+          lastName: mapped.lastName,
+          dateOfBirth: mapped.dateOfBirth,
+          gender: mapped.gender,
+          mobileNumber: mapped.contactNumber || mapped.phone || '',
+          email: mapped.email,
+          photoUrl: mapped.photoUrl,
+        };
       });
 
       setSearchResults(allPatients);

@@ -15,8 +15,10 @@ namespace AuthService.Models.Domain.Dtos
         [StringLength(100, ErrorMessage = "Last name cannot exceed 100 characters")]
         public string LastName { get; set; } = null!;
         
-        [Required(ErrorMessage = "Date of birth is required")]
-        public DateTime DateOfBirth { get; set; }
+        public DateTime? DateOfBirth { get; set; }
+
+        /// <summary>When checking duplicates on an existing profile, exclude this patient id.</summary>
+        public Guid? ExcludePatientId { get; set; }
         
         [Phone(ErrorMessage = "Invalid phone number format")]
         [StringLength(20, ErrorMessage = "Contact number cannot exceed 20 characters")]

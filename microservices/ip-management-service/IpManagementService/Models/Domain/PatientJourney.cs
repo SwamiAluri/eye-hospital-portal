@@ -86,6 +86,12 @@ public class PatientJourney
     // OT return tracking
     public string?  OtReturnReason           { get; set; }
 
+    // Cancel-today annotations (G1 — not clinical states)
+    public DateTime? SurgeryCancelledAt      { get; set; }
+    public string?   SurgeryCancelReason     { get; set; }
+    public bool      PendingRebook           { get; set; }
+    public string?   CancelledFromState      { get; set; }
+
     // Parallel checklist phase rollup (JSONB)
     public string?  ChecklistPhaseStatus     { get; set; }
 
@@ -95,6 +101,7 @@ public class PatientJourney
     public DateTime? WhoSupervisorOverrideAt       { get; set; }
 
     // Financial snapshot (nullable — may not be set at time of journey creation)
+    public string?   PaymentMode              { get; set; }  // payer category: Insurance|CGHS|ESI|Camp|Cash
     public decimal?  PackageAmount            { get; set; }
     public decimal?  TotalAdvances            { get; set; }
     public decimal?  TotalPaid                { get; set; }
@@ -120,9 +127,11 @@ public class IpPatient
     public Guid      TenantId             { get; set; }
     public string?   HealthId             { get; set; }  // UHID / HID-format
     public string?   MedicalRecordNumber  { get; set; }  // MRN-format
+    public string?   Status               { get; set; }
     public string    FirstName            { get; set; } = string.Empty;
     public string    LastName             { get; set; } = string.Empty;
     public string?   Gender               { get; set; }
     public DateTime? DateOfBirth          { get; set; }
+    public string?   SpecialNeeds         { get; set; }
     public DateTime? DeletedAt            { get; set; }
 }

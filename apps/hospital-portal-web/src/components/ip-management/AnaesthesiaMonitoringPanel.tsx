@@ -146,9 +146,6 @@ export function AnaesthesiaMonitoringPanel({
     return <p className="text-sm text-red-600">Could not load anaesthesia monitoring.</p>;
   }
 
-  const usedIntervals = new Set(data.readings.map(r => r.elapsedMin));
-  const quickIntervals = DEFAULT_INTERVALS.filter(m => !usedIntervals.has(m));
-
   if (mode === 'discharge') {
     return (
       <div className="space-y-4 border border-emerald-100 rounded-xl p-4 bg-emerald-50/50">
@@ -227,6 +224,10 @@ export function AnaesthesiaMonitoringPanel({
       </div>
     );
   }
+
+  const readings = data.readings ?? [];
+  const usedIntervals = new Set(readings.map(r => r.elapsedMin));
+  const quickIntervals = DEFAULT_INTERVALS.filter(m => !usedIntervals.has(m));
 
   return (
     <div className="space-y-5 border border-cyan-100 rounded-xl p-4 bg-cyan-50/30">
@@ -325,14 +326,14 @@ export function AnaesthesiaMonitoringPanel({
               </tr>
             </thead>
             <tbody>
-              {data.readings.length === 0 ? (
+              {readings.length === 0 ? (
                 <tr>
                   <td colSpan={readOnly ? 4 : 5} className="px-2 py-4 text-center text-gray-400 border border-gray-200">
                     No readings yet
                   </td>
                 </tr>
               ) : (
-                data.readings.map(r => (
+                readings.map(r => (
                   <tr key={r.id}>
                     <td className="px-2 py-1.5 border border-gray-200 font-medium">{r.elapsedMin}</td>
                     <td className="px-2 py-1.5 border border-gray-200">{r.pulse ?? '—'}</td>

@@ -8,6 +8,10 @@ import {
   MedicationLogDto,
   OphthMedicationDto,
 } from '@/lib/api/ip-management.api';
+import {
+  isDilatationMedicine,
+  WARD_DILATATION_ITEM_KEY,
+} from '@/lib/ip-checklist/dilatation-meds';
 
 export interface PreOpMedicationLogProps {
   journeyId: string;
@@ -45,6 +49,8 @@ export function PreOpMedicationLog({
   const [selectedMedId, setSelectedMedId] = useState<string>('');
   const [freeTextMed, setFreeTextMed] = useState('');
   const [metaSaving, setMetaSaving] = useState(false);
+  const [dilatationPrompt, setDilatationPrompt] = useState(false);
+  const [markingDilatation, setMarkingDilatation] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,6 +121,7 @@ export function PreOpMedicationLog({
     doseId: string,
     administeredAt: string,
     currentlySet: boolean,
+    medicineName: string,
   ) {
     if (readOnly) return;
     setSavingDoseId(doseId);
@@ -122,9 +129,44 @@ export function PreOpMedicationLog({
       administeredAt: administeredAt ? new Date(administeredAt).toISOString() : undefined,
       clearAdministration: !administeredAt && currentlySet,
     });
-    if (updated) setLog(updated);
-    else toast.error('Failed to save dose');
+    if (updated) {
+      setLog(updated);
+      if (administeredAt && isDilatationMedicine(medicineName)) {
+        setDilatationPrompt(true);
+      }
+    } else {
+      toast.error('Failed to save dose');
+    }
     setSavingDoseId(null);
+  }
+
+  async function markDilatationDoneOnChecklist() {
+    setMarkingDilatation(true);
+    try {
+      const checklist = await ipManagementApi.getWardChecklist(journeyId);
+      const item = checklist?.items.find(i => i.itemKey === WARD_DILATATION_ITEM_KEY);
+      if (!item) {
+        toast.error('Ward dilatation item not found on ward safety checklist');
+        return;
+      }
+      if (item.isCompleted || item.isBypassed) {
+        setDilatationPrompt(false);
+        toast.success('Dilatation already confirmed on ward checklist');
+        return;
+      }
+      const updated = await ipManagementApi.saveWardChecklistCompletion(journeyId, item.itemId, {
+        isCompleted: true,
+        notes: 'Confirmed after med log dilatation dose',
+      });
+      if (updated) {
+        setDilatationPrompt(false);
+        toast.success('Dilatation marked done on ward safety checklist');
+      } else {
+        toast.error('Failed to update ward dilatation item');
+      }
+    } finally {
+      setMarkingDilatation(false);
+    }
   }
 
   if (loading) {
@@ -141,10 +183,38 @@ export function PreOpMedicationLog({
       <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
         <span className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
           <Pill className="h-4 w-4" />
-          Pre-Op Medication Log (Form 4)
+          Pre-Op Medication Log
         </span>
         <span className="text-xs text-amber-700">Informational — does not block send to OT</span>
       </div>
+
+      {dilatationPrompt && !readOnly && (
+        <div className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-2.5 space-y-2">
+          <p className="text-sm text-purple-900 font-medium">
+            Dilatation dose recorded — confirm on ward safety checklist?
+          </p>
+          <p className="text-xs text-purple-700">
+            Med log tracks administration time; ward checklist “Dilatation Done” is the clinical confirmation.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={markingDilatation}
+              onClick={markDilatationDoneOnChecklist}
+              className="text-xs font-semibold text-white bg-purple-700 hover:bg-purple-800 px-3 py-1.5 rounded-lg disabled:opacity-50"
+            >
+              {markingDilatation ? 'Saving…' : 'Mark dilatation done'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDilatationPrompt(false)}
+              className="text-xs text-purple-700 hover:text-purple-900 px-2 py-1.5"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div>
@@ -272,7 +342,7 @@ export function PreOpMedicationLog({
                               type="datetime-local"
                               disabled={readOnly || saving}
                               value={toLocalInput(dose.administeredAt)}
-                              onChange={e => handleDoseChange(dose.id, e.target.value, done)}
+                              onChange={e => handleDoseChange(dose.id, e.target.value, done, drug.medicineName)}
                               className="text-xs border border-gray-200 rounded px-1.5 py-1 w-full max-w-[180px]"
                             />
                           </td>

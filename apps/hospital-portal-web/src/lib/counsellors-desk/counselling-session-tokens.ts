@@ -10,14 +10,28 @@ export const counsellingSessionTokens = {
   sectionTitle: 'text-sm font-semibold text-foreground',
   sectionSubtitle: 'text-sm text-muted-foreground',
   microLabel: 'text-xs font-semibold uppercase tracking-wide text-muted-foreground',
+  /** @deprecated Prefer catalogSelectedRow for procedure/investigation lists */
   selectedRow:
     'border-l-4 border-counselling-primary bg-counselling-primary/10 hover:bg-counselling-primary/15',
+  /** Dense catalog list row (~36px) — desktop counsellor workstation */
+  catalogRow: 'min-h-9 py-1.5 text-sm',
+  catalogInput: 'h-9 text-sm',
+  catalogListGap: 'space-y-0.5',
+  catalogCategoryGap: 'space-y-2',
+  catalogSelectedRow:
+    'ring-2 ring-inset ring-counselling-primary/35 bg-counselling-accent/50 hover:bg-counselling-accent/60',
+  catalogUnselectedRow:
+    'border border-transparent bg-card hover:border-border/80 hover:bg-muted/80',
+  /** Sticky filter bar inside estimate/investigation cards (single outer scroll) */
+  catalogStickyFilters:
+    'sticky top-0 z-10 border-b border-counselling-border/60 bg-card px-3 py-2',
   readOnlyPanel: 'rounded-xl border border-border bg-muted/90 px-4 py-3',
   accentPanel:
     'rounded-lg border border-counselling-primary/30 bg-counselling-accent/80 px-3 py-2.5',
   accentText: 'text-counselling-accent-foreground',
   primaryText: 'text-counselling-primary',
   touchTarget: 'min-h-11 touch-manipulation',
+  catalogTouchTarget: 'min-h-9 touch-manipulation',
 } as const;
 
 /** Section anchor IDs for progress navigation */
@@ -52,10 +66,14 @@ export const counsellingTestIds = {
   quoteDiscountReason: 'counselling-quote-discount-reason',
   quoteDiscountApply: 'counselling-quote-discount-apply',
   followUpDate: 'counselling-follow-up-date',
+  scheduleSurgeryDate: 'counselling-schedule-surgery-date',
+  insuranceCompany: 'counselling-insurance-company',
   quoteOverrideBtn: 'counselling-quote-override-btn',
   btnOpenCoverage: 'counselling-btn-open-coverage',
   quotePanel: 'counselling-quote-panel',
   btnSaveSession: 'counselling-btn-save-session',
+  btnSaveDraft: 'counselling-btn-save-draft',
+  btnPatientDetails: 'counselling-btn-patient-details',
   btnPhaseNext: 'counselling-btn-phase-next',
   btnPhaseBack: 'counselling-btn-phase-back',
   quoteGoToEstimate: 'counselling-quote-go-to-estimate',

@@ -27,7 +27,57 @@ public record PatientJourneyRowDto(
     DateTime? PatientDob,
     string?  OtReturnReason,
     Guid?    CounselingSessionId,
-    bool     OtDetailsSaved
+    bool     OtDetailsSaved,
+    bool     PendingRebook,
+    DateTime? SurgeryCancelledAt,
+    string?  SurgeryCancelReason,
+    string?  CancelledFromState,
+    bool     IsPatientMerged,
+    Guid?    CanonicalPatientId,
+    string?  CanonicalUhid,
+    int?     P2ClearanceCompleted,
+    int?     P2ClearanceTotal,
+    bool?    P2ClearanceNeedsAttention,
+    // Financial / payer (migration 146)
+    string?  PaymentMode,
+    bool     IsEmergencyFc,
+    string?  EmergencyFcReason,
+    // Readiness / dashboard summary (Phase 2) — derived from checklist_phase_status,
+    // surgical team strings, and the P2 rollup; no extra per-row queries.
+    string?  AnaesthetistName        = null,
+    string?  OperationTheatreName    = null,
+    int?     InvestigationsVerified  = null,
+    int?     InvestigationsTotal     = null,
+    int      UnverifiedCriticalCount = 0,
+    bool     PacCompleted            = false,
+    int      ReadinessCompleted      = 0,
+    int      ReadinessTotal          = 0,
+    // Primary surgeon display name, resolved from the read-only users table (Phase 2 follow-up).
+    string?  SurgeonName             = null
+);
+
+// ─── Ward dashboard summary (Phase 2) ──────────────────────────────────────────
+
+/// <summary>Server-computed KPI counts + filter facets for the ward command center.</summary>
+public record WardDashboardSummaryDto(
+    IReadOnlyDictionary<string, int> StageCounts,
+    int OtLoadToday,
+    int PacPending,
+    int CriticalLabs,
+    int FinancialPending,
+    int Delayed,
+    int CancelledToday,
+    int RebookRequired,
+    int EmergencyCount,
+    WardDashboardFacetsDto Facets
+);
+
+/// <summary>Distinct filter values for dashboard chips (entity-resident, no cross-service joins).</summary>
+public record WardDashboardFacetsDto(
+    IReadOnlyList<string> OtRooms,
+    IReadOnlyList<string> Anaesthetists,
+    IReadOnlyList<string> Payers,
+    IReadOnlyList<string> Surgeons
 );
 
 /// <summary>Full detail for Journey detail page / OT inline form.</summary>
@@ -97,7 +147,17 @@ public record PatientJourneyDetailDto(
     bool     DischargeOverrideApplied,
     bool     WhoSupervisorOverrideApplied,
     IReadOnlyDictionary<string, bool>? ChecklistPhaseStatus,
-    IReadOnlyList<ChecklistGateWarningDto>? TransitionWarnings
+    InvestigationPhaseSummaryDto? InvestigationPhaseSummary,
+    IReadOnlyList<ChecklistGateWarningDto>? TransitionWarnings,
+    bool     PendingRebook,
+    DateTime? SurgeryCancelledAt,
+    string?  SurgeryCancelReason,
+    string?  CancelledFromState,
+    bool     IsPatientMerged,
+    Guid?    CanonicalPatientId,
+    string?  CanonicalUhid,
+    // Financial / payer (migration 146)
+    string?  PaymentMode
 );
 
 // ─── Admit ────────────────────────────────────────────────────────────────────
@@ -105,7 +165,7 @@ public record PatientJourneyDetailDto(
 public record AdmitPatientRequest(
     Guid    WardId,
     string  AdmissionType,       // DayCare|IPD|Emergency
-    Guid    AdmittingDoctorId,
+    Guid?   AdmittingDoctorId,
     string? BedNumber,
     string? RoomNumber,
     string? AttendantName,
@@ -167,3 +227,11 @@ public record EmergencyFcRequest(
 // ─── Discharge override ────────────────────────────────────────────────────────
 
 public record DischargeOverrideRequest(string Reason);
+
+public record CancelTodaySurgeryRequest(string Reason);
+
+public record ApplyCounsellingRebookRequest(
+    Guid     OtScheduleId,
+    Guid     TenantId,
+    DateTime? SurgeryScheduledAt,
+    string?  ActorUserId);

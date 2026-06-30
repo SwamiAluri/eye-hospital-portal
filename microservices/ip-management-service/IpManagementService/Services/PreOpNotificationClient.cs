@@ -26,6 +26,29 @@ public interface IPreOpNotificationClient
     /// logged as warnings so the clinical state transition is never blocked.
     /// </summary>
     Task MarkOtSurgeryDoneAsync(Guid otScheduleId, Guid tenantId, string actorUserId);
+
+    /// <summary>
+    /// Release OT list slot on cancel-today (OTPrepared → Confirmed). Non-fatal.
+    /// </summary>
+    Task ReleaseOtScheduleForRebookAsync(Guid otScheduleId, Guid tenantId, string actorUserId);
+
+    /// <summary>Notify counselling that surgery was cancelled and needs rebook.</summary>
+    Task NotifyCounsellingRebookAsync(
+        Guid tenantId, Guid? branchId, Guid? counselingSessionId, string patientName, string reason);
+
+    /// <summary>Notify IPD nursing when OT moves patient to post-op ward (G10).</summary>
+    Task NotifyWardPostOpHandoffAsync(
+        Guid tenantId, Guid? branchId, Guid journeyId, string patientName, string? procedureName);
+
+    /// <summary>
+    /// Lightweight real-time ping for the Ward Command Center: tells connected ward
+    /// clients a journey changed lane so the board can refresh. Fire-and-forget.
+    /// </summary>
+    Task NotifyWardChangedAsync(Guid tenantId, Guid? branchId, Guid journeyId, string newState);
+
+    /// <summary>Notify OT that a patient is marked ready for surgery (Admitted → ReadyForSurgery).</summary>
+    Task NotifyPreOpMarkReadyAsync(
+        Guid tenantId, Guid? branchId, Guid journeyId, string patientName, string? procedureName);
 }
 
 public class PreOpNotificationClient : IPreOpNotificationClient
@@ -105,5 +128,90 @@ public class PreOpNotificationClient : IPreOpNotificationClient
             _logger.LogWarning(ex,
                 "Failed to mark OT schedule {Id} as SurgeryDone.", otScheduleId);
         }
+    }
+
+    public async Task ReleaseOtScheduleForRebookAsync(
+        Guid otScheduleId, Guid tenantId, string actorUserId)
+    {
+        try
+        {
+            var payload = new { OtScheduleId = otScheduleId, TenantId = tenantId, ActorUserId = actorUserId };
+            var resp    = await _http.PostAsJsonAsync("api/internal/ot-sync/release-for-rebook", payload);
+            if (!resp.IsSuccessStatusCode)
+                _logger.LogWarning(
+                    "ReleaseOtScheduleForRebook returned {Status} for scheduleId={Id}",
+                    resp.StatusCode, otScheduleId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to release OT schedule {Id} for rebook.", otScheduleId);
+        }
+    }
+
+    public async Task NotifyCounsellingRebookAsync(
+        Guid tenantId, Guid? branchId, Guid? counselingSessionId, string patientName, string reason)
+    {
+        if (!counselingSessionId.HasValue) return;
+        await NotifyDepartmentAsync(
+            tenantId,
+            branchId,
+            "STD_COUNSELLING",
+            "SurgeryCancelledRebook",
+            $"Surgery cancelled — rebook required: {patientName}",
+            $"Session {counselingSessionId}: {reason}");
+    }
+
+    public async Task NotifyWardPostOpHandoffAsync(
+        Guid tenantId, Guid? branchId, Guid journeyId, string patientName, string? procedureName)
+    {
+        var details = $"JourneyId: {journeyId}";
+        if (!string.IsNullOrWhiteSpace(procedureName))
+            details += $"; Procedure: {procedureName}";
+
+        await NotifyDepartmentAsync(
+            tenantId,
+            branchId,
+            "IPD_NURSING",
+            "PatientReceivedFromOt",
+            $"Patient received from OT — post-op care: {patientName}",
+            details);
+    }
+
+    public async Task NotifyWardChangedAsync(Guid tenantId, Guid? branchId, Guid journeyId, string newState)
+    {
+        // Reuses the proven push-dept broadcast → SignalR ReceiveNotification('WardJourneyChanged', …).
+        // The ward board listens for this type and triggers a quiet refresh.
+        await NotifyDepartmentAsync(
+            tenantId,
+            branchId,
+            "IPD_NURSING",
+            "WardJourneyChanged",
+            "Ward board updated",
+            $"{{\"journeyId\":\"{journeyId}\",\"state\":\"{newState}\"}}");
+    }
+
+    public async Task NotifyPreOpMarkReadyAsync(
+        Guid tenantId, Guid? branchId, Guid journeyId, string patientName, string? procedureName)
+    {
+        var details = $"{{\"journeyId\":\"{journeyId}\"}}";
+        var proc = string.IsNullOrWhiteSpace(procedureName) ? "" : $" — {procedureName}";
+
+        await NotifyDepartmentAsync(
+            tenantId,
+            branchId,
+            "OPERATION_THEATRE",
+            "PreOpMarkReady",
+            $"Ready for surgery: {patientName}{proc}",
+            details);
+
+        // Ward board also refreshes on this event (same journey filter as workspace realtime).
+        await NotifyDepartmentAsync(
+            tenantId,
+            branchId,
+            "IPD_NURSING",
+            "PreOpMarkReady",
+            $"Marked ready for surgery: {patientName}",
+            details);
     }
 }

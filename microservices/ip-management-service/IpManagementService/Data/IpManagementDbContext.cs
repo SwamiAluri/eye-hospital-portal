@@ -25,6 +25,7 @@ public class IpManagementDbContext : DbContext
     public DbSet<VitalSign>              VitalSigns               { get; set; }
     public DbSet<NurseRecord>            NurseRecords             { get; set; }
     public DbSet<IpPatient>              Patients                 { get; set; }
+    public DbSet<IpStaffUser>           StaffUsers               { get; set; }
 
     // ── Master Data ───────────────────────────────────────────────────────
     public DbSet<IpIoType>              IoTypes                  { get; set; }
@@ -36,6 +37,7 @@ public class IpManagementDbContext : DbContext
     public DbSet<PreOpClearance>         PreOpClearances          { get; set; }
     public DbSet<PreOpCompletion>        PreOpCompletions         { get; set; }
     public DbSet<PreOpDocument>          PreOpDocuments           { get; set; }
+    public DbSet<PreOpConsentDetail>     PreOpConsentDetails      { get; set; }
     public DbSet<PreOpSectionClearance>  PreOpSectionClearances   { get; set; }
     public DbSet<PreOpFollowUpTask>      PreOpFollowUpTasks        { get; set; }
     public DbSet<CounsellorChecklistCompletion> CounsellorChecklistCompletions { get; set; }
@@ -58,7 +60,21 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.LastName).HasColumnName("last_name");
             e.Property(p => p.Gender).HasColumnName("gender");
             e.Property(p => p.DateOfBirth).HasColumnName("date_of_birth");
+            e.Property(p => p.Status).HasColumnName("status");
+            e.Property(p => p.SpecialNeeds).HasColumnName("special_needs");
             e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+        });
+
+        // ── IpStaffUser (users table — read-only, owned by auth-service) ─
+        modelBuilder.Entity<IpStaffUser>(e =>
+        {
+            e.ToTable("users", t => t.ExcludeFromMigrations());
+            e.Property(p => p.Id).HasColumnName("id");
+            // Auth-service maps these via EF defaults (no snake_case), so the real
+            // Postgres columns are the quoted PascalCase identifiers.
+            e.Property(p => p.FirstName).HasColumnName("FirstName");
+            e.Property(p => p.LastName).HasColumnName("LastName");
+            e.Ignore(p => p.FullName);
         });
 
         // ── Ward ──────────────────────────────────────────────────────────
@@ -146,10 +162,15 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.DischargeOverrideReason).HasColumnName("discharge_override_reason");
             e.Property(p => p.DischargeOverrideBy).HasColumnName("discharge_override_by");
             e.Property(p => p.OtReturnReason).HasColumnName("ot_return_reason");
-            e.Property(p => p.ChecklistPhaseStatus).HasColumnName("checklist_phase_status");
+            e.Property(p => p.SurgeryCancelledAt).HasColumnName("surgery_cancelled_at");
+            e.Property(p => p.SurgeryCancelReason).HasColumnName("surgery_cancel_reason");
+            e.Property(p => p.PendingRebook).HasColumnName("pending_rebook");
+            e.Property(p => p.CancelledFromState).HasColumnName("cancelled_from_state");
+            e.Property(p => p.ChecklistPhaseStatus).HasColumnName("checklist_phase_status").HasColumnType("jsonb");
             e.Property(p => p.WhoSupervisorOverrideApplied).HasColumnName("who_supervisor_override_applied");
             e.Property(p => p.WhoSupervisorOverrideBy).HasColumnName("who_supervisor_override_by");
             e.Property(p => p.WhoSupervisorOverrideAt).HasColumnName("who_supervisor_override_at");
+            e.Property(p => p.PaymentMode).HasColumnName("payment_mode");
             e.Property(p => p.PackageAmount).HasColumnName("package_amount");
             e.Property(p => p.TotalAdvances).HasColumnName("total_advances");
             e.Property(p => p.TotalPaid).HasColumnName("total_paid");
@@ -475,6 +496,7 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.FormCode).HasColumnName("form_code");
             e.Property(p => p.FormContext).HasColumnName("form_context");
             e.Property(p => p.ResponsibleDepartmentCode).HasColumnName("responsible_department_code");
+            e.Property(p => p.ItemConfig).HasColumnName("item_config").HasColumnType("jsonb");
             e.Property(p => p.CreatedAt).HasColumnName("created_at");
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
             e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
@@ -493,6 +515,9 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.IsBypassed).HasColumnName("is_bypassed");
             e.Property(p => p.BypassReason).HasColumnName("bypass_reason");
             e.Property(p => p.Notes).HasColumnName("notes");
+            e.Property(p => p.ResultValue).HasColumnName("result_value");
+            e.Property(p => p.ResultUnit).HasColumnName("result_unit");
+            e.Property(p => p.EntryStatus).HasColumnName("entry_status");
             e.Property(p => p.CompletedByUserId).HasColumnName("completed_by_user_id");
             e.Property(p => p.CompletedByRole).HasColumnName("completed_by_role");
             e.Property(p => p.CompletedAt).HasColumnName("completed_at");
@@ -657,6 +682,17 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.IsBypassed).HasColumnName("is_bypassed");
             e.Property(p => p.BypassReason).HasColumnName("bypass_reason");
             e.Property(p => p.Notes).HasColumnName("notes");
+            e.Property(p => p.ResultValue).HasColumnName("result_value");
+            e.Property(p => p.ResultUnit).HasColumnName("result_unit");
+            e.Property(p => p.ReferenceRange).HasColumnName("reference_range");
+            e.Property(p => p.ResultFlag).HasColumnName("result_flag");
+            e.Property(p => p.ResultSource).HasColumnName("result_source");
+            e.Property(p => p.EntryStatus).HasColumnName("entry_status");
+            e.Property(p => p.EnteredByUserId).HasColumnName("entered_by_user_id");
+            e.Property(p => p.EnteredAt).HasColumnName("entered_at");
+            e.Property(p => p.VerifiedByUserId).HasColumnName("verified_by_user_id");
+            e.Property(p => p.VerifiedAt).HasColumnName("verified_at");
+            e.Property(p => p.ExternalReportNote).HasColumnName("external_report_note");
             e.Property(p => p.DocumentId).HasColumnName("document_id");
             e.Property(p => p.CompletedByUserId).HasColumnName("completed_by_user_id");
             e.Property(p => p.CompletedByRole).HasColumnName("completed_by_role");
@@ -695,6 +731,28 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
             e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
             e.Property(p => p.Status).HasColumnName("status");
+        });
+
+        // ── PreOpConsentDetail ─────────────────────────────────────────────
+        modelBuilder.Entity<PreOpConsentDetail>(e =>
+        {
+            e.ToTable("pre_op_consent_details");
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.CompletionId).HasColumnName("completion_id");
+            e.Property(p => p.PatientSigned).HasColumnName("patient_signed");
+            e.Property(p => p.WitnessName).HasColumnName("witness_name");
+            e.Property(p => p.WitnessRelation).HasColumnName("witness_relation");
+            e.Property(p => p.SurgeonUserId).HasColumnName("surgeon_user_id");
+            e.Property(p => p.ConsentVersion).HasColumnName("consent_version");
+            e.Property(p => p.Method).HasColumnName("method");
+            e.Property(p => p.SignedAt).HasColumnName("signed_at");
+            e.Property(p => p.CapturedByUserId).HasColumnName("captured_by_user_id");
+            e.Property(p => p.RevokedAt).HasColumnName("revoked_at");
+            e.Property(p => p.RevokedReason).HasColumnName("revoked_reason");
+            e.Property(p => p.RevokedByUserId).HasColumnName("revoked_by_user_id");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
         });
 
         // ── IpIoType (global master — no tenant) ──────────────────────────

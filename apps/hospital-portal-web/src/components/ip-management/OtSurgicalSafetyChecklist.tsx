@@ -191,6 +191,14 @@ export function OtSurgicalSafetyChecklist({
     );
   }
 
+  if (!data?.gates || !data.beforeAnaesthesia || !data.whoTimeout || !data.afterSurgery) {
+    return (
+      <p className="text-sm text-red-600 py-4">
+        Surgical safety checklist data is incomplete. Refresh the page or verify IP Management service.
+      </p>
+    );
+  }
+
   const { gates, beforeAnaesthesia: b, whoTimeout: w, afterSurgery: a } = data;
   const suggestedEye = inferEyeFlags(eyeOperated ?? data.eyeOperated);
 

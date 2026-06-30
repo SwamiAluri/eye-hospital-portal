@@ -17,6 +17,10 @@ import {
   type AdminDashboardStats,
 } from '@/lib/admin/map-admin-dashboard';
 
+const EMPTY_ACTIVITIES: AdminRecentActivity[] = [];
+const EMPTY_ALERTS: AdminAlert[] = [];
+const EMPTY_ACTIVITY_SERIES: ActivitySeriesPoint[] = [];
+
 export function useAdminDashboard() {
   const queryClient = useQueryClient();
 
@@ -92,9 +96,9 @@ export function useAdminDashboard() {
   return {
     overview: overview.data as AdminOverviewStats | undefined,
     quickStats: quickStats.data as AdminQuickStats | undefined,
-    activities: (activities.data ?? []) as AdminRecentActivity[],
-    alerts: (alerts.data ?? []) as AdminAlert[],
-    activitySeries: (activitySeries.data ?? []) as ActivitySeriesPoint[],
+    activities: activities.data ?? EMPTY_ACTIVITIES,
+    alerts: alerts.data ?? EMPTY_ALERTS,
+    activitySeries: activitySeries.data ?? EMPTY_ACTIVITY_SERIES,
     breakdownStats: breakdownStats.data as AdminDashboardStats | undefined,
     isLoading,
     error: overview.error ?? quickStats.error,

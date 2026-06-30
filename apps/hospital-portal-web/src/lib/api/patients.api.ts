@@ -104,33 +104,23 @@ export interface PatientStats {
  */
 export const patientApi = {
   /**
-   * Get all patients with optional filtering and pagination
+   * Get all patients with optional filtering and pagination.
+   * For typeahead search use `searchPatientsUnified` from `@/lib/patients/unified-patient-search`.
    */
   async getAll(params?: {
     page?: number;
     pageSize?: number;
-    search?: string;
     status?: string;
     branchId?: string;
   }) {
     const api = getApi();
-    
-    // If search term provided, use the search endpoint
-    if (params?.search && params.search.length > 0) {
-      const searchParams = new URLSearchParams();
-      searchParams.append('searchTerm', params.search);
-      if (params?.pageSize) searchParams.append('pageSize', params.pageSize.toString());
-      
-      return api.get<Patient[]>(`/patients/search?${searchParams.toString()}`);
-    }
-    
-    // Otherwise use the regular endpoint
+
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append('page', params.page.toString());
     if (params?.pageSize) queryParams.append('pageSize', params.pageSize.toString());
     if (params?.status) queryParams.append('status', params.status);
     if (params?.branchId) queryParams.append('branchId', params.branchId);
-    
+
     const query = queryParams.toString();
     return api.get<Patient[]>(`/patients${query ? `?${query}` : ''}`);
   },
@@ -182,11 +172,17 @@ export const patientApi = {
   },
 
   /**
-   * Search patients by name, code, or phone
+   * @deprecated Use `searchPatientsUnified` from `@/lib/patients/unified-patient-search`.
    */
-  async search(query: string) {
-    const api = getApi();
-    return api.get<Patient[]>(`/patients/search?query=${encodeURIComponent(query)}`);
+  async search(query: string, branchId?: string) {
+    const { searchPatientsUnified, unifiedHitToPatient } = await import(
+      '@/lib/patients/unified-patient-search'
+    );
+    if (!branchId) {
+      throw new Error('branchId is required for patient search');
+    }
+    const hits = await searchPatientsUnified(branchId, query, 25);
+    return { data: hits.map(unifiedHitToPatient) };
   },
 
   /**

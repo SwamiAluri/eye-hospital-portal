@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Clock, Activity, FileText, Pill, Stethoscope, TestTube, Image, DollarSign, Shield, MessageSquare, Users, Phone, Star, Search, Filter, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -72,6 +72,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ patientId }) => {
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['clinical', 'diagnostic', 'administrative', 'communication', 'engagement']);
   const [selectedTypes, setSelectedTypes] = useState<string[]>(Object.keys(EVENT_TYPE_CONFIG));
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+  const [selectedYear, setSelectedYear] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
 
   // Fetch all timeline data from multiple endpoints
@@ -266,6 +267,11 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ patientId }) => {
     fetchTimelineData();
   }, [patientId]);
 
+  const availableYears = useMemo(() => {
+    const years = new Set(events.map((e) => e.timestamp.getFullYear()));
+    return Array.from(years).sort((a, b) => b - a);
+  }, [events]);
+
   // Apply filters
   useEffect(() => {
     let filtered = [...events];
@@ -285,6 +291,12 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ patientId }) => {
     // Filter by selected types
     filtered = filtered.filter(event => selectedTypes.includes(event.type));
 
+    // Filter by year
+    if (selectedYear !== 'all') {
+      const year = Number(selectedYear);
+      filtered = filtered.filter((event) => event.timestamp.getFullYear() === year);
+    }
+
     // Filter by date range
     if (dateRange.start) {
       const startDate = new Date(dateRange.start);
@@ -297,7 +309,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ patientId }) => {
     }
 
     setFilteredEvents(filtered);
-  }, [events, searchQuery, selectedCategories, selectedTypes, dateRange]);
+  }, [events, searchQuery, selectedCategories, selectedTypes, selectedYear, dateRange]);
 
   const toggleEventExpansion = (eventId: string) => {
     const newExpanded = new Set(expandedEvents);
@@ -364,6 +376,19 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ patientId }) => {
             className="pl-10"
           />
         </div>
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(e.target.value)}
+          className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm shrink-0"
+          aria-label="Filter by year"
+        >
+          <option value="all">All years</option>
+          {availableYears.map((year) => (
+            <option key={year} value={String(year)}>
+              {year}
+            </option>
+          ))}
+        </select>
         <Button
           variant="outline"
           size="sm"
@@ -432,6 +457,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ patientId }) => {
                 setSelectedCategories(['clinical', 'diagnostic', 'administrative', 'communication', 'engagement']);
                 setSelectedTypes(Object.keys(EVENT_TYPE_CONFIG));
                 setDateRange({ start: '', end: '' });
+                setSelectedYear('all');
               }}
             >
               Clear All Filters

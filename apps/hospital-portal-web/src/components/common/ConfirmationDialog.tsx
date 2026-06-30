@@ -13,6 +13,9 @@ interface ConfirmationDialogProps {
   cancelText?: string;
   variant?: ConfirmationVariant;
   isLoading?: boolean;
+  /** Optional E2E hooks */
+  dataTestId?: string;
+  confirmTestId?: string;
 }
 
 const VARIANT_CONFIG = {
@@ -60,6 +63,8 @@ export function ConfirmationDialog({
   cancelText = 'Cancel',
   variant = 'danger',
   isLoading = false,
+  dataTestId,
+  confirmTestId,
 }: ConfirmationDialogProps) {
   const [isProcessing, setIsProcessing] = React.useState(false);
 
@@ -91,6 +96,7 @@ export function ConfirmationDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
+      data-testid={dataTestId}
     >
       {/* Backdrop */}
       <div
@@ -149,6 +155,7 @@ export function ConfirmationDialog({
           <button
             onClick={handleConfirm}
             disabled={busy}
+            data-testid={confirmTestId}
             className={`flex-1 py-2.5 text-sm font-semibold text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${cfg.confirmBg}`}
           >
             {busy && (

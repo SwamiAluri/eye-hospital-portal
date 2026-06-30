@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, TrendingUp, TrendingDown, Download, Calendar, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format, subMonths } from 'date-fns';
+import { getVitalsHistory, type VitalsReading } from '@/lib/api/widgets.api';
 
 interface VitalsFlowsheetTabProps {
   patientId: string;
@@ -25,79 +26,75 @@ interface VitalSign {
   notes?: string;
 }
 
-// Mock data - Replace with VitalsController API when available
-const generateMockVitals = (): VitalSign[] => {
-  const vitals: VitalSign[] = [];
-  const now = new Date();
-  
-  // Generate BP readings for last 6 months
-  for (let i = 0; i < 24; i++) {
-    const date = subMonths(now, Math.floor(i / 4));
-    vitals.push({
-      id: `bp-${i}`,
-      recordedAt: new Date(date.getTime() - i * 86400000 * 7),
+function mapVitalsReadingToSigns(reading: VitalsReading): VitalSign[] {
+  const at = new Date(reading.measuredAt);
+  const signs: VitalSign[] = [];
+  const by = reading.measuredBy;
+
+  if (reading.bloodPressure?.systolic != null && reading.bloodPressure?.diastolic != null) {
+    signs.push({
+      id: `${reading.id}-bp`,
+      recordedAt: at,
       type: 'BP',
-      systolic: 115 + Math.floor(Math.random() * 15),
-      diastolic: 75 + Math.floor(Math.random() * 10),
+      systolic: reading.bloodPressure.systolic,
+      diastolic: reading.bloodPressure.diastolic,
       unit: 'mmHg',
-      recordedBy: 'Nurse Jane',
+      recordedBy: by,
+      notes: reading.notes,
     });
   }
-  
-  // Generate Pulse readings
-  for (let i = 0; i < 24; i++) {
-    const date = subMonths(now, Math.floor(i / 4));
-    vitals.push({
-      id: `pulse-${i}`,
-      recordedAt: new Date(date.getTime() - i * 86400000 * 7),
+  if (reading.pulseRate != null) {
+    signs.push({
+      id: `${reading.id}-pulse`,
+      recordedAt: at,
       type: 'Pulse',
-      value: 68 + Math.floor(Math.random() * 12),
+      value: reading.pulseRate,
       unit: 'bpm',
-      recordedBy: 'Nurse Jane',
+      recordedBy: by,
     });
   }
-  
-  // Generate Temperature readings
-  for (let i = 0; i < 24; i++) {
-    const date = subMonths(now, Math.floor(i / 4));
-    vitals.push({
-      id: `temp-${i}`,
-      recordedAt: new Date(date.getTime() - i * 86400000 * 7),
+  if (reading.temperature != null) {
+    signs.push({
+      id: `${reading.id}-temp`,
+      recordedAt: at,
       type: 'Temperature',
-      value: 98.2 + Math.random() * 0.8,
+      value: reading.temperature,
       unit: '°F',
-      recordedBy: 'Nurse Jane',
+      recordedBy: by,
     });
   }
-  
-  // Generate SpO2 readings
-  for (let i = 0; i < 24; i++) {
-    const date = subMonths(now, Math.floor(i / 4));
-    vitals.push({
-      id: `spo2-${i}`,
-      recordedAt: new Date(date.getTime() - i * 86400000 * 7),
+  if (reading.oxygenSaturation != null) {
+    signs.push({
+      id: `${reading.id}-spo2`,
+      recordedAt: at,
       type: 'SpO2',
-      value: 96 + Math.floor(Math.random() * 3),
+      value: reading.oxygenSaturation,
       unit: '%',
-      recordedBy: 'Nurse Jane',
+      recordedBy: by,
     });
   }
-  
-  // Generate Weight readings
-  for (let i = 0; i < 12; i++) {
-    const date = subMonths(now, Math.floor(i / 2));
-    vitals.push({
-      id: `weight-${i}`,
-      recordedAt: new Date(date.getTime() - i * 86400000 * 14),
+  if (reading.weight != null) {
+    signs.push({
+      id: `${reading.id}-weight`,
+      recordedAt: at,
       type: 'Weight',
-      value: 70 + Math.floor(Math.random() * 5) - 2,
+      value: reading.weight,
       unit: 'kg',
-      recordedBy: 'Nurse Jane',
+      recordedBy: by,
     });
   }
-  
-  return vitals.sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime());
-};
+  if (reading.heightCm != null) {
+    signs.push({
+      id: `${reading.id}-height`,
+      recordedAt: at,
+      type: 'Height',
+      value: reading.heightCm,
+      unit: 'cm',
+      recordedBy: by,
+    });
+  }
+  return signs;
+}
 
 export const VitalsFlowsheetTab: React.FC<VitalsFlowsheetTabProps> = ({ patientId }) => {
   const [vitals, setVitals] = useState<VitalSign[]>([]);
@@ -111,15 +108,13 @@ export const VitalsFlowsheetTab: React.FC<VitalsFlowsheetTabProps> = ({ patientI
       
       setLoading(true);
       try {
-        // TODO: Replace with actual VitalsController API call
-        // const response = await vitalsApi.getByPatient(patientId);
-        // setVitals(response.data || []);
-        
-        // Using mock data for now
-        const mockVitals = generateMockVitals();
-        setVitals(mockVitals);
+        const readings = await getVitalsHistory(patientId, 100);
+        const mapped = readings.flatMap(mapVitalsReadingToSigns);
+        mapped.sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime());
+        setVitals(mapped);
       } catch (error) {
         console.error('Error fetching vitals:', error);
+        setVitals([]);
       } finally {
         setLoading(false);
       }
@@ -195,6 +190,12 @@ export const VitalsFlowsheetTab: React.FC<VitalsFlowsheetTabProps> = ({ patientI
     window.URL.revokeObjectURL(url);
   };
 
+  const bpData = useMemo(() => prepareChartData('BP'), [vitals, dateRange]);
+  const pulseData = useMemo(() => prepareChartData('Pulse'), [vitals, dateRange]);
+  const tempData = useMemo(() => prepareChartData('Temperature'), [vitals, dateRange]);
+  const spo2Data = useMemo(() => prepareChartData('SpO2'), [vitals, dateRange]);
+  const weightData = useMemo(() => prepareChartData('Weight'), [vitals, dateRange]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -205,12 +206,6 @@ export const VitalsFlowsheetTab: React.FC<VitalsFlowsheetTabProps> = ({ patientI
       </div>
     );
   }
-
-  const bpData = prepareChartData('BP');
-  const pulseData = prepareChartData('Pulse');
-  const tempData = prepareChartData('Temperature');
-  const spo2Data = prepareChartData('SpO2');
-  const weightData = prepareChartData('Weight');
 
   return (
     <div className="space-y-6">

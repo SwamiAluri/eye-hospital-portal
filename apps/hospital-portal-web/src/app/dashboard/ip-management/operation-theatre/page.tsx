@@ -31,6 +31,7 @@ import {
   startSurgeryWithGates,
   transitionClinicalWithGates,
 } from '@/lib/ip-checklist/transition-gates';
+import { OT_TEST_IDS } from '@/lib/ip-management/ot-test-ids';
 import { toast } from 'react-hot-toast';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -2446,6 +2447,7 @@ function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpda
   return (
     <>
       <tr
+        data-testid={OT_TEST_IDS.journeyRow(journey.id)}
         className={`transition-colors cursor-pointer ${
           clinicalState === 'InOT' ? 'bg-amber-50 hover:bg-amber-100' :
           clinicalState === 'SurgeryCompleted' ? 'bg-green-50 hover:bg-green-100' :
@@ -2464,6 +2466,7 @@ function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpda
           <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
             {showAccept && (
               <button
+                data-testid={OT_TEST_IDS.acceptBtn(journey.id)}
                 onClick={() => onOpenConfirm('accept', 'Accept this patient into the Operation Theatre?')}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors"
               >
@@ -2473,6 +2476,7 @@ function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpda
             )}
             {showStart && (
               <button
+                data-testid={OT_TEST_IDS.startSurgeryBtn(journey.id)}
                 onClick={() => onOpenConfirm('startSurgery', 'Start surgery for this patient now?')}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
@@ -2482,6 +2486,7 @@ function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpda
             )}
             {showEnd && (
               <button
+                data-testid={OT_TEST_IDS.endSurgeryBtn(journey.id)}
                 onClick={() => onOpenConfirm('endSurgery', 'Mark this surgery as completed?')}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
               >
@@ -2500,6 +2505,7 @@ function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpda
             )}
             {isDone ? (
               <button
+                data-testid={OT_TEST_IDS.moveToPostOpBtn(journey.id)}
                 onClick={handleMoveToPostOp}
                 disabled={movingToPostOp}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-lg transition-colors whitespace-nowrap"
@@ -2673,7 +2679,7 @@ export default function OperationTheatrePage() {
   }, [journeys]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid={OT_TEST_IDS.page}>
       {formatHeads && <FormatHeadsModal onClose={() => setFormatHeads(false)} />}
       <ConfirmationDialog
         isOpen={!!confirmModal}
@@ -2683,6 +2689,8 @@ export default function OperationTheatrePage() {
         confirmText="Yes"
         cancelText="No"
         isLoading={actionLoading}
+        dataTestId={OT_TEST_IDS.confirmDialog}
+        confirmTestId={OT_TEST_IDS.confirmYes}
         onConfirm={handleConfirmAction}
         onClose={() => setConfirmModal(null)}
       />
@@ -2731,6 +2739,7 @@ export default function OperationTheatrePage() {
         {OT_STAT_CARDS.map(({ key, label, bg, icon }) => (
           <button
             key={key}
+            data-testid={OT_TEST_IDS.statusTab(key)}
             onClick={() => setActiveFilter(activeFilter === key ? 'All' : key)}
             className={`rounded-xl p-4 text-left border transition-all ${activeFilter === key ? `${bg} border-current shadow-sm` : 'bg-white border-gray-100 hover:border-gray-200 hover:shadow-sm'}`}
           >

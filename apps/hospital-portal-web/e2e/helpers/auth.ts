@@ -30,8 +30,8 @@ export async function apiLogin(request: APIRequestContext): Promise<LoginPayload
 
 /** Seed browser localStorage with API login tokens (matches auth-store keys). */
 export async function seedBrowserAuth(page: Page, login: LoginPayload): Promise<void> {
-  await page.goto('/auth/login');
-  await page.evaluate(
+  // addInitScript runs before page JS — avoids /auth/login clearing localStorage on mount
+  await page.context().addInitScript(
     ({ login, tenantId }) => {
       localStorage.setItem('auth_token', login.accessToken);
       localStorage.setItem('refresh_token', login.refreshToken);
@@ -42,6 +42,8 @@ export async function seedBrowserAuth(page: Page, login: LoginPayload): Promise<
     },
     { login, tenantId: E2E_TENANT_ID },
   );
+  await page.goto('/dashboard');
+  await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
 }
 
 export function apiHeaders(token: string): Record<string, string> {
@@ -49,6 +51,16 @@ export function apiHeaders(token: string): Record<string, string> {
     Authorization: `Bearer ${token}`,
     'X-Tenant-ID': E2E_TENANT_ID,
   };
+}
+
+/** Seed browser auth with a filtered permission set (RBAC negative tests). */
+export async function seedBrowserAuthWithPermissions(
+  page: Page,
+  login: LoginPayload,
+  permissions: string[],
+): Promise<void> {
+  const trimmed = { ...login, permissions };
+  await seedBrowserAuth(page, trimmed);
 }
 
 const ROLE_CREDENTIALS: Record<string, { email: string; password: string }> = {

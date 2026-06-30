@@ -43,5 +43,10 @@
 
     <!-- JSON serialisation (pinned to >=10.0.1 to satisfy Azure.Core transitive dep) -->
     <PackageReference Include="System.Text.Json" Version="10.0.1" />
+
+    <!-- Policy card OCR (mirrors inventory GRN extraction stack) -->
+    <PackageReference Include="OpenAI" Version="2.1.0" />
+    <PackageReference Include="PdfPig" Version="0.1.14" />
+    <PackageReference Include="PDFtoImage" Version="4.0.0" />
   </ItemGroup>
 </Project>

@@ -2,6 +2,7 @@
 
 import { ChevronUp, Smartphone } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { formatInr } from '@/lib/counsellors-desk/package-preview';
 import {
   COUNSELLING_ACTION_BAR_HEIGHT_PX,
@@ -42,7 +43,7 @@ export function CounsellingQuoteBottomSheet({
           style={{ minHeight: COUNSELLING_QUOTE_STRIP_HEIGHT_PX }}
         >
           <div className="flex min-w-0 items-center gap-2">
-            <span className="text-sm font-semibold text-counselling-foreground">Estimate</span>
+            <span className="text-sm font-semibold text-counselling-foreground">{counsellingCopy.estimate}</span>
             <span className="text-counselling-muted-foreground/80">·</span>
             <span className="truncate text-sm font-bold tabular-nums text-counselling-primary">
               {formatInr(finalPayable)}

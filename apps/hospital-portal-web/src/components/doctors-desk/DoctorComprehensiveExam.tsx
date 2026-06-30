@@ -19,7 +19,7 @@ import ResumeDraftModal from './ResumeDraftModal';
 import { useAuthStore } from '@/lib/auth-store';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useConfirmation } from '@/components/common/ConfirmationDialog';
-import { examinationDraftApi as draftApi } from '@/lib/api/examinationDraft.api';
+import { examinationDraftApi as draftApi, parseExaminationDraftData } from '@/lib/api/examinationDraft.api';
 import { 
   examinationDraftApi, 
   examinationApi, 
@@ -146,10 +146,16 @@ export default function DoctorComprehensiveExam({
       if (data.diagnosisData) completed++;
       if (data.adviceData) completed++;
       
+      const existing = await draftApi.getDraft(patientId, visitId ?? undefined);
+      const prior =
+        existing?.data && typeof existing.data === 'object' && !Array.isArray(existing.data)
+          ? (existing.data as Record<string, unknown>)
+          : {};
       await draftApi.saveDraft({
         patientId,
         doctorId: user.id,
-        data,
+        visitId: visitId ?? undefined,
+        data: { ...prior, ...data },
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
       
@@ -265,7 +271,7 @@ export default function DoctorComprehensiveExam({
       
       try {
         setIsLoadingDraft(true);
-        const draft = await draftApi.getDraft(patientId);
+        const draft = await draftApi.getDraft(patientId, visitId ?? undefined);
         
         if (draft) {
           setPendingDraft(draft);
@@ -279,18 +285,18 @@ export default function DoctorComprehensiveExam({
     };
     
     loadDraft();
-  }, [patientId, user]);
+  }, [patientId, user, visitId]);
 
   // Resume draft handler
   const handleResumeDraft = () => {
     if (!pendingDraft) return;
     
     // Restore all saved data
-    const draftData = pendingDraft.data;
-    if (draftData.visualAcuityData) setVisualAcuityData(draftData.visualAcuityData);
-    if (draftData.iopData) setIopData(draftData.iopData);
-    if (draftData.pachymetryData) setPachymetryData(draftData.pachymetryData);
-    if (draftData.visualFieldData) setVisualFieldData(draftData.visualFieldData);
+    const draftData = parseExaminationDraftData(pendingDraft.data) as Record<string, unknown>;
+    if (draftData.visualAcuityData) setVisualAcuityData(draftData.visualAcuityData as VisualAcuityData);
+    if (draftData.iopData) setIopData(draftData.iopData as TonometryData);
+    if (draftData.pachymetryData) setPachymetryData(draftData.pachymetryData as PachymetryData);
+    if (draftData.visualFieldData) setVisualFieldData(draftData.visualFieldData as VisualFieldData);
     if (draftData.iopExtended) setIopExtended(draftData.iopExtended);
     if (draftData.retinoscopyData) setRetinoscopyData(draftData.retinoscopyData);
     if (draftData.anteriorSegmentData) setAnteriorSegmentData(draftData.anteriorSegmentData);
@@ -308,7 +314,7 @@ export default function DoctorComprehensiveExam({
   const handleStartFresh = async () => {
     if (pendingDraft?.id) {
       try {
-        await draftApi.deleteDraft(patientId);
+        await draftApi.deleteDraft(patientId, visitId ?? undefined);
         toast.success('🆕 Starting fresh examination');
       } catch (error) {
         console.error('Failed to delete draft:', error);
@@ -449,7 +455,7 @@ export default function DoctorComprehensiveExam({
         
         // Delete draft after successful finalization
         try {
-          await draftApi.deleteDraft(patientId);
+          await draftApi.deleteDraft(patientId, visitId ?? undefined);
         } catch (draftError) {
           console.warn('Could not delete draft:', draftError);
         }
@@ -628,7 +634,7 @@ export default function DoctorComprehensiveExam({
       
       // Delete draft after successful save
       try {
-        await draftApi.deleteDraft(patientId);
+        await draftApi.deleteDraft(patientId, visitId ?? undefined);
         console.log('✅ Draft deleted after successful save');
       } catch (draftError) {
         console.warn('Failed to delete draft (non-critical):', draftError);

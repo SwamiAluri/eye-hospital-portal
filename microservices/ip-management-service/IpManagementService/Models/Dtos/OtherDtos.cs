@@ -21,6 +21,19 @@ public record AddBillingTransactionRequest(
     string?  Notes
 );
 
+/// <summary>
+/// Live insurance pre-auth status for the Ward Pre-Op Financial step, projected
+/// from the CCMS coverage case (read-only guidance). Mirrors CcmsAdmissionValidation.
+/// </summary>
+public record PreauthStatusDto(
+    bool     Allowed,
+    string   WarningLevel,     // "none" | "info" | "warning" | "block"
+    string?  WarningMessage,
+    string?  BlockReason,
+    string?  PreAuthNumber,
+    decimal? ApprovedAmount
+);
+
 // ─── Intra-Op Notes ───────────────────────────────────────────────────────────
 
 public record IntraOpNoteDto(

@@ -11,6 +11,10 @@ public static class InvestigationKeywordRegistry
             ["blood_urea"]        = ["urea", "bun", "blood urea"],
             ["serum_creatinine"]  = ["creatinine", "s.creatinine", "serum creatinine"],
             ["hba1c_done"]        = ["hba1c", "a1c", "glycated"],
+            ["hemoglobin"]        = ["hemoglobin", "hb", "hgb"],
+            ["pt_inr"]            = ["pt", "inr", "prothrombin"],
+            ["hbsag_done"]        = ["hbsag", "hepatitis b", "hbs ag"],
+            ["hcv_done"]          = ["hcv", "hepatitis c", "anti hcv"],
         };
 
     public static readonly IReadOnlyDictionary<string, string[]> ImagingItemKeywords =
@@ -19,16 +23,15 @@ public static class InvestigationKeywordRegistry
             ["ascan_done"]      = ["a-scan", "ascan", "biometry", "axial length", "iol master"],
             ["bscan_done"]      = ["b-scan", "bscan", "ultrasound", "b scan"],
             ["xray_ga_cases"]   = ["x-ray", "xray", "chest", "cxr", "radiograph"],
+            ["ecg_done"]        = ["ecg", "ekg", "electrocardiogram"],
         };
 
     /// <summary>Investigation items completed manually on ward (no external webhook).</summary>
     public static readonly IReadOnlySet<string> ManualOnlyItemKeys =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "bp_checked",
             "physician_fitness",
             "duct_assessed",
-            "dilatation_done",
             "consent_confirmed",
         };
 

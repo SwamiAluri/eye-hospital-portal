@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { attachAuthRequestInterceptor, attachAuthResponseInterceptor } from './auth-interceptors';
+import { unwrapPagedItems, type PagedResult } from './api/paged-result';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -65,7 +66,13 @@ export const visitsApi = {
 export const appointmentsApi = {
   getAll: (params?: any) => getApi().get('/appointments', { params }),
   getById: (id: string) => getApi().get(`/appointments/${id}`),
-  getByPatient: (patientId: string) => getApi().get(`/appointments/patient/${patientId}`),
+  getByPatient: async (patientId: string, pageSize = 100) => {
+    const response = await getApi().get<PagedResult<unknown> | unknown[]>(
+      `/appointments/patient/${patientId}`,
+      { params: { page: 1, pageSize } },
+    );
+    return { ...response, data: unwrapPagedItems(response.data) };
+  },
   getTodayByPatient: (patientId: string) => getApi().get(`/appointments/patient/${patientId}/today`),
   getStats: () => getApi().get('/appointments/stats'),
   create: (data: any) => getApi().post('/appointments', data),

@@ -27,7 +27,7 @@ export default defineConfig({
   /* Reporter */
   reporter: process.env.CI
     ? [['github'], ['html', { outputFolder: 'e2e/playwright-report', open: 'never' }]]
-    : [['list'], ['html', { outputFolder: 'e2e/playwright-report', open: 'on-failure' }]],
+    : [['list'], ['html', { outputFolder: 'e2e/playwright-report', open: 'never' }]],
 
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000',
@@ -53,6 +53,54 @@ export default defineConfig({
       use: { storageState: { cookies: [], origins: [] } },
     },
 
+    {
+      name: 'hub-setup',
+      testMatch: '**/hub.setup.ts',
+      use: { storageState: { cookies: [], origins: [] } },
+    },
+
+    {
+      name: 'chromium-hub',
+      testMatch: '**/patient-hub.spec.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1400, height: 900 },
+        storageState: { cookies: [], origins: [] },
+      },
+      dependencies: ['hub-setup'],
+    },
+    {
+      name: 'chromium-ward-journey',
+      testMatch: [
+        '**/ip-ward-preop-workspace.spec.ts',
+        '**/ip-checklist-closure.spec.ts',
+        '**/ip-checklist-rbac.spec.ts',
+        '**/ip-ward-cancel-today.spec.ts',
+        '**/ip-ot-journey.spec.ts',
+        '**/ip-ward-rebook.spec.ts',
+        '**/ip-ward-phase3.spec.ts',
+        '**/ip-ward-program-closure.spec.ts',
+        '**/ip-ward-scheduling-guard.spec.ts',
+      ],
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
+      fullyParallel: false,
+      workers: 1,
+      timeout: 120_000,
+    },
+    {
+      name: 'chromium-ward-preop',
+      testMatch: [
+        '**/ip-ward-preop-workspace.spec.ts',
+        '**/ip-checklist-closure.spec.ts',
+        '**/ip-checklist-rbac.spec.ts',
+      ],
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
+      fullyParallel: false,
+      workers: 1,
+      timeout: 120_000,
+    },
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
@@ -88,6 +136,9 @@ export default defineConfig({
           NEXTAUTH_URL: 'http://localhost:3000',
           NEXTAUTH_SECRET: 'playwright-test-secret',
           NEXT_PUBLIC_API_URL: process.env.E2E_API_URL ?? 'http://localhost:5073/api',
+          NEXT_PUBLIC_IP_MANAGEMENT_API_URL:
+            process.env.E2E_IP_MANAGEMENT_API_URL ?? 'http://localhost:5074/api',
+          NEXT_PUBLIC_PATIENT_HUB_V2: process.env.NEXT_PUBLIC_PATIENT_HUB_V2 ?? 'true',
         },
       },
 

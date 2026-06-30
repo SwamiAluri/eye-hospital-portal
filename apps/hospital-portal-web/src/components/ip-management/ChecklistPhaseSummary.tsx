@@ -1,110 +1,152 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import { ipManagementApi } from '@/lib/api/ip-management.api';
 import {
-  ipManagementApi,
-  CounsellorOutpatientChecklistDto,
-  WardChecklistDto,
-  WardInvestigationChecklistDto,
-} from '@/lib/api/ip-management.api';
+  buildWardPreOpPhaseProgress,
+  phaseIsComplete,
+  phaseProgressPercent,
+  phaseToChecklistSection,
+  type WardPreOpPhaseKey,
+  type WardPreOpPhaseProgress,
+} from '@/lib/ip-management/ward-preop-progress';
+import { WARD_PREOP_TEST_IDS } from '@/lib/ip-management/ward-preop-test-ids';
 
 export interface ChecklistPhaseSummaryProps {
   journeyId: string;
   counselingSessionId?: string | null;
   paymentMode?: string;
-}
-
-interface PhaseChip {
-  key: string;
-  label: string;
-  completed: number;
-  total: number;
+  /** When set, chips navigate to the matching § stepper section */
+  onPhaseNavigate?: (section: ReturnType<typeof phaseToChecklistSection>) => void;
 }
 
 export function ChecklistPhaseSummary({
   journeyId,
   counselingSessionId,
   paymentMode,
+  onPhaseNavigate,
 }: ChecklistPhaseSummaryProps) {
-  const [chips, setChips] = useState<PhaseChip[]>([]);
+  const [phases, setPhases] = useState<WardPreOpPhaseProgress[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const [p0, p1, p2, clearance] = await Promise.all([
-        counselingSessionId
-          ? ipManagementApi.getCounsellorOutpatientChecklist(counselingSessionId).catch(() => null)
-          : Promise.resolve(null as CounsellorOutpatientChecklistDto | null),
-        ipManagementApi.getWardInvestigationChecklist(journeyId).catch(() => null),
-        ipManagementApi.getWardChecklist(journeyId, paymentMode).catch(() => null),
-        ipManagementApi.getPreOpClearance(journeyId).catch(() => null),
-      ]);
-      if (cancelled) return;
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [p0, p1, clearance, p3, pac] = await Promise.all([
+      counselingSessionId
+        ? ipManagementApi.getCounsellorOutpatientChecklist(counselingSessionId).catch(() => null)
+        : Promise.resolve(null),
+      ipManagementApi.getWardInvestigationChecklist(journeyId).catch(() => null),
+      ipManagementApi.getPreOpClearance(journeyId).catch(() => null),
+      ipManagementApi.getWardChecklist(journeyId, paymentMode).catch(() => null),
+      ipManagementApi.getPacAssessment(journeyId).catch(() => null),
+    ]);
 
-      const next: PhaseChip[] = [];
-
-      if (p0) {
-        next.push({
-          key: 'p0',
-          label: 'P0 Outpatient',
-          completed: p0.completedItems,
-          total: p0.totalItems,
-        });
-      }
-
-      if (p1) {
-        next.push({
-          key: 'p1',
-          label: 'P1 Investigation',
-          completed: p1.completedItems,
-          total: p1.totalItems,
-        });
-      }
-
-      if (p2) {
-        next.push({
-          key: 'p2',
-          label: 'P2 Ward (Form 2)',
-          completed: p2.completedItems,
-          total: p2.totalItems,
-        });
-      }
-
-      if (clearance?.completions?.length) {
-        const done = clearance.completions.filter(c => c.isCompleted || c.isBypassed).length;
-        next.push({
-          key: 'clearance',
-          label: 'Pre-Op Clearance',
-          completed: done,
-          total: clearance.completions.length,
-        });
-      }
-
-      setChips(next);
-    }
-    load();
-    return () => { cancelled = true; };
+    setPhases(
+      buildWardPreOpPhaseProgress({
+        p0,
+        p1,
+        clearance,
+        p3,
+        pac,
+        includeP0: !!counselingSessionId,
+      }),
+    );
+    setLoading(false);
   }, [journeyId, counselingSessionId, paymentMode]);
 
-  if (chips.length === 0) return null;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400 py-1">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Loading phase progress…
+      </div>
+    );
+  }
+
+  if (phases.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-2 mb-3">
-      {chips.map(chip => {
-        const pct = chip.total > 0 ? Math.round((chip.completed / chip.total) * 100) : 0;
-        const done = chip.total > 0 && chip.completed === chip.total;
-        return (
-          <span
-            key={chip.key}
-            className={[
-              'inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2.5 py-1 border',
-              done ? 'bg-green-50 text-green-800 border-green-200' : 'bg-slate-50 text-slate-700 border-slate-200',
-            ].join(' ')}
-          >
-            {chip.label}: {chip.completed}/{chip.total} ({pct}%)
-          </span>
-        );
-      })}
+    <div
+      className="space-y-2"
+      data-testid={WARD_PREOP_TEST_IDS.phaseProgressStrip}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+          Pre-op phase progress
+        </p>
+        <button
+          type="button"
+          onClick={load}
+          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {phases.map(phase => (
+          <PhaseChip
+            key={phase.key}
+            phase={phase}
+            onClick={
+              onPhaseNavigate
+                ? () => onPhaseNavigate(phaseToChecklistSection(phase.key as WardPreOpPhaseKey))
+                : undefined
+            }
+          />
+        ))}
+      </div>
     </div>
+  );
+}
+
+function PhaseChip({
+  phase,
+  onClick,
+}: {
+  phase: WardPreOpPhaseProgress;
+  onClick?: () => void;
+}) {
+  const pct = phaseProgressPercent(phase.completed, phase.total);
+  const done = phaseIsComplete(phase.completed, phase.total);
+  const started = phase.completed > 0;
+
+  const Wrapper = onClick ? 'button' : 'div';
+
+  return (
+    <Wrapper
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      title={phase.detail}
+      data-testid={WARD_PREOP_TEST_IDS.phaseChip(phase.key)}
+      className={[
+        'min-w-[108px] rounded-lg border px-2.5 py-1.5 text-left transition-colors',
+        onClick ? 'cursor-pointer hover:ring-2 hover:ring-indigo-200' : '',
+        done
+          ? 'bg-green-50 border-green-200'
+          : started
+            ? 'bg-amber-50 border-amber-200'
+            : 'bg-slate-50 border-slate-200',
+      ].join(' ')}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[10px] font-bold text-gray-700">{phase.shortLabel}</span>
+        <span className="text-[10px] font-medium text-gray-600">
+          {phase.total > 0 ? `${phase.completed}/${phase.total}` : '—'}
+        </span>
+      </div>
+      <p className="text-[10px] text-gray-600 truncate mt-0.5">{phase.label.replace(/^P\d+\s/, '')}</p>
+      <div className="mt-1 h-1 rounded-full bg-white/80 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${done ? 'bg-green-500' : 'bg-indigo-400'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </Wrapper>
   );
 }

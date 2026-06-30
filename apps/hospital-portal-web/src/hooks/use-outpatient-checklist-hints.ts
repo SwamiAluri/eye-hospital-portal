@@ -12,7 +12,7 @@ import { patientConsentsApi } from '@/lib/api/patient-consents.api';
 
 import { optometrySummaryApi } from '@/lib/api/optometry.api';
 
-import { doctorQueueApi } from '@/lib/api/doctorQueue.api';
+import { examinationApi } from '@/lib/api/doctorQueue.api';
 
 import {
 
@@ -122,7 +122,7 @@ export function useOutpatientChecklistHints(ctx: OutpatientIntegrationContext) {
 
         ctx.patientId
 
-          ? doctorQueueApi.getPatientHistory(ctx.patientId, { limit: 5 }).catch(() => [])
+          ? examinationApi.getPatientHistory(ctx.patientId, { limit: 5 }).catch(() => [])
 
           : Promise.resolve([]),
 

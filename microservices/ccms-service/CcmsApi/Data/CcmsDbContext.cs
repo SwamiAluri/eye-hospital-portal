@@ -71,6 +71,9 @@ public class CcmsDbContext : DbContext
     // ── Migration 122: Visit Insurance Policies ───────────────────────────
     public DbSet<CcmsVisitInsurancePolicy>  VisitInsurancePolicies    { get; set; }
 
+    // ── Policy card OCR audit ─────────────────────────────────────────────
+    public DbSet<CcmsPolicyExtractionAuditLog> PolicyExtractionAuditLogs { get; set; }
+
     // ── Keyless entities (raw SQL projections) ────────────────────────────
     public DbSet<BillingTransactionRow>     BillingTransactionRows    { get; set; }
 
@@ -729,6 +732,34 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.DocumentName).HasColumnName("document_name");
             e.Property(x => x.BlobUrl).HasColumnName("blob_url");
             e.Property(x => x.UploadedAt).HasColumnName("uploaded_at");
+        });
+
+        // ── Policy extraction audit ─────────────────────────────────────────
+        mb.Entity<CcmsPolicyExtractionAuditLog>(e =>
+        {
+            e.ToTable("ccms_policy_extraction_audit_logs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id");
+            e.Property(x => x.UserId).HasColumnName("user_id");
+            e.Property(x => x.CoverageCase_Id).HasColumnName("coverage_case_id");
+            e.Property(x => x.SessionId).HasColumnName("session_id");
+            e.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key");
+            e.Property(x => x.Outcome).HasColumnName("outcome");
+            e.Property(x => x.OriginalFilename).HasColumnName("original_filename");
+            e.Property(x => x.FrontDocumentUrl).HasColumnName("front_document_url");
+            e.Property(x => x.BackDocumentUrl).HasColumnName("back_document_url");
+            e.Property(x => x.BlobPurgeAt).HasColumnName("blob_purge_at");
+            e.Property(x => x.BlobPurged).HasColumnName("blob_purged");
+            e.Property(x => x.ProviderModel).HasColumnName("provider_model");
+            e.Property(x => x.ProcessingMs).HasColumnName("processing_ms");
+            e.Property(x => x.HighFieldCount).HasColumnName("high_field_count");
+            e.Property(x => x.ReviewFieldCount).HasColumnName("review_field_count");
+            e.Property(x => x.LowFieldCount).HasColumnName("low_field_count");
+            e.Property(x => x.FieldOverrideCount).HasColumnName("field_override_count");
+            e.Property(x => x.OverriddenFieldsJson).HasColumnName("overridden_fields_json");
+            e.Property(x => x.CreatedPolicyId).HasColumnName("created_policy_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
 
         // ── Migration 122: Visit Insurance Policies ────────────────────────

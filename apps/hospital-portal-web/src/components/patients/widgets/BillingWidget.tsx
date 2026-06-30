@@ -23,7 +23,7 @@ export const BillingWidget: React.FC<BillingWidgetProps> = ({ patientId, onViewB
       setLoading(true);
       try {
         const response = await opdBillsApi.getByPatient(patientId);
-        const bills = response.data || [];
+        const bills = response.data?.bills ?? response.data ?? [];
         
         const unpaidBills = bills.filter((b: any) => b.paymentStatus === 'pending' || b.paymentStatus === 'partial');
         const totalOutstanding = unpaidBills.reduce((sum: number, b: any) => sum + (b.totalAmount - (b.paidAmount || 0)), 0);

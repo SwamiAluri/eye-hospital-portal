@@ -11,7 +11,11 @@ public record WardChecklistItemDto(
     string?  Notes,
     DateTime? CompletedAt,
     string?  Source,
-    string?  CompletedByRole
+    string?  CompletedByRole,
+    // Surgery/patient-type scoping: false when the catalog filters this item out for
+    // the journey's procedure (e.g. toric IOL marking on a LASIK case). Defaulted so
+    // existing positional constructors stay valid.
+    bool     AppliesToJourney = true
 );
 
 public record WardChecklistDto(

@@ -4,6 +4,8 @@ import { useAuthStore } from '@/lib/auth-store';
 
 export const IP_CHECKLIST_PERMISSIONS = {
   wardEdit: 'ward.checklist.edit',
+  investigationEnter: 'ward.investigation.enter',
+  investigationVerify: 'ward.investigation.verify',
   otSafetySign: 'ot.safety.sign',
   pacEdit: 'anaesthesia.pac.edit',
   monitoringEdit: 'anaesthesia.monitoring.edit',
@@ -22,6 +24,10 @@ export function useIpChecklistPermissions() {
 
   return {
     canEditWardChecklist: can(permissions, IP_CHECKLIST_PERMISSIONS.wardEdit),
+    canEnterInvestigation: can(permissions, IP_CHECKLIST_PERMISSIONS.investigationEnter)
+      || can(permissions, IP_CHECKLIST_PERMISSIONS.wardEdit),
+    canVerifyInvestigation: can(permissions, IP_CHECKLIST_PERMISSIONS.investigationVerify)
+      || can(permissions, IP_CHECKLIST_PERMISSIONS.wardEdit),
     canSignOtSafety: can(permissions, IP_CHECKLIST_PERMISSIONS.otSafetySign),
     canEditPac: can(permissions, IP_CHECKLIST_PERMISSIONS.pacEdit),
     canEditMonitoring: can(permissions, IP_CHECKLIST_PERMISSIONS.monitoringEdit),

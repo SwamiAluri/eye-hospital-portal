@@ -4,6 +4,8 @@ using CcmsApi.Models.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace CcmsApi.Services;
 
@@ -123,8 +125,30 @@ public class CoverageCaseService
             UpdatedByUserId     = actorUserId,
             Status              = "active",
             LegacyPreauthId     = req.LegacyPreauthId,
-            SessionPreauthId    = req.SessionPreauthId
+            SessionPreauthId    = req.SessionPreauthId,
+            InsurerName         = req.InsurerName,
         };
+
+        if (!string.IsNullOrWhiteSpace(req.CounsellorDraftJson))
+        {
+            coverageCase.CounsellorDraftJson = req.CounsellorDraftJson;
+            coverageCase.IsDraft = true;
+            coverageCase.DraftSavedAt = DateTime.UtcNow;
+        }
+        else if (!string.IsNullOrWhiteSpace(req.InsurerName) || req.EstimatedAmount is > 0)
+        {
+            coverageCase.CounsellorDraftJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                insurerName = req.InsurerName,
+                insuranceCompany = req.InsurerName,
+                estimatedAmount = req.EstimatedAmount,
+                finalPayableAmount = req.EstimatedAmount,
+                paymentType = req.PaymentType,
+                insuranceProviderId = req.InsuranceProviderId,
+            });
+            coverageCase.IsDraft = true;
+            coverageCase.DraftSavedAt = DateTime.UtcNow;
+        }
 
         _db.CoverageCases.Add(coverageCase);
         await _db.SaveChangesAsync(ct);
@@ -205,7 +229,12 @@ public class CoverageCaseService
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(draftJson);
-            foreach (var key in new[] { "estimatedAmount", "EstimatedAmount", "sessionPackageRate", "SessionPackageRate" })
+            foreach (var key in new[] {
+                "finalPayableAmount", "FinalPayableAmount",
+                "estimatedAmount", "EstimatedAmount",
+                "sessionPackageRate", "SessionPackageRate",
+                "rate", "Rate",
+            })
             {
                 if (doc.RootElement.TryGetProperty(key, out var val))
                 {
@@ -309,47 +338,18 @@ public class CoverageCaseService
 
         // Persist counsellor-captured fields as camelCase JSON so the frontend
         // parseCounsellorDraft() can restore them without a case-mapping step.
-        var draftPayload = new
-        {
-            insurerName             = req.InsurerName,
-            policyNumber            = req.PolicyNumber,
-            membershipNumber        = req.MembershipNumber,
-            insuredName             = req.InsuredName,
-            relationshipToInsured   = req.RelationshipToInsured,
-            sumInsured              = req.SumInsured,
-            coPay                   = req.CoPay,
-            policyExpiry            = req.PolicyExpiry,
-            urgencyLevel            = req.UrgencyLevel,
-            coverageNotes           = req.CoverageNotes,
-            clinicalNotes           = req.ClinicalNotes,
-            tpaContactPerson        = req.TpaContactPerson,
-            tpaContactEmail         = req.TpaContactEmail,
-            tpaContactPhone         = req.TpaContactPhone,
-            surgeryDate             = req.SurgeryDate,
-            diagnosisCode           = req.DiagnosisCode,
-            procedureCode           = req.ProcedureCode,
-            estimatedAmount         = req.EstimatedAmount,
-            estimatedSurgery        = req.EstimatedSurgery,
-            estimatedRoom           = req.EstimatedRoom,
-            estimatedMedicines      = req.EstimatedMedicines,
-            estimatedLab            = req.EstimatedLab,
-            estimatedOther          = req.EstimatedOther,
-            paymentType             = req.PaymentType,
-            roomClassEntitlement    = req.RoomClassEntitlement,
-            networkHospitalConfirmed = req.NetworkHospitalConfirmed,
-        };
-        coverageCase.CounsellorDraftJson = System.Text.Json.JsonSerializer.Serialize(draftPayload,
-            new System.Text.Json.JsonSerializerOptions
-            {
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-            });
+        coverageCase.CounsellorDraftJson = BuildCounsellorDraftJson(req);
         coverageCase.IsDraft      = req.IsDraft ?? true;
         coverageCase.DraftSavedAt = DateTime.UtcNow;
 
         // Also write to native DB columns where they exist, so CCMS team sees the data immediately
-        if (!string.IsNullOrWhiteSpace(req.FinancialYearId) &&
-            Guid.TryParse(req.FinancialYearId, out var fyGuid))
-            coverageCase.FinancialYearId = fyGuid;
+        if (!string.IsNullOrWhiteSpace(req.FinancialYearId))
+        {
+            var fyId = await _fyService.ResolveFinancialYearIdAsync(
+                coverageCase.TenantId, req.FinancialYearId, actorUserId, ct);
+            if (fyId.HasValue)
+                coverageCase.FinancialYearId = fyId;
+        }
 
         if (!string.IsNullOrWhiteSpace(req.InsuranceProviderId) &&
             Guid.TryParse(req.InsuranceProviderId, out var provGuid))
@@ -381,6 +381,11 @@ public class CoverageCaseService
         // submit-to-claims guard (which requires a primary policy) is satisfied.
         if (!string.IsNullOrWhiteSpace(req.PolicyNumber))
         {
+            Guid? visitProviderId = null;
+            if (!string.IsNullOrWhiteSpace(req.InsuranceProviderId) &&
+                Guid.TryParse(req.InsuranceProviderId, out var visitProvGuid))
+                visitProviderId = visitProvGuid;
+
             var existingPolicy = await _db.VisitInsurancePolicies
                 .FirstOrDefaultAsync(p => p.CoverageCase_Id == coverageCase.Id
                                        && p.IsPrimary
@@ -397,6 +402,7 @@ public class CoverageCaseService
                     PolicyNumber         = req.PolicyNumber.Trim(),
                     MembershipNumber     = req.MembershipNumber?.Trim(),
                     InsuredName          = req.InsuredName?.Trim(),
+                    InsuranceProviderId  = visitProviderId,
                     RelationshipToInsured = req.RelationshipToInsured?.ToLower(),
                     AccommodationClass   = req.RoomClassEntitlement?.ToLower(),
                     IsPrimary            = true,
@@ -465,6 +471,85 @@ public class CoverageCaseService
         _log.LogInformation(
             "Remind note added for coverage case {Id} (state={State}) by user {UserId}",
             id, coverageCase.CurrentState, actorUserId);
+    }
+
+    /// <summary>
+    /// Builds counsellor draft JSON from PATCH scalars, merging extended fields from the client payload.
+    /// </summary>
+    private static string BuildCounsellorDraftJson(PatchCoverageCaseRequest req)
+    {
+        var serializeOpts = new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
+
+        var draft = new Dictionary<string, object?>
+        {
+            ["insurerName"]              = req.InsurerName,
+            ["policyNumber"]             = req.PolicyNumber,
+            ["membershipNumber"]         = req.MembershipNumber,
+            ["insuredName"]              = req.InsuredName,
+            ["relationshipToInsured"]    = req.RelationshipToInsured,
+            ["sumInsured"]               = req.SumInsured,
+            ["coPay"]                    = req.CoPay,
+            ["policyExpiry"]             = req.PolicyExpiry,
+            ["urgencyLevel"]             = req.UrgencyLevel,
+            ["coverageNotes"]            = req.CoverageNotes,
+            ["clinicalNotes"]            = req.ClinicalNotes,
+            ["tpaContactPerson"]         = req.TpaContactPerson,
+            ["tpaContactEmail"]          = req.TpaContactEmail,
+            ["tpaContactPhone"]          = req.TpaContactPhone,
+            ["surgeryDate"]              = req.SurgeryDate,
+            ["diagnosisCode"]            = req.DiagnosisCode,
+            ["procedureCode"]            = req.ProcedureCode,
+            ["estimatedAmount"]          = req.EstimatedAmount,
+            ["estimatedSurgery"]         = req.EstimatedSurgery,
+            ["estimatedRoom"]            = req.EstimatedRoom,
+            ["estimatedMedicines"]       = req.EstimatedMedicines,
+            ["estimatedLab"]             = req.EstimatedLab,
+            ["estimatedOther"]           = req.EstimatedOther,
+            ["paymentType"]              = req.PaymentType,
+            ["roomClassEntitlement"]     = req.RoomClassEntitlement,
+            ["networkHospitalConfirmed"] = req.NetworkHospitalConfirmed,
+            ["insuranceProviderId"]      = req.InsuranceProviderId,
+        };
+
+        if (!string.IsNullOrWhiteSpace(req.FinancialYearId) &&
+            !Guid.TryParse(req.FinancialYearId, out _))
+            draft["financialYear"] = req.FinancialYearId;
+
+        if (!string.IsNullOrWhiteSpace(req.CounsellorDraftJson))
+        {
+            try
+            {
+                var client = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                    req.CounsellorDraftJson);
+                if (client is not null)
+                {
+                    foreach (var key in new[]
+                    {
+                        "financialYear",
+                        "insuranceProviderId",
+                        "estimateLineItems",
+                        "surgeryProcedureLabel",
+                        "manualCovered",
+                        "serviceTaxApplicable",
+                        "serviceTaxPercent",
+                        "estimateSyncSources",
+                    })
+                    {
+                        if (client.TryGetValue(key, out var val) && val.ValueKind != JsonValueKind.Null)
+                            draft[key] = JsonSerializer.Deserialize<object>(val.GetRawText());
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore malformed client draft — server scalars still persist.
+            }
+        }
+
+        return JsonSerializer.Serialize(draft, serializeOpts);
     }
 
     // ── Admission validation (9-case matrix) ─────────────────────────────────
@@ -579,7 +664,10 @@ public record CreateCoverageCaseRequest(
     Guid?   GovernmentSchemeId,
     Guid?   CoveragePackageId,
     Guid?   LegacyPreauthId,
-    Guid?   SessionPreauthId
+    Guid?   SessionPreauthId,
+    string? InsurerName = null,
+    decimal? EstimatedAmount = null,
+    string? CounsellorDraftJson = null
 );
 
 /// <summary>Payload for PATCH /ccms/coverage-cases/{id} — all fields optional.</summary>
@@ -612,7 +700,8 @@ public record PatchCoverageCaseRequest(
     string?  TpaContactPhone,
     string?  ClinicalNotes,
     string?  PaymentType,
-    bool?    IsDraft
+    bool?    IsDraft,
+    string?  CounsellorDraftJson
 );
 
 public record PagedResult<T>(

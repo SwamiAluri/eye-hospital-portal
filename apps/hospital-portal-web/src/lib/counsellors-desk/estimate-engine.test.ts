@@ -98,6 +98,24 @@ describe('estimate-engine', () => {
     expect(proc?.detail).toBe('LE');
   });
 
+  it('adds procedure line from override price when variant is missing', () => {
+    const result = computeEstimateResult({
+      estimateMode: 'custom',
+      packageTemplate: null,
+      procedure: null,
+      procedureOverridePrice: 95000,
+      iol: null,
+      investigations: [],
+      selectedEye: 'RE',
+      discountType: null,
+      discountValue: 0,
+      settings: { maxDiscountPercent: 50 },
+    });
+    const proc = result.lines.find((l) => l.kind === 'procedure');
+    expect(proc?.amount).toBe(95000);
+    expect(result.finalPayableAmount).toBe(95000);
+  });
+
   it('groupEstimateLinesForDisplay splits procedure, imaging, and labs', () => {
     const grouped = groupEstimateLinesForDisplay([
       { key: 'p', label: 'Phaco', amount: 1, kind: 'procedure', detail: 'RE' },

@@ -19,9 +19,8 @@ import {
   SaveDischargeSummaryRequest,
   UpdateWardAssignmentRequest,
 } from '@/lib/api/ip-management.api';
-import { PreOpTab } from '@/components/ip-management/PreOpTab';
+import { JourneyPreOpSummary } from '@/components/ip-management/JourneyPreOpSummary';
 import { ChecklistPhaseStatusChips } from '@/components/ip-management/ChecklistPhaseStatusChips';
-import { useUserDepartment } from '@/hooks/useUserDepartment';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -277,8 +276,6 @@ export default function JourneyDetailPage() {
   const searchParams = useSearchParams();
   const id = params?.id as string;
 
-  const { primaryDeptCode: currentUserDeptCode } = useUserDepartment();
-
   const [journey, setJourney] = useState<PatientJourneyDetailDto | null>(null);
   const [billing, setBilling] = useState<BillingTransactionDto[]>([]);
   const [intraOp, setIntraOp] = useState<IntraOpNoteDto | null>(null);
@@ -481,7 +478,10 @@ export default function JourneyDetailPage() {
             )}
           </div>
           <div className="mt-2">
-            <ChecklistPhaseStatusChips phaseStatus={journey.checklistPhaseStatus} />
+            <ChecklistPhaseStatusChips
+              phaseStatus={journey.checklistPhaseStatus}
+              investigationSummary={journey.investigationPhaseSummary}
+            />
           </div>
         </div>
 
@@ -748,13 +748,13 @@ export default function JourneyDetailPage() {
           )}
 
           {/* ── PRE-OP ────────────────────────────────────────── */}
-          {activeTab === 'preop' && (
-            <PreOpTab
+          {activeTab === 'preop' && journey && (
+            <JourneyPreOpSummary
               journeyId={id}
+              counselingSessionId={journey.counselingSessionId}
+              paymentMode={journey.paymentMode ?? undefined}
               clinicalState={journey.clinicalState}
-              branchId={journey.branchId}
-              isLocked={journey.isLocked}
-              currentUserDeptCode={currentUserDeptCode}
+              onOpenWorkspace={() => router.push('/dashboard/ip-management/ward')}
             />
           )}
 

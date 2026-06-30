@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AreaChart,
   Area,
@@ -31,6 +31,11 @@ export function AdminIamPanel({
   useEffect(() => {
     setChartsReady(true);
   }, []);
+
+  const departmentChartData = useMemo(
+    () => breakdownStats?.departmentStats.slice(0, 8) ?? [],
+    [breakdownStats?.departmentStats],
+  );
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -138,7 +143,7 @@ export function AdminIamPanel({
         </div>
       </div>
 
-      {chartsReady && breakdownStats && breakdownStats.departmentStats.length > 0 && (
+      {chartsReady && departmentChartData.length > 0 && (
         <div className="lg:col-span-2 bg-white border border-gray-200 rounded-2xl p-5 min-w-0">
           <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-3">
             Staff by department (top 10)
@@ -146,7 +151,7 @@ export function AdminIamPanel({
           <div className="h-48 min-w-0 w-full" aria-label="Department staff distribution">
             <ResponsiveContainer width="100%" height={192}>
               <BarChart
-                data={breakdownStats.departmentStats.slice(0, 8)}
+                data={departmentChartData}
                 layout="vertical"
                 margin={{ left: 80 }}
               >

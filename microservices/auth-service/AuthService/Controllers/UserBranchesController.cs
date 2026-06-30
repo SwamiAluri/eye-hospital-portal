@@ -55,6 +55,23 @@ namespace AuthService.Controllers
         }
 
         /// <summary>
+        /// Branches assigned to the current authenticated user (Patient Hub branch switcher).
+        /// GET /api/user-branches/me
+        /// </summary>
+        [HttpGet("me")]
+        public async Task<IActionResult> GetMyBranches()
+        {
+            if (!TryGetTenantId(out var tenantId))
+                return BadRequest(new { message = "TenantId missing" });
+
+            var userId = GetCurrentUserId();
+            if (userId == Guid.Empty)
+                return Unauthorized(new { message = "Current user ID not found" });
+
+            return await GetUserBranchesInternal(tenantId, userId);
+        }
+
+        /// <summary>
         /// Get all branch assignments for a specific user
         /// GET /api/user-branches/user/{userId}
         /// </summary>
@@ -65,6 +82,11 @@ namespace AuthService.Controllers
             if (!TryGetTenantId(out var tenantId))
                 return BadRequest(new { message = "TenantId missing" });
 
+            return await GetUserBranchesInternal(tenantId, userId);
+        }
+
+        private async Task<IActionResult> GetUserBranchesInternal(Guid tenantId, Guid userId)
+        {
             var userBranches = await _context.Set<UserBranch>()
                 .Where(ub => ub.UserId == userId && ub.TenantId == tenantId && ub.Status == "active")
                 .Join(_context.Set<Branch>(),

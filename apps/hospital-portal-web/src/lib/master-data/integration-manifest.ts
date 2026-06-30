@@ -98,7 +98,18 @@ export const MASTER_ENTITY_INTEGRATIONS: MasterEntityIntegration[] = [
   { entityType: 'billing.transaction_type', groupKey: 'billing_finance', status: 'wired', usedBy: ['PaymentCollectionWidget', 'useTransactionTypes'] },
 
   // ── Insurance ────────────────────────────────────────────────────────────
-  { entityType: 'insurance.provider', groupKey: 'insurance', status: 'wired', usedBy: ['NewPatientModal', 'counsellor', 'CCMS payer alignment'] },
+  {
+    entityType: 'insurance.provider',
+    groupKey: 'insurance',
+    status: 'wired',
+    usedBy: [
+      'NewPatientModal',
+      'CounsellingPaymentSection',
+      'CoveragePreauthPanel',
+      'PolicyExtractionReview',
+      'CCMS payer alignment',
+    ],
+  },
   { entityType: 'insurance.tpa_provider', groupKey: 'insurance', status: 'wired', usedBy: ['CoveragePreauthPanel', 'VisitPolicyForm', 'useTpaProviderMaster'] },
   { entityType: 'insurance.govt_scheme', groupKey: 'insurance', status: 'wired', usedBy: ['CoveragePreauthPanel', 'useGovtSchemeMaster'] },
   { entityType: 'insurance.type', groupKey: 'insurance', status: 'wired', usedBy: ['ccms/cases', 'useInsuranceTypeMaster'] },

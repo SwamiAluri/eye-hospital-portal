@@ -12,6 +12,13 @@ public static class ClinicalState
     public const string PostOp             = "PostOp";
     public const string ReadyForDischarge  = "ReadyForDischarge";
     public const string Discharged         = "Discharged";
+
+    /// <summary>
+    /// Off-ramp branch (Phase 1). A cancelled surgical case parks here instead of
+    /// silently reverting to Expected; the only exit is Rebook → Expected.
+    /// Not part of the forward graph.
+    /// </summary>
+    public const string CancelledSurgery   = "CancelledSurgery";
 }
 
 /// <summary>Values for patient_journey.ot_state</summary>

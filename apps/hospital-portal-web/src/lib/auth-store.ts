@@ -21,9 +21,11 @@ interface AuthState {
   permissions: string[];
   isLoading: boolean;
   mustChangePassword: boolean;
+  selectedBranchId: string | null;
   
   // Actions
   setAuth: (token: string, refreshToken: string, user: User, roles: string[], permissions: string[], tenantId: string, mustChangePassword: boolean) => void;
+  setSelectedBranchId: (branchId: string | null) => void;
   logout: () => Promise<void>;
   clearMustChangePassword: () => void;
   hasPermission: (permissionCode: string) => boolean;
@@ -39,6 +41,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   permissions: [],
   isLoading: false,
   mustChangePassword: false,
+  selectedBranchId: null,
 
   setAuth: (token, refreshToken, user, roles, permissions, tenantId, mustChangePassword) => {
     set({
@@ -61,6 +64,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.setItem('tenant_id', tenantId);
     }
   },
+
+  setSelectedBranchId: (branchId) => set({ selectedBranchId: branchId }),
 
   logout: async () => {
     // Call backend logout endpoint to log the audit event
@@ -85,6 +90,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       roles: [],
       permissions: [],
       mustChangePassword: false,
+      selectedBranchId: null,
     });
     
     if (typeof window !== 'undefined') {

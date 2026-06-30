@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { Check, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import {
@@ -14,6 +14,7 @@ import {
   ROLLUP_DRILLDOWN_TARGETS,
   type OutpatientIntegrationContext,
 } from '@/lib/ip-checklist/outpatient-integration';
+import type { OutpatientChecklistHandle } from '@/components/counsellors-desk/outpatient-checklist-handle';
 import { OutpatientChecklistRollup } from './OutpatientChecklistRollup';
 
 export interface CounsellorOutpatientChecklistProps {
@@ -23,21 +24,25 @@ export interface CounsellorOutpatientChecklistProps {
   showRollup?: boolean;
 }
 
-export function CounsellorOutpatientChecklist({
-  counselingSessionId,
-  readOnly = false,
-  integrationContext,
-  showRollup = false,
-}: CounsellorOutpatientChecklistProps) {
+export const CounsellorOutpatientChecklist = forwardRef<
+  OutpatientChecklistHandle,
+  CounsellorOutpatientChecklistProps
+>(function CounsellorOutpatientChecklist(
+  { counselingSessionId, readOnly = false, integrationContext, showRollup = false },
+  ref,
+) {
   const [checklist, setChecklist] = useState<CounsellorOutpatientChecklistDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [applyingSuggestions, setApplyingSuggestions] = useState(false);
 
-  const ctx: OutpatientIntegrationContext = useMemo(() => ({
-    sessionId: counselingSessionId,
-    ...integrationContext,
-  }), [counselingSessionId, integrationContext]);
+  const ctx: OutpatientIntegrationContext = useMemo(
+    () => ({
+      sessionId: counselingSessionId,
+      ...integrationContext,
+    }),
+    [counselingSessionId, integrationContext],
+  );
 
   const { hints } = useOutpatientChecklistHints(ctx);
 
@@ -60,11 +65,40 @@ export function CounsellorOutpatientChecklist({
   const pendingSuggestions = useMemo(() => {
     if (!checklist) return [];
     return checklist.items
-      .filter(item => !item.isCompleted && !item.isBypassed)
-      .map(item => ({ item, hint: hintForItem(hints, item.itemKey) }))
-      .filter((x): x is { item: typeof x.item; hint: NonNullable<typeof x.hint> } =>
-        Boolean(x.hint?.suggestedComplete));
+      .filter((item) => !item.isCompleted && !item.isBypassed)
+      .map((item) => ({ item, hint: hintForItem(hints, item.itemKey) }))
+      .filter(
+        (x): x is { item: typeof x.item; hint: NonNullable<typeof x.hint> } =>
+          Boolean(x.hint?.suggestedComplete),
+      );
   }, [checklist, hints]);
+
+  const flushDraft = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (readOnly || pendingSuggestions.length === 0) return true;
+      setApplyingSuggestions(true);
+      let applied = 0;
+      for (const { item, hint } of pendingSuggestions) {
+        const updated = await ipManagementApi.saveCounsellorOutpatientCompletion(
+          counselingSessionId,
+          item.itemId,
+          { isCompleted: true, notes: `Auto-suggested from ${hint.source}` },
+        );
+        if (updated) {
+          setChecklist(updated);
+          applied++;
+        }
+      }
+      setApplyingSuggestions(false);
+      if (applied > 0 && !options?.silent) {
+        toast.success(`Applied ${applied} integration suggestion(s)`);
+      }
+      return applied > 0 || pendingSuggestions.length === 0;
+    },
+    [readOnly, pendingSuggestions, counselingSessionId],
+  );
+
+  useImperativeHandle(ref, () => ({ flushDraft }), [flushDraft]);
 
   async function toggleItem(itemId: string, currentlyDone: boolean) {
     if (readOnly) return;
@@ -83,23 +117,7 @@ export function CounsellorOutpatientChecklist({
   }
 
   async function applyAllSuggestions() {
-    if (readOnly || pendingSuggestions.length === 0) return;
-    setApplyingSuggestions(true);
-    let applied = 0;
-    for (const { item, hint } of pendingSuggestions) {
-      const updated = await ipManagementApi.saveCounsellorOutpatientCompletion(
-        counselingSessionId,
-        item.itemId,
-        { isCompleted: true, notes: `Auto-suggested from ${hint.source}` },
-      );
-      if (updated) {
-        setChecklist(updated);
-        applied++;
-      }
-    }
-    setApplyingSuggestions(false);
-    if (applied > 0) toast.success(`Applied ${applied} integration suggestion(s)`);
-    else toast.error('Could not apply suggestions');
+    await flushDraft({ silent: false });
   }
 
   if (loading) {
@@ -127,7 +145,7 @@ export function CounsellorOutpatientChecklist({
       {showRollup && rollupCards.length > 0 && (
         <OutpatientChecklistRollup
           cards={rollupCards}
-          onCardClick={key => {
+          onCardClick={(key) => {
             const targetKey = ROLLUP_DRILLDOWN_TARGETS[key];
             const el = document.querySelector(`[data-outpatient-item="${targetKey}"]`);
             el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -145,16 +163,12 @@ export function CounsellorOutpatientChecklist({
         </span>
       </div>
 
-      <p className="text-xs text-counselling-muted-foreground">
-        Informational items for pre-operative readiness. Completed items sync to ward on admission.
-      </p>
-
       {!readOnly && pendingSuggestions.length > 0 && (
         <button
           type="button"
           disabled={applyingSuggestions}
           onClick={applyAllSuggestions}
-          className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 hover:bg-indigo-100 disabled:opacity-50"
+          className="flex items-center gap-1.5 text-xs font-medium text-counselling-primary bg-counselling-accent border border-counselling-primary/30 rounded-lg px-3 py-1.5 hover:bg-counselling-accent/80 disabled:opacity-50"
         >
           <Sparkles className="h-3.5 w-3.5" />
           {applyingSuggestions
@@ -163,7 +177,7 @@ export function CounsellorOutpatientChecklist({
         </button>
       )}
 
-      <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 overflow-hidden">
+      <ul className="divide-y divide-counselling-border overflow-hidden rounded-2xl border border-counselling-border">
         {checklist.items.map((item) => {
           const done = item.isCompleted || item.isBypassed;
           const isSaving = savingItemId === item.itemId;
@@ -175,7 +189,7 @@ export function CounsellorOutpatientChecklist({
               data-outpatient-item={item.itemKey}
               className={[
                 'flex items-start gap-3 px-3 py-2.5 transition-colors',
-                done ? 'bg-green-50/60' : 'bg-white',
+                done ? 'bg-counselling-accent/50' : 'bg-counselling-card',
               ].join(' ')}
             >
               <button
@@ -185,8 +199,8 @@ export function CounsellorOutpatientChecklist({
                 className={[
                   'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
                   done
-                    ? 'border-green-600 bg-green-600 text-white'
-                    : 'border-gray-300 bg-white hover:border-green-500',
+                    ? 'border-counselling-primary bg-counselling-primary text-white'
+                    : 'border-counselling-border bg-counselling-card hover:border-counselling-primary',
                   readOnly ? 'cursor-default opacity-70' : 'cursor-pointer',
                   isSaving ? 'opacity-50' : '',
                 ].join(' ')}
@@ -201,14 +215,16 @@ export function CounsellorOutpatientChecklist({
               </button>
 
               <div className="min-w-0 flex-1">
-                <p className={`text-sm ${done ? 'text-gray-700' : 'text-gray-900'}`}>
+                <p className={`text-sm ${done ? 'text-counselling-muted-foreground' : 'text-counselling-foreground'}`}>
                   {item.itemLabel}
                 </p>
                 {item.description && (
-                  <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
+                  <p className="text-xs text-counselling-muted-foreground mt-0.5">{item.description}</p>
                 )}
                 {hint && (
-                  <p className={`text-[10px] mt-1 ${hint.suggestedComplete ? 'text-indigo-600' : 'text-gray-400'}`}>
+                  <p
+                    className={`text-[10px] mt-1 ${hint.suggestedComplete ? 'text-counselling-primary' : 'text-counselling-muted-foreground/80'}`}
+                  >
                     {hint.label}
                     {hint.detail ? ` · ${hint.detail}` : ''}
                   </p>
@@ -225,4 +241,4 @@ export function CounsellorOutpatientChecklist({
       </ul>
     </div>
   );
-}
+});

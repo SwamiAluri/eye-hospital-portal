@@ -12,11 +12,16 @@ public class MedicationLogService
 
     private readonly IpManagementDbContext           _db;
     private readonly ChecklistPhaseStatusService     _phaseStatus;
+    private readonly JourneyMutationGuardService     _mutationGuard;
 
-    public MedicationLogService(IpManagementDbContext db, ChecklistPhaseStatusService phaseStatus)
+    public MedicationLogService(
+        IpManagementDbContext db,
+        ChecklistPhaseStatusService phaseStatus,
+        JourneyMutationGuardService mutationGuard)
     {
-        _db          = db;
-        _phaseStatus = phaseStatus;
+        _db            = db;
+        _phaseStatus   = phaseStatus;
+        _mutationGuard = mutationGuard;
     }
 
     public async Task<MedicationLogDto> GetMedicationLogAsync(Guid journeyId, Guid tenantId)
@@ -38,7 +43,7 @@ public class MedicationLogService
     public async Task<MedicationLogDto> AddDrugAsync(
         Guid journeyId, Guid tenantId, Guid userId, AddMedicationDrugRequest req)
     {
-        await RequireJourneyAsync(journeyId, tenantId);
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
 
         var name = req.MedicineName?.Trim();
         if (string.IsNullOrWhiteSpace(name))
@@ -86,7 +91,7 @@ public class MedicationLogService
     public async Task<MedicationLogDto> SaveDoseAsync(
         Guid journeyId, Guid doseId, Guid tenantId, Guid userId, SaveMedicationDoseRequest req)
     {
-        await RequireJourneyAsync(journeyId, tenantId);
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
 
         var row = await _db.PreOpMedicationLogs.FirstOrDefaultAsync(m =>
                       m.Id == doseId
@@ -119,7 +124,7 @@ public class MedicationLogService
     public async Task<MedicationLogDto> RemoveDrugAsync(
         Guid journeyId, Guid tenantId, string medicineName)
     {
-        await RequireJourneyAsync(journeyId, tenantId);
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
 
         var name = medicineName.Trim();
         var rows = await _db.PreOpMedicationLogs
@@ -148,6 +153,7 @@ public class MedicationLogService
     public async Task<MedicationLogDto> UpdateMetaAsync(
         Guid journeyId, Guid tenantId, Guid userId, UpdateMedicationLogMetaRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var journey = await RequireJourneyAsync(journeyId, tenantId);
 
         if (req.AnaesthesiaType != null)

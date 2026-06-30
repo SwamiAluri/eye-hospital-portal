@@ -125,6 +125,10 @@ export function buildWardIntegrationHints(
       hints.push({ itemKey: key, source: 'lab', suggestedComplete: true, label: 'Vitals recorded' });
     }
 
+    if (key === 'vitals_checked' && data.hasRecentVitals) {
+      hints.push({ itemKey: key, source: 'lab', suggestedComplete: true, label: 'Vitals recorded' });
+    }
+
     if (key === 'postop_medication_prescribed' && data.hasActivePrescription) {
       hints.push({ itemKey: key, source: 'lab', suggestedComplete: false, label: 'Active prescription on file' });
     }

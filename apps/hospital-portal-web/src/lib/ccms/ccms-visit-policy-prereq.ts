@@ -1,6 +1,9 @@
 import type { PreAuthorization } from '@/lib/api/ccms/ccms-authorizations.api';
 import type { VisitPolicy, CreateVisitPolicyRequest, AccommodationClass } from '@/lib/api/ccms/visit-policies.api';
 import type { CounsellorDraftSnapshot } from '@/lib/api/ccms/parse-counsellor-draft';
+import type { CoveragePanelForm } from '@/lib/counsellors-desk/coverage-form-mappers';
+import { isCcmsUuid } from '@/lib/ccms/ccms-ids';
+import { relationshipApiValue } from '@/lib/ccms/relationship-api-map';
 
 /** Backend requires a row in ccms_visit_insurance_policies with is_primary = true. */
 export function hasDbPrimaryVisitPolicy(policies: VisitPolicy[]): boolean {
@@ -39,6 +42,35 @@ export function buildVisitPolicyFromDraft(
     accommodationClass: mapDraftRoomClass(draft.roomClassEntitlement),
     isPrimary: opts?.markPrimary ?? true,
     serviceTaxApplicable: Boolean((draft as { serviceTaxApplicable?: boolean }).serviceTaxApplicable),
+  };
+}
+
+/** Build a create-policy payload from the coverage panel form (counsellor workflow). */
+export function buildVisitPolicyFromCoverageForm(
+  caseId: string,
+  form: CoveragePanelForm,
+  opts?: { markPrimary?: boolean; sessionId?: string },
+): CreateVisitPolicyRequest | null {
+  const policyNumber = form.policyNumber?.trim();
+  if (!policyNumber) return null;
+
+  const relationship = form.relationshipToInsured
+    ? relationshipApiValue(form.relationshipToInsured)
+    : 'self';
+
+  return {
+    coverageCaseId: caseId,
+    sessionId: opts?.sessionId,
+    policyNumber,
+    membershipNumber: form.membershipNumber?.trim() || undefined,
+    insuredName: form.insuredName?.trim() || undefined,
+    insuranceProviderId: isCcmsUuid(form.insuranceProviderId)
+      ? form.insuranceProviderId
+      : undefined,
+    relationshipToInsured: relationship,
+    accommodationClass: mapDraftRoomClass(form.roomClassEntitlement),
+    isPrimary: opts?.markPrimary ?? true,
+    serviceTaxApplicable: Boolean(form.serviceTaxApplicable),
   };
 }
 

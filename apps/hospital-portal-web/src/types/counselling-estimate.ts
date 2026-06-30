@@ -12,6 +12,9 @@ export interface CounsellingPackageAddonsBlob {
   decision?: string;
   paymentType?: string;
   insuranceCompany?: string;
+  insuranceProviderId?: string;
+  tpaProviderId?: string;
+  governmentSchemeId?: string;
   followUpDate?: string;
   schedule?: unknown;
   patientRemarks?: string;

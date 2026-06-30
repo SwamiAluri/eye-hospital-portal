@@ -105,6 +105,7 @@ export function useCounsellingEstimate(
         packageTemplate: activeTemplate,
         procedure: selectedProcedure,
         procedureOverridePrice: params.procedureOverridePrice,
+        procedureFallbackLabel: selectedProcedure?.name,
         iol: selectedIol,
         investigations: investigationsList,
         selectedEye: params.selectedEye,

@@ -176,6 +176,7 @@ async Task SeedBasicDataForTestingAsync(AppDbContext context)
                     new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "GLAUCOMA", DepartmentName = "Glaucoma", DepartmentType = "Clinical", Description = "Glaucoma diagnosis, laser therapy, surgical management", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                     new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "CORNEA", DepartmentName = "Cornea", DepartmentType = "Clinical", Description = "Corneal transplants, keratoconus, corneal diseases", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                     new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "CATARACT", DepartmentName = "Cataract", DepartmentType = "Clinical", Description = "Cataract surgery, phacoemulsification, IOL implantation", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "REFRACTIVE", DepartmentName = "LASIK & Refractive Surgery", DepartmentType = "Clinical", Description = "LASIK, PRK, SMILE and refractive surgical procedures", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                     new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "PEDIATRIC", DepartmentName = "Pediatric Ophthalmology", DepartmentType = "Clinical", Description = "Pediatric eye care, squint surgery, amblyopia treatment", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                     new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "OCULOPLASTY", DepartmentName = "Oculoplasty", DepartmentType = "Clinical", Description = "Eyelid surgery, orbital surgery, cosmetic procedures", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                     new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "NEURO_OPHTH", DepartmentName = "Neuro-Ophthalmology", DepartmentType = "Clinical", Description = "Optic nerve disorders, visual pathway diseases", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
@@ -329,6 +330,7 @@ async Task SeedBasicDataForTestingAsync(AppDbContext context)
                         new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "GLAUCOMA", DepartmentName = "Glaucoma", DepartmentType = "Clinical", Description = "Glaucoma diagnosis, laser therapy, surgical management", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                         new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "CORNEA", DepartmentName = "Cornea", DepartmentType = "Clinical", Description = "Corneal transplants, keratoconus, corneal diseases", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                         new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "CATARACT", DepartmentName = "Cataract", DepartmentType = "Clinical", Description = "Cataract surgery, phacoemulsification, IOL implantation", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                        new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "REFRACTIVE", DepartmentName = "LASIK & Refractive Surgery", DepartmentType = "Clinical", Description = "LASIK, PRK, SMILE and refractive surgical procedures", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                         new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "PEDIATRIC", DepartmentName = "Pediatric Ophthalmology", DepartmentType = "Clinical", Description = "Pediatric eye care, squint surgery, amblyopia treatment", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                         new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "OCULOPLASTY", DepartmentName = "Oculoplasty", DepartmentType = "Clinical", Description = "Eyelid surgery, orbital surgery, cosmetic procedures", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                         new Department { Id = Guid.NewGuid(), TenantId = testTenantId, BranchId = null, ParentDepartmentId = doctorDept.Id, DepartmentCode = "NEURO_OPHTH", DepartmentName = "Neuro-Ophthalmology", DepartmentType = "Clinical", Description = "Optic nerve disorders, visual pathway diseases", Status = "Active", Is24x7 = false, RequiresApproval = false, DepartmentLevel = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
@@ -587,6 +589,9 @@ try
             Description = "ASP.NET Core 8.0 API for Hospital Management System"
         });
         
+        // Avoid schema ID collisions when multiple types share the same class name (e.g. RescheduleRequest).
+        c.CustomSchemaIds(t => t.FullName?.Replace("+", ".") ?? t.Name);
+
         // Handle multiple actions with same HTTP method and route
         c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
         
@@ -758,6 +763,15 @@ try
     // builder.Services.AddScoped<IAppointmentService, CachedAppointmentService>(); // Disabled - interface mismatch
     builder.Services.AddScoped<IAppointmentService, AppointmentService>();
     builder.Services.AddScoped<IPatientService, PatientService>();
+    builder.Services.AddScoped<IPatientMergeService, PatientMergeService>();
+    builder.Services.AddScoped<IAcuityScoringService, AcuityScoringService>();
+    builder.Services.AddScoped<IPatientEngagementService, PatientEngagementService>();
+    builder.Services.AddScoped<IPatientLookupService, PatientLookupService>();
+    builder.Services.AddScoped<IPatientOmniSearchService, PatientOmniSearchService>();
+    builder.Services.AddScoped<IPatientRecentViewsService, PatientRecentViewsService>();
+    builder.Services.AddScoped<IPatientSummaryService, PatientSummaryService>();
+    builder.Services.AddScoped<IPatientSummaryPdfService, PatientSummaryPdfService>();
+    builder.Services.AddScoped<IUserChartLayoutService, UserChartLayoutService>();
     builder.Services.AddScoped<IPatientDuplicateDetectionService, PatientDuplicateDetectionService>(); // Feb 2026 - Duplicate prevention
     builder.Services.AddScoped<INotificationService, NotificationService>();
     builder.Services.AddScoped<INotificationClient, NotificationClient>(); // Notification microservice client

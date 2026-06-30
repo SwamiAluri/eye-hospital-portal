@@ -553,6 +553,20 @@ namespace AuthService.Services
                 Make("clinical","clinical.scan_type","ERG","Electroretinography (ERG)",8),
                 Make("clinical","clinical.scan_type","VEP","Visual Evoked Potential (VEP)",9),
 
+                // HPI template categories (pills in metadata)
+                Make("clinical","clinical.hpi_category","onset","Onset",1,false,@"{""pills"":[""Sudden"",""Gradual"",""Since childhood"",""Since yesterday"",""Since weeks"",""Since months""]}"),
+                Make("clinical","clinical.hpi_category","duration","Duration",2,false,@"{""pills"":[""Hours"",""Days"",""Weeks"",""Months"",""Years"",""Intermittent""]}"),
+                Make("clinical","clinical.hpi_category","quality","Quality",3,false,@"{""pills"":[""Blurring"",""Pain"",""Redness"",""Discharge"",""Floaters"",""Flashes"",""Diplopia""]}"),
+                Make("clinical","clinical.hpi_category","severity","Severity",4,false,@"{""pills"":[""Mild"",""Moderate"",""Severe"",""Worse in morning"",""Worse in evening""]}"),
+                Make("clinical","clinical.hpi_category","timing","Timing",5,false,@"{""pills"":[""Constant"",""Intermittent"",""Progressive"",""Stable"",""Improving""]}"),
+                Make("clinical","clinical.hpi_category","context","Context",6,false,@"{""pills"":[""After trauma"",""Post-surgery"",""After screen use"",""After injury"",""No trigger""]}"),
+                Make("clinical","clinical.hpi_category","modifiers","Modifying factors",7,false,@"{""pills"":[""Better with rest"",""Worse with reading"",""Relieved by drops"",""Not relieved by OTC""]}"),
+                Make("clinical","clinical.hpi_category","associated","Associated symptoms",8,false,@"{""pills"":[""Headache"",""Nausea"",""Photophobia"",""Lacrimation"",""Halos"",""Night blindness""]}"),
+
+                // PE quick-note templates
+                Make("clinical","clinical.pe_template","anterior","Anterior Segment",1,false,@"{""sections"":[""Lids"",""Conjunctiva"",""Cornea"",""AC"",""Iris"",""Lens""]}"),
+                Make("clinical","clinical.pe_template","posterior","Posterior Segment",2,false,@"{""sections"":[""Vitreous"",""Disc"",""Macula"",""Vessels"",""Periphery""]}"),
+
                 // ── Appointments ─────────────────────────────────────────────────
                 Make("appointments","appointment.type","OPD","OPD Consultation",1),
                 Make("appointments","appointment.type","REVIEW","Review",2),

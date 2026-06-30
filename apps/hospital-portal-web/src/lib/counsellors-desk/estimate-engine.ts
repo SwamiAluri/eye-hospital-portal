@@ -39,6 +39,7 @@ export interface ComputeEstimateInput {
   packageTemplate: CounsellingPackageTemplate | null;
   procedure: CounsellorProcedureVariant | null;
   procedureOverridePrice?: number | null;
+  procedureFallbackLabel?: string | null;
   iol: IolMasterDto | null;
   investigations: InvestigationItem[];
   selectedEye?: 'RE' | 'LE' | 'BE';
@@ -133,6 +134,7 @@ export function computeDiscountAmount(params: {
 export function computeItemizedLines(input: {
   procedure: CounsellorProcedureVariant | null;
   procedureOverridePrice?: number | null;
+  procedureFallbackLabel?: string | null;
   iol: IolMasterDto | null;
   investigations: InvestigationItem[];
   defaultEye?: 'RE' | 'LE' | 'BE';
@@ -148,6 +150,17 @@ export function computeItemizedLines(input: {
     lines.push({
       key: 'procedure',
       label: sanitizeVariantName(input.procedure.name),
+      detail: input.defaultEye ?? 'RE',
+      amount,
+      kind: 'procedure',
+    });
+    subtotal += amount;
+  } else if (input.procedureOverridePrice != null && input.procedureOverridePrice > 0) {
+    const amount = input.procedureOverridePrice;
+    const label = sanitizeVariantName(input.procedureFallbackLabel?.trim() || 'Procedure');
+    lines.push({
+      key: 'procedure',
+      label,
       detail: input.defaultEye ?? 'RE',
       amount,
       kind: 'procedure',
@@ -184,6 +197,7 @@ export function computeEstimateResult(input: ComputeEstimateInput): ComputeEstim
   const { lines, subtotal: itemizedSubtotal } = computeItemizedLines({
     procedure: input.procedure,
     procedureOverridePrice: input.procedureOverridePrice,
+    procedureFallbackLabel: input.procedureFallbackLabel ?? input.procedure?.name,
     iol: input.iol,
     investigations: input.investigations,
     defaultEye: input.selectedEye,
@@ -340,11 +354,19 @@ export function mergeEstimateState(
   base: CounsellingEstimateState,
   computed: ComputeEstimateResult,
 ): CounsellingEstimateState {
+  const hasProcedureLine = computed.lines.some(
+    (line) => line.kind === 'procedure' || line.kind === 'iol',
+  );
+  const savedFinal = base.finalPayableAmount ?? 0;
+  const liveFinal = computed.finalPayableAmount;
+  const finalPayableAmount =
+    !hasProcedureLine && savedFinal > liveFinal ? savedFinal : liveFinal;
+
   return {
     ...base,
     itemizedSubtotal: computed.itemizedSubtotal,
     bundleSavings: computed.bundleSavings,
     discountAmount: computed.discount.discountAmount,
-    finalPayableAmount: computed.finalPayableAmount,
+    finalPayableAmount,
   };
 }

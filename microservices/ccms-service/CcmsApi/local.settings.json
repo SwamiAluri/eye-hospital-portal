@@ -11,7 +11,11 @@
     "IpService__BaseUrl": "http://localhost:5074",
     "IpService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
     "NotificationService__BaseUrl": "http://localhost:7073",
-    "NotificationService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026"
+    "NotificationService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
+    "OpenAI__ApiKey": "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",
+    "OpenAI__Model": "gpt-4.1-mini",
+    "OpenAI__VisionModel": "gpt-4.1-mini",
+    "PolicyExtraction__Enabled": "true"
   },
   "Host": {
     "LocalHttpPort": 7075,

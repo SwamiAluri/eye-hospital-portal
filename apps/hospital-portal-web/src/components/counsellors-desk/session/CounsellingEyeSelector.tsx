@@ -50,6 +50,7 @@ export function CounsellingEyeSelector({
             labels={EYE_LABELS}
             disabled={isDisabled}
             onChange={onChange}
+            size="sm"
             optionTestIds={{
               RE: counsellingTestIds.eyeRe,
               LE: counsellingTestIds.eyeLe,
@@ -77,6 +78,7 @@ export function CounsellingEyeSelector({
         labels={EYE_LABELS}
         disabled={isDisabled}
         onChange={onChange}
+        size="sm"
         optionTestIds={{
           RE: counsellingTestIds.eyeRe,
           LE: counsellingTestIds.eyeLe,

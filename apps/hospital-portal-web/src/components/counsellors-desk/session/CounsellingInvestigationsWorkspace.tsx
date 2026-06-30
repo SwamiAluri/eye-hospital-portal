@@ -22,8 +22,9 @@ import {
   CounsellingSeparator,
   CounsellingSkeleton,
 } from '@/components/counsellors-desk/session/primitives';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { formatInr } from '@/lib/counsellors-desk/package-preview';
-import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import type { InvestigationItem, MasterCatalogItem } from '@/types/counsellors-desk';
 
 type InvTab = 'imaging_orders' | 'required_investigations';
@@ -149,13 +150,13 @@ function CategorySection({
 
   return (
     <div>
-      <div className="mb-1.5 flex items-center gap-1.5 px-1">
-        {Icon ? <Icon size={14} className="text-counselling-primary" /> : <FolderOpen size={14} className="text-counselling-muted-foreground/80" />}
+      <div className="mb-1 flex items-center gap-1.5 px-1">
+        {Icon ? <Icon size={13} className="text-counselling-primary" /> : <FolderOpen size={13} className="text-counselling-muted-foreground/80" />}
         <p className="text-xs font-semibold text-counselling-muted-foreground">{title}</p>
         <span className="text-[10px] text-counselling-muted-foreground/70">({items.length})</span>
       </div>
-      <CounsellingSeparator className="mb-2 bg-counselling-border" />
-      <div className="space-y-1">
+      <CounsellingSeparator className="mb-1 bg-counselling-border" />
+      <div className={counsellingSessionTokens.catalogListGap}>
         {items.map((item) => {
           const inv = selectedInvestigations.get(item.id);
           return (
@@ -258,10 +259,10 @@ export function CounsellingInvestigationsWorkspace({
   const listContent = (
     <>
       {masterCatalogLoading && (
-        <div className="space-y-2 py-2">
-          <CounsellingSkeleton className="h-10 w-full" />
-          <CounsellingSkeleton className="h-10 w-full" />
-          <CounsellingSkeleton className="h-10 w-full" />
+        <div className={`${counsellingSessionTokens.catalogListGap} py-2`}>
+          <CounsellingSkeleton className={`${counsellingSessionTokens.catalogInput} w-full`} />
+          <CounsellingSkeleton className={`${counsellingSessionTokens.catalogInput} w-full`} />
+          <CounsellingSkeleton className={`${counsellingSessionTokens.catalogInput} w-full`} />
         </div>
       )}
 
@@ -287,15 +288,14 @@ export function CounsellingInvestigationsWorkspace({
           }
         />
       ) : !masterCatalogLoading && !masterCatalogError ? (
-        <div className="max-h-80 overflow-y-auto overscroll-contain pr-1">
-          <div className="space-y-4">
-            {packageItems.length > 0 && (
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-2">
-                <p className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-semibold text-indigo-800">
-                  <Package size={14} />
-                  Included in package
-                </p>
-                <div className="space-y-1">
+        <div className={counsellingSessionTokens.catalogCategoryGap}>
+          {packageItems.length > 0 && (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-2">
+              <p className="mb-1 flex items-center gap-1.5 px-1 text-xs font-semibold text-indigo-800">
+                <Package size={13} />
+                Included in Package
+              </p>
+              <div className={counsellingSessionTokens.catalogListGap}>
                   {packageItems.map((item) => {
                     const inv = selectedInvestigations.get(item.id);
                     return (
@@ -328,7 +328,6 @@ export function CounsellingInvestigationsWorkspace({
                 }}
               />
             ))}
-          </div>
         </div>
       ) : null}
     </>
@@ -337,44 +336,48 @@ export function CounsellingInvestigationsWorkspace({
   const content = (
     <>
       {selectedInvestigations.size > 0 && (
-        <div className="mb-3 flex min-h-11 items-center justify-between gap-2 rounded-lg border border-counselling-primary/30 bg-counselling-accent/60 px-3 py-2">
+        <div className="mb-2 flex min-h-9 items-center justify-between gap-2 rounded-lg border border-counselling-primary/30 bg-counselling-accent/60 px-3 py-1.5">
           <p className="text-xs text-counselling-accent-foreground">
             <span className="font-semibold">{selectedInvestigations.size}</span> selected ·{' '}
             <span className="font-bold tabular-nums">{formatInr(selectionTotal)}</span>
           </p>
           {!isReadOnly && (
             <CounsellingButton type="button" variant="outline" size="sm" onClick={onClearAll}>
-              Clear all
+              Clear All
             </CounsellingButton>
           )}
         </div>
       )}
 
-      <CounsellingSegmented
-        options={[...INV_SEG_OPTIONS]}
-        selected={TAB_TO_SEG[invTab]}
-        onChange={(v) => setInvTab(SEG_TO_TAB[v as InvSegOption])}
-        labels={{ imaging: 'Imaging & scans', lab: 'Lab & pre-op' }}
-        className="mb-3 w-full"
-        data-testid="counselling-tab"
-      />
+      <div className={`${counsellingSessionTokens.catalogStickyFilters} -mx-1 mb-2 space-y-2 px-1`}>
+        <CounsellingSegmented
+          options={[...INV_SEG_OPTIONS]}
+          selected={TAB_TO_SEG[invTab]}
+          onChange={(v) => setInvTab(SEG_TO_TAB[v as InvSegOption])}
+          labels={{ imaging: counsellingCopy.imagingAndScans, lab: counsellingCopy.labAndPreOp }}
+          size="sm"
+          className="w-full"
+          data-testid="counselling-tab"
+        />
 
-      {!masterCatalogLoading && totalCatalogCount > 0 && (
-        <p className="mb-2 text-[10px] text-counselling-muted-foreground">
-          {masterCatalog.imaging.length + masterCatalog.scan.length} diagnostics · {masterCatalog.lab.length} lab tests
-        </p>
-      )}
+        {!masterCatalogLoading && totalCatalogCount > 0 && (
+          <p className="text-[10px] text-counselling-muted-foreground">
+            {masterCatalog.imaging.length + masterCatalog.scan.length} diagnostics · {masterCatalog.lab.length} lab tests
+          </p>
+        )}
 
-      <CounsellingSearchInput
-        value={invTab === 'imaging_orders' ? imagingSearch : labSearch}
-        onChange={invTab === 'imaging_orders' ? setImagingSearch : setLabSearch}
-        placeholder={
-          invTab === 'imaging_orders' ? 'Search diagnostics…' : 'Search laboratory tests…'
-        }
-        disabled={isReadOnly || masterCatalogLoading}
-        data-testid={counsellingTestIds.investigationSearch}
-      />
-      <div className="mt-3">{listContent}</div>
+        <CounsellingSearchInput
+          value={invTab === 'imaging_orders' ? imagingSearch : labSearch}
+          onChange={invTab === 'imaging_orders' ? setImagingSearch : setLabSearch}
+          placeholder={
+            invTab === 'imaging_orders' ? counsellingCopy.searchDiagnostics : counsellingCopy.searchLabTests
+          }
+          disabled={isReadOnly || masterCatalogLoading}
+          data-testid={counsellingTestIds.investigationSearch}
+        />
+      </div>
+
+      {listContent}
     </>
   );
 

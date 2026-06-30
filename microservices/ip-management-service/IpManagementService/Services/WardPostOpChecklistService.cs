@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using IpManagementService.Data;
 using IpManagementService.Models.Domain;
 using IpManagementService.Models.Dtos;
@@ -19,15 +20,18 @@ public class WardPostOpChecklistService
     private readonly IpManagementDbContext           _db;
     private readonly PreOpClearanceService           _preOp;
     private readonly ChecklistPhaseStatusService   _phaseStatus;
+    private readonly JourneyMutationGuardService _mutationGuard;
 
     public WardPostOpChecklistService(
         IpManagementDbContext db,
         PreOpClearanceService preOp,
-        ChecklistPhaseStatusService phaseStatus)
+        ChecklistPhaseStatusService phaseStatus,
+        JourneyMutationGuardService mutationGuard)
     {
-        _db          = db;
-        _preOp       = preOp;
-        _phaseStatus = phaseStatus;
+        _db            = db;
+        _preOp         = preOp;
+        _phaseStatus   = phaseStatus;
+        _mutationGuard = mutationGuard;
     }
 
     public async Task<WardPostOpChecklistDto> GetChecklistAsync(
@@ -82,6 +86,7 @@ public class WardPostOpChecklistService
     public async Task<WardPostOpChecklistDto> SaveIolStickerChecksAsync(
         Guid journeyId, Guid tenantId, Guid userId, SaveIolStickerChecksRequest req)
     {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var journey = await RequireJourneyAsync(journeyId, tenantId);
 
         journey.WardPostopIolChecks = JsonSerializer.Serialize(new
@@ -159,7 +164,20 @@ public class WardPostOpChecklistService
         }
 
         if (itemIds.Any(id => !existing.Contains(id)))
-            await _db.SaveChangesAsync();
+        {
+            // RACE: concurrent readers can both seed the same (clearance_id, item_id) rows
+            // → 23505 on uq_preop_completion. Discard the duplicate insert; the winner's rows
+            // are valid and BuildDtoAsync re-reads them.
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+                when (ex.InnerException is PostgresException pg && pg.SqlState == "23505")
+            {
+                _db.ChangeTracker.Clear();
+            }
+        }
     }
 
     private async Task SyncAutoItemsAsync(

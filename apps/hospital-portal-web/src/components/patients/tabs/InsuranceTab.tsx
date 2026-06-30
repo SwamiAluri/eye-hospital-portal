@@ -6,9 +6,13 @@ import { patientInsuranceApi, PatientInsurance } from '@/lib/api/patient-insuran
 
 interface InsuranceTabProps {
   patientId: string;
+  profileInsurance?: {
+    provider?: string | null;
+    policyNumber?: string | null;
+  };
 }
 
-export function InsuranceTab({ patientId }: InsuranceTabProps) {
+export function InsuranceTab({ patientId, profileInsurance }: InsuranceTabProps) {
   const [policies, setPolicies] = useState<PatientInsurance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +29,7 @@ export function InsuranceTab({ patientId }: InsuranceTabProps) {
       setPolicies(response.data || []);
     } catch (err: any) {
       console.error('Error loading insurance:', err);
-      setError('Failed to load insurance information.');
+      setError('Insurance data is temporarily unavailable.');
       setPolicies([]);
     } finally {
       setLoading(false);
@@ -194,7 +198,17 @@ export function InsuranceTab({ patientId }: InsuranceTabProps) {
         </div>
       ))}
 
-      {policies.length === 0 && !error && (
+      {policies.length === 0 && !error && profileInsurance?.provider && (
+        <div className="border rounded-lg p-4 bg-gray-50 text-sm text-gray-700">
+          <p className="font-medium text-gray-900">From patient profile</p>
+          <p className="mt-1">{profileInsurance.provider}</p>
+          {profileInsurance.policyNumber && (
+            <p className="text-gray-600 font-mono text-xs mt-1">{profileInsurance.policyNumber}</p>
+          )}
+        </div>
+      )}
+
+      {policies.length === 0 && !error && !profileInsurance?.provider && (
         <div className="text-center py-12 text-gray-500">
           <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-50" />
           <p>No insurance policies found for this patient.</p>

@@ -74,6 +74,15 @@ public class JourneyFunctions
                 return await BadRequest(req, "branchId is required.");
             qs.TryGetValue("clinicalState", out var clinicalState);
             qs.TryGetValue("wardId", out var wardId);
+            qs.TryGetValue("otRoom", out var otRoom);
+            qs.TryGetValue("anaesthetist", out var anaesthetist);
+            qs.TryGetValue("paymentMode", out var paymentMode);
+            qs.TryGetValue("surgeryDate", out var surgeryDateStr);
+            DateTime? surgeryDate = DateTime.TryParse(surgeryDateStr, out var sd) ? sd : null;
+            qs.TryGetValue("limit", out var limitStr);
+            qs.TryGetValue("offset", out var offsetStr);
+            int? limit  = int.TryParse(limitStr, out var lim) && lim > 0 ? lim : null;
+            int? offset = int.TryParse(offsetStr, out var off) && off > 0 ? off : null;
 
             if (string.IsNullOrWhiteSpace(clinicalState)
                 || string.Equals(clinicalState, "Expected", StringComparison.OrdinalIgnoreCase)
@@ -82,8 +91,38 @@ public class JourneyFunctions
                 await _journeySvc.OnboardExpectedJourneysAsync(tid, branchId, userId);
             }
 
-            var rows = await _journeySvc.ListAsync(tid, branchId, clinicalState, wardId);
-            return await Ok(req, rows);
+            var (rows, total) = await _journeySvc.ListAsync(
+                tid, branchId, clinicalState, wardId,
+                otRoom, anaesthetist, paymentMode, surgeryDate, limit, offset);
+            return await Ok(req, rows, total);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    // ── Ward dashboard summary (Phase 2) ────────────────────────────────────────
+
+    [Function("WardDashboardSummary")]
+    public async Task<HttpResponseData> WardDashboardSummary(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+             Route = "ip-management/journeys/dashboard-summary")]
+        HttpRequestData req)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var qs  = ParseQs(req.Url.Query);
+            if (!qs.TryGetValue("branchId", out var branchStr) || !Guid.TryParse(branchStr, out var branchId))
+                return await BadRequest(req, "branchId is required.");
+
+            DateTime? date = null;
+            if (qs.TryGetValue("date", out var dateStr)
+                && DateTime.TryParse(dateStr, out var parsed))
+                date = parsed;
+
+            var summary = await _journeySvc.GetDashboardSummaryAsync(tid, branchId, date);
+            return await Ok(req, summary);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
         catch (Exception ex) { return await InternalError(req, ex.Message); }
@@ -166,7 +205,7 @@ public class JourneyFunctions
         catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
         catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
         catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
-        catch (Exception ex) { return await InternalError(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.GetBaseException().Message); }
     }
 
     // ── Ward assignment ────────────────────────────────────────────────────────
@@ -178,6 +217,7 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<UpdateWardAssignmentRequest>(req.Body, Json)
@@ -201,6 +241,7 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermOtSign);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<UpdateOtDetailsRequest>(req.Body, Json)
@@ -232,6 +273,54 @@ public class JourneyFunctions
                        ?? throw new ArgumentException("Body required.");
             var roles  = _jwt.ExtractRoles(req);
             var result = await _journeySvc.TransitionClinicalAsync(id, tid, userId, body, roles);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    // ── Cancel today's surgery (G1) ────────────────────────────────────────────
+
+    [Function("CancelTodaySurgery")]
+    public async Task<HttpResponseData> CancelTodaySurgery(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+             Route = "ip-management/journeys/{id:guid}/cancel-today-surgery")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid  = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<CancelTodaySurgeryRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _journeySvc.CancelTodaySurgeryAsync(id, tid, userId, body);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    // ── Rebook a cancelled surgery (Phase 1) ───────────────────────────────────
+
+    [Function("RebookCancelledSurgery")]
+    public async Task<HttpResponseData> RebookCancelledSurgery(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+             Route = "ip-management/journeys/{id:guid}/rebook")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var result = await _journeySvc.RebookCancelledSurgeryAsync(id, tid, userId);
             return await Ok(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
@@ -325,7 +414,7 @@ public class JourneyFunctions
     {
         try
         {
-            IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermOtSign);
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<EmergencyFcRequest>(req.Body, Json)
@@ -349,6 +438,7 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<DischargeOverrideRequest>(req.Body, Json)
@@ -376,6 +466,24 @@ public class JourneyFunctions
             var tid = _jwt.ExtractTenantId(req, tenantId);
             var txs = await _billingSvc.ListAsync(id, tid);
             return await Ok(req, txs);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("GetFinancialPreauthStatus")]
+    public async Task<HttpResponseData> GetFinancialPreauthStatus(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+            Route = "ip-management/journeys/{id:guid}/financial/preauth-status")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var status = await _journeySvc.GetPreauthStatusAsync(id, tid);
+            if (status is null) return await NotFound(req, "Journey not found.");
+            return await Ok(req, status);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
         catch (Exception ex) { return await InternalError(req, ex.Message); }
@@ -571,6 +679,17 @@ public class JourneyFunctions
     {
         var r = req.CreateResponse(HttpStatusCode.OK);
         r.Headers.Add("Content-Type", "application/json; charset=utf-8");
+        await r.WriteStringAsync(JsonSerializer.Serialize(payload, Json));
+        return r;
+    }
+
+    /// <summary>OK with a total-row count header for paged list responses.</summary>
+    private async Task<HttpResponseData> Ok(HttpRequestData req, object payload, int totalCount)
+    {
+        var r = req.CreateResponse(HttpStatusCode.OK);
+        r.Headers.Add("Content-Type", "application/json; charset=utf-8");
+        r.Headers.Add("X-Total-Count", totalCount.ToString());
+        r.Headers.Add("Access-Control-Expose-Headers", "X-Total-Count");
         await r.WriteStringAsync(JsonSerializer.Serialize(payload, Json));
         return r;
     }

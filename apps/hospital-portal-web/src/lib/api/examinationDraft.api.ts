@@ -27,6 +27,25 @@ export interface ExaminationDraft {
   expiresAt: string;
 }
 
+/** Backend stores draft payload as a JSON string column. */
+export function parseExaminationDraftData(data: unknown): unknown {
+  if (typeof data !== 'string') return data;
+  try {
+    return JSON.parse(data) as unknown;
+  } catch {
+    return data;
+  }
+}
+
+function serializeExaminationDraftData(data: unknown): string {
+  if (typeof data === 'string') return data;
+  return JSON.stringify(data ?? {});
+}
+
+function normalizeDraft(draft: ExaminationDraft): ExaminationDraft {
+  return { ...draft, data: parseExaminationDraftData(draft.data) };
+}
+
 export const examinationDraftApi = {
   /**
    * Save or update examination draft (upsert by patient + doctor + visit when visitId set).
@@ -34,8 +53,11 @@ export const examinationDraftApi = {
    */
   async saveDraft(draftData: ExaminationDraftData): Promise<ExaminationDraft> {
     const api = getApi();
-    const response = await api.post<ExaminationDraft>('/Examinations/draft', draftData);
-    return response.data;
+    const response = await api.post<ExaminationDraft>('/Examinations/draft', {
+      ...draftData,
+      data: serializeExaminationDraftData(draftData.data),
+    });
+    return normalizeDraft(response.data);
   },
 
   /**
@@ -49,10 +71,10 @@ export const examinationDraftApi = {
       const response = await api.get<ExaminationDraft>(`/Examinations/draft/${patientId}`, {
         params,
       });
-      return response.data;
+      return normalizeDraft(response.data);
     } catch (error: unknown) {
       const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status === 404) {
+      if (status === 404 || status === 500) {
         return null;
       }
       throw error;

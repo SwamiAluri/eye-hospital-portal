@@ -6,6 +6,7 @@ import type { CounsellingDiscountType } from '@/types/counselling-estimate';
 import { formatInr, resolveProcedureOverride } from '@/lib/counsellors-desk/package-preview';
 import { addCalendarDays, formatValidityEn } from '@/lib/counsellors-desk/counselling-estimate-pdf-content';
 import type { CounsellingPhase } from '@/lib/counsellors-desk/counselling-progress';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import type { CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
 import type { PriceOverrideRecord } from '@/lib/api/counselling-azure.api';
@@ -57,7 +58,7 @@ const QuoteModeBadge = memo(function QuoteModeBadge({
       ? `Package · ${activeTemplate.name}`
       : 'Package'
     : selectedVariant
-      ? 'Custom estimate'
+      ? counsellingCopy.customEstimate
       : 'Custom';
 
   return (
@@ -174,7 +175,7 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
     [estimate.lines],
   );
 
-  const procedureSectionTitle = isPackage ? 'Package' : 'Procedure';
+  const procedureSectionTitle = isPackage ? counsellingCopy.package : counsellingCopy.procedure;
 
   const {
     draftType,
@@ -203,7 +204,7 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
       className="rounded-xl border-2 border-counselling-primary/30 bg-counselling-accent/50 px-4 py-3"
       data-testid={counsellingTestIds.quoteFinalPayable}
     >
-      <p className={counsellingSessionTokens.microLabel + ' text-counselling-primary'}>Final payable</p>
+      <p className={counsellingSessionTokens.microLabel + ' text-counselling-primary'}>{counsellingCopy.finalPayable}</p>
       <p className="text-2xl font-extrabold tabular-nums text-counselling-accent-foreground">
         {formatInr(estimate.finalPayableAmount)}
       </p>
@@ -234,7 +235,7 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
         <div className="space-y-3">
           <CounsellingEmptyState
             compact
-            title={hasPendingProcedure ? 'Price pending' : 'No items yet'}
+            title={hasPendingProcedure ? counsellingCopy.pricePending : counsellingCopy.noItemsYet}
             description={emptyDescription}
           />
           {onGoToBuildQuote && activePhase !== 'estimate' ? (
@@ -245,7 +246,7 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
               data-testid={counsellingTestIds.quoteGoToEstimate}
               className="w-full bg-counselling-primary hover:bg-counselling-primary/90"
             >
-              Go to Build Quote
+              {counsellingCopy.goToBuildQuote}
             </CounsellingButton>
           ) : null}
           {finalPayableBlock}
@@ -253,7 +254,7 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
       ) : (
         <>
           <div>
-            <p className={counsellingSessionTokens.microLabel}>Itemized breakdown</p>
+            <p className={counsellingSessionTokens.microLabel}>{counsellingCopy.itemizedBreakdown}</p>
             <div className="mt-2 space-y-4">
               {isPackage && estimate.activeTemplate && (
                 <div className="flex items-start justify-between gap-2 rounded-lg border border-indigo-200/60 bg-indigo-50/50 px-3 py-2 text-sm">
@@ -296,7 +297,7 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
                 ))}
               </QuoteLineSection>
 
-              <QuoteLineSection title="Investigations" lines={groupedLines.imaging}>
+              <QuoteLineSection title={counsellingCopy.investigations} lines={groupedLines.imaging}>
                 {groupedLines.imaging.map((line) => (
                   <EstimateLineItemRow
                     key={line.key}
@@ -307,7 +308,7 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
                 ))}
               </QuoteLineSection>
 
-              <QuoteLineSection title="Labs" lines={groupedLines.labs}>
+              <QuoteLineSection title={counsellingCopy.labs} lines={groupedLines.labs}>
                 {groupedLines.labs.map((line) => (
                   <EstimateLineItemRow
                     key={line.key}
@@ -322,18 +323,18 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
 
           <div className="space-y-1 border-t border-counselling-border/60 pt-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-counselling-muted-foreground">Subtotal</span>
+              <span className="text-counselling-muted-foreground">{counsellingCopy.subtotal}</span>
               <span className="font-semibold tabular-nums">{formatInr(estimate.itemizedSubtotal)}</span>
             </div>
             {estimate.isPackageMode && estimate.bundleSavings > 0 && (
               <div className="flex justify-between text-emerald-700">
-                <span>Bundle savings</span>
+                <span>{counsellingCopy.bundleSavings}</span>
                 <span className="font-semibold tabular-nums">−{formatInr(estimate.bundleSavings)}</span>
               </div>
             )}
             {estimate.discountAmount > 0 && (
               <div className="flex justify-between text-red-700">
-                <span>Discount</span>
+                <span>{counsellingCopy.discount}</span>
                 <span className="font-semibold tabular-nums">−{formatInr(estimate.discountAmount)}</span>
               </div>
             )}
@@ -342,7 +343,7 @@ export const CounsellingQuoteSummary = memo(function CounsellingQuoteSummary({
           <CounsellingAccordion type="single" collapsible className="rounded-lg border border-counselling-border/60">
             <CounsellingAccordionItem value="discount" className="border-0">
               <CounsellingAccordionTrigger className="px-3 py-2 text-xs font-semibold hover:no-underline">
-                Apply discount
+                {counsellingCopy.applyDiscount}
                 {estimateDiscountType && estimateDiscountValue > 0 && (
                   <span className="ml-2 font-normal text-counselling-muted-foreground">
                     ({estimateDiscountType === 'percent' ? `${estimateDiscountValue}%` : formatInr(estimateDiscountValue)})

@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { IolMasterDto } from '@/lib/api/service-catalog.api';
 import type { CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
 import type { CounsellingPackageTemplate } from '@/types/counselling-estimate';
 import type { MasterCatalogItem } from '@/types/counsellors-desk';
 import type { UseCounsellingEstimateResult } from '@/hooks/use-counselling-estimate';
 import type { CounsellingEyeOption } from '@/lib/counsellors-desk/counselling-eye';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { counsellingSectionIds, counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
   CounsellingAlertDialog,
@@ -19,7 +20,6 @@ import {
   CounsellingAlertDialogTitle,
   CounsellingCard,
   CounsellingCardContent,
-  CounsellingCardDescription,
   CounsellingCardHeader,
   CounsellingCardTitle,
   CounsellingTabs,
@@ -42,6 +42,7 @@ interface PendingProcedurePick {
 }
 
 export interface CounsellingEstimateBuilderCardProps {
+  phaseNav?: ReactNode;
   estimate: UseCounsellingEstimateResult;
   procedureVariants: CounsellorProcedureVariant[];
   procedureLoading: boolean;
@@ -75,6 +76,7 @@ export interface CounsellingEstimateBuilderCardProps {
 }
 
 export function CounsellingEstimateBuilderCard({
+  phaseNav,
   estimate,
   procedureVariants,
   procedureLoading,
@@ -192,34 +194,30 @@ export function CounsellingEstimateBuilderCard({
         className={`${counsellingSessionTokens.card} scroll-mt-24`}
       >
         <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-                Build estimate
-              </CounsellingCardTitle>
-              <CounsellingEyeSelector
-                value={selectedEye}
-                onChange={handleEyeChange}
-                disabled={isReadOnly}
-                readOnly={eyeReadOnly}
-                variant="inline"
-                className="shrink-0"
-              />
-            </div>
-            <CounsellingCardDescription className={counsellingSessionTokens.sectionSubtitle}>
-              Select procedure or package
-            </CounsellingCardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
+              {counsellingCopy.buildEstimate}
+            </CounsellingCardTitle>
+            <CounsellingEyeSelector
+              value={selectedEye}
+              onChange={handleEyeChange}
+              disabled={isReadOnly}
+              readOnly={eyeReadOnly}
+              variant="inline"
+              className="shrink-0"
+            />
           </div>
         </CounsellingCardHeader>
 
-        <CounsellingCardContent className={`${counsellingSessionTokens.cardBody} space-y-4`}>
+        <CounsellingCardContent className={`${counsellingSessionTokens.cardBody} space-y-3`}>
+          {phaseNav}
           <CounsellingTabs value={activeTab} onValueChange={(v) => handleModeChange(v as EstimateTab)}>
-            <CounsellingTabsList className="grid w-full grid-cols-2">
-              <CounsellingTabsTrigger value="custom" data-testid={counsellingTestIds.tabCustom}>
-                Custom procedure
+            <CounsellingTabsList className="grid h-9 w-full grid-cols-2">
+              <CounsellingTabsTrigger value="custom" data-testid={counsellingTestIds.tabCustom} className="text-sm">
+                {counsellingCopy.customProcedure}
               </CounsellingTabsTrigger>
-              <CounsellingTabsTrigger value="package" data-testid={counsellingTestIds.tabPackage}>
-                Package
+              <CounsellingTabsTrigger value="package" data-testid={counsellingTestIds.tabPackage} className="text-sm">
+                {counsellingCopy.package}
               </CounsellingTabsTrigger>
             </CounsellingTabsList>
 
@@ -234,7 +232,7 @@ export function CounsellingEstimateBuilderCard({
               />
             )}
 
-            <CounsellingTabsContent value="custom" className="mt-4">
+            <CounsellingTabsContent value="custom" className="mt-3">
               {estimate.isPackageMode ? (
                 <ProcedureReadOnlyMirror
                   procedureVariants={procedureVariants}
@@ -275,7 +273,7 @@ export function CounsellingEstimateBuilderCard({
               )}
             </CounsellingTabsContent>
 
-            <CounsellingTabsContent value="package" className="mt-4">
+            <CounsellingTabsContent value="package" className="mt-3">
               <CounsellingPackageWorkspace
                 embedded
                 estimate={estimate}

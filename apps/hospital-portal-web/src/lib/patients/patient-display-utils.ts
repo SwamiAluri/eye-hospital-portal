@@ -64,3 +64,27 @@ export function resolvePatientPhone(patient?: Pick<Patient, 'contactNumber' | 'p
   const phone = patient?.contactNumber?.trim() || patient?.phone?.trim();
   return phone || null;
 }
+
+/** Whole-year age from ISO date of birth. */
+export function calcPatientAge(dateOfBirth?: string | null, asOf = new Date()): number | null {
+  if (!dateOfBirth) return null;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return null;
+  let age = asOf.getFullYear() - dob.getFullYear();
+  const monthDelta = asOf.getMonth() - dob.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && asOf.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? age : null;
+}
+
+const CARE_PROGRAM_LABELS: Record<string, string> = {
+  CATARACT: 'Cataract',
+  GLAUCOMA: 'Glaucoma',
+  RETINA: 'Retina',
+  REFRACTIVE: 'LASIK',
+};
+
+export function formatCareProgramLabel(code: string): string {
+  return CARE_PROGRAM_LABELS[code.toUpperCase()] ?? code;
+}

@@ -23,6 +23,7 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; dot: string; lab
   PostOp:            { bg: 'bg-violet-100',  text: 'text-violet-800', dot: 'bg-violet-500',  label: 'Post-Op' },
   ReadyForDischarge: { bg: 'bg-emerald-100', text: 'text-emerald-800',dot: 'bg-emerald-500', label: 'Ready for Discharge' },
   Discharged:        { bg: 'bg-gray-100',    text: 'text-gray-500',   dot: 'bg-gray-400',    label: 'Discharged' },
+  CancelledSurgery:  { bg: 'bg-rose-100',    text: 'text-rose-700',   dot: 'bg-rose-500',    label: 'Cancelled' },
 };
 
 interface StatusBadgeProps {

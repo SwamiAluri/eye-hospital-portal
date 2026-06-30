@@ -110,6 +110,8 @@ namespace AuthService.Services
                 await AddAuditAsync(existing.Id, "Upsert", oldStatus, existing.Status,
                                     oldSnapshot, Snapshot(existing), userId.ToString());
                 await _db.SaveChangesAsync();
+                if (existing.StartTime.HasValue)
+                    _ = NotifyJourneyRebookAsync(existing.Id, tenantId, existing.StartTime, userId);
                 return ToResponse(existing);
             }
             else
@@ -151,6 +153,8 @@ namespace AuthService.Services
                 await AddAuditAsync(entity.Id, "Upsert", null, entity.Status,
                                     null, Snapshot(entity), userId.ToString());
                 await _db.SaveChangesAsync();
+                if (entity.StartTime.HasValue)
+                    _ = NotifyJourneyRebookAsync(entity.Id, tenantId, entity.StartTime, userId);
                 return ToResponse(entity);
             }
         }
@@ -512,6 +516,8 @@ namespace AuthService.Services
 
             foreach (var entity in entities)
             {
+                await ValidateSameDaySingleEyeGuardAsync(entity, tenantId);
+
                 var oldStatus = entity.Status;
                 entity.Status         = OtFinalizeStatus.OTPrepared;
                 entity.IsLocked       = true;
@@ -754,6 +760,49 @@ namespace AuthService.Services
         };
 
         /// <summary>
+        /// HTTP POST to ip-management to clear pending-rebook when a new surgery date is set.
+        /// Non-fatal: OT schedule mutation must not be blocked by ip-management unavailability.
+        /// </summary>
+        private async Task NotifyJourneyRebookAsync(
+            Guid scheduleId, Guid tenantId, DateTime? surgeryScheduledAt, Guid userId)
+        {
+            if (!surgeryScheduledAt.HasValue) return;
+            try
+            {
+                var baseUrl = _config["IpManagementService:BaseUrl"] ?? "http://localhost:5074/api";
+                var key     = _config["InternalApi:Key"] ?? string.Empty;
+                var client  = _httpFactory.CreateClient();
+                if (!string.IsNullOrEmpty(key))
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", key);
+
+                var payload = new
+                {
+                    otScheduleId        = scheduleId,
+                    tenantId,
+                    surgeryScheduledAt,
+                    actorUserId         = userId.ToString(),
+                };
+                var response = await client.PostAsJsonAsync(
+                    $"{baseUrl.TrimEnd('/')}/ip-management/internal/journey-sync/apply-rebook",
+                    payload);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning(
+                        "Journey rebook sync for schedule {ScheduleId} returned {Status}: {Body}",
+                        scheduleId, (int)response.StatusCode, body);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to sync counselling rebook to ip-management for schedule {ScheduleId}.",
+                    scheduleId);
+            }
+        }
+
+        /// <summary>
         /// HTTP POST to the counselling microservice to transition the linked session to RepeatCounselling.
         /// Non-fatal: logs a warning on failure so the OT cancel still succeeds.
         /// </summary>
@@ -992,7 +1041,54 @@ namespace AuthService.Services
             await AddAuditAsync(entity.Id, "UpdateDetails", oldStatus, entity.Status,
                                 oldSnapshot, Snapshot(entity), userId.ToString());
             await _db.SaveChangesAsync();
+            if (request.StartTime.HasValue)
+                _ = NotifyJourneyRebookAsync(entity.Id, tenantId, entity.StartTime, userId);
             return ToResponse(entity);
+        }
+
+        // ── G6: same-day single-eye scheduling guard ─────────────────────────
+
+        private static bool IsBilateralEye(string? eye)
+        {
+            if (string.IsNullOrWhiteSpace(eye)) return false;
+            var e = eye.Trim().ToUpperInvariant();
+            return e is "BE" or "OU" or "BOTH" or "BOTH_EYES";
+        }
+
+        private static bool IsSingleEye(string? eye)
+            => !string.IsNullOrWhiteSpace(eye) && !IsBilateralEye(eye);
+
+        private async Task ValidateSameDaySingleEyeGuardAsync(
+            OtFinalizeSchedule entity, Guid tenantId)
+        {
+            if (!IsSingleEye(entity.Eye) || !entity.StartTime.HasValue) return;
+
+            var surgeryDate = entity.StartTime.Value.Date;
+
+            var conflictingEyes = await _db.OtFinalizeSchedules
+                .Where(s =>
+                    s.PatientId == entity.PatientId
+                    && s.TenantId == tenantId
+                    && s.DeletedAt == null
+                    && s.Id != entity.Id
+                    && s.StartTime != null
+                    && s.StartTime.Value.Date == surgeryDate
+                    && s.Status != OtFinalizeStatus.Cancelled
+                    && s.Status != OtFinalizeStatus.SurgeryDone)
+                .Select(s => s.Eye)
+                .ToListAsync();
+
+            if (conflictingEyes.Any(e => IsSingleEye(e)))
+            {
+                throw new InvalidOperationException(
+                    $"Same-day single-eye scheduling blocked: {entity.PatientName} already has a single-eye case on {surgeryDate:yyyy-MM-dd}. Use one bilateral (BE) journey or choose a different date.");
+            }
+
+            if (conflictingEyes.Any(e => IsBilateralEye(e)))
+            {
+                throw new InvalidOperationException(
+                    $"Same-day scheduling blocked: {entity.PatientName} already has a bilateral (BE) case on {surgeryDate:yyyy-MM-dd}.");
+            }
         }
     }
 }

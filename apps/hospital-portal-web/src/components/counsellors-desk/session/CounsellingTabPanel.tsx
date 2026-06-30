@@ -1,8 +1,6 @@
 'use client';
 
-
-
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
 import type { CounsellingSession, CombinedPaymentType, DecisionType } from '@/types/counsellors-desk';
 
@@ -251,7 +249,18 @@ export function CounsellingTabPanel() {
 
   }, [sess?.surgeries]);
 
-
+  const phaseNav = useMemo(
+    () => (
+      <CounsellingPhaseNav
+        activePhase={activePhase}
+        visitedPhases={visitedPhases}
+        phaseCompletion={phaseCompletion}
+        onPhaseSelect={goToPhase}
+        canGoToPhase={canGoToPhase}
+      />
+    ),
+    [activePhase, visitedPhases, phaseCompletion, goToPhase, canGoToPhase],
+  );
 
   const workspace = useMemo(() => {
 
@@ -260,7 +269,7 @@ export function CounsellingTabPanel() {
       return (
 
         <CounsellingEstimatePhase
-
+          phaseNav={phaseNav}
           estimate={estimate}
 
           procedureVariants={procedureVariants}
@@ -394,7 +403,7 @@ export function CounsellingTabPanel() {
       return (
 
         <CounsellingDecisionPhase
-
+          phaseNav={phaseNav}
           paymentType={paymentType as CombinedPaymentType | ''}
 
           setPaymentType={setPaymentType}
@@ -442,7 +451,8 @@ export function CounsellingTabPanel() {
     return (
 
       <CounsellingWrapupPhase
-
+        phaseNav={phaseNav}
+        counselingSessionId={sessionId}
         counsellorNotes={counsellorNotes}
 
         setCounsellorNotes={setCounsellorNotes}
@@ -478,6 +488,8 @@ export function CounsellingTabPanel() {
   }, [
 
     activePhase,
+
+    phaseNav,
 
     estimate,
 
@@ -660,10 +672,10 @@ export function CounsellingTabPanel() {
 
   return (
 
-    <div className={counsellingSessionTokens.page + ' min-h-0 flex-1 overflow-hidden p-5'}>
+    <div className={counsellingSessionTokens.page + ' flex min-h-0 flex-1 flex-col overflow-hidden p-5'}>
 
       {isSurgeryDoneState && (
-        <CounsellingInfoAlert variant="info" className="mb-4" title="Surgery completed">
+        <CounsellingInfoAlert variant="info" className="mb-4 shrink-0" title="Surgery completed">
           This session is <strong>read-only</strong> — re-evaluation is not available after surgery.
         </CounsellingInfoAlert>
       )}
@@ -671,7 +683,7 @@ export function CounsellingTabPanel() {
       {isDoneState && (
         <CounsellingInfoAlert
           variant="success"
-          className="mb-4"
+          className="mb-4 shrink-0"
           title="Session completed"
           action={
             <CounsellingButton
@@ -690,7 +702,7 @@ export function CounsellingTabPanel() {
       )}
 
       {queueStatus === 'AddOnSurgery' && (
-        <CounsellingInfoAlert variant="info" className="mb-4" title="Upgraded case">
+        <CounsellingInfoAlert variant="info" className="mb-4 shrink-0" title="Upgraded case">
           Package was upgraded on this completed session. Update the new package details and save to
           confirm the add-on surgery.
         </CounsellingInfoAlert>
@@ -698,29 +710,8 @@ export function CounsellingTabPanel() {
 
 
 
-      <CounsellingSessionLayout
-
-        phaseNav={
-
-          <CounsellingPhaseNav
-
-            activePhase={activePhase}
-
-            visitedPhases={visitedPhases}
-
-            phaseCompletion={phaseCompletion}
-
-            onPhaseSelect={goToPhase}
-
-            canGoToPhase={canGoToPhase}
-
-          />
-
-        }
-
-        workspace={workspace}
-
-        quotePanel={
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <CounsellingSessionLayout workspace={workspace} quotePanel={
 
           <CounsellingQuotePanel
 
@@ -751,6 +742,8 @@ export function CounsellingTabPanel() {
         }
 
       />
+
+      </div>
 
     </div>
 

@@ -26,6 +26,7 @@ export interface SaveCounsellingSessionParams {
   packageRate: number | '';
   paymentType: CombinedPaymentType | '';
   insuranceCompany: string;
+  insuranceProviderId?: string;
   freeSurgeryReason: string;
   decision: DecisionType;
   followUpReason: string;
@@ -51,18 +52,39 @@ export interface SaveCounsellingSessionParams {
   invalidateSession: (id: string) => void;
 }
 
-export async function saveCounsellingSession(params: SaveCounsellingSessionParams): Promise<void> {
+type CounsellingPersistenceInput = Pick<
+  SaveCounsellingSessionParams,
+  | 'paymentType'
+  | 'insuranceCompany'
+  | 'decision'
+  | 'followUpReason'
+  | 'followUpDate'
+  | 'counsellorNotes'
+  | 'patientRemarks'
+  | 'doctorNotes'
+  | 'wantToSeeDoctor'
+  | 'interestedToUpgrade'
+  | 'notRequiredPreAuth'
+  | 'selectedSurgeryId'
+  | 'selectedEye'
+  | 'packageName'
+  | 'packageRate'
+  | 'schedule'
+  | 'mergedEstimate'
+  | 'savedSnapshot'
+  | 'sessionId'
+  | 'selectedVariantId'
+  | 'selectedIolId'
+  | 'variantSubOption'
+  | 'insuranceProviderId'
+  | 'freeSurgeryReason'
+  | 'isDoneState'
+>;
+
+export function buildCounsellingSessionPayload(params: CounsellingPersistenceInput) {
   const {
-    sessionId,
-    session,
-    selectedSurgeryId,
-    selectedVariantId,
-    selectedEye,
-    packageName,
-    packageRate,
     paymentType,
     insuranceCompany,
-    freeSurgeryReason,
     decision,
     followUpReason,
     followUpDate,
@@ -72,15 +94,17 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     wantToSeeDoctor,
     interestedToUpgrade,
     notRequiredPreAuth,
+    selectedSurgeryId,
+    selectedEye,
+    packageName,
+    packageRate,
     schedule,
-    selectedInvestigations,
     mergedEstimate,
     savedSnapshot,
+    selectedVariantId,
+    insuranceProviderId,
+    freeSurgeryReason,
     isDoneState,
-    existingOtScheduleId,
-    onSuccess,
-    invalidateWaitingList,
-    invalidateSession,
   } = params;
 
   const currentSnapshot = buildCounsellingFieldSnapshot({
@@ -124,7 +148,7 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     ? Number(savedSnapshot.packageRate)
     : undefined;
 
-  await counsellorsDeskApi.saveSession(sessionId, {
+  const payload = {
     packageAddonsJson: JSON.stringify(
       mergeEstimateIntoBlob(
         {
@@ -135,7 +159,13 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
           decision: decision || undefined,
           paymentType: paymentType || undefined,
           insuranceCompany: insuranceCompany || undefined,
-          rate: typeof packageRate === 'number' ? packageRate : undefined,
+          ...(insuranceProviderId && { insuranceProviderId }),
+          rate:
+            mergedEstimate.finalPayableAmount > 0
+              ? mergedEstimate.finalPayableAmount
+              : typeof packageRate === 'number'
+                ? packageRate
+                : undefined,
           ...(followUpDate && { followUpDate }),
           ...(schedule && { schedule }),
           ...(patientRemarks && { patientRemarks }),
@@ -172,6 +202,49 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     variantSubOption: params.variantSubOption,
     company: insuranceCompany,
     isFollowUpRequired: decision === 'NotInterested' || decision === 'NeedsTime',
+  };
+
+  return { payload, currentSnapshot, fieldChanges, agreedToSurgery, isPackageUpgrade, prevPackageName, prevPackageAmount };
+}
+
+export async function saveCounsellingSession(params: SaveCounsellingSessionParams): Promise<void> {
+  const {
+    sessionId,
+    session,
+    selectedSurgeryId,
+    selectedVariantId,
+    selectedEye,
+    packageName,
+    packageRate,
+    paymentType,
+    insuranceCompany,
+    insuranceProviderId,
+    freeSurgeryReason,
+    decision,
+    followUpReason,
+    followUpDate,
+    counsellorNotes,
+    patientRemarks,
+    doctorNotes,
+    wantToSeeDoctor,
+    interestedToUpgrade,
+    notRequiredPreAuth,
+    schedule,
+    selectedInvestigations,
+    mergedEstimate,
+    savedSnapshot,
+    isDoneState,
+    existingOtScheduleId,
+    onSuccess,
+    invalidateWaitingList,
+    invalidateSession,
+  } = params;
+
+  const { payload, currentSnapshot, fieldChanges, isPackageUpgrade, prevPackageName, prevPackageAmount } =
+    buildCounsellingSessionPayload(params);
+
+  await counsellorsDeskApi.saveSession(sessionId, {
+    ...payload,
     fieldChanges: fieldChanges.length > 0 ? fieldChanges : undefined,
   } as unknown as CounsellingSession);
 

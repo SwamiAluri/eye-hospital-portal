@@ -1,4 +1,5 @@
 import { getApi } from '../api';
+import { unwrapPagedItems, type PagedResult } from './paged-result';
 
 export interface Appointment {
   id: string;
@@ -128,8 +129,12 @@ export const appointmentsApi = {
     return getApi().get<Appointment>(`/appointments/${id}`);
   },
 
-  getByPatient: async (patientId: string) => {
-    return getApi().get<Appointment[]>(`/appointments/patient/${patientId}`);
+  getByPatient: async (patientId: string, pageSize = 100) => {
+    const response = await getApi().get<PagedResult<Appointment> | Appointment[]>(
+      `/appointments/patient/${patientId}`,
+      { params: { page: 1, pageSize } },
+    );
+    return { ...response, data: unwrapPagedItems(response.data) };
   },
 
   getByDoctor: async (doctorId: string, startDate?: string, endDate?: string) => {

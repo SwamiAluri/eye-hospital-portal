@@ -54,7 +54,7 @@ public class MasterDataFunctions
             return await req.UnauthorizedAsync(err);
 
         var body = await JsonSerializer.DeserializeAsync<CcmsInsuranceProvider>(
-            req.Body, HttpRequestDataExtensions.DeserializeOpts);
+            req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
         body.TenantId           = claims!.TenantId;
@@ -84,7 +84,7 @@ public class MasterDataFunctions
             return await req.UnauthorizedAsync(err);
 
         var body = await JsonSerializer.DeserializeAsync<CcmsInsuranceProvider>(
-            req.Body, HttpRequestDataExtensions.DeserializeOpts);
+            req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
         body.Id                 = id;

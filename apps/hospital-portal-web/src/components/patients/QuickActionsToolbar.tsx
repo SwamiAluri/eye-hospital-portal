@@ -1,359 +1,350 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  LogIn, 
-  AlertTriangle, 
-  Calendar, 
-  Clock, 
-  XCircle, 
-  RotateCcw, 
-  UserX, 
-  MessageSquare, 
-  FileText, 
-  Upload, 
-  Download, 
-  Users, 
-  MessageCircle, 
-  DollarSign, 
+import { useRouter } from 'next/navigation';
+import {
+  LogIn,
+  AlertTriangle,
+  Calendar,
+  ChevronDown,
+  Clock,
+  XCircle,
+  RotateCcw,
+  UserX,
+  MessageSquare,
+  FileText,
+  Upload,
+  Download,
+  MessageCircle,
+  DollarSign,
   CreditCard,
-  Phone
+  Phone,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { patientLookupTestIds } from '@/lib/patients/patient-lookup-test-ids';
+import { patientPrintSummaryUrl } from '@/lib/patients/patient-routes';
+
+interface QuickAction {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+}
 
 interface QuickActionsToolbarProps {
   patientId: string;
   patientName: string;
+  variant?: 'panel' | 'compact';
+  onExportPdf?: () => void;
+  onOpenScheduling?: () => void;
+  onOpenBilling?: () => void;
+  onOpenCounseling?: () => void;
+  onOpenInsurance?: () => void;
   onActionComplete?: (action: string) => void;
 }
 
 export const QuickActionsToolbar: React.FC<QuickActionsToolbarProps> = ({
   patientId,
   patientName,
-  onActionComplete
+  variant = 'panel',
+  onExportPdf,
+  onOpenScheduling,
+  onOpenBilling,
+  onOpenCounseling,
+  onOpenInsurance,
+  onActionComplete,
 }) => {
+  const router = useRouter();
   const [showActionModal, setShowActionModal] = useState<string | null>(null);
 
-  const handleAction = (actionType: string) => {
-    // TODO: Implement action handlers
-    console.log(`Action triggered: ${actionType} for patient ${patientId}`);
-    setShowActionModal(actionType);
+  const runAction = (actionType: string, run: () => void) => {
+    run();
     onActionComplete?.(actionType);
   };
 
-  const quickActions = [
-    // CRITICAL ACTIONS (Red/Primary)
+  const goTo = (path: string, actionType: string) => {
+    runAction(actionType, () => router.push(path));
+  };
+
+  const openScheduling = (actionType: string) => {
+    if (onOpenScheduling) {
+      runAction(actionType, onOpenScheduling);
+    } else {
+      goTo(`/dashboard/appointments/schedule?patientId=${patientId}`, actionType);
+    }
+  };
+
+  const primaryActions: QuickAction[] = [
     {
       id: 'check-in',
-      label: 'Check-In',
+      label: 'Check-in',
       icon: LogIn,
-      variant: 'default' as const,
-      color: 'bg-green-600 hover:bg-green-700 text-white',
-      onClick: () => handleAction('check-in')
+      onClick: () =>
+        goTo(`/dashboard/frontdesk/check-in?patientId=${patientId}`, 'check-in'),
     },
     {
       id: 'emergency-check-in',
       label: 'Emergency',
       icon: AlertTriangle,
-      variant: 'destructive' as const,
-      color: 'bg-red-600 hover:bg-red-700 text-white',
-      onClick: () => handleAction('emergency-check-in')
+      onClick: () =>
+        goTo(
+          `/dashboard/frontdesk/check-in?patientId=${patientId}&emergency=1`,
+          'emergency-check-in',
+        ),
     },
     {
       id: 'book-appointment',
-      label: 'Book Appt',
+      label: 'Book appt',
       icon: Calendar,
-      variant: 'default' as const,
-      color: 'bg-indigo-600 hover:bg-indigo-700 text-white',
-      onClick: () => handleAction('book-appointment')
+      onClick: () => openScheduling('book-appointment'),
     },
+  ];
 
-    // HIGH-FREQUENCY ACTIONS (Outline)
+  const moreActions: QuickAction[] = [
+    {
+      id: 'send-to-counselor',
+      label: 'Counselor',
+      icon: MessageCircle,
+      onClick: () => {
+        if (onOpenCounseling) {
+          runAction('send-to-counselor', onOpenCounseling);
+        } else {
+          goTo(`/dashboard/counsellors-desk?patientId=${patientId}`, 'send-to-counselor');
+        }
+      },
+    },
+    {
+      id: 'pre-auth',
+      label: 'Pre-auth',
+      icon: ShieldCheck,
+      onClick: () => {
+        if (onOpenInsurance) {
+          runAction('pre-auth', onOpenInsurance);
+        } else {
+          goTo(`/dashboard/patients/${patientId}?tab=insurance`, 'pre-auth');
+        }
+      },
+    },
     {
       id: 'view-queue',
-      label: 'Queue Status',
+      label: 'Queue status',
       icon: Clock,
-      variant: 'outline' as const,
-      onClick: () => handleAction('view-queue')
+      onClick: () => goTo('/dashboard/frontdesk/queue', 'view-queue'),
     },
     {
       id: 'reschedule',
       label: 'Reschedule',
       icon: RotateCcw,
-      variant: 'outline' as const,
-      onClick: () => handleAction('reschedule')
+      onClick: () => openScheduling('reschedule'),
     },
     {
       id: 'cancel-appointment',
-      label: 'Cancel Appt',
+      label: 'Cancel appt',
       icon: XCircle,
-      variant: 'outline' as const,
-      onClick: () => handleAction('cancel-appointment')
+      onClick: () => {
+        if (onOpenScheduling) {
+          runAction('cancel-appointment', onOpenScheduling);
+        } else {
+          goTo(`/dashboard/appointments?patientId=${patientId}`, 'cancel-appointment');
+        }
+      },
     },
     {
       id: 'mark-no-show',
-      label: 'No-Show',
+      label: 'No-show',
       icon: UserX,
-      variant: 'outline' as const,
-      onClick: () => handleAction('mark-no-show')
+      onClick: () => setShowActionModal('mark-no-show'),
     },
-
-    // REGULAR ACTIONS (Ghost)
     {
       id: 'send-sms',
       label: 'Send SMS',
       icon: MessageSquare,
-      variant: 'ghost' as const,
-      onClick: () => handleAction('send-sms')
+      onClick: () => setShowActionModal('send-sms'),
     },
     {
       id: 'call-patient',
       label: 'Call',
       icon: Phone,
-      variant: 'ghost' as const,
-      onClick: () => handleAction('call-patient')
+      onClick: () => setShowActionModal('call-patient'),
     },
     {
       id: 'upload-document',
-      label: 'Upload Doc',
+      label: 'Upload doc',
       icon: Upload,
-      variant: 'ghost' as const,
-      onClick: () => handleAction('upload-document')
+      onClick: () => goTo(`/dashboard/patients/${patientId}?tab=documents`, 'upload-document'),
     },
-
-    // OCCASIONAL ACTIONS (Ghost)
     {
       id: 'export-summary',
-      label: 'Export',
+      label: 'Export PDF',
       icon: Download,
-      variant: 'ghost' as const,
-      onClick: () => handleAction('export-summary')
-    },
-    {
-      id: 'send-to-counselor',
-      label: 'Counselor',
-      icon: MessageCircle,
-      variant: 'ghost' as const,
-      onClick: () => handleAction('send-to-counselor')
+      onClick: () => {
+        if (onExportPdf) {
+          runAction('export-summary', onExportPdf);
+        } else {
+          runAction('export-summary', () =>
+            window.open(patientPrintSummaryUrl(patientId), '_blank'),
+          );
+        }
+      },
     },
     {
       id: 'view-billing',
       label: 'Billing',
       icon: DollarSign,
-      variant: 'ghost' as const,
-      onClick: () => handleAction('view-billing')
+      onClick: () => {
+        if (onOpenBilling) {
+          runAction('view-billing', onOpenBilling);
+        } else {
+          goTo(`/dashboard/billing/opd?patientId=${patientId}`, 'view-billing');
+        }
+      },
     },
     {
       id: 'print-card',
-      label: 'Print Card',
+      label: 'Print card',
       icon: CreditCard,
-      variant: 'ghost' as const,
-      onClick: () => handleAction('print-card')
+      onClick: () =>
+        runAction('print-card', () =>
+          window.open(patientPrintSummaryUrl(patientId), '_blank'),
+        ),
     },
     {
       id: 'medical-summary',
-      label: 'Summary',
+      label: 'Print summary',
       icon: FileText,
-      variant: 'ghost' as const,
-      onClick: () => handleAction('medical-summary')
-    }
+      onClick: () =>
+        runAction('medical-summary', () =>
+          window.open(patientPrintSummaryUrl(patientId), '_blank'),
+        ),
+    },
   ];
+
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      {primaryActions.map((action) => {
+        const isEmergency = action.id === 'emergency-check-in';
+        const isCheckIn = action.id === 'check-in';
+        return (
+          <Button
+            key={action.id}
+            variant={isEmergency ? 'destructive' : isCheckIn ? 'default' : 'outline'}
+            size="sm"
+            onClick={action.onClick}
+            className={
+              isCheckIn
+                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                : isEmergency
+                  ? undefined
+                  : 'border-emerald-200 text-emerald-800 hover:bg-emerald-50'
+            }
+            data-testid={`patient-quick-action-${action.id}`}
+          >
+            <action.icon className="h-4 w-4" />
+            <span className="hidden sm:inline">{action.label}</span>
+          </Button>
+        );
+      })}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-gray-200 text-gray-700"
+            data-testid={patientLookupTestIds.recordQuickActionsMore}
+          >
+            More actions
+            <ChevronDown className="ml-1 h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          {moreActions.map((action, index) => (
+            <React.Fragment key={action.id}>
+              {index === 2 && <DropdownMenuSeparator />}
+              <DropdownMenuItem
+                onClick={action.onClick}
+                data-testid={`patient-quick-action-${action.id}`}
+              >
+                <action.icon className="mr-2 h-4 w-4 text-gray-500" />
+                {action.label}
+              </DropdownMenuItem>
+            </React.Fragment>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
 
   return (
     <>
-      {/* Toolbar */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-700">Quick Actions</h3>
-          <div className="flex items-center gap-2 flex-wrap">
-            {quickActions.map((action) => (
-              <Button
-                key={action.id}
-                variant={action.variant}
-                size="sm"
-                onClick={action.onClick}
-                className={`flex items-center gap-2 ${action.color || ''}`}
-              >
-                <action.icon className="w-4 h-4" />
-                <span className="hidden md:inline">{action.label}</span>
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Inline Modals */}
-      {showActionModal === 'check-in' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Check-In Patient</h3>
-              <button onClick={() => setShowActionModal(null)} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-gray-600 mb-4">
-              Check-in <strong>{patientName}</strong> for today's appointment?
-            </p>
-            <div className="mb-4 space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  <option>Ophthalmology</option>
-                  <option>Optometry</option>
-                  <option>Surgery</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Doctor</label>
-                <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  <option>Dr. Smith</option>
-                  <option>Dr. Johnson</option>
-                  <option>Dr. Williams</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowActionModal(null)}>Cancel</Button>
-              <Button variant="default" onClick={() => { handleAction('check-in-confirm'); setShowActionModal(null); }}>
-                Check-In Now
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showActionModal === 'emergency-check-in' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-red-600 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5" />
-                Emergency Check-In
-              </h3>
-              <button onClick={() => setShowActionModal(null)} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-gray-600 mb-4">
-              Emergency check-in for <strong>{patientName}</strong>. This will bypass the queue.
-            </p>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Reason</label>
-              <textarea 
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-20" 
-                placeholder="Describe the emergency..."
-              ></textarea>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowActionModal(null)}>Cancel</Button>
-              <Button variant="destructive" onClick={() => { handleAction('emergency-confirm'); setShowActionModal(null); }}>
-                Emergency Check-In
-              </Button>
-            </div>
+      {variant === 'compact' ? (
+        toolbar
+      ) : (
+        <div className="border-b border-gray-200 bg-white px-6 py-3">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-sm font-semibold text-gray-700">Quick actions</h3>
+            {toolbar}
           </div>
         </div>
       )}
 
       {showActionModal === 'send-sms' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Send SMS Reminder</h3>
-              <button onClick={() => setShowActionModal(null)} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Send SMS reminder</h3>
+              <button
+                onClick={() => setShowActionModal(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="h-5 w-5" />
               </button>
             </div>
-            <div className="mb-4 space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Message Template</label>
-                <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  <option>Appointment Reminder</option>
-                  <option>Payment Reminder</option>
-                  <option>Lab Results Ready</option>
-                  <option>Custom Message</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
-                <textarea 
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24" 
-                  placeholder="Your appointment is scheduled for..."
-                ></textarea>
-              </div>
-            </div>
+            <p className="mb-4 text-gray-600">
+              SMS reminders for <strong>{patientName}</strong> will open from the communications
+              workflow once connected.
+            </p>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowActionModal(null)}>Cancel</Button>
-              <Button variant="default" onClick={() => { handleAction('sms-send'); setShowActionModal(null); }}>
-                Send SMS
+              <Button variant="outline" onClick={() => setShowActionModal(null)}>
+                Close
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      {showActionModal === 'book-appointment' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Book Appointment</h3>
-              <button onClick={() => setShowActionModal(null)} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="mb-4 space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Appointment Date</label>
-                <input 
-                  type="date" 
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time Slot</label>
-                <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  <option>9:00 AM - 9:30 AM</option>
-                  <option>10:00 AM - 10:30 AM</option>
-                  <option>11:00 AM - 11:30 AM</option>
-                  <option>2:00 PM - 2:30 PM</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Doctor</label>
-                <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  <option>Dr. Smith</option>
-                  <option>Dr. Johnson</option>
-                  <option>Dr. Williams</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowActionModal(null)}>Cancel</Button>
-              <Button variant="default" onClick={() => { handleAction('appointment-book'); setShowActionModal(null); }}>
-                Book Appointment
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Other modals can be added similarly */}
-      {showActionModal && !['check-in', 'emergency-check-in', 'send-sms', 'book-appointment'].includes(showActionModal) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
+      {showActionModal && !['send-sms'].includes(showActionModal) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                {showActionModal.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                {showActionModal
+                  .split('-')
+                  .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                  .join(' ')}
               </h3>
-              <button onClick={() => setShowActionModal(null)} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="w-5 h-5" />
+              <button
+                onClick={() => setShowActionModal(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="h-5 w-5" />
               </button>
             </div>
-            <p className="text-gray-600 mb-4">
-              This action is coming soon. Feature under development.
+            <p className="mb-4 text-gray-600">
+              This action is coming soon. Use scheduling or front desk check-in for now.
             </p>
             <div className="flex justify-end">
-              <Button variant="outline" onClick={() => setShowActionModal(null)}>Close</Button>
+              <Button variant="outline" onClick={() => setShowActionModal(null)}>
+                Close
+              </Button>
             </div>
           </div>
         </div>

@@ -12,17 +12,20 @@ public class ChecklistGateService
     private readonly SurgicalSafetyService      _surgicalSafety;
     private readonly AnaesthesiaMonitoringService _monitoring;
     private readonly PacAssessmentService       _pac;
+    private readonly WardInvestigationChecklistService _investigation;
 
     public ChecklistGateService(
         IpManagementDbContext db,
         SurgicalSafetyService surgicalSafety,
         AnaesthesiaMonitoringService monitoring,
-        PacAssessmentService pac)
+        PacAssessmentService pac,
+        WardInvestigationChecklistService investigation)
     {
         _db          = db;
         _surgicalSafety = surgicalSafety;
         _monitoring  = monitoring;
         _pac         = pac;
+        _investigation = investigation;
     }
 
     public async Task<ChecklistGateResultDto> EvaluateTransitionAsync(
@@ -38,7 +41,7 @@ public class ChecklistGateService
                 break;
 
             case $"{ClinicalState.Admitted}->{ClinicalState.ReadyForSurgery}":
-                await AddPacWarningAsync(journey.Id, tenantId, warnings);
+                await AddMarkReadyHardBlocksAsync(journey, tenantId, warnings);
                 break;
 
             case $"{ClinicalState.ReadyForSurgery}->{ClinicalState.SentToOT}":
@@ -110,6 +113,18 @@ public class ChecklistGateService
     private async Task AddAdmissionPhaseWarningsAsync(
         PatientJourney journey, Guid tenantId, List<ChecklistGateWarningDto> warnings)
     {
+        // Financial: warn (never block) when an outstanding balance has not been
+        // collected and Emergency FC has not been applied. Insurance pre-auth is a
+        // separate hard gate (CcmsAdmissionClient); this covers self-pay & copay.
+        if (journey.BalanceDue is > 0 && !journey.EmergencyFcApplied)
+        {
+            warnings.Add(new ChecklistGateWarningDto(
+                "financial_balance_outstanding",
+                $"Outstanding balance of \u20B9{journey.BalanceDue:N0} not yet collected.",
+                "warn",
+                false));
+        }
+
         if (journey.CounselingSessionId is Guid sessionId)
         {
             var p0 = await (
@@ -151,22 +166,72 @@ public class ChecklistGateService
             tenantId);
         if (p1.total > 0 && p1.done < p1.total)
         {
+                    warnings.Add(new ChecklistGateWarningDto(
+                        "p1_investigation_incomplete",
+                        $"P1 Investigations: {p1.done}/{p1.total} complete.",
+                        "warn",
+                        false));
+        }
+
+        var p2 = await CountDeptClearanceAsync(clearance.Id, tenantId);
+        if (p2.total > 0 && p2.done < p2.total)
+        {
             warnings.Add(new ChecklistGateWarningDto(
-                "p1_investigation_incomplete",
-                $"P1 Ward Investigation: {p1.done}/{p1.total} complete.",
+                "p2_dept_clearance_incomplete",
+                $"P2 Dept Clearance: {p2.done}/{p2.total} complete.",
                 "warn",
                 false));
         }
 
-        var p2 = await CountPhaseAsync(clearance.Id, WardChecklistService.WardFormCode, tenantId);
-        if (p2.total > 0 && p2.done < p2.total)
+        // P3 Ward Safety (bedside) is intentionally NOT warned here: post-Option-B it holds
+        // only true bedside nursing acts (check-in, dilatation, slit-lamp, marking, etc.)
+        // which physically happen AFTER admission, and its former mirror rows duplicated the
+        // P1/P2/PAC facts already warned above. Nurse prep is verified at the point of care
+        // (Send-to-OT med-log gate + OT Surgical Safety Checklist).
+    }
+
+    private static readonly HashSet<string> DeptClearanceExcludedCategories = new(StringComparer.Ordinal)
+    {
+        "Lab Tests",
+        "Diagnostic Imaging",
+        "Investigations",
+        "Vitals",
+    };
+
+    /// <summary>Matches frontend <c>computeDeptClearanceProgress</c> (P2 phase strip).</summary>
+    private async Task<(int done, int total)> CountDeptClearanceAsync(
+        Guid clearanceId, Guid tenantId)
+    {
+        var sectionClearances = await _db.PreOpSectionClearances
+            .Where(s => s.ClearanceId == clearanceId && s.DeletedAt == null)
+            .ToListAsync();
+
+        var activeSections = sectionClearances
+            .Where(s => s.Status != "NotRequested")
+            .ToList();
+
+        if (activeSections.Count > 0)
         {
-            warnings.Add(new ChecklistGateWarningDto(
-                "p2_ward_incomplete",
-                $"P2 Ward Checklist: {p2.done}/{p2.total} complete.",
-                "warn",
-                false));
+            var confirmed = activeSections.Count(s => s.Status == "WardConfirmed");
+            return (confirmed, activeSections.Count);
         }
+
+        var deptItems = await (
+            from cp in _db.PreOpCompletions
+            join item in _db.PreOpSectionItems on cp.ItemId equals item.Id
+            where cp.ClearanceId == clearanceId
+                  && cp.TenantId == tenantId
+                  && cp.DeletedAt == null
+                  && item.IsActive
+                  && item.FormCode != WardChecklistService.WardFormCode
+                  && item.FormCode != WardInvestigationChecklistService.InvestigationFormCode
+                  && !DeptClearanceExcludedCategories.Contains(item.Category)
+            select new { item.IsBlocking, Done = cp.IsCompleted || cp.IsBypassed }
+        ).ToListAsync();
+
+        var pool = deptItems.Where(x => x.IsBlocking).ToList();
+        var items = pool.Count > 0 ? pool : deptItems;
+        return (items.Count(x => x.Done), items.Count);
     }
 
     private async Task<(int done, int total)> CountPhaseAsync(
@@ -186,17 +251,102 @@ public class ChecklistGateService
         return (rows.Count(x => x), rows.Count);
     }
 
-    private async Task AddPacWarningAsync(
-        Guid journeyId, Guid tenantId, List<ChecklistGateWarningDto> warnings)
+    private async Task AddMarkReadyHardBlocksAsync(
+        PatientJourney journey, Guid tenantId, List<ChecklistGateWarningDto> warnings)
     {
-        if (!await _pac.IsCompletedAsync(journeyId, tenantId))
+        var userId = journey.UpdatedByUserId ?? journey.CreatedByUserId ?? Guid.Empty;
+        var checklist = await _investigation.GetChecklistAsync(journey.Id, tenantId, userId);
+        if (checklist.UnverifiedCriticalKeys.Count > 0)
+        {
+            warnings.Add(new ChecklistGateWarningDto(
+                "critical_labs_unverified",
+                checklist.UnverifiedCriticalKeys.Count == 1
+                    ? $"Critical lab not ward-verified: {checklist.UnverifiedCriticalKeys[0]}."
+                    : $"{checklist.UnverifiedCriticalKeys.Count} critical labs are not ward-verified.",
+                "block",
+                false));
+        }
+
+        var clearance = await _db.PreOpClearances
+            .FirstOrDefaultAsync(c => c.JourneyId == journey.Id
+                                      && c.TenantId == tenantId
+                                      && c.DeletedAt == null);
+        if (clearance is not null)
+        {
+            if (!await IsCompletionDoneAsync(clearance.Id, tenantId, "surgery_consent_signed"))
+            {
+                warnings.Add(new ChecklistGateWarningDto(
+                    "surgical_consent_unsigned",
+                    "Surgical consent must be signed with the consent PDF on file.",
+                    "block",
+                    false));
+            }
+
+            if (!await IsLateralityAttestedAsync(journey.EyeOperated, clearance.Id, tenantId))
+            {
+                warnings.Add(new ChecklistGateWarningDto(
+                    "laterality_not_attested",
+                    string.IsNullOrWhiteSpace(journey.EyeOperated)
+                        ? "Operative eye is not scheduled on this journey."
+                        : $"Surgery site for {NormalizeEye(journey.EyeOperated)} must be marked and attested in Consent.",
+                    "block",
+                    false));
+            }
+        }
+
+        if (!await _pac.IsCompletedAsync(journey.Id, tenantId))
         {
             warnings.Add(new ChecklistGateWarningDto(
                 "pac_incomplete",
-                "PAC assessment is not completed. Ward item \"PAC done & documented\" may be incomplete.",
-                "warn",
+                "PAC assessment must be completed before marking ready for surgery.",
+                "block",
                 false));
         }
+    }
+
+    private async Task<bool> IsCompletionDoneAsync(Guid clearanceId, Guid tenantId, string itemKey)
+    {
+        return await (
+            from cp in _db.PreOpCompletions
+            join item in _db.PreOpSectionItems on cp.ItemId equals item.Id
+            where cp.ClearanceId == clearanceId
+                  && cp.TenantId == tenantId
+                  && cp.DeletedAt == null
+                  && item.ItemKey == itemKey
+            select cp.IsCompleted || cp.IsBypassed
+        ).FirstOrDefaultAsync();
+    }
+
+    private async Task<bool> IsLateralityAttestedAsync(
+        string? scheduledEye, Guid clearanceId, Guid tenantId)
+    {
+        var scheduled = NormalizeEye(scheduledEye);
+        if (scheduled is null) return false;
+
+        var row = await (
+            from cp in _db.PreOpCompletions
+            join item in _db.PreOpSectionItems on cp.ItemId equals item.Id
+            where cp.ClearanceId == clearanceId
+                  && cp.TenantId == tenantId
+                  && cp.DeletedAt == null
+                  && item.ItemKey == "surgery_site_marked"
+            select new { cp.IsCompleted, cp.IsBypassed, cp.Notes, cp.ResultValue }
+        ).FirstOrDefaultAsync();
+
+        if (row is null || !(row.IsCompleted || row.IsBypassed)) return false;
+        if (string.IsNullOrWhiteSpace(row.Notes)) return false;
+        return NormalizeEye(row.ResultValue) == scheduled;
+    }
+
+    private static string? NormalizeEye(string? value)
+    {
+        var raw = (value ?? "").Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(raw)) return null;
+        if (raw is "OD" or "OS" or "OU") return raw;
+        if (raw is "RE" || raw.Contains("RIGHT", StringComparison.Ordinal)) return "OD";
+        if (raw is "LE" || raw.Contains("LEFT", StringComparison.Ordinal)) return "OS";
+        if (raw is "BOTH" || raw.Contains("BILAT", StringComparison.Ordinal)) return "OU";
+        return raw;
     }
 
     private async Task AddAfterSurgeryWarningAsync(
