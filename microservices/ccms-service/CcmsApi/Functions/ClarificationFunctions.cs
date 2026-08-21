@@ -50,6 +50,17 @@ public class ClarificationFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
+        // Phase 2 RBAC: clarification write requires operational CCMS permission.
+        var perms = claims!.SafePermissions;
+        if (perms.Length > 0
+            && !perms.Contains("*")
+            && !perms.Contains("ccms.clarification.write")
+            && !perms.Contains("ccms.preauth.process")
+            && !perms.Contains("ccms.workflow.admin"))
+        {
+            return await req.UnauthorizedAsync("Missing permission: ccms.clarification.write");
+        }
+
         var body = await JsonSerializer.DeserializeAsync<AddClarificationQueryRequest>(req.Body,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (body is null || string.IsNullOrWhiteSpace(body.Query))
@@ -76,6 +87,16 @@ public class ClarificationFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+
+        var perms = claims!.SafePermissions;
+        if (perms.Length > 0
+            && !perms.Contains("*")
+            && !perms.Contains("ccms.clarification.write")
+            && !perms.Contains("ccms.preauth.process")
+            && !perms.Contains("ccms.workflow.admin"))
+        {
+            return await req.UnauthorizedAsync("Missing permission: ccms.clarification.write");
+        }
 
         var body = await JsonSerializer.DeserializeAsync<RespondToClarificationRequest>(req.Body,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });

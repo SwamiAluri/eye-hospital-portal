@@ -19,6 +19,7 @@ import { CasePatientInsuranceCard } from '@/components/ccms/CasePatientInsurance
 import { CaseWorkflowStepper } from '@/components/ccms/CaseWorkflowStepper';
 import { CaseDocumentsPanel } from '@/components/ccms/CaseDocumentsPanel';
 import { ClarificationPanel } from '@/components/ccms/ClarificationPanel';
+import { CaseEnhancementPanel } from '@/components/ccms/CaseEnhancementPanel';
 import type { TpaResponsePrefill } from '@/lib/ccms/tpa-response-prefill';
 import { TabActionButton } from '@/components/ccms/TabActionButton';
 import { CaseIntakePanel } from '@/components/ccms/CaseIntakePanel';
@@ -808,6 +809,18 @@ export default function CcmsCaseDetailPage() {
           {/* ── PRE-AUTH ──────────────────────────────────────────────────── */}
           {tab === 'authorization' && (
             <div className="space-y-4">
+              {case_ && (
+                <CaseEnhancementPanel
+                  caseId={case_.id}
+                  caseApprovedAmount={Number(case_.approvedAmount ?? 0)}
+                  eligibleAmountHint={Number(
+                    case_.estimatedAmount
+                    ?? case_.approvedAmount
+                    ?? 0,
+                  )}
+                  canWrite={perms.canCreateAuth || perms.canRecordTpaResponse}
+                />
+              )}
               {needsVisitPolicyImport && (
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
                   <div className="flex-1 min-w-0">

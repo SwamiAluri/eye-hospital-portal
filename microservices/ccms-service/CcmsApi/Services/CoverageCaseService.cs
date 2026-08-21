@@ -552,50 +552,104 @@ public class CoverageCaseService
         return JsonSerializer.Serialize(draft, serializeOpts);
     }
 
-    // ── Admission validation (9-case matrix) ─────────────────────────────────
+    // ── Admission validation (canonical decision policy — Phase 1) ────────────
 
     public async Task<AdmissionValidationResult> ValidateAdmissionAsync(
-        Guid tenantId, Guid? journeyId, Guid? sessionId, CancellationToken ct = default)
+        Guid tenantId,
+        Guid? journeyId,
+        Guid? sessionId,
+        bool emergencyFcApplied = false,
+        CancellationToken ct = default)
     {
-        // No CCMS case → allow
         CcmsCoverageCase? coverageCase = null;
         if (journeyId.HasValue)
             coverageCase = await GetByJourneyIdAsync(journeyId.Value, ct);
         if (coverageCase is null && sessionId.HasValue)
             coverageCase = await GetBySessionIdAsync(sessionId.Value, ct);
 
+        return AdmissionCoverageDecisionPolicy.Decide(coverageCase, emergencyFcApplied);
+    }
+
+    /// <summary>
+    /// Links JourneyId onto a coverage case for IP lifecycle integration.
+    /// Prefer session match when JourneyId is not yet set; never overwrites a different JourneyId.
+    /// </summary>
+    public async Task<CcmsCoverageCase?> LinkJourneyIdAsync(
+        Guid journeyId,
+        Guid? sessionId,
+        Guid actorUserId,
+        CancellationToken ct = default)
+    {
+        var byJourney = await GetByJourneyIdAsync(journeyId, ct);
+        if (byJourney is not null)
+            return byJourney;
+
+        CcmsCoverageCase? coverageCase = null;
+        if (sessionId.HasValue)
+            coverageCase = await GetBySessionIdAsync(sessionId.Value, ct);
+
         if (coverageCase is null)
-            return AdmissionValidationResult.Allow("No coverage case found. Proceeding normally.");
+            return null;
 
-        var state = coverageCase.CurrentState;
-        var emergencyFc = coverageCase.EmergencyFcApplied;
-        var preAuthSent = state is "PREAUTH_SENT" or "WAITING_APPROVAL" or "APPROVED"
-            or "PARTIAL_APPROVAL" or "ADMISSION_READY" or "ADMITTED"
-            or "CLARIFICATION_REQUIRED" or "RESUBMITTED";
-
-        return state switch
+        if (coverageCase.JourneyId.HasValue && coverageCase.JourneyId.Value != journeyId)
         {
-            "APPROVED"             => AdmissionValidationResult.Allow(null, coverageCase),
-            "PARTIAL_APPROVAL"     => AdmissionValidationResult.Warn("Partial approval. Patient share applicable.", coverageCase),
-            "WAITING_APPROVAL" when emergencyFc
-                                   => AdmissionValidationResult.Warn("Emergency FC applied. Pre-auth pending.", coverageCase),
-            "WAITING_APPROVAL" when preAuthSent
-                                   => AdmissionValidationResult.Warn("Pre-auth sent; awaiting TPA response.", coverageCase),
-            "WAITING_APPROVAL"     => AdmissionValidationResult.Block("Pre-auth not yet sent to TPA. Cannot admit."),
-            "PREAUTH_GENERATED" when emergencyFc
-                                   => AdmissionValidationResult.Warn("Emergency FC applied. Pre-auth generated but not sent.", coverageCase),
-            "PREAUTH_GENERATED"    => AdmissionValidationResult.Block("Pre-auth generated but not sent to TPA."),
-            "CLARIFICATION_REQUIRED"
-                                   => AdmissionValidationResult.Warn("TPA requested clarification.", coverageCase),
-            "RESUBMITTED"          => AdmissionValidationResult.Warn("Pre-auth resubmitted. Awaiting TPA decision.", coverageCase),
-            "REJECTED"             => AdmissionValidationResult.Block("TPA rejected pre-auth. Cannot admit under insurance."),
-            "EXPIRED"              => AdmissionValidationResult.Block("Pre-auth has expired. Renewal required."),
-            "CANCELLED" or "ABORTED"
-                                   => AdmissionValidationResult.Block("Coverage case was cancelled/aborted."),
-            "DRAFT" or "ELIGIBILITY_PENDING" or "ELIGIBILITY_VERIFIED" or "POLICY_CAPTURED" or "AUTHORIZATION_REQUIRED"
-                                   => AdmissionValidationResult.Allow("Pre-auth process not yet started. Informational.", coverageCase),
-            _                      => AdmissionValidationResult.Allow($"State: {state}. Proceeding.", coverageCase)
-        };
+            _log.LogWarning(
+                "Refusing JourneyId link: case {CaseId} already linked to {Existing}, requested {Requested}",
+                coverageCase.Id, coverageCase.JourneyId, journeyId);
+            return coverageCase;
+        }
+
+        coverageCase.JourneyId = journeyId;
+        coverageCase.UpdatedAt = DateTime.UtcNow;
+        coverageCase.UpdatedByUserId = actorUserId;
+        await _db.SaveChangesAsync(ct);
+        _log.LogInformation("Linked JourneyId {JourneyId} to coverage case {CaseId}", journeyId, coverageCase.Id);
+        return coverageCase;
+    }
+
+    /// <summary>
+    /// Marks Emergency Financial Clearance on the coverage case so subsequent
+    /// validate-admission decisions reflect the audited IP exception.
+    /// </summary>
+    public async Task<CcmsCoverageCase?> ApplyEmergencyFcAsync(
+        Guid tenantId,
+        Guid? journeyId,
+        Guid? sessionId,
+        string reason,
+        Guid actorUserId,
+        CancellationToken ct = default)
+    {
+        CcmsCoverageCase? coverageCase = null;
+        if (journeyId.HasValue)
+            coverageCase = await GetByJourneyIdAsync(journeyId.Value, ct);
+        if (coverageCase is null && sessionId.HasValue)
+            coverageCase = await GetBySessionIdAsync(sessionId.Value, ct);
+        if (coverageCase is null || coverageCase.TenantId != tenantId)
+            return null;
+
+        coverageCase.EmergencyFcApplied = true;
+        coverageCase.UpdatedAt = DateTime.UtcNow;
+        coverageCase.UpdatedByUserId = actorUserId;
+        // Persist reason in counsellor draft JSON when no dedicated column exists.
+        try
+        {
+            var draft = string.IsNullOrWhiteSpace(coverageCase.CounsellorDraftJson)
+                ? new Dictionary<string, object?>()
+                : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                      coverageCase.CounsellorDraftJson!)
+                  ?? new Dictionary<string, object?>();
+            draft["emergencyFcReason"] = reason;
+            draft["emergencyFcAppliedAt"] = DateTime.UtcNow.ToString("O");
+            draft["emergencyFcAppliedBy"] = actorUserId.ToString();
+            coverageCase.CounsellorDraftJson = System.Text.Json.JsonSerializer.Serialize(draft);
+        }
+        catch
+        {
+            // Non-fatal — flag is still set.
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return coverageCase;
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
@@ -721,21 +775,40 @@ public record AdmissionValidationResult(
     string? RoomClassApproved,
     DateTime? ValidUntil,
     string? PreAuthNumber,
-    bool    RequiresEmergencyFcOverride
+    bool    RequiresEmergencyFcOverride,
+    /// <summary>ALLOW | WARN | BLOCK — distinct from WarningLevel display tone.</summary>
+    string  Decision = AdmissionCoverageDecisionPolicy.DecisionAllow,
+    string? CoverageState = null,
+    bool    IsEmergencyFinancialClearance = false,
+    string? PaymentType = null,
+    DateTime? LastUpdatedAt = null
 )
 {
-    public static AdmissionValidationResult Allow(string? message = null, CcmsCoverageCase? c = null) =>
+    public static AdmissionValidationResult Allow(
+        string? message = null,
+        CcmsCoverageCase? c = null,
+        string decision = AdmissionCoverageDecisionPolicy.DecisionAllow) =>
         new(true, message is null ? "none" : "info", message, null,
             c?.Id, c?.ApprovedAmount ?? 0, c?.RoomClassApproved,
-            c?.PreAuthExpiry, c?.PreAuthNumber, false);
+            c?.PreAuthExpiry, c?.PreAuthNumber, false,
+            decision, c?.CurrentState, false, c?.PaymentType, c?.UpdatedAt);
 
-    public static AdmissionValidationResult Warn(string msg, CcmsCoverageCase? c = null) =>
+    public static AdmissionValidationResult Warn(
+        string msg,
+        CcmsCoverageCase? c = null,
+        string decision = AdmissionCoverageDecisionPolicy.DecisionWarn,
+        bool isEmergencyFc = false) =>
         new(true, "warning", msg, null,
             c?.Id, c?.ApprovedAmount ?? 0, c?.RoomClassApproved,
-            c?.PreAuthExpiry, c?.PreAuthNumber, false);
+            c?.PreAuthExpiry, c?.PreAuthNumber, isEmergencyFc,
+            decision, c?.CurrentState, isEmergencyFc, c?.PaymentType, c?.UpdatedAt);
 
-    public static AdmissionValidationResult Block(string reason) =>
-        new(false, "blocked", null, reason, null, 0, null, null, null, true);
+    public static AdmissionValidationResult Block(string reason, CcmsCoverageCase? c = null) =>
+        new(false, "blocked", null, reason,
+            c?.Id, c?.ApprovedAmount ?? 0, c?.RoomClassApproved,
+            c?.PreAuthExpiry, c?.PreAuthNumber, true,
+            AdmissionCoverageDecisionPolicy.DecisionBlock,
+            c?.CurrentState, false, c?.PaymentType, c?.UpdatedAt);
 }
 
 // EF raw SQL helper

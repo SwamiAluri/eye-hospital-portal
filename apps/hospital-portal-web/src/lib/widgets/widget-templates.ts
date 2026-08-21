@@ -170,7 +170,7 @@ export const FINANCIAL_COUNSELING_TEMPLATE: WidgetTemplate = {
 export const INSURANCE_DISCUSSION_TEMPLATE: WidgetTemplate = {
   id: 'insurance',
   name: 'Insurance & Cost Discussion',
-  description: 'Insurance pre-auth info and cost explanation (payment at billing desk)',
+  description: 'Cost discussion; coverage/pre-auth is handled in CCMS (not mock widgets)',
   stage: 'financial',
   icon: Shield,
   widgets: [
@@ -193,22 +193,16 @@ export const INSURANCE_DISCUSSION_TEMPLATE: WidgetTemplate = {
       order: 3,
     },
     {
-      widgetId: 'insurance-preauth',
-      size: 'large',
-      isPinned: false,
-      order: 4,
-    },
-    {
       widgetId: 'payment-summary',
       size: 'medium',
       isPinned: false,
-      order: 5,
+      order: 4,
     },
     {
       widgetId: 'session-notes',
       size: 'medium',
       isPinned: false,
-      order: 6,
+      order: 5,
     },
   ],
 };
@@ -273,7 +267,7 @@ export const CASH_FLOW_TEMPLATE: WidgetTemplate = {
 export const GOVERNMENT_SCHEME_FLOW_TEMPLATE: WidgetTemplate = {
   id: 'government-scheme-flow',
   name: 'Government Scheme Counseling',
-  description: 'Explain authorization process (CGHS/ESH/SGHS/Arograshree)',
+  description: 'Explain scheme coverage; authorization is handled in CCMS',
   stage: 'financial',
   icon: Shield,
   widgets: [
@@ -296,22 +290,16 @@ export const GOVERNMENT_SCHEME_FLOW_TEMPLATE: WidgetTemplate = {
       order: 3,
     },
     {
-      widgetId: 'government-scheme-authorization',
-      size: 'large',
-      isPinned: false,
-      order: 4,
-    },
-    {
       widgetId: 'payment-summary',
       size: 'medium',
       isPinned: false,
-      order: 5,
+      order: 4,
     },
     {
       widgetId: 'session-notes',
       size: 'medium',
       isPinned: false,
-      order: 6,
+      order: 5,
     },
   ],
 };

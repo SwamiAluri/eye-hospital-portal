@@ -1,7 +1,18 @@
 'use client';
 
+/**
+ * @deprecated Phase 3 — Auth Module insurance-preauth hooks are frozen for writes.
+ * Production coverage lives in CCMS (`/dashboard/ccms/cases`).
+ * Reads remain for historical compatibility.
+ */
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getApi } from '@/lib/api';
+
+const LEGACY_WRITE_FROZEN = Object.assign(
+  new Error('Legacy insurance-preauth writes are frozen. Use Coverage & Claims (CCMS).'),
+  { code: 'CCMS_LEGACY_WRITE_FROZEN' as const },
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -98,13 +109,10 @@ export function useInsurancePreauth(sessionId: string | undefined) {
 export function useCreateInsurancePreauth(sessionId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: CreatePreauthPayload) => {
-      const api = getApi();
-      const res = await api.post('/insurance-preauth', payload);
-      return res.data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['insurance-preauth-v2', sessionId] });
+    mutationFn: async (_payload: CreatePreauthPayload) => {
+      void sessionId;
+      void qc;
+      throw LEGACY_WRITE_FROZEN;
     },
   });
 }
@@ -114,13 +122,10 @@ export function useCreateInsurancePreauth(sessionId: string) {
 export function useUpdatePreauthStatus(sessionId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload: UpdateStatusPayload }) => {
-      const api = getApi();
-      const res = await api.patch(`/insurance-preauth/${id}/status`, payload);
-      return res.data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['insurance-preauth-v2', sessionId] });
+    mutationFn: async (_args: { id: string; payload: UpdateStatusPayload }) => {
+      void sessionId;
+      void qc;
+      throw LEGACY_WRITE_FROZEN;
     },
   });
 }

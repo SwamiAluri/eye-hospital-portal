@@ -102,7 +102,9 @@ public class JwtService
     /// </summary>
     public Guid ValidateInternalKey(HttpRequestData request)
     {
-        var expectedKey = _config["AuthService__InternalApiKey"] ?? string.Empty;
+        var expectedKey = _config["AuthService:InternalApiKey"]
+            ?? _config["AuthService__InternalApiKey"]
+            ?? string.Empty;
         request.Headers.TryGetValues("X-Internal-Key", out var keyVals);
         var providedKey = keyVals?.FirstOrDefault() ?? string.Empty;
 

@@ -16,11 +16,16 @@ public class OpdBillService : IOpdBillService
 {
     private readonly AppDbContext _context;
     private readonly ILogger<OpdBillService> _logger;
+    private readonly ICcmsBillFinalizedClient _ccms;
 
-    public OpdBillService(AppDbContext context, ILogger<OpdBillService> logger)
+    public OpdBillService(
+        AppDbContext context,
+        ILogger<OpdBillService> logger,
+        ICcmsBillFinalizedClient ccms)
     {
         _context = context;
         _logger = logger;
+        _ccms = ccms;
     }
 
     public async Task<OpdBillDto?> GetByIdAsync(Guid id)
@@ -507,6 +512,32 @@ public class OpdBillService : IOpdBillService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Bill {BillNumber} finalized by user {UserId}", bill.BillNumber, userId);
+
+        // Billing owns finalized bills — notify CCMS for coverage allocation (Phase 2 residual).
+        // Look up latest counselling session for this patient as optional SessionId link.
+        Guid? sessionId = null;
+        try
+        {
+            sessionId = await _context.CounselingSession
+                .Where(s => s.PatientId == bill.PatientId
+                            && s.TenantId == bill.TenantId
+                            && s.DeletedAt == null)
+                .OrderByDescending(s => s.CreatedAt)
+                .Select(s => (Guid?)s.Id)
+                .FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Session lookup for bill-finalized skipped");
+        }
+
+        _ = _ccms.NotifyBillFinalizedAsync(
+            bill.TenantId,
+            journeyId: null,
+            sessionId,
+            bill.Id,
+            bill.NetAmount,
+            userId);
 
         return await GetByIdAsync(bill.Id);
     }

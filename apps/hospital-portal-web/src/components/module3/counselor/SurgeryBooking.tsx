@@ -310,8 +310,8 @@ export function SurgeryBooking({
                 <div className="flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
                   <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
                   <div className="text-sm text-orange-900">
-                    <p className="font-medium">Financial Clearance Required</p>
-                    <p className="mt-1">Complete package selection and payment collection before booking OR.</p>
+                    <p className="font-medium">Patient Payment Status Incomplete</p>
+                    <p className="mt-1">Complete package selection and payment collection before booking OR. Coverage authorization (if insurance) is handled in CCMS.</p>
                   </div>
                 </div>
               )}

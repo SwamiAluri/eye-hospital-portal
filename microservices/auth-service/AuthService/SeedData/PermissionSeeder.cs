@@ -67,11 +67,20 @@ namespace AuthService.SeedData
                 // Clarifications
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.clarification.create",  Name = "Add Clarification Query",          Module = "ccms", Action = "create",          ResourceType = "clarification",         Scope = "branch", Description = "Record a TPA query against a pre-authorisation",                IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.clarification.respond", Name = "Respond to Clarification",         Module = "ccms", Action = "respond",         ResourceType = "clarification",         Scope = "branch", Description = "Provide hospital response to a TPA clarification query",         IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.clarification.write",   Name = "Write Clarifications",             Module = "ccms", Action = "write",           ResourceType = "clarification",         Scope = "branch", Description = "Phase 2 alias: create or respond to clarifications",             IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.preauth.create",        Name = "Create Pre-Auth (alias)",          Module = "ccms", Action = "create",          ResourceType = "authorization",         Scope = "branch", Description = "Alias of ccms.authorization.create",                            IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.preauth.submit",        Name = "Submit Pre-Auth (alias)",          Module = "ccms", Action = "submit",          ResourceType = "authorization",         Scope = "branch", Description = "Alias of ccms.authorization.submit",                            IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.preauth.process",       Name = "Process Pre-Auth (alias)",         Module = "ccms", Action = "process",         ResourceType = "authorization",         Scope = "branch", Description = "Alias of ccms.authorization.record_response",                   IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.enhancement.create",    Name = "Create Enhancement",               Module = "ccms", Action = "create",          ResourceType = "enhancement",           Scope = "branch", Description = "Create an enhancement request",                                 IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.enhancement.decide",    Name = "Decide Enhancement",               Module = "ccms", Action = "decide",          ResourceType = "enhancement",           Scope = "branch", Description = "Approve or reject an enhancement request",                      IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.enhancement.write",     Name = "Write Enhancements",               Module = "ccms", Action = "write",           ResourceType = "enhancement",           Scope = "branch", Description = "Phase 2 alias: create or decide enhancements",                  IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 // Claims
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.claim.create",          Name = "Create Claim Packet",              Module = "ccms", Action = "create",          ResourceType = "claim",                 Scope = "branch", Description = "Create a claim packet for billing",                             IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.claim.read",            Name = "View Claim",                       Module = "ccms", Action = "read",            ResourceType = "claim",                 Scope = "branch", Description = "View claim packets and their status",                           IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.claim.submit",          Name = "Submit Claim",                     Module = "ccms", Action = "submit",          ResourceType = "claim",                 Scope = "branch", Description = "Submit claim to TPA or insurer",                                IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.claim.write",           Name = "Write Claims (alias)",             Module = "ccms", Action = "write",           ResourceType = "claim",                 Scope = "branch", Description = "Phase 2 alias covering claim create/submit",                    IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.claim.acknowledge",     Name = "Acknowledge Claim",                Module = "ccms", Action = "acknowledge",     ResourceType = "claim",                 Scope = "branch", Description = "Record TPA acknowledgement of a claim",                         IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ip.emergency_fc.apply",      Name = "Apply Emergency FC",               Module = "ip_management", Action = "apply", ResourceType = "emergency_fc",          Scope = "branch", Description = "Apply Emergency Financial Clearance on an IP journey",          IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 // Settlements
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.settlement.create",    Name = "Record Settlement",                Module = "ccms", Action = "create",          ResourceType = "settlement",            Scope = "branch", Description = "Record a payment receipt against a claim",                      IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.settlement.read",      Name = "View Settlements",                 Module = "ccms", Action = "read",            ResourceType = "settlement",            Scope = "branch", Description = "View settlement history and amounts",                           IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
@@ -105,7 +114,106 @@ namespace AuthService.SeedData
             
             await context.SaveChangesAsync();
             
-            Console.WriteLine($"✓ Seeded {permissions.Count} patient management permissions");
+            Console.WriteLine($"✓ Seeded {permissions.Count} permissions (incl. CCMS Phase 2 aliases) for system tenant");
+        }
+
+        /// <summary>
+        /// Copies missing CCMS Phase-2 alias permissions to every live tenant
+        /// and attaches them to roles that already have any ccms.* permission
+        /// so they appear in JWTs after next login.
+        /// </summary>
+        public static async Task SeedPhase2AliasesForAllTenantsAsync(AppDbContext context)
+        {
+            var systemTenant = Guid.Parse("00000000-0000-0000-0000-000000000000");
+            var aliasCodes = new[]
+            {
+                "ccms.clarification.write",
+                "ccms.preauth.create",
+                "ccms.preauth.submit",
+                "ccms.preauth.process",
+                "ccms.enhancement.write",
+                "ccms.enhancement.create",
+                "ccms.enhancement.decide",
+                "ccms.claim.write",
+                "ip.emergency_fc.apply",
+            };
+
+            // Ensure system-tenant aliases exist first.
+            await SeedPermissionsAsync(context);
+
+            var tenantIds = await context.Tenants
+                .Where(t => t.IsActive)
+                .Select(t => t.Id)
+                .ToListAsync();
+            tenantIds.Add(systemTenant);
+            tenantIds = tenantIds.Distinct().ToList();
+
+            var systemAliases = await context.Permissions
+                .Where(p => p.TenantId == systemTenant && aliasCodes.Contains(p.Code) && p.IsActive)
+                .ToListAsync();
+
+            foreach (var tenantId in tenantIds)
+            {
+                foreach (var src in systemAliases)
+                {
+                    var exists = await context.Permissions
+                        .AnyAsync(p => p.TenantId == tenantId && p.Code == src.Code);
+                    if (exists) continue;
+
+                    await context.Permissions.AddAsync(new Permission
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = tenantId,
+                        Code = src.Code,
+                        Name = src.Name,
+                        Module = src.Module,
+                        Action = src.Action,
+                        ResourceType = src.ResourceType,
+                        Scope = src.Scope,
+                        Description = src.Description,
+                        IsSystemPermission = true,
+                        DepartmentSpecific = false,
+                        IsCustom = false,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    });
+                }
+            }
+
+            await context.SaveChangesAsync();
+
+            var roleIdsWithCcms = await context.RolePermissions
+                .Where(rp => rp.Permission.IsActive && rp.Permission.Code.StartsWith("ccms."))
+                .Select(rp => rp.RoleId)
+                .Distinct()
+                .ToListAsync();
+
+            var aliasPermIds = await context.Permissions
+                .Where(p => aliasCodes.Contains(p.Code) && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            foreach (var roleId in roleIdsWithCcms)
+            {
+                foreach (var permId in aliasPermIds)
+                {
+                    var linked = await context.RolePermissions
+                        .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permId);
+                    if (linked) continue;
+
+                    await context.RolePermissions.AddAsync(new Models.Domain.RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = roleId,
+                        PermissionId = permId,
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                }
+            }
+
+            await context.SaveChangesAsync();
+            Console.WriteLine($"✓ Phase 2 CCMS aliases ensured for {tenantIds.Count} tenants and {roleIdsWithCcms.Count} CCMS roles");
         }
     }
 }

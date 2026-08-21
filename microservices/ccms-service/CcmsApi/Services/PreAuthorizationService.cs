@@ -14,17 +14,20 @@ public class PreAuthorizationService
     private readonly CcmsDbContext _db;
     private readonly IWorkflowEngine _workflow;
     private readonly ClarificationService _clarification;
+    private readonly AuthServiceClient _authClient;
     private readonly ILogger<PreAuthorizationService> _log;
 
     public PreAuthorizationService(
         CcmsDbContext db,
         IWorkflowEngine workflow,
         ClarificationService clarification,
+        AuthServiceClient authClient,
         ILogger<PreAuthorizationService> log)
     {
         _db            = db;
         _workflow      = workflow;
         _clarification = clarification;
+        _authClient    = authClient;
         _log           = log;
     }
 
@@ -286,6 +289,54 @@ public class PreAuthorizationService
         coverageCase.RowVersion      += 1;
 
         await _db.SaveChangesAsync(ct);
+
+        var decision = req.Decision.ToUpperInvariant();
+        if (decision is "APPROVED" or "PARTIAL" or "REJECTED")
+        {
+            var type = decision switch
+            {
+                "APPROVED" => "ccms.preauth.approved",
+                "PARTIAL"  => "ccms.preauth.partially_approved",
+                _          => "ccms.preauth.rejected",
+            };
+            var msg = decision switch
+            {
+                "APPROVED" => "Pre-authorization approved",
+                "PARTIAL"  => "Pre-authorization partially approved",
+                _          => "Pre-authorization rejected",
+            };
+            await _authClient.NotifyDepartmentAsync(
+                coverageCase.TenantId,
+                coverageCase.BranchId,
+                "CCMS",
+                type,
+                msg,
+                $"Case {coverageCase.CaseNumber} · Auth {authorizationId:N} · Amount {req.ApprovedAmount}");
+            await _authClient.NotifyDepartmentAsync(
+                coverageCase.TenantId,
+                coverageCase.BranchId,
+                "WARD",
+                type,
+                msg,
+                $"Case {coverageCase.CaseNumber} · Journey {coverageCase.JourneyId}");
+        }
+        else if (decision is "CLARIFICATION" || decision.Contains("DOCUMENT", StringComparison.OrdinalIgnoreCase))
+        {
+            await _authClient.NotifyDepartmentAsync(
+                coverageCase.TenantId,
+                coverageCase.BranchId,
+                "CCMS",
+                "ccms.preauth.additional_docs_required",
+                "Additional documents required",
+                $"Case {coverageCase.CaseNumber} · Auth {authorizationId:N}");
+            await _authClient.NotifyDepartmentAsync(
+                coverageCase.TenantId,
+                coverageCase.BranchId,
+                "COUNSELLING",
+                "ccms.preauth.additional_docs_required",
+                "Additional documents required",
+                $"Case {coverageCase.CaseNumber} · Session {coverageCase.SessionId}");
+        }
 
         if (req.Decision.Equals("CLARIFICATION", StringComparison.OrdinalIgnoreCase))
         {

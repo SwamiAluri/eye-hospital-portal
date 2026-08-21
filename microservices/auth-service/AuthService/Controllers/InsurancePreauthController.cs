@@ -111,8 +111,23 @@ namespace AuthService.Controllers
 
         [HttpPost]
         [RequirePermission("counseling_sessions.update")]
+        [Obsolete("Use CCMS coverage case workflow. Writes are frozen in Phase 2.")]
         public async Task<IActionResult> Create([FromBody] CreatePreauthRequest request)
         {
+            var isBypass = Request.Headers.TryGetValue("X-CCMS-Bypass", out var bypassVal)
+                && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (!isBypass)
+            {
+                _logger.LogWarning(
+                    "Blocked legacy insurance-preauth create for session {SessionId}. Use CCMS.",
+                    request.SessionId);
+                return Conflict(new
+                {
+                    message = "New insurance pre-authorizations must be created via CCMS.",
+                    ccmsRedirect = $"/dashboard/ccms/cases?sessionId={request.SessionId}",
+                });
+            }
+
             try
             {
                 var tenantId = GetTenantId();
@@ -161,8 +176,20 @@ namespace AuthService.Controllers
 
         [HttpPatch("{id}/status")]
         [RequirePermission("counseling_sessions.update")]
+        [Obsolete("Use CCMS coverage case workflow. Writes are frozen in Phase 2.")]
         public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdatePreauthStatusRequest request)
         {
+            var isBypass = Request.Headers.TryGetValue("X-CCMS-Bypass", out var bypassVal)
+                && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (!isBypass)
+            {
+                return Conflict(new
+                {
+                    message = "Legacy insurance-preauth status updates are frozen. Use CCMS.",
+                    ccmsRedirect = "/dashboard/ccms/cases",
+                });
+            }
+
             try
             {
                 var tenantId = GetTenantId();
@@ -261,8 +288,20 @@ namespace AuthService.Controllers
 
         [HttpPost("{id}/documents")]
         [RequirePermission("counseling_sessions.update")]
+        [Obsolete("Use CCMS document domain. Writes are frozen in Phase 2.")]
         public async Task<IActionResult> AddDocument(Guid id, [FromBody] AddPreauthDocumentRequest request)
         {
+            var isBypass = Request.Headers.TryGetValue("X-CCMS-Bypass", out var bypassVal)
+                && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (!isBypass)
+            {
+                return Conflict(new
+                {
+                    message = "Legacy insurance-preauth document writes are frozen. Use CCMS.",
+                    ccmsRedirect = "/dashboard/ccms/cases",
+                });
+            }
+
             try
             {
                 var tenantId = GetTenantId();

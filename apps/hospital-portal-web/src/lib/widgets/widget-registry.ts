@@ -61,24 +61,27 @@ class WidgetRegistryClass {
   }
 
   /**
-   * Get all registered widgets
+   * Get all registered widgets.
+   * @param includeGalleryOnly when true, includes deprecated mock widgets (gallery pages).
    */
-  getAll(): WidgetRegistryEntry[] {
-    return Array.from(this.registry.values());
+  getAll(includeGalleryOnly = false): WidgetRegistryEntry[] {
+    const all = Array.from(this.registry.values());
+    if (includeGalleryOnly) return all;
+    return all.filter((e) => !e.metadata.galleryOnly);
   }
 
   /**
    * Get widgets by category
    */
-  getByCategory(category: string): WidgetRegistryEntry[] {
-    return this.getAll().filter((entry) => entry.metadata.category === category);
+  getByCategory(category: string, includeGalleryOnly = false): WidgetRegistryEntry[] {
+    return this.getAll(includeGalleryOnly).filter((entry) => entry.metadata.category === category);
   }
 
   /**
-   * Get widgets available for a specific session stage
+   * Get widgets available for a specific session stage (production templates only)
    */
   getByStage(stage: SessionStage): WidgetRegistryEntry[] {
-    return this.getAll().filter((entry) => {
+    return this.getAll(false).filter((entry) => {
       if (!entry.metadata.requiredStages || entry.metadata.requiredStages.length === 0) {
         return true; // Available in all stages
       }
@@ -264,22 +267,6 @@ export const ADVANCE_PAYMENT_CALCULATOR_WIDGET: WidgetMetadata = {
   minHeight: 450,
 };
 
-export const GOVERNMENT_SCHEME_AUTHORIZATION_WIDGET: WidgetMetadata = {
-  id: 'government-scheme-authorization',
-  title: 'Government Scheme Authorization',
-  description: 'CGHS, ESH, SGHS, Arograshree forms and document upload',
-  icon: Shield,
-  category: 'financial',
-  defaultSize: 'large',
-  allowedSizes: ['medium', 'large'],
-  requiredStages: ['financial'],
-  isPinnable: false,
-  isCloseable: true,
-  isResizable: true,
-  minWidth: 450,
-  minHeight: 500,
-};
-
 export const CAMP_SPONSOR_INFO_WIDGET: WidgetMetadata = {
   id: 'camp-sponsor-info',
   title: 'Camp Sponsor Info',
@@ -326,22 +313,6 @@ export const PAYMENT_COLLECTION_WIDGET: WidgetMetadata = {
   isResizable: true,
   minWidth: 400,
   minHeight: 350,
-};
-
-export const INSURANCE_PREAUTH_WIDGET: WidgetMetadata = {
-  id: 'insurance-preauth',
-  title: 'Insurance Pre-Auth',
-  description: 'Pre-auth form, document upload, status tracker',
-  icon: Shield,
-  category: 'financial',
-  defaultSize: 'large',
-  allowedSizes: ['medium', 'large'],
-  requiredStages: ['financial', 'consent', 'admission'],
-  isPinnable: false,
-  isCloseable: true,
-  isResizable: true,
-  minWidth: 450,
-  minHeight: 400,
 };
 
 // Consent & Documentation Widgets
@@ -553,22 +524,6 @@ export const IMAGING_VIEWER_WIDGET: WidgetMetadata = {
 };
 
 // Financial & Admin Widgets
-export const INSURANCE_CLAIM_TRACKING_WIDGET: WidgetMetadata = {
-  id: 'insurance-claim-tracking',
-  title: 'Insurance Claim Tracking',
-  description: 'Real-time claim status and document tracking',
-  icon: Shield,
-  category: 'admin',
-  defaultSize: 'medium',
-  allowedSizes: ['medium', 'large'],
-  requiredStages: ['financial', 'post-operative-care'],
-  isPinnable: true,
-  isCloseable: true,
-  isResizable: true,
-  minWidth: 400,
-  minHeight: 350,
-};
-
 export const BILLING_PAYMENT_PLAN_WIDGET: WidgetMetadata = {
   id: 'billing-payment-plan',
   title: 'Billing & Payment Plan',
@@ -728,11 +683,6 @@ export function registerAllWidgets(): void {
   });
 
   WidgetRegistry.register({
-    metadata: GOVERNMENT_SCHEME_AUTHORIZATION_WIDGET,
-    component: require('@/components/widgets/GovernmentSchemeAuthorizationWidget').default,
-  });
-
-  WidgetRegistry.register({
     metadata: CAMP_SPONSOR_INFO_WIDGET,
     component: require('@/components/widgets/CampSponsorInfoWidget').default,
   });
@@ -745,11 +695,6 @@ export function registerAllWidgets(): void {
   WidgetRegistry.register({
     metadata: PAYMENT_COLLECTION_WIDGET,
     component: require('@/components/widgets/PaymentCollectionWidget').default,
-  });
-
-  WidgetRegistry.register({
-    metadata: INSURANCE_PREAUTH_WIDGET,
-    component: require('@/components/widgets/InsurancePreAuthWidget').default,
   });
 
   // Consent & Documentation Widgets
@@ -833,11 +778,6 @@ export function registerAllWidgets(): void {
   });
 
   // Financial & Admin Widgets
-  WidgetRegistry.register({
-    metadata: INSURANCE_CLAIM_TRACKING_WIDGET,
-    component: require('@/components/widgets/InsuranceClaimTrackingWidget').default,
-  });
-
   WidgetRegistry.register({
     metadata: BILLING_PAYMENT_PLAN_WIDGET,
     component: require('@/components/widgets/BillingPaymentPlanWidget').default,

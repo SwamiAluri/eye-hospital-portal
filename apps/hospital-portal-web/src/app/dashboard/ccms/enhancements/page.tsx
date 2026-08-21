@@ -1,97 +1,125 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   TrendingUp, RefreshCw, AlertCircle, CheckCircle2, XCircle,
-  Clock, Plus, ChevronRight,
+  Clock, ChevronRight, Send,
 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
 import {
-  getEnhancementsByCaseId,
-  type Enhancement,
+  listEnhancements,
+  decideEnhancement,
+  submitEnhancement,
+  type EnhancementListItem,
 } from '@/lib/api/ccms/ccms-enhancements.api';
-import { listCoverageCases, type CoverageCase } from '@/lib/api/ccms/ccms-coverage-cases.api';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function statusConfig(status: string) {
   if (status === 'approved') return { cls: 'bg-green-50 text-green-700', label: 'Approved', icon: <CheckCircle2 className="w-3 h-3" /> };
   if (status === 'rejected') return { cls: 'bg-red-50 text-red-700',   label: 'Rejected', icon: <XCircle className="w-3 h-3" /> };
-  return { cls: 'bg-amber-50 text-amber-700', label: 'Pending', icon: <Clock className="w-3 h-3" /> };
+  if (status === 'submitted') return { cls: 'bg-indigo-50 text-indigo-700', label: 'Awaiting TPA', icon: <Send className="w-3 h-3" /> };
+  return { cls: 'bg-amber-50 text-amber-700', label: 'Draft', icon: <Clock className="w-3 h-3" /> };
 }
 
 function inr(n: number | undefined) {
-  if (!n) return '—';
+  if (n == null) return '—';
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
 function Skeleton() {
   return (
     <tr className="animate-pulse border-b border-gray-50">
-      {Array.from({ length: 7 }).map((_, j) => (
+      {Array.from({ length: 8 }).map((_, j) => (
         <td key={j} className="px-4 py-3"><div className="h-3 bg-gray-100 rounded-full" /></td>
       ))}
     </tr>
   );
 }
 
-// ── The enhancements page shows open enhancement requests across all cases ────
-
 export default function EnhancementsPage() {
   const router = useRouter();
-  // Load cases in APPROVED / PARTIAL_APPROVAL states that may have enhancements
-  const [cases,        setCases]        = useState<CoverageCase[]>([]);
-  const [enhancements, setEnhancements] = useState<Record<string, Enhancement[]>>({});
-  const [loading,      setLoading]      = useState(true);
-  const [error,        setError]        = useState<string | null>(null);
-  const [filter,       setFilter]       = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [rows, setRows] = useState<EnhancementListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'pending' | 'awaiting_tpa' | 'approved' | 'rejected'>('pending');
+  const [deciding, setDeciding] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // Load cases that are likely to have enhancements (approved track + in-progress)
-      const result = await listCoverageCases({ pageSize: 100 });
-      const allCases = result.cases ?? [];
-      setCases(allCases);
-
-      // Load enhancements for each case in parallel (cap to 20 cases for perf)
-      const sample = allCases.slice(0, 20);
-      const results = await Promise.allSettled(
-        sample.map(c => getEnhancementsByCaseId(c.id))
-      );
-      const map: Record<string, Enhancement[]> = {};
-      sample.forEach((c, i) => {
-        const r = results[i];
-        if (r.status === 'fulfilled' && r.value.length > 0) {
-          map[c.id] = r.value;
-        }
-      });
-      setEnhancements(map);
+      const status =
+        filter === 'pending' ? 'active'
+          : filter === 'awaiting_tpa' ? 'submitted'
+            : filter;
+      const list = await listEnhancements({ status, take: 200 });
+      setRows(list);
     } catch (e: unknown) {
       setError((e as Error)?.message ?? 'Failed to load enhancements');
+      setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
-  // Flatten all enhancements with their case context
-  const allRows = Object.entries(enhancements).flatMap(([caseId, list]) => {
-    const c = cases.find(x => x.id === caseId);
-    return list.map(e => ({ ...e, case_: c }));
-  });
+  const drafts = rows.filter(r => r.enhancement.status === 'active').length;
+  const awaiting = rows.filter(r => r.enhancement.status === 'submitted').length;
+  const approved = rows.filter(r => r.enhancement.status === 'approved').length;
+  const rejected = rows.filter(r => r.enhancement.status === 'rejected').length;
 
-  const filtered = allRows.filter(e =>
-    filter === 'all' || e.status === filter
-  );
+  async function onSubmit(id: string) {
+    const ref = window.prompt('TPA reference (optional)') ?? undefined;
+    setDeciding(id);
+    try {
+      await submitEnhancement(id, { tpaReferenceNumber: ref || undefined });
+      await load();
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? 'Submit failed');
+    } finally {
+      setDeciding(null);
+    }
+  }
 
-  const pending  = allRows.filter(e => e.status === 'active').length;
-  const approved = allRows.filter(e => e.status === 'approved').length;
-  const rejected = allRows.filter(e => e.status === 'rejected').length;
+  async function onDecide(id: string, approved: boolean, requested: number, fromSubmitted: boolean) {
+    const amount = approved
+      ? Number(window.prompt('Additional approved amount (INR)', String(requested)) ?? '')
+      : 0;
+    if (approved && !(amount >= 0)) return;
+
+    let hospitalOverride = false;
+    let overrideReason: string | undefined;
+    if (!fromSubmitted) {
+      const ok = window.confirm('Draft was not sent to TPA. Record as hospital override?');
+      if (!ok) return;
+      overrideReason = window.prompt('Override reason (required)') ?? '';
+      if (!overrideReason.trim()) {
+        setError('Override reason required');
+        return;
+      }
+      hospitalOverride = true;
+    }
+
+    const tpaRef = fromSubmitted
+      ? (window.prompt('TPA outcome reference (optional)') ?? undefined)
+      : undefined;
+
+    setDeciding(id);
+    try {
+      await decideEnhancement(id, {
+        approved,
+        approvedAmount: amount,
+        tpaReferenceNumber: tpaRef || undefined,
+        hospitalOverride,
+        overrideReason,
+      });
+      await load();
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? 'Decision failed');
+    } finally {
+      setDeciding(null);
+    }
+  }
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -101,11 +129,11 @@ export default function EnhancementsPage() {
           <div>
             <h1 className="text-base font-extrabold text-gray-900">Enhancement Requests</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">
-              Requests to extend approved coverage (amount, days, procedures)
+              Draft → Submit to TPA → Record outcome. Coverage projection updates only after outcome (or audited override).
             </p>
           </div>
         </div>
-        <button onClick={load} disabled={loading}
+        <button type="button" onClick={() => void load()} disabled={loading}
           className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 disabled:opacity-50">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
@@ -118,42 +146,48 @@ export default function EnhancementsPage() {
           </div>
         )}
 
-        {/* Summary strip */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           {[
-            { label: 'Pending Decision', value: pending,  cls: 'bg-amber-50 border-amber-100 text-amber-800' },
-            { label: 'Approved',         value: approved, cls: 'bg-green-50 border-green-100 text-green-800' },
-            { label: 'Rejected',         value: rejected, cls: 'bg-red-50 border-red-100 text-red-800' },
+            { label: 'Drafts', value: drafts, cls: 'bg-amber-50 border-amber-100 text-amber-800', f: 'pending' as const },
+            { label: 'Awaiting TPA', value: awaiting, cls: 'bg-indigo-50 border-indigo-100 text-indigo-800', f: 'awaiting_tpa' as const },
+            { label: 'Approved', value: approved, cls: 'bg-green-50 border-green-100 text-green-800', f: 'approved' as const },
+            { label: 'Rejected', value: rejected, cls: 'bg-red-50 border-red-100 text-red-800', f: 'rejected' as const },
           ].map(s => (
-            <div key={s.label} className={`rounded-2xl border p-4 ${s.cls}`}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest opacity-70">{s.label}</p>
-              <p className="text-2xl font-extrabold mt-0.5">{s.value}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Filter */}
-        <div className="flex gap-2">
-          {(['all', 'active', 'approved', 'rejected'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f === 'active' ? 'pending' : f as typeof filter)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors border ${
-                (filter === 'pending' && f === 'active') || filter === f
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => setFilter(s.f)}
+              className={`rounded-2xl border p-4 text-left ${s.cls} ${filter === s.f ? 'ring-2 ring-indigo-400' : ''}`}
             >
-              {f === 'active' ? 'Pending' : f.charAt(0).toUpperCase() + f.slice(1)}
+              <p className="text-[10px] font-semibold uppercase tracking-widest opacity-70">{s.label}</p>
+              <p className="text-2xl font-extrabold mt-0.5">{loading && filter === s.f ? '…' : s.value}</p>
             </button>
           ))}
         </div>
 
-        {/* Table */}
+        <div className="flex gap-2 flex-wrap">
+          {(['all', 'pending', 'awaiting_tpa', 'approved', 'rejected'] as const).map(f => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors border ${
+                filter === f
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+            </button>
+          ))}
+        </div>
+
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Case #', 'Patient', 'Type', 'Requested', 'Approved', 'Reason', 'Status', 'Date', ''].map(h => (
+                  {['Case #', 'Patient', 'Type', 'Requested', 'Case approved', 'Reason', 'Status', 'Actions'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-widest text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -161,66 +195,84 @@ export default function EnhancementsPage() {
               <tbody className="divide-y divide-gray-50">
                 {loading
                   ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} />)
-                  : filtered.length === 0
+                  : rows.length === 0
                     ? (
                       <tr>
-                        <td colSpan={9} className="py-14 text-center">
+                        <td colSpan={8} className="py-14 text-center">
                           <TrendingUp className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                          <p className="text-sm font-semibold text-gray-500">No enhancement requests found</p>
+                          <p className="text-sm font-semibold text-gray-500">No enhancement requests</p>
                           <p className="text-xs text-gray-400 mt-1">
-                            Enhancement requests are created from a case's Pre-Auth tab.
+                            Gaps are drafted when a finalized bill exceeds approved coverage, or created from a case.
                           </p>
                         </td>
                       </tr>
                     )
-                    : filtered.map(e => {
-                      const sc = statusConfig(e.status === 'active' ? 'pending' : e.status);
+                    : rows.map(({ enhancement: e, caseNumber, patientName, caseApprovedAmount }) => {
+                      const sc = statusConfig(e.status);
                       return (
                         <tr key={e.id} className="hover:bg-gray-50/80 group transition-colors">
-                          <td className="px-4 py-3">
-                            <Link href={`/dashboard/ccms/cases/${e.coverageCase_Id}`}
-                              className="font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5">
-                              {e.case_?.caseNumber ?? e.coverageCase_Id.slice(0, 8)}
-                              <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100" />
-                            </Link>
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">{e.case_?.patientName ?? '—'}</td>
+                          <td className="px-4 py-3 font-semibold text-gray-900">{caseNumber || '—'}</td>
+                          <td className="px-4 py-3 text-gray-600">{patientName || '—'}</td>
                           <td className="px-4 py-3 text-gray-600">{e.enhancementType?.replace(/_/g, ' ')}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-gray-800">{inr(e.requestedAmount)}</td>
-                          <td className="px-4 py-3 text-right">
-                            <span className={e.approvedAmount ? 'font-semibold text-green-700' : 'text-gray-400'}>
-                              {inr(e.approvedAmount)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 max-w-[180px] truncate">{e.reason ?? '—'}</td>
+                          <td className="px-4 py-3 font-medium">{inr(e.requestedAmount)}</td>
+                          <td className="px-4 py-3 text-gray-600">{inr(caseApprovedAmount)}</td>
+                          <td className="px-4 py-3 text-gray-500 max-w-[220px] truncate" title={e.reason}>{e.reason || '—'}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${sc.cls}`}>
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${sc.cls}`}>
                               {sc.icon}{sc.label}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
-                            {new Date(e.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                          </td>
                           <td className="px-4 py-3">
-                            <Link href={`/dashboard/ccms/cases/${e.coverageCase_Id}?tab=authorization`}
-                              className="text-[11px] text-indigo-600 hover:text-indigo-700 font-semibold whitespace-nowrap">
-                              View →
-                            </Link>
+                            <div className="flex items-center gap-2">
+                              {e.status === 'active' && (
+                                <button
+                                  type="button"
+                                  disabled={deciding === e.id}
+                                  onClick={() => void onSubmit(e.id)}
+                                  className="text-[10px] font-semibold text-indigo-700 hover:underline disabled:opacity-50"
+                                >
+                                  Submit to TPA
+                                </button>
+                              )}
+                              {(e.status === 'active' || e.status === 'submitted') && (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={deciding === e.id}
+                                    onClick={() => void onDecide(e.id, true, e.requestedAmount, e.status === 'submitted')}
+                                    className="text-[10px] font-semibold text-emerald-700 hover:underline disabled:opacity-50"
+                                  >
+                                    {e.status === 'submitted' ? 'TPA approve' : 'Override'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={deciding === e.id}
+                                    onClick={() => void onDecide(e.id, false, 0, e.status === 'submitted')}
+                                    className="text-[10px] font-semibold text-red-600 hover:underline disabled:opacity-50"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/dashboard/ccms/cases/${e.coverageCase_Id}`)}
+                                className="text-indigo-600 hover:text-indigo-800"
+                                title="Open case"
+                              >
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
-                    })
-                }
+                    })}
               </tbody>
             </table>
           </div>
-          {!loading && (
-            <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-[11px] text-gray-400">
-              {filtered.length} enhancement{filtered.length !== 1 ? 's' : ''} · across {Object.keys(enhancements).length} cases loaded
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 }
+

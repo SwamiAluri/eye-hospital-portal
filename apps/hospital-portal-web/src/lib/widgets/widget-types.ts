@@ -77,6 +77,12 @@ export interface WidgetMetadata {
   isResizable: boolean; // Can be resized
   minWidth?: number; // Minimum width in pixels
   minHeight?: number; // Minimum height in pixels
+  /**
+   * Phase 2+: mock/legacy coverage widgets kept for gallery demos only.
+   * Excluded from production counselor templates and stage pickers.
+   */
+  galleryOnly?: boolean;
+  deprecated?: boolean;
 }
 
 /**

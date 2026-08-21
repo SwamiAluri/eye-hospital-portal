@@ -25,6 +25,10 @@ public class ClaimFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!,
+                "ccms.claim.submit", "ccms.claim.write", "ccms.workflow.admin") is { } forbidden)
+            return forbidden;
+
         var body = await JsonSerializer.DeserializeAsync<GenerateClaimRequest>(req.Body);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 

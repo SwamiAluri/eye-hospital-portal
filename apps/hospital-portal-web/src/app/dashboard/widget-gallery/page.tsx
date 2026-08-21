@@ -7,7 +7,6 @@ import EducationLibraryWidget from '@/components/widgets/EducationLibraryWidget'
 import AppointmentReminderWidget from '@/components/widgets/AppointmentReminderWidget';
 import VitalsMonitoringWidget from '@/components/widgets/VitalsMonitoringWidget';
 import MedicalHistoryTimelineWidget from '@/components/widgets/MedicalHistoryTimelineWidget';
-import InsuranceClaimTrackingWidget from '@/components/widgets/InsuranceClaimTrackingWidget';
 import SmartWorkflowAssistantWidget from '@/components/widgets/SmartWorkflowAssistantWidget';
 import LabTestIntegrationWidget from '@/components/widgets/LabTestIntegrationWidget';
 import ImagingViewerWidget from '@/components/widgets/ImagingViewerWidget';
@@ -16,6 +15,7 @@ import ReferralManagementWidget from '@/components/widgets/ReferralManagementWid
 import PatientFeedbackWidget from '@/components/widgets/PatientFeedbackWidget';
 import TelemedicineConsultationWidget from '@/components/widgets/TelemedicineConsultationWidget';
 import TreatmentPlanComparisonWidget from '@/components/widgets/TreatmentPlanComparisonWidget';
+import Link from 'next/link';
 
 export default function WidgetGalleryPage() {
   // Mock IDs for testing
@@ -27,7 +27,14 @@ export default function WidgetGalleryPage() {
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Widget Gallery</h1>
-          <p className="text-gray-600">Testing all 15 new widgets with mock data</p>
+          <p className="text-gray-600">
+            Demo surface for widgets. Deprecated insurance mock widgets have been removed —
+            production coverage &amp; claims use{' '}
+            <Link href="/dashboard/ccms/cases" className="text-indigo-700 underline">
+              CCMS
+            </Link>
+            .
+          </p>
         </div>
 
         {/* Post-Operative Care Widgets */}
@@ -84,12 +91,9 @@ export default function WidgetGalleryPage() {
         {/* Financial & Admin Widgets */}
         <section className="mb-12">
           <h2 className="text-2xl font-bold text-gray-800 mb-4 pb-2 border-b-2 border-yellow-500">
-            💰 Financial & Admin (4 widgets)
+            💰 Financial & Admin (3 widgets)
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg shadow-lg p-4 h-[400px] lg:h-[500px] xl:h-[600px]">
-              <InsuranceClaimTrackingWidget patientId={mockPatientId} sessionId={mockSessionId} />
-            </div>
             <div className="bg-white rounded-lg shadow-lg p-4 h-[400px] lg:h-[500px] xl:h-[600px]">
               <BillingPaymentPlanWidget patientId={mockPatientId} sessionId={mockSessionId} />
             </div>

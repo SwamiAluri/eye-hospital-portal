@@ -34,6 +34,10 @@ public class AuthorizationFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!,
+                "ccms.preauth.create", "ccms.preauth.process", "ccms.workflow.admin") is { } forbidden)
+            return forbidden;
+
         var body = await JsonSerializer.DeserializeAsync<GeneratePreAuthRequest>(
             req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
@@ -83,6 +87,10 @@ public class AuthorizationFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!,
+                "ccms.preauth.submit", "ccms.preauth.process", "ccms.workflow.admin") is { } forbidden)
+            return forbidden;
+
         var body = await JsonSerializer.DeserializeAsync<SubmitPreAuthRequest>(
             req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);
 
@@ -104,6 +112,10 @@ public class AuthorizationFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!,
+                "ccms.preauth.process", "ccms.workflow.admin") is { } forbidden)
+            return forbidden;
 
         var body = await JsonSerializer.DeserializeAsync<RecordTpaResponseRequest>(
             req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);

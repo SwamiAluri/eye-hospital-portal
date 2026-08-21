@@ -29,6 +29,9 @@ var host = new HostBuilder()
             ?? throw new InvalidOperationException("DefaultConnection is not configured.");
 
         services.AddMemoryCache();
+        services.AddScoped<DbIntegrationIdempotencyGuard>();
+        services.AddSingleton<MemoryIntegrationIdempotencyGuard>();
+        services.AddScoped<IIntegrationIdempotencyGuard, ResilientIntegrationIdempotencyGuard>();
 
         // OpenAPI metadata
         services.AddSingleton<IOpenApiConfigurationOptions, CcmsOpenApiConfigurationOptions>();

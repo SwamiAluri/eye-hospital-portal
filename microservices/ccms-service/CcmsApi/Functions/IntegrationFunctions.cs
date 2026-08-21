@@ -1,10 +1,8 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using CcmsApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace CcmsApi.Functions;
@@ -19,45 +17,41 @@ public class IntegrationFunctions
     private readonly CoverageCaseService _caseService;
     private readonly TpaInboundEmailService _tpaInbound;
     private readonly IWorkflowEngine _workflow;
+    private readonly EnhancementService _enhancements;
     private readonly JwtService _jwt;
-    private readonly IMemoryCache _cache;
+    private readonly IIntegrationIdempotencyGuard _idempotency;
     private readonly ILogger<IntegrationFunctions> _log;
 
     public IntegrationFunctions(
         CoverageCaseService caseService,
         TpaInboundEmailService tpaInbound,
         IWorkflowEngine workflow,
+        EnhancementService enhancements,
         JwtService jwt,
-        IMemoryCache cache,
+        IIntegrationIdempotencyGuard idempotency,
         ILogger<IntegrationFunctions> log)
     {
         _caseService = caseService;
         _tpaInbound  = tpaInbound;
         _workflow    = workflow;
+        _enhancements = enhancements;
         _jwt         = jwt;
-        _cache       = cache;
+        _idempotency = idempotency;
         _log         = log;
     }
 
     /// <summary>
     /// Checks the X-Idempotency-Key header. Returns true if this is a duplicate request
     /// (key was seen within the last 24 h). Records the key on first encounter.
+    /// Shared Postgres store — safe across multiple CCMS instances.
     /// </summary>
-    private bool IsDuplicate(HttpRequestData req, out string key)
+    private async Task<(bool IsDup, string Key)> IsDuplicateAsync(HttpRequestData req)
     {
-        key = req.Headers.TryGetValues("X-Idempotency-Key", out var vals)
+        var key = req.Headers.TryGetValues("X-Idempotency-Key", out var vals)
             ? vals.FirstOrDefault() ?? string.Empty
             : string.Empty;
-        if (string.IsNullOrWhiteSpace(key)) return false;
-
-        var cacheKey = $"idempotency:{key}";
-        if (_cache.TryGetValue(cacheKey, out _))
-        {
-            _log.LogInformation("Duplicate integration request suppressed (key={Key})", key);
-            return true;
-        }
-        _cache.Set(cacheKey, 1, TimeSpan.FromHours(24));
-        return false;
+        var isDup = await _idempotency.IsDuplicateAsync(key);
+        return (isDup, key);
     }
 
     // POST /api/ccms/integration/counselling-completed
@@ -73,7 +67,7 @@ public class IntegrationFunctions
         if (!authorized)
             return req.CreateResponse(HttpStatusCode.Unauthorized);
 
-        if (IsDuplicate(req, out var idempKey))
+        if ((await IsDuplicateAsync(req)).IsDup)
             return req.CreateResponse(HttpStatusCode.OK); // return 200 for idempotent replay
 
         CounsellingCompletedPayload? body;
@@ -150,7 +144,7 @@ public class IntegrationFunctions
 
     // GET /api/ccms/integration/validate-admission
     // Called by ip-service PatientJourneyService.AdmitAsync()
-    // Query params: patientId, sessionId, journeyId, tenantId
+    // Query params: journeyId, sessionId, tenantId, emergencyFcApplied
     [Function("ValidateAdmission")]
     public async Task<HttpResponseData> ValidateAdmission(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ccms/integration/validate-admission")] HttpRequestData req)
@@ -165,18 +159,95 @@ public class IntegrationFunctions
         Guid.TryParse(req.Query["journeyId"],  out var journeyId);
         Guid.TryParse(req.Query["sessionId"],  out var sessionId);
         Guid.TryParse(req.Query["tenantId"],   out var tenantId);
+        bool.TryParse(req.Query["emergencyFcApplied"], out var emergencyFcApplied);
 
         var result = await _caseService.ValidateAdmissionAsync(
             tenantId,
             journeyId == Guid.Empty ? null : journeyId,
-            sessionId == Guid.Empty ? null : sessionId);
+            sessionId == Guid.Empty ? null : sessionId,
+            emergencyFcApplied);
 
-        var resp = req.CreateResponse(result.Allowed
-            ? HttpStatusCode.OK
-            : HttpStatusCode.OK);  // Always 200 — blocked flag is in body
-
+        // Always 200 — Allowed / Decision / BlockReason live in the body.
+        var resp = req.CreateResponse(HttpStatusCode.OK);
         await resp.WriteAsJsonAsync(result);
         return resp;
+    }
+
+    // POST /api/ccms/integration/emergency-fc
+    // Called by ip-service when ward applies Emergency Financial Clearance.
+    [Function("ApplyCoverageEmergencyFc")]
+    public async Task<HttpResponseData> ApplyCoverageEmergencyFc(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/integration/emergency-fc")] HttpRequestData req)
+    {
+        if (!_jwt.TryValidateInternalKey(req) && !_jwt.ValidateAndExtract(req, out _, out _))
+            return req.CreateResponse(HttpStatusCode.Unauthorized);
+
+        var body = await JsonSerializer.DeserializeAsync<EmergencyFcIntegrationPayload>(req.Body);
+        if (body is null || body.TenantId == Guid.Empty || string.IsNullOrWhiteSpace(body.Reason))
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+
+        var coverageCase = await _caseService.ApplyEmergencyFcAsync(
+            body.TenantId,
+            body.JourneyId,
+            body.SessionId,
+            body.Reason.Trim(),
+            body.ActorUserId ?? Guid.Empty);
+
+        var resp = req.CreateResponse(HttpStatusCode.OK);
+        await resp.WriteAsJsonAsync(new
+        {
+            applied = coverageCase is not null,
+            caseId = coverageCase?.Id,
+            coverageState = coverageCase?.CurrentState,
+            emergencyFcApplied = coverageCase?.EmergencyFcApplied ?? false,
+        });
+        return resp;
+    }
+
+    // POST /api/ccms/integration/journey-admitted
+    // Reliable outbox delivery from ip-service after clinical admission.
+    // Links JourneyId onto the coverage case (by session) when missing, then fires ADMIT_PATIENT.
+    [Function("JourneyAdmitted")]
+    public async Task<HttpResponseData> JourneyAdmitted(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/integration/journey-admitted")] HttpRequestData req)
+    {
+        if (!_jwt.TryValidateInternalKey(req) && !_jwt.ValidateAndExtract(req, out _, out _))
+            return req.CreateResponse(HttpStatusCode.Unauthorized);
+
+        if ((await IsDuplicateAsync(req)).IsDup) return req.CreateResponse(HttpStatusCode.OK);
+
+        var body = await JsonSerializer.DeserializeAsync<JourneyEventPayload>(
+            req.Body, Services.HttpRequestDataExtensions.DeserializeOpts);
+        if (body?.JourneyId is null) return req.CreateResponse(HttpStatusCode.BadRequest);
+
+        var coverageCase = await _caseService.LinkJourneyIdAsync(
+            body.JourneyId.Value,
+            body.SessionId,
+            body.ActorUserId ?? Guid.Empty);
+
+        if (coverageCase is not null && coverageCase.WorkflowInstanceId.HasValue)
+        {
+            _log.LogInformation(
+                "Journey admitted {JourneyId} linked to CCMS case {CaseId} — firing ADMIT_PATIENT",
+                body.JourneyId, coverageCase.Id);
+            try
+            {
+                await _workflow.FireAsync(
+                    coverageCase.WorkflowInstanceId.Value,
+                    "ADMIT_PATIENT",
+                    body.ActorUserId ?? Guid.Empty,
+                    "Patient admitted via ip-service outbox",
+                    CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex,
+                    "ADMIT_PATIENT fire failed for case {CaseId} (may be benign if state already advanced)",
+                    coverageCase.Id);
+            }
+        }
+
+        return req.CreateResponse(HttpStatusCode.OK);
     }
 
     // POST /api/ccms/integration/surgery-completed
@@ -188,9 +259,10 @@ public class IntegrationFunctions
         if (!_jwt.TryValidateInternalKey(req) && !_jwt.ValidateAndExtract(req, out _, out _))
             return req.CreateResponse(HttpStatusCode.Unauthorized);
 
-        if (IsDuplicate(req, out _)) return req.CreateResponse(HttpStatusCode.OK);
+        if ((await IsDuplicateAsync(req)).IsDup) return req.CreateResponse(HttpStatusCode.OK);
 
-        var body = await JsonSerializer.DeserializeAsync<JourneyEventPayload>(req.Body);
+        var body = await JsonSerializer.DeserializeAsync<JourneyEventPayload>(
+            req.Body, Services.HttpRequestDataExtensions.DeserializeOpts);
         if (body?.JourneyId is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
         var coverageCase = await _caseService.GetByJourneyIdAsync(body.JourneyId.Value);
@@ -225,9 +297,10 @@ public class IntegrationFunctions
         if (!_jwt.TryValidateInternalKey(req) && !_jwt.ValidateAndExtract(req, out _, out _))
             return req.CreateResponse(HttpStatusCode.Unauthorized);
 
-        if (IsDuplicate(req, out _)) return req.CreateResponse(HttpStatusCode.OK);
+        if ((await IsDuplicateAsync(req)).IsDup) return req.CreateResponse(HttpStatusCode.OK);
 
-        var body = await JsonSerializer.DeserializeAsync<JourneyEventPayload>(req.Body);
+        var body = await JsonSerializer.DeserializeAsync<JourneyEventPayload>(
+            req.Body, Services.HttpRequestDataExtensions.DeserializeOpts);
         if (body?.JourneyId is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
         var coverageCase = await _caseService.GetByJourneyIdAsync(body.JourneyId.Value);
@@ -262,12 +335,13 @@ public class IntegrationFunctions
         if (!_jwt.TryValidateInternalKey(req) && !_jwt.ValidateAndExtract(req, out _, out _))
             return req.CreateResponse(HttpStatusCode.Unauthorized);
 
-        if (IsDuplicate(req, out _)) return req.CreateResponse(HttpStatusCode.OK);
+        if ((await IsDuplicateAsync(req)).IsDup) return req.CreateResponse(HttpStatusCode.OK);
 
         BillFinalizedPayload? body;
         try
         {
-            body = await System.Text.Json.JsonSerializer.DeserializeAsync<BillFinalizedPayload>(req.Body);
+            body = await System.Text.Json.JsonSerializer.DeserializeAsync<BillFinalizedPayload>(
+                req.Body, Services.HttpRequestDataExtensions.DeserializeOpts);
         }
         catch
         {
@@ -305,6 +379,33 @@ public class IntegrationFunctions
             catch (Exception ex)
             {
                 _log.LogWarning(ex, "FINALIZE_BILL fire failed for case {CaseId} (may be benign)", coverageCase.Id);
+            }
+        }
+
+        // Phase 4 C — guided enhancement draft when finalized bill exceeds approved coverage.
+        // Does not assume payer approval; creates an open request for CCMS ops to decide.
+        if (body.TotalAmount is decimal total && total > 0)
+        {
+            try
+            {
+                var drafted = await _enhancements.SuggestFromEligibleAmountAsync(
+                    coverageCase.Id,
+                    total,
+                    body.ActorUserId ?? Guid.Empty,
+                    source: $"bill_finalized:{body.BillId}",
+                    CancellationToken.None);
+                if (drafted is not null)
+                {
+                    _log.LogInformation(
+                        "BillFinalized: drafted enhancement {EnhancementId} for case {CaseId} gap={Gap}",
+                        drafted.Id, coverageCase.Id, drafted.RequestedAmount);
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex,
+                    "BillFinalized: enhancement suggestion failed for case {CaseId} (non-fatal)",
+                    coverageCase.Id);
             }
         }
 
@@ -399,6 +500,14 @@ public record JourneyEventPayload(
     Guid?   SessionId,
     Guid?   PatientId,
     string? EventType,
+    Guid?   ActorUserId = null
+);
+
+public record EmergencyFcIntegrationPayload(
+    Guid    TenantId,
+    Guid?   JourneyId,
+    Guid?   SessionId,
+    string  Reason,
     Guid?   ActorUserId = null
 );
 

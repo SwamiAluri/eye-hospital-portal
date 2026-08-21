@@ -78,6 +78,13 @@ export interface TPACommunicationLog {
 }
 
 class InsuranceApi {
+  private static readonly LegacyWriteFrozen = Object.assign(
+    new Error(
+      'Legacy insurance writes are frozen (Phase 2). Use CCMS at /dashboard/ccms/cases.',
+    ),
+    { code: 'CCMS_LEGACY_WRITE_FROZEN', ccmsRedirect: '/dashboard/ccms/cases' },
+  );
+
   // Pre-Authorization endpoints
   async getAllPreAuthorizations(filters?: {
     status?: string;
@@ -103,44 +110,34 @@ class InsuranceApi {
     return response.data;
   }
 
-  async createPreAuthorization(data: CreatePreAuthorizationRequest): Promise<InsurancePreAuthorization> {
-    const api = getApi();
-    const response = await api.post('/insurance/pre-authorizations', data);
-    return response.data;
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async createPreAuthorization(_data: CreatePreAuthorizationRequest): Promise<InsurancePreAuthorization> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
-  async updatePreAuthorization(id: string, data: Partial<CreatePreAuthorizationRequest>): Promise<InsurancePreAuthorization> {
-    const api = getApi();
-    const response = await api.put(`/insurance/pre-authorizations/${id}`, data);
-    return response.data;
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async updatePreAuthorization(_id: string, _data: Partial<CreatePreAuthorizationRequest>): Promise<InsurancePreAuthorization> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
-  async deletePreAuthorization(id: string): Promise<void> {
-    const api = getApi();
-    await api.delete(`/insurance/pre-authorizations/${id}`);
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async deletePreAuthorization(_id: string): Promise<void> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
-  async submitToTPA(id: string, data: SubmitToTPARequest): Promise<InsurancePreAuthorization> {
-    const api = getApi();
-    const response = await api.post(`/insurance/pre-authorizations/${id}/submit-to-tpa`, data);
-    return response.data;
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async submitToTPA(_id: string, _data: SubmitToTPARequest): Promise<InsurancePreAuthorization> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
-  async approvePreAuthorization(id: string, approvedAmount: number, notes?: string): Promise<InsurancePreAuthorization> {
-    const api = getApi();
-    const response = await api.post(`/insurance/pre-authorizations/${id}/approve`, {
-      approvedAmount,
-      notes
-    });
-    return response.data;
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async approvePreAuthorization(_id: string, _approvedAmount: number, _notes?: string): Promise<InsurancePreAuthorization> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
-  async rejectPreAuthorization(id: string, rejectionReason: string): Promise<InsurancePreAuthorization> {
-    const api = getApi();
-    const response = await api.post(`/insurance/pre-authorizations/${id}/reject`, {
-      rejectionReason
-    });
-    return response.data;
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async rejectPreAuthorization(_id: string, _rejectionReason: string): Promise<InsurancePreAuthorization> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
   // Approval Workflow endpoints
@@ -150,13 +147,9 @@ class InsuranceApi {
     return response.data;
   }
 
-  async updateWorkflowStage(workflowId: string, newStage: string, notes?: string): Promise<ApprovalWorkflow> {
-    const api = getApi();
-    const response = await api.put(`/insurance/workflows/${workflowId}/stage`, {
-      newStage,
-      notes
-    });
-    return response.data;
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async updateWorkflowStage(_workflowId: string, _newStage: string, _notes?: string): Promise<ApprovalWorkflow> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
   // Insurance Documents endpoints
@@ -166,23 +159,14 @@ class InsuranceApi {
     return response.data;
   }
 
-  async uploadDocument(preAuthId: string, file: File, documentType: string): Promise<InsuranceDocument> {
-    const api = getApi();
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('documentType', documentType);
-    
-    const response = await api.post(`/insurance/documents`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    });
-    return response.data;
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async uploadDocument(_preAuthId: string, _file: File, _documentType: string): Promise<InsuranceDocument> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
-  async deleteDocument(documentId: string): Promise<void> {
-    const api = getApi();
-    await api.delete(`/insurance/documents/${documentId}`);
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async deleteDocument(_documentId: string): Promise<void> {
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
   // TPA Communication endpoints
@@ -192,17 +176,13 @@ class InsuranceApi {
     return response.data;
   }
 
-  async logCommunication(preAuthId: string, data: {
+  /** @deprecated Phase 2 — competing insurance writes frozen; use CCMS. */
+  async logCommunication(_preAuthId: string, _data: {
     communicationType: string;
     messageContent: string;
     responseContent?: string;
   }): Promise<TPACommunicationLog> {
-    const api = getApi();
-    const response = await api.post(`/insurance/communications`, {
-      preauthorizationId: preAuthId,
-      ...data
-    });
-    return response.data;
+    throw InsuranceApi.LegacyWriteFrozen;
   }
 
   // Statistics and Reports

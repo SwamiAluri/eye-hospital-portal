@@ -41,6 +41,16 @@ namespace AuthService.Controllers
         
         private Guid GetCurrentUserId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
+        private bool IsCcmsBypass() =>
+            Request.Headers.TryGetValue("X-CCMS-Bypass", out var bypassVal)
+            && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        private static object LegacyFrozen(string message) => new
+        {
+            message,
+            ccmsRedirect = "/dashboard/ccms/cases",
+        };
+
         #region Pre-Authorization
 
         [HttpGet("pre-auths")]
@@ -75,23 +85,19 @@ namespace AuthService.Controllers
         [Obsolete("Use CCMS coverage case workflow. This endpoint is deprecated for new sessions.")]
         public async Task<ActionResult<InsurancePreAuthDto>> CreatePreAuth([FromBody] CreatePreAuthRequest request)
         {
-            // Block creation for sessions that should be handled via CCMS.
-            // Allow bypass only with explicit override header (manual correction scenarios).
+            // Phase 3 — all competing Coverage & Claims writes require explicit bypass.
+            // Empty SessionId previously bypassed the freeze and could create parallel truth.
             var isBypass = Request.Headers.TryGetValue("X-CCMS-Bypass", out var bypassVal)
                 && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
 
-            if (!isBypass && request.SessionId != Guid.Empty)
+            if (!isBypass)
             {
                 _logger.LogWarning(
-                    "Blocked legacy pre-auth creation for session {SessionId}. " +
-                    "Use CCMS workflow or set X-CCMS-Bypass: true for override.",
+                    "Blocked legacy pre-auth creation (session {SessionId}). Use CCMS or X-CCMS-Bypass.",
                     request.SessionId);
-                return Conflict(new
-                {
-                    message = "New insurance pre-authorizations must be created via CCMS. " +
-                              "This session is managed by the CCMS workflow engine.",
-                    ccmsRedirect = $"/dashboard/ccms/cases?sessionId={request.SessionId}",
-                });
+                return Conflict(LegacyFrozen(
+                    "New insurance pre-authorizations must be created via CCMS. " +
+                    "Legacy Auth Module writes are frozen."));
             }
 
             try
@@ -107,8 +113,20 @@ namespace AuthService.Controllers
 
         [HttpPut("pre-auths/{id}")]
         [RequirePermission("insurance.preauth.edit")]
+        [Obsolete("Use CCMS coverage case workflow. Writes are frozen in Phase 2.")]
         public async Task<ActionResult<InsurancePreAuthDto>> UpdatePreAuth(Guid id, [FromBody] UpdatePreAuthRequest request)
         {
+            var isBypass = Request.Headers.TryGetValue("X-CCMS-Bypass", out var bypassVal)
+                && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (!isBypass)
+            {
+                return Conflict(new
+                {
+                    message = "Legacy insurance pre-auth updates are frozen. Use CCMS.",
+                    ccmsRedirect = "/dashboard/ccms/cases",
+                });
+            }
+
             try
             {
                 var preAuth = await _insuranceService.UpdatePreAuthAsync(id, request, GetTenantId(), GetCurrentUserId());
@@ -126,8 +144,20 @@ namespace AuthService.Controllers
 
         [HttpPost("pre-auths/{id}/submit-tpa")]
         [RequirePermission("insurance.preauth.submit")]
+        [Obsolete("Use CCMS coverage case workflow. Writes are frozen in Phase 2.")]
         public async Task<ActionResult<InsurancePreAuthDto>> SubmitToTPA(Guid id, [FromBody] SubmitToTPARequest request)
         {
+            var isBypass = Request.Headers.TryGetValue("X-CCMS-Bypass", out var bypassVal)
+                && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (!isBypass)
+            {
+                return Conflict(new
+                {
+                    message = "Legacy TPA submit is frozen. Use CCMS pre-authorization workspace.",
+                    ccmsRedirect = "/dashboard/ccms/cases",
+                });
+            }
+
             try
             {
                 var preAuth = await _insuranceService.SubmitToTPAAsync(id, request, GetTenantId(), GetCurrentUserId());
@@ -145,8 +175,20 @@ namespace AuthService.Controllers
 
         [HttpPost("pre-auths/{id}/tpa-response")]
         [RequirePermission("insurance.preauth.process")]
+        [Obsolete("Use CCMS coverage case workflow. Writes are frozen in Phase 2.")]
         public async Task<ActionResult<InsurancePreAuthDto>> ProcessTPAResponse(Guid id, [FromBody] TPAResponseRequest request)
         {
+            var isBypass = Request.Headers.TryGetValue("X-CCMS-Bypass", out var bypassVal)
+                && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (!isBypass)
+            {
+                return Conflict(new
+                {
+                    message = "Legacy TPA response processing is frozen. Use CCMS.",
+                    ccmsRedirect = "/dashboard/ccms/cases",
+                });
+            }
+
             try
             {
                 var preAuth = await _insuranceService.ProcessTPAResponseAsync(id, request, GetTenantId(), GetCurrentUserId());
@@ -191,8 +233,12 @@ namespace AuthService.Controllers
 
         [HttpPost("workflow/{workflowId}/process")]
         [RequirePermission("insurance.workflow.approve")]
+        [Obsolete("Use CCMS coverage case workflow. Writes are frozen in Phase 2.")]
         public async Task<ActionResult<ApprovalWorkflowDto>> ProcessApprovalStage(Guid workflowId, [FromBody] ProcessApprovalRequest request)
         {
+            if (!IsCcmsBypass())
+                return Conflict(LegacyFrozen("Legacy insurance approval workflow is frozen. Use CCMS."));
+
             try
             {
                 var workflow = await _insuranceService.ProcessApprovalStageAsync(workflowId, request, GetTenantId(), GetCurrentUserId());
@@ -222,16 +268,24 @@ namespace AuthService.Controllers
 
         [HttpPost("documents")]
         [RequirePermission("insurance.documents.upload")]
+        [Obsolete("Use CCMS document domain. Writes are frozen in Phase 2.")]
         public async Task<ActionResult<InsuranceDocumentDto>> UploadDocument([FromBody] UploadInsuranceDocumentRequest request)
         {
+            if (!IsCcmsBypass())
+                return Conflict(LegacyFrozen("Legacy insurance document uploads are frozen. Use CCMS."));
+
             var document = await _insuranceService.UploadDocumentAsync(request, GetTenantId(), GetCurrentUserId());
             return CreatedAtAction(nameof(GetDocuments), new { preAuthId = request.PreAuthId }, document);
         }
 
         [HttpPost("documents/{documentId}/verify")]
         [RequirePermission("insurance.documents.verify")]
+        [Obsolete("Use CCMS document domain. Writes are frozen in Phase 2.")]
         public async Task<ActionResult<InsuranceDocumentDto>> VerifyDocument(Guid documentId)
         {
+            if (!IsCcmsBypass())
+                return Conflict(LegacyFrozen("Legacy insurance document verify is frozen. Use CCMS."));
+
             try
             {
                 var document = await _insuranceService.VerifyDocumentAsync(documentId, GetTenantId(), GetCurrentUserId());
@@ -245,8 +299,12 @@ namespace AuthService.Controllers
 
         [HttpDelete("documents/{documentId}")]
         [RequirePermission("insurance.documents.delete")]
+        [Obsolete("Use CCMS document domain. Writes are frozen in Phase 2.")]
         public async Task<IActionResult> DeleteDocument(Guid documentId)
         {
+            if (!IsCcmsBypass())
+                return Conflict(LegacyFrozen("Legacy insurance document delete is frozen. Use CCMS."));
+
             try
             {
                 await _insuranceService.DeleteDocumentAsync(documentId, GetTenantId());
@@ -272,16 +330,24 @@ namespace AuthService.Controllers
 
         [HttpPost("communications")]
         [RequirePermission("insurance.tpa.log")]
+        [Obsolete("Use CCMS communication workspace. Writes are frozen in Phase 2.")]
         public async Task<ActionResult<TPACommunicationDto>> LogCommunication([FromBody] LogTPACommunicationRequest request)
         {
+            if (!IsCcmsBypass())
+                return Conflict(LegacyFrozen("Legacy TPA communication create is frozen. Use CCMS."));
+
             var communication = await _insuranceService.LogCommunicationAsync(request, GetTenantId(), GetCurrentUserId());
             return CreatedAtAction(nameof(GetCommunications), new { preAuthId = request.PreAuthId }, communication);
         }
 
         [HttpPost("communications/{communicationId}/response")]
         [RequirePermission("insurance.tpa.respond")]
+        [Obsolete("Use CCMS communication workspace. Writes are frozen in Phase 2.")]
         public async Task<ActionResult<TPACommunicationDto>> RecordResponse(Guid communicationId, [FromBody] string responseText)
         {
+            if (!IsCcmsBypass())
+                return Conflict(LegacyFrozen("Legacy TPA communication response is frozen. Use CCMS."));
+
             try
             {
                 var communication = await _insuranceService.RecordResponseAsync(communicationId, responseText, GetTenantId());

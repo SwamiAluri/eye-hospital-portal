@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { useSessionPackages, useCreatePackage, usePackageTemplates } from '@/hooks/use-packages';
 import { usePayments, useCreatePayment } from '@/hooks/use-payments';
 import type { CounselorPackageDto, PaymentTransaction } from '@/types/counselor';
+import { CoveragePaymentTerms } from '@/lib/ip-management/coverage-payment-terminology';
 
 interface FinancialClearanceProps {
   sessionId: string;
@@ -148,16 +149,16 @@ export function FinancialClearance({
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Financial Clearance</h3>
+        <h3 className="text-lg font-semibold">{CoveragePaymentTerms.patientPaymentStatus}</h3>
         {hasClearance ? (
           <Badge variant="default" className="bg-green-500">
             <CheckCircle2 className="w-4 h-4 mr-1" />
-            Cleared
+            Patient payment complete
           </Badge>
         ) : (
           <Badge variant="secondary">
             <AlertCircle className="w-4 h-4 mr-1" />
-            Pending ₹{pendingAmount.toFixed(2)}
+            Outstanding ₹{pendingAmount.toFixed(2)}
           </Badge>
         )}
       </div>

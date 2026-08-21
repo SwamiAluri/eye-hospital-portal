@@ -203,10 +203,45 @@ public class AuthServiceClient
         {
 
             _log.LogWarning(ex, "AuthService ccms-callback failed (fire-and-forget) for session {SessionId}.", sessionId);
-
         }
-
     }
 
+    /// <summary>
+    /// Push a department SignalR notification via auth-service internal API (Phase 2 clarifications).
+    /// Never throws — notifications must not block CCMS workflow.
+    /// </summary>
+    public virtual async Task NotifyDepartmentAsync(
+        Guid tenantId,
+        Guid? branchId,
+        string departmentCode,
+        string type,
+        string message,
+        string details,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var payload = new
+            {
+                tenantId,
+                branchId,
+                departmentCode,
+                type,
+                message,
+                details,
+            };
+            var resp = await _http.PostAsync(
+                "/api/notifications/internal/push-dept",
+                JsonContent.Create(payload), ct);
+            if (!resp.IsSuccessStatusCode)
+                _log.LogWarning(
+                    "AuthService push-dept returned {Status} for dept {Dept} type {Type}",
+                    resp.StatusCode, departmentCode, type);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "AuthService push-dept failed for dept {Dept}", departmentCode);
+        }
+    }
 }
 

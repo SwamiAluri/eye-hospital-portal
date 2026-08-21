@@ -14,14 +14,19 @@ public class ClarificationService
 {
     private readonly CcmsDbContext _db;
     private readonly IWorkflowEngine _workflow;
+    private readonly AuthServiceClient _authClient;
     private readonly ILogger<ClarificationService> _log;
 
     public ClarificationService(
-        CcmsDbContext db, IWorkflowEngine workflow, ILogger<ClarificationService> log)
+        CcmsDbContext db,
+        IWorkflowEngine workflow,
+        AuthServiceClient authClient,
+        ILogger<ClarificationService> log)
     {
-        _db       = db;
+        _db = db;
         _workflow = workflow;
-        _log      = log;
+        _authClient = authClient;
+        _log = log;
     }
 
     // ── List ─────────────────────────────────────────────────────────────────
@@ -67,6 +72,15 @@ public class ClarificationService
 
         await _db.SaveChangesAsync(ct);
         _log.LogInformation("Clarification query added for auth {AuthId}", authorizationId);
+
+        var coverageCase = await _db.CoverageCases.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == auth.CoverageCase_Id && c.DeletedAt == null, ct);
+        await NotifyCoverageOpsAsync(
+            coverageCase,
+            "ccms.clarification.raised",
+            "TPA clarification raised",
+            $"Authorization {authorizationId:N}: {req.Query}");
+
         return item;
     }
 
@@ -129,7 +143,45 @@ public class ClarificationService
 
         await _db.SaveChangesAsync(ct);
         _log.LogInformation("Clarification {ItemId} responded", clarificationItemId);
+
+        var caseForNotify = auth is null
+            ? null
+            : await _db.CoverageCases.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == auth.CoverageCase_Id && c.DeletedAt == null, ct);
+        await NotifyCoverageOpsAsync(
+            caseForNotify,
+            "ccms.clarification.answered",
+            "Clarification answered",
+            $"Clarification {clarificationItemId:N} response recorded.");
+
         return item;
+    }
+
+    private async Task NotifyCoverageOpsAsync(
+        CcmsCoverageCase? coverageCase,
+        string type,
+        string message,
+        string details)
+    {
+        if (coverageCase is null) return;
+        await _authClient.NotifyDepartmentAsync(
+            coverageCase.TenantId,
+            coverageCase.BranchId,
+            "CCMS",
+            type,
+            message,
+            details + (coverageCase.Id != Guid.Empty ? $" Case={coverageCase.CaseNumber}" : ""));
+        // Counselling desk also needs visibility for session-linked cases.
+        if (coverageCase.SessionId.HasValue)
+        {
+            await _authClient.NotifyDepartmentAsync(
+                coverageCase.TenantId,
+                coverageCase.BranchId,
+                "COUNSELLING",
+                type,
+                message,
+                details + $" Session={coverageCase.SessionId}");
+        }
     }
 }
 
