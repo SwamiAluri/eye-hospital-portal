@@ -146,11 +146,11 @@ public class AnaesthesiaMonitoringService
 
     private async Task<AnaesthesiaMonitoring> GetOrInitAsync(Guid journeyId, Guid tenantId)
     {
-        var existing = await _db.AnaesthesiaMonitorings
-            .FirstOrDefaultAsync(m => m.PatientJourneyId == journeyId
-                                      && m.TenantId == tenantId
-                                      && m.DeletedAt == null);
+        var existing = await FindActiveMonitoringAsync(journeyId, tenantId);
         if (existing is not null) return existing;
+
+        var revived = await ReviveSoftDeletedMonitoringAsync(journeyId, tenantId);
+        if (revived is not null) return revived;
 
         var now = DateTime.UtcNow;
         var journey = await _db.PatientJourneys
@@ -173,13 +173,34 @@ public class AnaesthesiaMonitoringService
         catch (DbUpdateException)
         {
             _db.ChangeTracker.Clear();
-            return await _db.AnaesthesiaMonitorings
-                       .FirstAsync(m => m.PatientJourneyId == journeyId
-                                         && m.TenantId == tenantId
-                                         && m.DeletedAt == null);
+            var raced = await FindActiveMonitoringAsync(journeyId, tenantId)
+                        ?? await ReviveSoftDeletedMonitoringAsync(journeyId, tenantId);
+            if (raced is not null) return raced;
+
+            throw new InvalidOperationException(
+                "Anaesthesia monitoring could not be created or loaded for this journey.");
         }
 
         return row;
+    }
+
+    private Task<AnaesthesiaMonitoring?> FindActiveMonitoringAsync(Guid journeyId, Guid tenantId)
+        => _db.AnaesthesiaMonitorings
+            .FirstOrDefaultAsync(m => m.PatientJourneyId == journeyId
+                                      && m.TenantId == tenantId
+                                      && m.DeletedAt == null);
+
+    private async Task<AnaesthesiaMonitoring?> ReviveSoftDeletedMonitoringAsync(Guid journeyId, Guid tenantId)
+    {
+        var deleted = await _db.AnaesthesiaMonitorings
+            .FirstOrDefaultAsync(m => m.PatientJourneyId == journeyId && m.DeletedAt != null);
+        if (deleted is null) return null;
+
+        deleted.DeletedAt = null;
+        deleted.TenantId  = tenantId;
+        deleted.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return deleted;
     }
 
     private static AnaesthesiaMonitoringDto BuildDto(AnaesthesiaMonitoring row)

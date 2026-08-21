@@ -31,11 +31,13 @@ async Task SeedBasicDataForTestingAsync(AppDbContext context)
         
         Console.WriteLine("✓ Tenant seeding skipped (use Admin UI to create tenants)");
         
-        // Get existing tenant from database for admin user creation
-        var existingTenant = context.Tenants.FirstOrDefault();
+        // Get canonical dev tenant (India Eye) — not whichever row happens to be first.
+        await DevTenantBootstrap.EnsureIndiaEyeTenantAsync(context);
+        await DevTenantBootstrap.EnsureIndiaEyeAdminUserAsync(context);
+        var existingTenant = await context.Tenants.FindAsync(DevTenantBootstrap.IndiaEyeTenantId);
         if (existingTenant != null)
         {
-            // Create test admin user directly
+            // Legacy block kept for department seeding on India Eye tenant.
             var adminUser = new AppUser
             {
                 Id = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
@@ -49,7 +51,7 @@ async Task SeedBasicDataForTestingAsync(AppDbContext context)
                 ConcurrencyStamp = Guid.NewGuid().ToString(),
                 PhoneNumber = "+1234567890",
                 PhoneNumberConfirmed = true,
-                TenantId = existingTenant.Id,
+                TenantId = DevTenantBootstrap.IndiaEyeTenantId,
                 UserType = "Admin",
                 UserStatus = "active",
                 MustChangePasswordOnLogin = false,
@@ -70,7 +72,7 @@ async Task SeedBasicDataForTestingAsync(AppDbContext context)
                 Name = "Admin",
                 NormalizedName = "ADMIN",
                 ConcurrencyStamp = Guid.NewGuid().ToString(),
-                TenantId = existingTenant.Id,
+                TenantId = DevTenantBootstrap.IndiaEyeTenantId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -101,8 +103,8 @@ async Task SeedBasicDataForTestingAsync(AppDbContext context)
             Console.WriteLine("⚠️  No tenants found. Skipping admin user creation.");
         }
 
-        // Seed 15 Standard Departments for the existing tenant
-        var firstTenant = context.Tenants.FirstOrDefault();
+        // Seed 15 Standard Departments for India Eye (canonical dev tenant)
+        var firstTenant = await context.Tenants.FindAsync(DevTenantBootstrap.IndiaEyeTenantId);
         if (firstTenant != null)
         {
             var testTenantId = firstTenant.Id;
@@ -791,6 +793,7 @@ try
     
     // OPD Visit & Billing Services (Phase 1 OPD Workflow - Jan 2026)
     builder.Services.AddScoped<IOpdBillService, OpdBillService>();
+    builder.Services.AddHttpClient<ICcmsBillFinalizedClient, CcmsBillFinalizedClient>();
     builder.Services.AddScoped<IOptometryQueueService, OptometryQueueService>();
     builder.Services.AddScoped<IOptometrySegmentExamService, OptometrySegmentExamService>();
     builder.Services.AddScoped<IOptometryPatientHistoryService, OptometryPatientHistoryService>();
@@ -965,9 +968,17 @@ builder.Services.AddScoped<IImagingAIAnalysisService, ImagingAIAnalysisService>(
     var app = builder.Build();
     Console.WriteLine("✓ Application built successfully");
 
-    // TODO Week 1: Seed permissions after fixing table name mapping
-    // The database has 216 permissions but table name mismatch (permission vs permissions)
-    // See COMPLETE_RBAC_IMPLEMENTATION_PLAN.md for manual approach
+    // Seed Phase 2 CCMS permission aliases for all tenants (idempotent; best-effort).
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AuthService.Context.AppDbContext>();
+        await AuthService.SeedData.PermissionSeeder.SeedPhase2AliasesForAllTenantsAsync(db);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠ Phase 2 CCMS permission seed skipped: {ex.Message}");
+    }
 
     // Configure the HTTP request pipeline
     Console.WriteLine("Configuring HTTP pipeline...");

@@ -717,7 +717,7 @@ namespace AuthService.Controllers
                 // Use default tenant if not provided
                 if (string.IsNullOrEmpty(tenantId))
                 {
-                    tenantId = "11111111-1111-1111-1111-111111111111"; // Apollo
+                    tenantId = DevTenantBootstrap.IndiaEyeTenantId.ToString();
                 }
 
                 // Check if admin already exists

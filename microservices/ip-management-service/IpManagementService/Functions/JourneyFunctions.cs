@@ -414,7 +414,7 @@ public class JourneyFunctions
     {
         try
         {
-            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            IpChecklistAuth.RequireEmergencyFc(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<EmergencyFcRequest>(req.Body, Json)

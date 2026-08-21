@@ -1,6 +1,5 @@
 'use client';
 
-import { useCachedAuthStore } from '@/lib/permission-cache';
 import { useAuthStore } from '@/lib/auth-store';
 import { DashboardLoadingSkeleton } from '@/components/DashboardLoadingSkeleton';
 import { useRouter } from 'next/navigation';
@@ -20,7 +19,7 @@ export function ProtectedRoute({
   fallbackPath?: string;
 }) {
   const router = useRouter();
-  const { token } = useCachedAuthStore();
+  const token = useAuthStore(s => s.token);
   const [isHydrated, setIsHydrated] = useState(false);
   const [showSessionExpired, setShowSessionExpired] = useState(false);
 

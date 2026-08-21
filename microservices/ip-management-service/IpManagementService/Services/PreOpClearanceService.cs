@@ -26,6 +26,7 @@ public class PreOpClearanceService
     private readonly CounsellorChecklistService _counsellorChecklist;
     private readonly WardChecklistAutoSyncService _wardSync;
     private readonly JourneyMutationGuardService _mutationGuard;
+    private readonly ICcmsAdmissionClient _ccms;
 
     public PreOpClearanceService(
         IpManagementDbContext    db,
@@ -33,7 +34,8 @@ public class PreOpClearanceService
         IPreOpNotificationClient notify,
         CounsellorChecklistService counsellorChecklist,
         WardChecklistAutoSyncService wardSync,
-        JourneyMutationGuardService mutationGuard)
+        JourneyMutationGuardService mutationGuard,
+        ICcmsAdmissionClient ccms)
     {
         _db     = db;
         _blob   = blob;
@@ -41,6 +43,7 @@ public class PreOpClearanceService
         _counsellorChecklist = counsellorChecklist;
         _wardSync = wardSync;
         _mutationGuard = mutationGuard;
+        _ccms = ccms;
     }
 
     // ── Section Items ──────────────────────────────────────────────────────────
@@ -213,15 +216,19 @@ public class PreOpClearanceService
     }
 
     // Department-owned Financial rows that are derived from canonical signals, never
-    // ticked by the ward: payment mode (counselling/registration) + advance (billing).
+    // ticked by the ward: payment mode (counselling/registration) + advance (billing)
+    // + emergency FC (privileged IP override) + insurance pre-auth (CCMS projection).
     private const string PaymentModeConfirmedKey = "payment_mode_confirmed";
     private const string AdvancePaidKey          = "advance_paid";
+    private const string EmergencyFcConfirmedKey = "emergency_fc_confirmed";
+    private const string InsurancePreauthKey     = "insurance_preauth_approved";
 
     /// <summary>
-    /// Reconciles the two department-fed Financial completions with the journey's
-    /// canonical financial signals so the ward sees a read-only, always-correct status:
-    ///   • payment_mode_confirmed ← journey.PaymentMode is set (counselling/registration)
-    ///   • advance_paid           ← journey.TotalAdvances/TotalPaid &gt; 0 (billing)
+    /// Reconciles department-fed Financial completions with canonical signals:
+    ///   • payment_mode_confirmed ← journey.PaymentMode is set
+    ///   • advance_paid           ← journey advances/paid &gt; 0
+    ///   • emergency_fc_confirmed ← journey.EmergencyFcApplied
+    ///   • insurance_preauth_approved ← CCMS admission decision (non-authoritative display)
     /// Idempotent; runs on every clearance init/refresh.
     /// </summary>
     private async Task EnsureFinancialDerivedAsync(
@@ -235,7 +242,10 @@ public class PreOpClearanceService
             where c.ClearanceId == clearance.Id
                   && c.TenantId == tenantId
                   && c.DeletedAt == null
-                  && (i.ItemKey == PaymentModeConfirmedKey || i.ItemKey == AdvancePaidKey)
+                  && (i.ItemKey == PaymentModeConfirmedKey
+                      || i.ItemKey == AdvancePaidKey
+                      || i.ItemKey == EmergencyFcConfirmedKey
+                      || i.ItemKey == InsurancePreauthKey)
             select new { Completion = c, i.ItemKey }
         ).ToListAsync();
 
@@ -243,26 +253,69 @@ public class PreOpClearanceService
 
         var paymentModeKnown = !string.IsNullOrWhiteSpace(journey.PaymentMode);
         var advanceReceived  = (journey.TotalAdvances ?? 0m) > 0m || (journey.TotalPaid ?? 0m) > 0m;
+        var emergencyFc      = journey.EmergencyFcApplied;
+
+        // Project CCMS decision into the compatibility checklist row (display/rollup only).
+        var coverageApproved = false;
+        string? coverageNote = null;
+        if (rows.Any(r => r.ItemKey == InsurancePreauthKey))
+        {
+            try
+            {
+                var coverageBased = PaymentModeCoveragePolicy.IsCoverageBased(journey.PaymentMode);
+                var v = await _ccms.ValidateAdmissionAsync(
+                    journey.Id, journey.CounselingSessionId, tenantId,
+                    coverageBased, journey.EmergencyFcApplied);
+                coverageApproved = v.Allowed || journey.EmergencyFcApplied;
+                coverageNote = coverageApproved
+                    ? $"Auto: CCMS {(v.CoverageState ?? v.Decision)}{(v.CaseId is Guid cid ? $" · case {cid:N}" : "")}"
+                    : $"Auto: CCMS {(v.CoverageState ?? v.Decision)} — {v.BlockReason ?? v.WarningMessage ?? "not ready"}";
+            }
+            catch
+            {
+                coverageApproved = journey.EmergencyFcApplied;
+                coverageNote = "Auto: CCMS projection unavailable";
+            }
+        }
 
         var changed = false;
         foreach (var r in rows)
         {
-            var desired = r.ItemKey == PaymentModeConfirmedKey ? paymentModeKnown : advanceReceived;
+            var desired = r.ItemKey switch
+            {
+                PaymentModeConfirmedKey => paymentModeKnown,
+                AdvancePaidKey          => advanceReceived,
+                EmergencyFcConfirmedKey => emergencyFc,
+                InsurancePreauthKey     => coverageApproved,
+                _                       => false,
+            };
             var c = r.Completion;
-            if (c.IsCompleted == desired) continue;
+            var desiredNotes = r.ItemKey switch
+            {
+                PaymentModeConfirmedKey => $"Auto: payer {journey.PaymentMode}",
+                AdvancePaidKey          => "Auto: advance/payment recorded in billing",
+                EmergencyFcConfirmedKey => string.IsNullOrWhiteSpace(journey.EmergencyFcReason)
+                    ? "Auto: Emergency Financial Clearance applied"
+                    : $"Auto: Emergency FC — {journey.EmergencyFcReason}",
+                InsurancePreauthKey     => coverageNote,
+                _                       => c.Notes,
+            };
+
+            if (c.IsCompleted == desired
+                && string.Equals(c.Notes, desiredNotes, StringComparison.Ordinal)
+                && c.Source == "system_derived")
+                continue;
 
             c.IsCompleted     = desired;
             c.IsBypassed      = false;
             c.Source          = "system_derived";
             c.UpdatedByUserId = userId;
             c.UpdatedAt       = DateTime.UtcNow;
+            c.Notes           = desiredNotes;
             if (desired)
             {
-                c.CompletedAt   = DateTime.UtcNow;
+                c.CompletedAt     = DateTime.UtcNow;
                 c.CompletedByRole = "system";
-                c.Notes = r.ItemKey == PaymentModeConfirmedKey
-                    ? $"Auto: payer {journey.PaymentMode}"
-                    : "Auto: advance/payment recorded in billing";
             }
             else
             {
@@ -528,6 +581,21 @@ public class PreOpClearanceService
     {
         await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
         var clearance = await RequireClearanceAsync(journeyId, tenantId);
+
+        // Phase 1: insurance_preauth_approved and emergency_fc_confirmed are not ward-editable.
+    // Canonical coverage approval lives in CCMS; Emergency FC is applied via the privileged API.
+    var itemMeta = await _db.PreOpSectionItems
+        .AsNoTracking()
+        .FirstOrDefaultAsync(i => i.Id == itemId && i.DeletedAt == null);
+    if (itemMeta is not null
+        && (string.Equals(itemMeta.ItemKey, "insurance_preauth_approved", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(itemMeta.ItemKey, "emergency_fc_confirmed", StringComparison.OrdinalIgnoreCase)))
+    {
+        throw new InvalidOperationException(
+            itemMeta.ItemKey == "emergency_fc_confirmed"
+                ? "Emergency Financial Clearance must be applied via the Emergency FC action, not the checklist."
+                : "Insurance pre-authorization status is owned by Coverage & Claims (CCMS) and cannot be edited on the ward checklist. Open the coverage case or apply Emergency Financial Clearance.");
+    }
 
         var existing = await _db.PreOpCompletions
             .FirstOrDefaultAsync(c => c.ClearanceId == clearance.Id
@@ -1540,5 +1608,112 @@ public class PreOpClearanceService
 
         var completionDtos = MapDeptCompletionDtos(completions.Select(x => (x.cp, x.item)));
         return SectionDisplayStatusHelper.MapSectionClearance(section, journeyId, clinicalState, completionDtos);
+    }
+
+    public async Task NotifyClinicalEvaluationMaterialChangeAsync(
+        Guid journeyId,
+        Guid tenantId,
+        ClinicalEvaluationNotifyRequest body)
+    {
+        var journey = await _db.PatientJourneys.AsNoTracking()
+            .FirstOrDefaultAsync(j => j.Id == journeyId && j.TenantId == tenantId && j.DeletedAt == null)
+            ?? throw new KeyNotFoundException($"PatientJourney {journeyId} not found.");
+
+        var patient = await _db.Patients.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == journey.PatientId && p.DeletedAt == null);
+        var patientName = patient != null
+            ? (patient.FirstName + " " + patient.LastName).Trim()
+            : journey.Uhid ?? "Patient";
+        var details = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            journeyId,
+            changeType = body.ChangeType,
+            previousIolId = body.PreviousIolId,
+            newIolId = body.NewIolId,
+            reason = body.Reason,
+            inOt = body.InOt,
+        });
+
+        _ = _notify.NotifyClinicalEvaluationMaterialChangeAsync(
+            tenantId,
+            journey.BranchId,
+            journeyId,
+            patientName,
+            body.ChangeType,
+            details,
+            body.InOt);
+    }
+
+    /// <summary>Clears doctor sign-off and records an audit entry — amend through Admitted/ReadyForSurgery or In-OT override.</summary>
+    public async Task AmendClinicalEvaluationAsync(
+        Guid journeyId,
+        Guid tenantId,
+        Guid userId,
+        AmendClinicalEvaluationRequest body)
+    {
+        await _mutationGuard.EnsureMutableAsync(journeyId, tenantId);
+        var journey = await RequireJourneyAsync(journeyId, tenantId);
+
+        var allowed =
+            journey.ClinicalState is ClinicalState.Admitted or ClinicalState.ReadyForSurgery
+            || (body.InOt && journey.ClinicalState == ClinicalState.InOT);
+        if (!allowed)
+            throw new InvalidOperationException(
+                $"Clinical evaluation cannot be amended in state {journey.ClinicalState}.");
+
+        var clearance = await RequireClearanceAsync(journeyId, tenantId);
+        var signKeys = new[] { "doctor_evaluation_signed", "doctor_evaluation_completed" };
+
+        var rows = await (
+            from cp in _db.PreOpCompletions
+            join item in _db.PreOpSectionItems on cp.ItemId equals item.Id
+            where cp.ClearanceId == clearance.Id
+                  && cp.DeletedAt == null
+                  && signKeys.Contains(item.ItemKey)
+            select new { cp, item }
+        ).ToListAsync();
+
+        if (rows.Count == 0)
+            throw new KeyNotFoundException("Sign-off checklist items are not configured for this journey.");
+
+        var signed = rows.FirstOrDefault(r => r.item.ItemKey == "doctor_evaluation_signed")?.cp;
+        if (signed is null || !signed.IsCompleted)
+            throw new InvalidOperationException("Clinical evaluation is not signed off.");
+
+        var auditPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            category = body.Category,
+            reason = body.Reason,
+            inOt = body.InOt,
+            at = DateTime.UtcNow,
+        });
+
+        foreach (var row in rows)
+        {
+            row.cp.IsCompleted = false;
+            row.cp.CompletedByUserId = null;
+            row.cp.CompletedAt = null;
+            row.cp.UpdatedByUserId = userId;
+            row.cp.UpdatedAt = DateTime.UtcNow;
+            if (row.item.ItemKey == "doctor_evaluation_signed")
+                row.cp.Notes = auditPayload;
+        }
+
+        _db.JourneyAuditLogs.Add(new JourneyAuditLog
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            PatientJourneyId = journeyId,
+            Action = body.InOt ? "ClinicalEvaluationEmergencyAmend" : "ClinicalEvaluationAmend",
+            StateType = "ClinicalEvaluation",
+            OldValue = "Signed",
+            NewValue = auditPayload,
+            PerformedByUserId = userId,
+            PerformedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+
+        await _db.SaveChangesAsync();
     }
 }

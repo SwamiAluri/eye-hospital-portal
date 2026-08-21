@@ -1,17 +1,31 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useAuthStore } from '@/lib/auth-store';
 import { logoutEverywhere } from '@/lib/logout-everywhere';
-import LiveActivityFeed from '@/components/LiveActivityFeed';
 import { BranchSwitcher } from '@/components/patients/lookup/BranchSwitcher';
-import { LogOut, Menu } from 'lucide-react';
+import { Bell, LogOut, Menu } from 'lucide-react';
+
+const LiveActivityFeed = dynamic(() => import('@/components/LiveActivityFeed'), {
+  ssr: false,
+  loading: () => (
+    <button
+      type="button"
+      className="relative p-2 text-gray-600 rounded-full"
+      aria-label="Activity Feed"
+      disabled
+    >
+      <Bell className="w-6 h-6" />
+    </button>
+  ),
+});
 
 interface TopNavProps {
   onMenuClick?: () => void;
 }
 
 export default function TopNav({ onMenuClick }: TopNavProps) {
-  const { user } = useAuthStore();
+  const user = useAuthStore(s => s.user);
 
   const initials = user
     ? `${(user.firstName?.[0] ?? '').toUpperCase()}${(user.lastName?.[0] ?? '').toUpperCase()}`

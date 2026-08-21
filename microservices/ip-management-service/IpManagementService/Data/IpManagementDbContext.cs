@@ -20,6 +20,7 @@ public class IpManagementDbContext : DbContext
     public DbSet<PostOpInstruction>      PostOpInstructions       { get; set; }
     public DbSet<DischargeSummary>       DischargeSummaries       { get; set; }
     public DbSet<JourneyAuditLog>        JourneyAuditLogs         { get; set; }
+    public DbSet<IntegrationOutboxEvent> IntegrationOutboxEvents  { get; set; }
     public DbSet<IolReturn>              IolReturns               { get; set; }
     public DbSet<SurgeryNoteTemplate>    SurgeryNoteTemplates     { get; set; }
     public DbSet<VitalSign>              VitalSigns               { get; set; }
@@ -391,6 +392,30 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.Status).HasColumnName("status");
         });
 
+        // ── IntegrationOutboxEvent (Phase 2 reliable lifecycle delivery) ──
+        modelBuilder.Entity<IntegrationOutboxEvent>(e =>
+        {
+            e.ToTable("integration_outbox_event");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.EventType).HasColumnName("event_type");
+            e.Property(p => p.AggregateType).HasColumnName("aggregate_type");
+            e.Property(p => p.AggregateId).HasColumnName("aggregate_id");
+            e.Property(p => p.CorrelationId).HasColumnName("correlation_id");
+            e.Property(p => p.PayloadJson).HasColumnName("payload_json");
+            e.Property(p => p.IdempotencyKey).HasColumnName("idempotency_key");
+            e.Property(p => p.OccurredAt).HasColumnName("occurred_at");
+            e.Property(p => p.Status).HasColumnName("status");
+            e.Property(p => p.RetryCount).HasColumnName("retry_count");
+            e.Property(p => p.LastAttemptAt).HasColumnName("last_attempt_at");
+            e.Property(p => p.ProcessedAt).HasColumnName("processed_at");
+            e.Property(p => p.Error).HasColumnName("error");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(p => p.IdempotencyKey).IsUnique();
+        });
+
         // ── IolReturn ─────────────────────────────────────────────────────
         modelBuilder.Entity<IolReturn>(e =>
         {
@@ -579,15 +604,15 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.Bp).HasColumnName("bp");
             e.Property(p => p.Hr).HasColumnName("hr");
             e.Property(p => p.PhysicalStatusAsa).HasColumnName("physical_status_asa");
-            e.Property(p => p.Investigations).HasColumnName("investigations");
+            e.Property(p => p.Investigations).HasColumnName("investigations").HasColumnType("jsonb");
             e.Property(p => p.Allergies).HasColumnName("allergies");
-            e.Property(p => p.SystemicReview).HasColumnName("systemic_review");
+            e.Property(p => p.SystemicReview).HasColumnName("systemic_review").HasColumnType("jsonb");
             e.Property(p => p.PastAnaestheticHistory).HasColumnName("past_anaesthetic_history");
-            e.Property(p => p.AirwayExam).HasColumnName("airway_exam");
+            e.Property(p => p.AirwayExam).HasColumnName("airway_exam").HasColumnType("jsonb");
             e.Property(p => p.AnaesthesiaPlan).HasColumnName("anaesthesia_plan");
             e.Property(p => p.PeriOpExplained).HasColumnName("peri_op_explained");
             e.Property(p => p.ConsentType).HasColumnName("consent_type");
-            e.Property(p => p.CurrentMedications).HasColumnName("current_medications");
+            e.Property(p => p.CurrentMedications).HasColumnName("current_medications").HasColumnType("jsonb");
             e.Property(p => p.PreOpConsultations).HasColumnName("pre_op_consultations");
             e.Property(p => p.MedicationsAdvised).HasColumnName("medications_advised");
             e.Property(p => p.InvestigationsAdvised).HasColumnName("investigations_advised");
@@ -613,7 +638,7 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.PreOpSpo2).HasColumnName("pre_op_spo2");
             e.Property(p => p.PreOpConsentConfirmed).HasColumnName("pre_op_consent_confirmed");
             e.Property(p => p.PreOpReviewAt).HasColumnName("pre_op_review_at");
-            e.Property(p => p.MonitoringReadings).HasColumnName("monitoring_readings");
+            e.Property(p => p.MonitoringReadings).HasColumnName("monitoring_readings").HasColumnType("jsonb");
             e.Property(p => p.DischargePr).HasColumnName("discharge_pr");
             e.Property(p => p.DischargeBp).HasColumnName("discharge_bp");
             e.Property(p => p.GeneralConditionNormal).HasColumnName("general_condition_normal");

@@ -17,6 +17,18 @@ const nextConfig = {
   ],
   experimental: {
     serverComponentsExternalPackages: [],
+    // Tree-shake large icon/UI barrels so dashboard shell does not pull every export.
+    optimizePackageImports: [
+      'lucide-react',
+      '@radix-ui/react-icons',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-tooltip',
+      'date-fns',
+      'recharts',
+    ],
   },
   // Enable WebAssembly support for CornerstoneJS
   webpack: (config, { isServer }) => {
@@ -73,6 +85,9 @@ const nextConfig = {
       { source: '/dashboard/imaging/electrophysiology', destination: '/dashboard/diagnostic/electrophysiology', permanent: true },
       { source: '/dashboard/imaging/retinopathy', destination: '/dashboard/diagnostic/retinopathy-screening', permanent: true },
       { source: '/dashboard/imaging/fundus', destination: '/dashboard/diagnostic/fundus-imaging', permanent: true },
+      // Phase 3 — legacy insurance UI → CCMS (canonical Coverage & Claims)
+      { source: '/dashboard/insurance', destination: '/dashboard/ccms', permanent: true },
+      { source: '/dashboard/insurance/:path*', destination: '/dashboard/ccms/:path*', permanent: true },
     ];
   },
 }

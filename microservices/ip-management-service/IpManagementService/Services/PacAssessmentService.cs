@@ -84,6 +84,7 @@ public class PacAssessmentService
         await _wardSync.SyncItemAsync(
             journeyId, tenantId, userId, WardChecklistAutoSyncService.PacDoneKey, true,
             "Auto-synced from PAC assessment");
+        await _wardSync.SyncAnaesthesiaFromPacAsync(journeyId, tenantId, userId, journey, row);
         await _phaseStatus.UpdateAsync(journeyId, tenantId, d => d["pac_completed"] = true);
 
         var assessment = await BuildDtoAsync(journey, row);
@@ -179,11 +180,11 @@ public class PacAssessmentService
 
     private async Task<PacAssessment> GetOrInitAsync(PatientJourney journey, Guid tenantId)
     {
-        var existing = await _db.PacAssessments
-            .FirstOrDefaultAsync(p => p.PatientJourneyId == journey.Id
-                                      && p.TenantId == tenantId
-                                      && p.DeletedAt == null);
+        var existing = await FindActivePacAsync(journey.Id, tenantId);
         if (existing is not null) return existing;
+
+        var revived = await ReviveSoftDeletedPacAsync(journey.Id, tenantId);
+        if (revived is not null) return revived;
 
         var now = DateTime.UtcNow;
         var row = new PacAssessment
@@ -204,13 +205,34 @@ public class PacAssessmentService
         catch (DbUpdateException)
         {
             _db.ChangeTracker.Clear();
-            return await _db.PacAssessments
-                       .FirstAsync(p => p.PatientJourneyId == journey.Id
-                                         && p.TenantId == tenantId
-                                         && p.DeletedAt == null);
+            var raced = await FindActivePacAsync(journey.Id, tenantId)
+                        ?? await ReviveSoftDeletedPacAsync(journey.Id, tenantId);
+            if (raced is not null) return raced;
+
+            throw new InvalidOperationException(
+                "PAC assessment could not be created or loaded for this journey.");
         }
 
         return row;
+    }
+
+    private Task<PacAssessment?> FindActivePacAsync(Guid journeyId, Guid tenantId)
+        => _db.PacAssessments
+            .FirstOrDefaultAsync(p => p.PatientJourneyId == journeyId
+                                      && p.TenantId == tenantId
+                                      && p.DeletedAt == null);
+
+    private async Task<PacAssessment?> ReviveSoftDeletedPacAsync(Guid journeyId, Guid tenantId)
+    {
+        var deleted = await _db.PacAssessments
+            .FirstOrDefaultAsync(p => p.PatientJourneyId == journeyId && p.DeletedAt != null);
+        if (deleted is null) return null;
+
+        deleted.DeletedAt = null;
+        deleted.TenantId  = tenantId;
+        deleted.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return deleted;
     }
 
     private static PacInvestigationsDto DeserializeInvestigations(string json)

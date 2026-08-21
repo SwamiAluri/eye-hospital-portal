@@ -28,6 +28,26 @@ function getClient(): AxiosInstance {
   return _client;
 }
 
+export type ApiMutationResult<T> = { data: T | null; error?: string };
+
+function formatApiError(e: unknown, fallback: string): string {
+  if (axios.isAxiosError(e)) {
+    const status = e.response?.status;
+    const body = e.response?.data;
+    if (status === 401 || status === 403) {
+      return 'You do not have permission for this action.';
+    }
+    if (typeof body === 'string' && body.trim()) return body;
+    if (body && typeof body === 'object') {
+      const record = body as Record<string, unknown>;
+      const msg = record.message ?? record.error;
+      if (typeof msg === 'string' && msg.trim()) return msg;
+    }
+    return e.message || fallback;
+  }
+  return e instanceof Error ? e.message : fallback;
+}
+
 // ─── Ward Types ───────────────────────────────────────────────────────────────
 
 export interface WardDto {
@@ -1570,7 +1590,7 @@ export interface RevokeConsentRequest {
   reason: string;
 }
 
-/** Live insurance pre-auth status (read-only) projected from the CCMS coverage case. */
+/** Live coverage & payment status (read-only) projected from the CCMS coverage case. */
 export interface PreauthStatusDto {
   allowed: boolean;
   warningLevel: string; // none | info | warning | block
@@ -1578,6 +1598,14 @@ export interface PreauthStatusDto {
   blockReason: string | null;
   preAuthNumber: string | null;
   approvedAmount: number | null;
+  caseId?: string | null;
+  coverageState?: string | null;
+  decision?: string; // ALLOW | WARN | BLOCK
+  paymentMode?: string | null;
+  isEmergencyFinancialClearance?: boolean;
+  requiresOverride?: boolean;
+  lastUpdatedAt?: string | null;
+  ccmsUnavailable?: boolean;
 }
 
 export interface AddPreOpVitalRequest {
@@ -1702,9 +1730,11 @@ export const ipManagementApi = {
     try {
       const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/admit`, req);
       return r.data;
-    } catch (e) {
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: string | { message?: string } } })?.response?.data;
+      const text = typeof msg === 'string' ? msg : msg?.message;
       console.warn('[ip-management] admitPatient failed', e);
-      return null;
+      throw new Error(text || 'Admission failed. Coverage authorization may be required.');
     }
   },
 
@@ -2221,9 +2251,9 @@ export const ipManagementApi = {
   async getPreOpReadiness(
     journeyId: string,
     paymentMode?: string,
-  ): Promise<PreOpReadinessApiDto | null> {
+  ): Promise<unknown> {
     try {
-      const r = await getClient().get<PreOpReadinessApiDto>(
+      const r = await getClient().get(
         `/ip-management/journeys/${journeyId}/pre-op/readiness`,
         { params: paymentMode ? { paymentMode } : undefined },
       );
@@ -2243,6 +2273,42 @@ export const ipManagementApi = {
       return r.data;
     } catch (e) {
       console.warn('[ip-management] savePreOpCompletion failed', e);
+      return null;
+    }
+  },
+
+  async notifyClinicalEvaluationMaterialChange(
+    journeyId: string,
+    payload: {
+      changeType: 'iol_changed' | 'diagnosis_overridden';
+      previousIolId?: string | null;
+      newIolId?: string | null;
+      reason?: string;
+      inOt?: boolean;
+    },
+  ): Promise<void> {
+    try {
+      await getClient().post(
+        `/ip-management/journeys/${journeyId}/pre-op/clinical-evaluation/notify`,
+        payload,
+      );
+    } catch (e) {
+      console.warn('[ip-management] notifyClinicalEvaluationMaterialChange failed', e);
+    }
+  },
+
+  async amendClinicalEvaluation(
+    journeyId: string,
+    payload: { reason: string; category: string; inOt?: boolean },
+  ): Promise<PreOpClearanceDetailDto | null> {
+    try {
+      const r = await getClient().post<PreOpClearanceDetailDto>(
+        `/ip-management/journeys/${journeyId}/pre-op/clinical-evaluation/amend`,
+        payload,
+      );
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] amendClinicalEvaluation failed', e);
       return null;
     }
   },
@@ -2793,32 +2859,38 @@ export const ipManagementApi = {
   async savePacAssessment(
     journeyId: string,
     req: SavePacAssessmentRequest,
-  ): Promise<PacAssessmentDto | null> {
+  ): Promise<ApiMutationResult<PacAssessmentDto>> {
     try {
       const r = await getClient().put<PacAssessmentDto>(
         `/ip-management/journeys/${journeyId}/pac-assessment`,
         req,
       );
-      return normalizePacAssessment(r.data);
+      return { data: normalizePacAssessment(r.data) };
     } catch (e) {
+      const error = formatApiError(e, 'Failed to save PAC assessment');
       console.warn('[ip-management] savePacAssessment failed', e);
-      return null;
+      return { data: null, error };
     }
   },
 
-  async completePacAssessment(journeyId: string): Promise<CompletePacAssessmentResultDto | null> {
+  async completePacAssessment(
+    journeyId: string,
+  ): Promise<ApiMutationResult<CompletePacAssessmentResultDto>> {
     try {
       const r = await getClient().post<CompletePacAssessmentResultDto>(
         `/ip-management/journeys/${journeyId}/pac-assessment/complete`,
       );
-      if (!r.data) return null;
+      if (!r.data) return { data: null, error: 'Empty response from server' };
       return {
-        assessment: normalizePacAssessment(r.data.assessment),
-        unverifiedCriticalWarnings: r.data.unverifiedCriticalWarnings ?? [],
+        data: {
+          assessment: normalizePacAssessment(r.data.assessment),
+          unverifiedCriticalWarnings: r.data.unverifiedCriticalWarnings ?? [],
+        },
       };
     } catch (e) {
+      const error = formatApiError(e, 'Failed to complete PAC assessment');
       console.warn('[ip-management] completePacAssessment failed', e);
-      return null;
+      return { data: null, error };
     }
   },
 

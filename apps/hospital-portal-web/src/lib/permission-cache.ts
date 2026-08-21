@@ -277,11 +277,24 @@ export function useCachedAuthStore() {
   );
 }
 
+/** Sidebar / gates: subscribe only to permission check (avoids full-store re-renders). */
+export function useHasPermission() {
+  const userId = useAuthStore(s => s.user?.id);
+  const storeHasPermission = useAuthStore(s => s.hasPermission);
+
+  return useCallback((permissionCode: string): boolean => {
+    if (!userId) return false;
+    const cached = permissionCache.hasPermission(userId, permissionCode);
+    if (cached !== null) return cached;
+    return storeHasPermission(permissionCode);
+  }, [userId, storeHasPermission]);
+}
+
 /**
  * Hook for permission caching utilities
  */
 export function usePermissionCache() {
-  const user = useAuthStore().user;
+  const user = useAuthStore(s => s.user);
 
   return {
     // Cache management

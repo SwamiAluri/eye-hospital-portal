@@ -48,14 +48,7 @@ export function WardPreOpGateChip({ journeyId, clinicalState }: WardPreOpGateChi
   }
 
   if (warnings.length === 0) {
-    return (
-      <span
-        className="inline-flex items-center text-[11px] font-medium text-green-700 bg-green-50 border border-green-100 rounded-full px-2.5 py-0.5"
-        data-testid={WARD_PREOP_TEST_IDS.gateChipClear}
-      >
-        No checklist warnings
-      </span>
-    );
+    return null;
   }
 
   const hardBlocks = warnings.filter(w => w.severity === 'block');

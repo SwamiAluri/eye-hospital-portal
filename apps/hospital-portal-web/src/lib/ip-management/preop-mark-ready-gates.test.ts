@@ -98,4 +98,32 @@ describe('computeMarkReadyGates', () => {
     expect(result.canMarkReady).toBe(true);
     expect(result.hardBlocks).toHaveLength(0);
   });
+
+  it('warns when clinical evaluation is unsigned but does not block', () => {
+    const result = computeMarkReadyGates({
+      investigation: {
+        journeyId: 'j1',
+        applicableCount: 1,
+        completedCount: 1,
+        anaesthesiaType: null,
+        items: [],
+        unverifiedCriticalKeys: [],
+      },
+      pac: { assessmentStatus: 'Completed' } as never,
+      detail: {
+        completions: [
+          completion('surgery_consent_signed', { isCompleted: true, category: 'Consent' }),
+          completion('surgery_site_marked', {
+            isCompleted: true,
+            notes: 'RS',
+            resultValue: 'OD',
+          }),
+        ],
+      } as never,
+      scheduledEye: 'OD',
+    });
+
+    expect(result.canMarkReady).toBe(true);
+    expect(result.softWarnings.map(w => w.code)).toContain('clinical_evaluation_unsigned');
+  });
 });

@@ -9,7 +9,10 @@ import {
   type WardInvestigationChecklistDto,
 } from '@/lib/api/ip-management.api';
 import { usePreOpClearanceOptional } from '@/components/ip-management/preop/PreOpClearanceProvider';
-import { mapPreOpReadinessFromApi } from '@/lib/ip-management/preop-readiness-api';
+import {
+  mapPreOpReadinessFromApi,
+  parsePreOpReadinessApiDto,
+} from '@/lib/ip-management/preop-readiness-api';
 import { computePreOpReadiness, type PreOpReadiness } from '@/lib/ip-management/preop-readiness';
 import {
   computePreOpSafetySignals,
@@ -77,9 +80,13 @@ export function usePreOpReadiness({
     const safeInvestigation = investigation as WardInvestigationChecklistDto | null;
     const safePac = pac as PacAssessmentDto | null;
     setPac(safePac);
+    const parsedReadiness = parsePreOpReadinessApiDto(serverReadiness);
+    if (serverReadiness && !parsedReadiness) {
+      console.warn('[preop-readiness] invalid server rollup; using client fallback', serverReadiness);
+    }
     setReadiness(
-      serverReadiness
-        ? mapPreOpReadinessFromApi(serverReadiness)
+      parsedReadiness
+        ? mapPreOpReadinessFromApi(parsedReadiness)
         : computePreOpReadiness({
             detail: safeDetail,
             investigation: safeInvestigation,

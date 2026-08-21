@@ -14,7 +14,10 @@ public static class IpChecklistAuth
     public const string PermMonitoringEdit = "anaesthesia.monitoring.edit";
     public const string PermCounsellorEdit = "counsellor.outpatient_checklist.edit";
     public const string PermOtOverride    = "ot.safety.override";
+    public const string PermClinicalEvalSign = "ward.clinical_evaluation.sign";
     public const string PermIpView        = "ip_management.view";
+    /// <summary>Privileged override: Emergency Financial Clearance (Phase 1).</summary>
+    public const string PermEmergencyFc   = "ip.emergency_fc.apply";
 
     public static IReadOnlyList<string> ExtractPermissions(ClaimsPrincipal principal)
         => principal.FindAll("permission").Select(c => c.Value).ToList();
@@ -73,6 +76,21 @@ public static class IpChecklistAuth
             return;
         throw new UnauthorizedAccessException(
             "Missing permission: ward.checklist.edit or ot.safety.sign");
+    }
+
+    /// <summary>
+    /// Emergency Financial Clearance is a privileged override — view-only users cannot apply it.
+    /// Accepts dedicated <see cref="PermEmergencyFc"/> or ward checklist edit.
+    /// </summary>
+    public static void RequireEmergencyFc(HttpRequestData request, JwtService jwt)
+    {
+        var principal = jwt.ValidatePrincipal(request);
+        var perms     = ExtractPermissions(principal);
+        if (perms.Count == 0) return;
+        if (HasPermission(perms, PermEmergencyFc) || HasPermission(perms, PermWardEdit))
+            return;
+        throw new UnauthorizedAccessException(
+            $"Missing permission: {PermEmergencyFc} or {PermWardEdit}");
     }
 
     public static void RequireOtReturnRole(HttpRequestData request, JwtService jwt)

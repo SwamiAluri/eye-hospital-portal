@@ -40,6 +40,7 @@ internal sealed class WardPreOpTestContext : IDisposable
         services.AddScoped<WardChecklistAutoSyncService>();
         services.AddSingleton<IAzureBlobStorageService, NoOpAzureBlobStorageService>();
         services.AddScoped<IPreOpNotificationClient, NoOpPreOpNotificationClient>();
+        services.AddScoped<ICcmsAdmissionClient, NoOpCcmsAdmissionClient>();
         services.AddScoped<JourneyMutationGuardService>();
         services.AddScoped<JourneySchedulingGuardService>();
         services.AddScoped<PreOpClearanceService>();

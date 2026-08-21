@@ -21,11 +21,12 @@ import {
   Utensils,
   Wallet,
 } from 'lucide-react';
+import { CoveragePaymentTerms } from '@/lib/ip-management/coverage-payment-terminology';
 
 export type PreOpStepKey =
   | 'investigations'
   | 'evaluation'
-  | 'anaesthesia'
+  | 'pac'
   | 'consent'
   | 'financial'
   | 'fasting'
@@ -70,7 +71,7 @@ export interface PreOpStepMeta {
   careStep?: boolean;
 }
 
-const NUMERALS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+const NUMERALS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
 
 export const PREOP_STEPS: PreOpStepMeta[] = [
   {
@@ -94,14 +95,13 @@ export const PREOP_STEPS: PreOpStepMeta[] = [
     hideUntilAdmitted: true,
   },
   {
-    key: 'anaesthesia',
+    key: 'pac',
     index: 3,
     numeral: NUMERALS[2],
-    label: 'Anaesthesia & PAC',
+    label: 'PAC Assessment',
     short: 'PAC',
     icon: HeartPulse,
     pac: true,
-    clearanceCategories: ['Anaesthesia'],
     admissionGated: true,
     hideUntilAdmitted: true,
   },
@@ -119,11 +119,10 @@ export const PREOP_STEPS: PreOpStepMeta[] = [
     key: 'financial',
     index: 5,
     numeral: NUMERALS[4],
-    label: 'Financial',
-    short: 'Financial',
+    label: CoveragePaymentTerms.coverageAndPaymentStatus,
+    short: 'Coverage',
     icon: Wallet,
-    // §2 "Financial" category is owned by FinancialClearancePanel (Phase 6 single source),
-    // not the generic DepartmentClearancePanel — see WardPreOpWorkspaceModal.
+    // Owned by FinancialClearancePanel — displays CCMS coverage projection + payment signals.
   },
   {
     key: 'fasting',
@@ -161,7 +160,7 @@ export const PREOP_STEPS: PreOpStepMeta[] = [
   {
     key: 'records',
     index: 9,
-    numeral: NUMERALS[7],
+    numeral: NUMERALS[8],
     label: 'Nursing & Records',
     short: 'Nursing',
     icon: Activity,
@@ -187,7 +186,7 @@ export function isStepLocked(step: PreOpStepMeta, clinicalState: string): boolea
 /**
  * Rail visibility per clinical state:
  *  - `expectedOnly` steps (Admit) show only while `Expected`.
- *  - `hideUntilAdmitted` steps (Evaluation/Anaesthesia/Records) hide while `Expected`.
+ *  - `hideUntilAdmitted` steps (Evaluation/PAC/Records) hide while `Expected`.
  */
 export function isStepHidden(step: PreOpStepMeta, clinicalState: string): boolean {
   if (step.expectedOnly) return clinicalState !== 'Expected';
@@ -224,7 +223,7 @@ export function defaultStepForRole(input: RoleDefaultInput): PreOpStepKey {
     /ANAE|ANES/.test(dept)
     || (input.canEditPac && !input.canEnterInvestigation && !input.canEditWardChecklist)
   ) {
-    return unlockedOr('anaesthesia');
+    return unlockedOr('pac');
   }
   if (/BILL|FINAN|ACCOUNT|CASH|TPA/.test(dept)) return 'financial';
   if (/THEATRE|THEATER|(^|[^A-Z])OT([^A-Z]|$)/.test(dept)) return unlockedOr('bedside');
@@ -254,7 +253,7 @@ export function legacyToStep(
     case 'wardSafety':
       return 'bedside';
     case 'pac':
-      return 'anaesthesia';
+      return 'pac';
     case 'p0':
     case 'investigations':
     default:

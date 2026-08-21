@@ -36,15 +36,10 @@ namespace AuthService.Controllers
         {
             try
             {
-                // Mock data for testing - bypasses database
-                // Using actual GUID format for tenant IDs
+                // Dev fallback when DB is unavailable — must match seed tenant (admin@test.com).
                 var mockTenants = new[]
                 {
-                    new { id = "11111111-1111-1111-1111-111111111111", name = "Apollo Hospitals - Main", tenantCode = "APOLLO-MAIN" },
-                    new { id = "22222222-2222-2222-2222-222222222222", name = "Fortis Healthcare", tenantCode = "FORTIS-01" },
-                    new { id = "33333333-3333-3333-3333-333333333333", name = "Max Healthcare", tenantCode = "MAX-HC" },
-                    new { id = "44444444-4444-4444-4444-444444444444", name = "Narayana Health", tenantCode = "NARAYANA" },
-                    new { id = "55555555-5555-5555-5555-555555555555", name = "Sankara Eye Hospital", tenantCode = "SANKARA" }
+                    new { id = "155fe198-6ae5-4a01-9254-ead5b427247e", name = "India Eye Hospital Network", tenantCode = "INDIA_EYE_NET" },
                 };
                 
                 _logger.LogInformation("Returning {Count} mock tenants for testing", mockTenants.Length);

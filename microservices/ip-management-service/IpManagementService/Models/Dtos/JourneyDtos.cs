@@ -217,6 +217,11 @@ public record TransitionRequest(
 
 // ─── Emergency FC Modal ───────────────────────────────────────────────────────
 
+/// <summary>
+/// Emergency FC request. GovernmentApprovalSubmitted / InsurancePreauthSubmitted
+/// are retained for API compatibility but ignored by ApplyEmergencyFcAsync (Phase 3) —
+/// coverage authorization truth is CCMS.
+/// </summary>
 public record EmergencyFcRequest(
     string Reason,
     bool   GovernmentApprovalSubmitted,

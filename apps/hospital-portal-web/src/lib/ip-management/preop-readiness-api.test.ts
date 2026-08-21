@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapPreOpReadinessFromApi } from './preop-readiness-api';
+import { mapPreOpReadinessFromApi, parsePreOpReadinessApiDto } from './preop-readiness-api';
 
 describe('preop-readiness-api', () => {
   it('maps backend DTO to workspace readiness', () => {
@@ -33,5 +33,33 @@ describe('preop-readiness-api', () => {
     expect(readiness.countableSteps).toBe(1);
     expect(readiness.byKey.investigations.blocking).toBe(1);
     expect(readiness.byKey.evaluation.locked).toBe(true);
+  });
+
+  it('parses PascalCase backend payloads', () => {
+    const parsed = parsePreOpReadinessApiDto({
+      Steps: [
+        {
+          Key: 'consent',
+          Completed: 1,
+          Total: 1,
+          Blocking: 0,
+          Status: 'completed',
+          Locked: false,
+          HasCount: true,
+        },
+      ],
+      ReadySteps: 1,
+      CountableSteps: 1,
+      Blockers: 0,
+    });
+
+    expect(parsed?.steps[0].key).toBe('consent');
+    expect(parsed?.readySteps).toBe(1);
+  });
+
+  it('rejects journey summary payloads without steps', () => {
+    expect(parsePreOpReadinessApiDto({ readinessCompleted: 2, readinessTotal: 5 })).toBeNull();
+    expect(parsePreOpReadinessApiDto(null)).toBeNull();
+    expect(parsePreOpReadinessApiDto({ steps: [] })).toBeNull();
   });
 });

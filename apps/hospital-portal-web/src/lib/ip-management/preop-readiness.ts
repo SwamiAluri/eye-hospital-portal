@@ -23,6 +23,7 @@ import {
 } from './preop-status';
 import { PREOP_STEPS, isStepLocked, type PreOpStepKey } from './preop-steps';
 import { BEDSIDE_NURSE_WARD_KEYS, BEDSIDE_NURSE_REHOMED_KEYS } from './bedside-items';
+import { countEvaluationReadiness } from './clinical-evaluation';
 
 export interface StepReadiness {
   key: PreOpStepKey;
@@ -136,8 +137,7 @@ export function computePreOpReadiness(input: ReadinessInputs): PreOpReadiness {
         };
       }
 
-      case 'anaesthesia': {
-        // PAC completion is the anaesthesia source of truth (§12 / D11).
+      case 'pac': {
         const done = pac?.assessmentStatus === 'Completed' ? 1 : 0;
         const started = !!pac && !!pac.assessmentStatus && pac.assessmentStatus !== 'NotStarted';
         const status: PreOpStatus = locked
@@ -159,7 +159,7 @@ export function computePreOpReadiness(input: ReadinessInputs): PreOpReadiness {
       }
 
       case 'evaluation': {
-        const c = countByCategories(completions, ['Evaluation']);
+        const c = countEvaluationReadiness(completions);
         const status = deriveStatus(locked, c.completed, c.total, sectionStatusFor(detail, 'Evaluation'));
         return { key: meta.key, ...c, blocking: locked ? 0 : c.blocking, status, locked, hasCount: c.total > 0 };
       }

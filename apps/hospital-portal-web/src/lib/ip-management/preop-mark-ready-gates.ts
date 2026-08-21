@@ -4,6 +4,7 @@ import type {
   WardInvestigationChecklistDto,
 } from '@/lib/api/ip-management.api';
 import type { PreOpStepKey } from './preop-steps';
+import { isEvaluationSignedOff } from './clinical-evaluation';
 import { isLateralityAttested, lateralityBlockMessage, normalizeOperativeEye } from './preop-laterality';
 
 export interface MarkReadyGate {
@@ -78,7 +79,16 @@ export function computeMarkReadyGates(input: {
       code: 'pac_incomplete',
       message: 'PAC assessment must be completed before marking ready for surgery.',
       severity: 'block',
-      navigateStep: 'anaesthesia',
+      navigateStep: 'pac',
+    });
+  }
+
+  if (!isEvaluationSignedOff(completions)) {
+    softWarnings.push({
+      code: 'clinical_evaluation_unsigned',
+      message: 'Clinical evaluation is not yet signed off by a doctor.',
+      severity: 'warn',
+      navigateStep: 'evaluation',
     });
   }
 

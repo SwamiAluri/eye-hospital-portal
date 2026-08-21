@@ -180,15 +180,15 @@ VALUES
 -- ────────────────────────────────────────────────────────────────────────────
 (gen_random_uuid(), NULL, 'Anaesthesia', 'anaesthesia_type_selected',
  'Anaesthesia Type Selected', 'Type of anaesthesia selected: LA / GA / Topical.',
- 'Anaesthesia', TRUE, TRUE, FALSE, NULL, NULL, 10),
+ 'Anaesthesia', TRUE, FALSE, FALSE, NULL, NULL, 10),
 
 (gen_random_uuid(), NULL, 'Anaesthesia', 'anaesthetist_assigned',
  'Anaesthetist Assigned', 'Responsible anaesthetist confirmed and assigned.',
- 'Anaesthesia', TRUE, TRUE, FALSE, NULL, NULL, 20),
+ 'Anaesthesia', TRUE, FALSE, FALSE, NULL, NULL, 20),
 
 (gen_random_uuid(), NULL, 'Anaesthesia', 'fitness_assessed',
  'Anaesthesia Fitness Assessed', 'Anaesthetist has completed fitness evaluation.',
- 'Anaesthesia', TRUE, TRUE, FALSE, NULL, NULL, 30),
+ 'Anaesthesia', TRUE, FALSE, FALSE, NULL, NULL, 30),
 
 (gen_random_uuid(), NULL, 'Anaesthesia', 'contraindications_reviewed',
  'Contraindications Reviewed', 'Drug allergies and anaesthesia contraindications reviewed.',
@@ -196,7 +196,7 @@ VALUES
 
 (gen_random_uuid(), NULL, 'Anaesthesia', 'fitness_certificate_uploaded',
  'Fitness Certificate Uploaded', 'Anaesthesia fitness certificate / clearance letter uploaded.',
- 'Anaesthesia', TRUE, TRUE, TRUE, NULL, NULL, 50),
+ 'Anaesthesia', FALSE, FALSE, TRUE, NULL, NULL, 50),
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- CATEGORY 7: Financial

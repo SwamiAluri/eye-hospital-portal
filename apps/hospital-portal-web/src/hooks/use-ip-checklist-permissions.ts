@@ -11,6 +11,7 @@ export const IP_CHECKLIST_PERMISSIONS = {
   monitoringEdit: 'anaesthesia.monitoring.edit',
   counsellorOutpatientEdit: 'counsellor.outpatient_checklist.edit',
   otSafetyOverride: 'ot.safety.override',
+  clinicalEvaluationSign: 'ward.clinical_evaluation.sign',
 } as const;
 
 function can(permissions: string[], code: string): boolean {
@@ -33,5 +34,9 @@ export function useIpChecklistPermissions() {
     canEditMonitoring: can(permissions, IP_CHECKLIST_PERMISSIONS.monitoringEdit),
     canEditCounsellorOutpatient: can(permissions, IP_CHECKLIST_PERMISSIONS.counsellorOutpatientEdit),
     canOverrideWhoTimeout: can(permissions, IP_CHECKLIST_PERMISSIONS.otSafetyOverride),
+    canSignClinicalEvaluation: can(permissions, IP_CHECKLIST_PERMISSIONS.clinicalEvaluationSign),
+    canAmendClinicalEvaluationInOt:
+      can(permissions, IP_CHECKLIST_PERMISSIONS.clinicalEvaluationSign)
+      && can(permissions, IP_CHECKLIST_PERMISSIONS.otSafetyOverride),
   };
 }

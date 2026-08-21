@@ -129,6 +129,8 @@ export function DepartmentClearancePanel({
     return isReadOnly || isSectionLockedAtExpected(clinicalState, category);
   }
 
+  const hideDeptChrome = hideSummary || flat || (categoryFilter?.length === 1);
+
   const [localDetail, setLocalDetail] = useState<PreOpClearanceDetailDto | null>(null);
   const [localLoading, setLocalLoading] = useState(!sharedClearance);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -544,6 +546,11 @@ export function DepartmentClearancePanel({
     (a, b) => DEPARTMENT_CLEARANCE_CATEGORY_ORDER.indexOf(a) - DEPARTMENT_CLEARANCE_CATEGORY_ORDER.indexOf(b),
   );
 
+  // Flat single-category steps (Pre-OT Prep, Fasting): hide panel when catalog has no items.
+  if (flat && categories.length > 0 && categories.every(cat => grouped[cat].length === 0)) {
+    return null;
+  }
+
   const visibleCompletions = (detail.completions ?? []).filter(
     c => includeCategory(c.category) && includeItem(c),
   );
@@ -811,7 +818,7 @@ export function DepartmentClearancePanel({
         </div>
       )}
       {/* ── Status banner ───────────────────────────────────────────────── */}
-      {!hideSummary && (
+      {!hideDeptChrome && (
       <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <Activity className="h-4 w-4 text-blue-600 shrink-0" />
@@ -850,7 +857,7 @@ export function DepartmentClearancePanel({
       </div>
       )}
 
-      {!hideSummary && (
+      {!hideDeptChrome && (
         <p className="text-xs text-gray-500">
           Lab and imaging results are captured in §1 Investigations. Use Confirm / Hold / Reject per department.
         </p>
@@ -909,19 +916,14 @@ export function DepartmentClearancePanel({
 
         // ── Flat layout (single-category steps): no accordion chrome ──────────
         if (flat) {
+          if (items.length === 0) {
+            return null;
+          }
+
           return (
             <div key={cat} className="rounded-xl border border-gray-200 overflow-hidden">
               <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  {isCategoryReadOnly(cat) && (
-                    <span data-testid={WARD_PREOP_TEST_IDS.sectionDisplayStatus(cat)}>
-                      <StatusChip
-                        status={statusFromDisplayStatus(displayStatus)}
-                        size="sm"
-                        label={displayStatus === 'Locked' ? 'Locked until admission' : undefined}
-                      />
-                    </span>
-                  )}
                   {catBlocking > 0 && (
                     <span className="inline-flex items-center gap-1 text-[11px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium shrink-0">
                       <AlertCircle className="h-3 w-3" /> {catBlocking} required
@@ -939,17 +941,7 @@ export function DepartmentClearancePanel({
                 </div>
               </div>
               {signoffLine}
-              {categoryLocked ? (
-                <div className="px-4 py-3 text-xs text-slate-600 bg-slate-50">
-                  Locked until the patient is admitted — clearance items appear after admission.
-                </div>
-              ) : items.length > 0 ? (
-                renderCategoryItemList(cat, items)
-              ) : (
-                <div className="px-4 py-3 text-xs text-gray-500">
-                  Clinical facts are captured in the structured form above. Use Request / Respond / Confirm for departmental coordination.
-                </div>
-              )}
+              {renderCategoryItemList(cat, items)}
             </div>
           );
         }

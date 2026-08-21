@@ -210,7 +210,12 @@ function EmergencyFcModal({ journey, onClose, onSaved }: {
     try {
       const result = await ipManagementApi.applyEmergencyFc(journey.id, { reason: reason.trim() });
       if (result) {
-        onSaved({ ...journey, financialState: result.financialState });
+        onSaved({
+          ...journey,
+          financialState: result.financialState,
+          isEmergencyFc: true,
+          emergencyFcReason: reason.trim(),
+        });
         onClose();
       } else {
         setError('Failed to apply Emergency FC. Please try again.');
@@ -479,7 +484,7 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
           <div className="flex items-center gap-2">
             <LogOut className="h-4 w-4 text-emerald-600" />
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Discharge Summary</h2>
+              <h2 className="text-base font-semibold text-gray-900">Clinical Discharge</h2>
               <p className="text-xs text-gray-500">{journey.patientName ?? '—'} · {journey.uhid ?? '—'}</p>
             </div>
           </div>
@@ -492,6 +497,13 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           {error && <p className="text-red-600 text-xs bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-900">
+            <p className="font-semibold">Clinical Discharge ≠ Financial Settlement</p>
+            <p className="mt-0.5 text-indigo-800/90">
+              Discharging ends the ward clinical journey. Payer claims and settlement remain in Coverage &amp; Claims (CCMS) / Billing.
+            </p>
+          </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className={`rounded-lg border px-3 py-2 ${isFinalized ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
@@ -563,7 +575,7 @@ function WardDischargeSummaryModal({ journey, onClose, onSaved }: {
           <button onClick={handleDischarge} disabled={discharging || !isFinalized}
             className="flex items-center gap-2 px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium disabled:opacity-60 disabled:cursor-not-allowed">
             <LogOut className="h-4 w-4" />
-            {discharging ? 'Discharging…' : 'Discharge Patient'}
+            {discharging ? 'Discharging…' : 'Complete Clinical Discharge'}
           </button>
         </div>
 

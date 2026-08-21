@@ -313,3 +313,19 @@ public record RespondPreOpSectionRequest(
 public record ConfirmPreOpSectionRequest(
     string? ConfirmationNotes = null
 );
+
+/// <summary>Ward clinical evaluation material change (IOL / diagnosis) — triggers downstream notifications.</summary>
+public record ClinicalEvaluationNotifyRequest(
+    string ChangeType,
+    string? PreviousIolId = null,
+    string? NewIolId = null,
+    string? Reason = null,
+    bool InOt = false
+);
+
+/// <summary>Doctor unlocks a signed clinical evaluation for amendment.</summary>
+public record AmendClinicalEvaluationRequest(
+    string Reason,
+    string Category,
+    bool InOt = false
+);

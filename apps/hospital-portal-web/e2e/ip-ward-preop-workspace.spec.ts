@@ -41,7 +41,11 @@ import {
 
   apiGetCounsellorPreOpInvestigations,
 
+  apiGetPacAssessment,
+
   apiSaveCounsellorPreOpInvestigation,
+
+  apiSavePacAssessment,
 
   apiSaveInvestigationResult,
 
@@ -52,8 +56,6 @@ import {
   completePacWithUnverifiedWarning,
 
   confirmConsentItem,
-
-  confirmFinancialItem,
 
   enterNpoTime,
 
@@ -181,13 +183,13 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
     await expect(bar).toBeVisible();
 
-    await expect(workspace.getByTestId(WARD_PREOP_TEST_IDS.safetyStrip)).toBeVisible();
-
     await expect(workspace.getByTestId(WARD_PREOP_TEST_IDS.readinessSummary)).toContainText(/steps ready/i);
 
-    // Investigations is unlocked pre-admit and exposes an inline X/Y count chip.
+    // Investigations is unlocked pre-admit; rail shows the full step label (counts live in the readiness bar).
 
-    await expect(workspace.getByTestId(WARD_PREOP_TEST_IDS.stepTabCount('investigations'))).toBeVisible();
+    await expect(workspace.getByTestId(WARD_PREOP_TEST_IDS.stepTab('investigations'))).toContainText('Investigations');
+
+    await expect(workspace.getByTestId(WARD_PREOP_TEST_IDS.stepTabCount('investigations'))).toHaveCount(0);
 
   });
 
@@ -282,30 +284,18 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
 
 
-  test('Expected §2 locks Evaluation and Anaesthesia (G2)', async ({ page }) => {
+  test('Admitted workspace shows separate PAC and Anaesthesia clearance steps', async ({ page }) => {
 
-    const journeyId = await openWorkspaceForFirstJourneyInTab(page, 'Expected');
+    const journeyId = await openWorkspaceForFirstJourneyInTab(page, 'Admitted');
 
-    test.skip(!journeyId, 'No Expected journey in branch');
+    test.skip(!journeyId, 'No Admitted journey in branch');
 
 
 
-    // §2 is re-sliced across steps: Evaluation → ②, Anaesthesia → ③.
-    await navigateStep(page, 'evaluation');
+    await navigateStep(page, 'pac');
 
-    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.sectionDisplayStatus('Evaluation'))).toHaveText(
-
-      /Locked until admission/i,
-
-    );
-
-    await navigateStep(page, 'anaesthesia');
-
-    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.sectionDisplayStatus('Anaesthesia'))).toHaveText(
-
-      /Locked until admission/i,
-
-    );
+    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.sectionPac)).toBeVisible();
+    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacAnaesthesiaClearance)).toBeVisible();
 
   });
 
@@ -345,7 +335,7 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
 
 
-  test('step nav navigates the 8-step workflow', async ({ page }) => {
+  test('step nav navigates the pre-op workflow', async ({ page }) => {
 
     const journeyId = await openWorkspaceForFirstJourneyInTab(page, 'Expected');
 
@@ -365,7 +355,7 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
 
 
-    await navigateStep(page, 'anaesthesia');
+    await navigateStep(page, 'pac');
 
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.sectionPac)).toBeVisible();
 
@@ -407,36 +397,22 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
 
 
-  test('Financial step is the single financial source with outstanding balance (Phase 6)', async ({ page }) => {
-
+  test('Coverage & Payment Status step shows CCMS projection (Phase 1)', async ({ page }) => {
     const journeyId = await openWorkspaceForFirstJourneyInTab(page, 'Expected');
-
     test.skip(!journeyId, 'No Expected journey in branch');
 
-
-
     await navigateStep(page, 'financial');
-
     const panel = page.getByTestId(WARD_PREOP_TEST_IDS.financialPanel);
-
     await expect(panel).toBeVisible();
-
-    // The single-source summary (with outstanding balance) renders here, once.
-
+    await expect(panel.getByRole('heading', { name: /Coverage & Payment Status/i })).toBeVisible();
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.financialSummary)).toBeVisible();
-
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.financialBalance)).toBeVisible();
-
-    // No generic department-clearance accordion is rendered for Financial anymore.
-
+    // No generic department-clearance accordion for this step.
     await expect(panel.getByTestId(WARD_PREOP_TEST_IDS.sectionClearance)).toHaveCount(0);
-
-
-
-    // Confirming payment mode persists (writer lives here, not in §2).
-
-    await confirmFinancialItem(page, 'payment_mode_confirmed');
-
+    // Canonical pre-auth is not ward-editable (no checkbox toggle).
+    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.financialToggle('insurance_preauth_approved'))).toHaveCount(0);
+    // Payment mode is derived (counselling) — not a writer toggle.
+    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.financialToggle('payment_mode_confirmed'))).toHaveCount(0);
   });
 
 
@@ -467,7 +443,7 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
 
 
-  test('Clinical Evaluation shows sign-off summary and keeps the §2 engine (Phase 8)', async ({ page }) => {
+  test('Clinical Evaluation shows locked preview before admission', async ({ page }) => {
 
     const journeyId = await openWorkspaceForFirstJourneyInTab(page, 'Expected');
 
@@ -479,17 +455,9 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.clinicalEvalPanel)).toBeVisible();
 
-    // Doctor sign-off summary (signature + timestamp surface) is present.
-
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.clinicalEvalSignoff)).toBeVisible();
 
-    // The departmental Request/Respond engine is preserved (admission lock still shows).
-
-    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.sectionDisplayStatus('Evaluation'))).toHaveText(
-
-      /Locked until admission/i,
-
-    );
+    await expect(page.getByText(/unlocks once the patient is admitted/i)).toBeVisible();
 
   });
 
@@ -523,20 +491,44 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
 
 
-    await navigateStep(page, 'anaesthesia');
+    await navigateStep(page, 'pac');
 
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.sectionPac)).toBeVisible();
 
-    await expandPacAccordion(page, 'reference');
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacVitalsReference)).toBeVisible();
+    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacAnaesthesiaClearance)).toBeVisible();
 
-    await expandPacAccordion(page, 'complete');
-    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacAutoSatisfyNote)).toBeVisible();
-
-    await expandPacAccordion(page, 'reference');
     await page.getByTestId(WARD_PREOP_TEST_IDS.pacInvestigationEditLink).click();
 
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.stepPanel('investigations'))).toBeVisible();
+
+  });
+
+
+
+  test('PAC API save persists scalar and jsonb fields', async ({ request }) => {
+
+    const login = await apiLogin(request);
+
+    const fixtures = await resolveWardFixtures(request, login);
+
+    test.skip(!fixtures.admitted, 'No Admitted journey');
+
+
+
+    const save = await apiSavePacAssessment(request, login, fixtures.admitted!.id);
+
+    expect(save.ok, save.error ?? 'PAC save failed').toBe(true);
+
+    expect(save.anaesthesiaPlan).toBe('Local');
+
+
+
+    const loaded = await apiGetPacAssessment(request, login, fixtures.admitted!.id);
+
+    expect(loaded?.bp).toBe('120/80');
+
+    expect(loaded?.anaesthesiaPlan).toBe('Local');
 
   });
 
@@ -649,7 +641,7 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
     await navigateChecklistSection(page, 'pac');
 
-    await expandPacAccordion(page, 'reference');
+    await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacSection('reference'))).toBeVisible();
     await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacInvestigationSummary)).toBeVisible();
 
   });
@@ -845,7 +837,7 @@ test.describe('Ward Pre-Op Workspace @ip-ward-preop', () => {
 
       await navigateChecklistSection(page, 'pac');
 
-      await expandPacAccordion(page, 'reference');
+      await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacSection('reference'))).toBeVisible();
       await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacInvestigationSummary)).toBeVisible();
 
     });

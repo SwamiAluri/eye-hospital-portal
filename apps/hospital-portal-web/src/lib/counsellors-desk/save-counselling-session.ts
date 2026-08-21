@@ -175,6 +175,8 @@ export function buildCounsellingSessionPayload(params: CounsellingPersistenceInp
           notRequiredPreAuth,
           ...(isPackageUpgrade && prevPackageName && { previousPackageName: prevPackageName }),
           ...(isPackageUpgrade && prevPackageAmount && { previousPackageAmount: prevPackageAmount }),
+          ...(params.selectedIolId && { selectedIolId: params.selectedIolId }),
+          ...(params.variantSubOption && { variantSubOption: params.variantSubOption }),
         },
         mergedEstimate,
       ),

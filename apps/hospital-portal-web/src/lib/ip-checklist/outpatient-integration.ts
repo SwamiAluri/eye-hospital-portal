@@ -246,14 +246,15 @@ export function computeRollupCards(
       ? (isPreAuthDone(ctx) ? 'Done' : 'Pending')
       : (paymentHint?.suggestedComplete ? 'Done' : 'Pending');
 
+  // Display rollup only — admit / coverage transitions are backend-owned (CCMS + IP).
   const preAuthStatus: RollupCardStatus = !isInsurancePayment(ctx.paymentType)
     ? 'NotRequired'
     : (preAuthHint?.suggestedComplete ? 'Done' : 'Pending');
 
   return [
     { key: 'investigations', label: 'Investigations', status: inv.status, ...inv },
-    { key: 'payment', label: 'Payment', status: paymentStatus, completed: paymentStatus === 'Done' ? 1 : 0, total: 1 },
+    { key: 'payment', label: 'Patient Payment Status', status: paymentStatus, completed: paymentStatus === 'Done' ? 1 : 0, total: 1 },
     { key: 'consent', label: 'Consent', status: con.status, ...con },
-    { key: 'preAuth', label: 'Pre-Auth', status: preAuthStatus, completed: preAuthStatus === 'Done' ? 1 : 0, total: isInsurancePayment(ctx.paymentType) ? 1 : 0 },
+    { key: 'preAuth', label: 'Authorization Status', status: preAuthStatus, completed: preAuthStatus === 'Done' ? 1 : 0, total: isInsurancePayment(ctx.paymentType) ? 1 : 0 },
   ];
 }

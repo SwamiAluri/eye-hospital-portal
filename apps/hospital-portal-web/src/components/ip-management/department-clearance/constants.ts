@@ -6,7 +6,7 @@ export const DEPARTMENT_CLEARANCE_CATEGORY_LABELS: Record<string, string> = {
   Anaesthesia:            'Anaesthesia Clearance',
   Consent:                'Consent Forms',
   'Pharmacy Preparation': 'Pharmacy Preparation',
-  Financial:              'Financial Clearance',
+  Financial:              'Coverage & Payment Status',
   'OT Preparation':       'OT Preparation',
   Documents:              'Required Documents',
 };

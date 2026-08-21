@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ExamCard, ExamInput, ExamSelect, StatusBadge, ActionButton } from './ExamCard';
 import { Stethoscope, Plus, Edit2, Trash2, Star, Printer, Copy, Eye, ChevronDown, ChevronUp, Search, Scissors } from 'lucide-react';
-import ICD10SearchDialog from '@/components/clinical/ICD10SearchDialog';
+import { ICD10SearchPanel } from '@/components/clinical/ICD10SearchPanel';
 import SurgeryRecommendationDialog from '@/components/doctors-desk/SurgeryRecommendationDialog';
 import type { DiagnosisCode } from '@/types/diagnosis';
 import { createSurgeryRecommendation } from '@/lib/surgery-api';
@@ -48,7 +48,7 @@ export default function DiagnosisTab({
   // ========== STATE ==========
   const [diagnosisList, setDiagnosisList] = useState<Diagnosis[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [showICD10Dialog, setShowICD10Dialog] = useState(false);
+  const [icdPanelExpanded, setIcdPanelExpanded] = useState(false);
   const [editingDiagnosis, setEditingDiagnosis] = useState<Diagnosis | null>(null);
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
 
@@ -76,6 +76,12 @@ export default function DiagnosisTab({
       setDiagnosisList(diagnoses);
     }
   }, [diagnoses]);
+
+  useEffect(() => {
+    if (canEdit && diagnosisList.length === 0) {
+      setIcdPanelExpanded(true);
+    }
+  }, [canEdit, diagnosisList.length]);
 
   // ========== COMMON ICD-10 CODES ==========
   const commonIcd10Codes = [
@@ -148,7 +154,6 @@ export default function DiagnosisTab({
 
     setDiagnosisList(updated);
     onSaveDiagnoses(updated);
-    setShowICD10Dialog(false);
   };
 
   const getExistingDiagnosisCodes = (): DiagnosisCode[] => {
@@ -382,18 +387,27 @@ export default function DiagnosisTab({
         icon={<Stethoscope className="w-5 h-5" />}
       >
         <div className="space-y-3">
-          {/* Smart ICD-10 Search Button */}
-          {!showAddForm && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowICD10Dialog(true)}
-                disabled={!canEdit}
-                className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 font-medium"
-              >
-                <Search className="w-5 h-5" />
-                Search ICD-10 Diagnosis Codes
-              </button>
-            </div>
+          {!showAddForm && !icdPanelExpanded && canEdit && (
+            <button
+              type="button"
+              onClick={() => setIcdPanelExpanded(true)}
+              className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              <Search className="h-4 w-4" aria-hidden="true" />
+              Search ICD-10
+            </button>
+          )}
+
+          {!showAddForm && canEdit && (
+            <ICD10SearchPanel
+              expanded={icdPanelExpanded}
+              onDone={() => setIcdPanelExpanded(false)}
+              onSelect={handleICD10DialogSelect}
+              patientId={patientId}
+              patientAge={patientAge}
+              patientGender={patientGender}
+              existingDiagnoses={getExistingDiagnosisCodes()}
+            />
           )}
 
           {/* Legacy search - kept for backward compatibility but hidden by default */}
@@ -743,17 +757,6 @@ export default function DiagnosisTab({
           </div>
         )}
       </ExamCard>
-
-      {/* ICD-10 Search Dialog */}
-      <ICD10SearchDialog
-        isOpen={showICD10Dialog}
-        onClose={() => setShowICD10Dialog(false)}
-        onSelect={handleICD10DialogSelect}
-        patientId={patientId}
-        patientAge={patientAge}
-        patientGender={patientGender}
-        existingDiagnoses={getExistingDiagnosisCodes()}
-      />
 
       {/* Surgery Recommendation Dialog */}
       {selectedDiagnosisForSurgery && patientId && (

@@ -83,7 +83,9 @@ var host = new HostBuilder()
         {
             client.BaseAddress = new Uri(ccmsBaseUrl.TrimEnd('/') + "/");
         });
-        services.AddScoped<ICcmsAdmissionClient, CcmsAdmissionClient>();    })
+        services.AddScoped<ICcmsAdmissionClient, CcmsAdmissionClient>();
+        services.AddScoped<IIntegrationOutboxService, IntegrationOutboxService>();
+    })
     .Build();
 
 host.Run();

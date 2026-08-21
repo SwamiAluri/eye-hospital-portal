@@ -186,12 +186,11 @@ public class SurgicalSafetyService
 
     private async Task<SurgicalSafetyChecklist> GetOrInitAsync(PatientJourney journey, Guid tenantId)
     {
-        var existing = await _db.SurgicalSafetyChecklists
-            .FirstOrDefaultAsync(c => c.PatientJourneyId == journey.Id
-                                      && c.TenantId == tenantId
-                                      && c.DeletedAt == null);
-
+        var existing = await FindActiveChecklistAsync(journey.Id, tenantId);
         if (existing is not null) return existing;
+
+        var revived = await ReviveSoftDeletedChecklistAsync(journey.Id, tenantId);
+        if (revived is not null) return revived;
 
         var now = DateTime.UtcNow;
         var row = new SurgicalSafetyChecklist
@@ -213,13 +212,34 @@ public class SurgicalSafetyService
         catch (DbUpdateException)
         {
             _db.ChangeTracker.Clear();
-            return await _db.SurgicalSafetyChecklists
-                       .FirstAsync(c => c.PatientJourneyId == journey.Id
-                                         && c.TenantId == tenantId
-                                         && c.DeletedAt == null);
+            var raced = await FindActiveChecklistAsync(journey.Id, tenantId)
+                        ?? await ReviveSoftDeletedChecklistAsync(journey.Id, tenantId);
+            if (raced is not null) return raced;
+
+            throw new InvalidOperationException(
+                "Surgical safety checklist could not be created or loaded for this journey.");
         }
 
         return row;
+    }
+
+    private Task<SurgicalSafetyChecklist?> FindActiveChecklistAsync(Guid journeyId, Guid tenantId)
+        => _db.SurgicalSafetyChecklists
+            .FirstOrDefaultAsync(c => c.PatientJourneyId == journeyId
+                                      && c.TenantId == tenantId
+                                      && c.DeletedAt == null);
+
+    private async Task<SurgicalSafetyChecklist?> ReviveSoftDeletedChecklistAsync(Guid journeyId, Guid tenantId)
+    {
+        var deleted = await _db.SurgicalSafetyChecklists
+            .FirstOrDefaultAsync(c => c.PatientJourneyId == journeyId && c.DeletedAt != null);
+        if (deleted is null) return null;
+
+        deleted.DeletedAt = null;
+        deleted.TenantId  = tenantId;
+        deleted.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return deleted;
     }
 
     private static string? InferSurgeryType(string? procedureName)

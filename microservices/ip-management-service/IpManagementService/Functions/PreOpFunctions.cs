@@ -186,6 +186,56 @@ public class PreOpFunctions
         catch (Exception ex)                   { return await InternalError(req, ex.Message); }
     }
 
+    [Function("NotifyClinicalEvaluationChange")]
+    public async Task<HttpResponseData> NotifyClinicalEvaluationChange(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+            Route = "ip-management/journeys/{id:guid}/pre-op/clinical-evaluation/notify")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            RequireWardEdit(req);
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<ClinicalEvaluationNotifyRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            await _preOp.NotifyClinicalEvaluationMaterialChangeAsync(id, tid, body);
+            return await Ok(req, new { ok = true });
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex)         { return await NotFound(req, ex.Message); }
+        catch (ArgumentException ex)            { return await BadRequest(req, ex.Message); }
+        catch (Exception ex)                   { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("AmendClinicalEvaluation")]
+    public async Task<HttpResponseData> AmendClinicalEvaluation(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+            Route = "ip-management/journeys/{id:guid}/pre-op/clinical-evaluation/amend")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermClinicalEvalSign);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<AmendClinicalEvaluationRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            if (body.InOt)
+                IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermOtOverride);
+            if (string.IsNullOrWhiteSpace(body.Reason))
+                throw new ArgumentException("Amend reason is required.");
+            await _preOp.AmendClinicalEvaluationAsync(id, tid, userId, body);
+            var detail = await _preOp.GetClearanceDetailAsync(id, tid);
+            return await Ok(req, detail);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex)         { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex)    { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex)            { return await BadRequest(req, ex.Message); }
+        catch (Exception ex)                   { return await InternalError(req, ex.Message); }
+    }
+
     // ── Consent capture ──────────────────────────────────────────────────────────
 
     [Function("CaptureConsent")]

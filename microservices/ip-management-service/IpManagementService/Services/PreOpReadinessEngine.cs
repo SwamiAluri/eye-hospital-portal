@@ -14,13 +14,13 @@ public static class PreOpReadinessEngine
 
     private static readonly string[] StepOrder =
     [
-        "investigations", "evaluation", "anaesthesia", "consent", "financial",
+        "investigations", "evaluation", "pac", "consent", "financial",
         "fasting", "bedside", "admit", "records",
     ];
 
     private static readonly HashSet<string> AdmissionGated = new(StringComparer.OrdinalIgnoreCase)
     {
-        "evaluation", "anaesthesia", "records",
+        "evaluation", "pac", "records",
     };
 
     public sealed record InvestigationSlice(int Completed, int Total, int Blocking);
@@ -65,8 +65,8 @@ public static class PreOpReadinessEngine
         return key switch
         {
             "investigations" => ComputeInvestigations(locked, investigation),
-            "anaesthesia"    => ComputeAnaesthesia(locked, pac),
-            "evaluation"     => ComputeCategoryStep(key, locked, completions, sectionClearances, "Evaluation"),
+            "pac"            => ComputePac(locked, pac),
+            "evaluation"     => ComputeEvaluation(locked, completions, sectionClearances),
             "consent"        => ComputeCategoryStep(key, locked, completions, sectionClearances, "Consent"),
             "financial"      => ComputeFinancial(locked, financialState, completions),
             "fasting"        => ComputeCategoryStep(key, locked, completions, sectionClearances, "Compliance", "Pharmacy Preparation"),
@@ -95,7 +95,7 @@ public static class PreOpReadinessEngine
             total > 0);
     }
 
-    private static StepReadinessDto ComputeAnaesthesia(bool locked, PacSlice? pac)
+    private static StepReadinessDto ComputePac(bool locked, PacSlice? pac)
     {
         var done = pac?.AssessmentStatus == "Completed" ? 1 : 0;
         var started = pac?.AssessmentStatus is not null and not "" and not "NotStarted";
@@ -104,13 +104,47 @@ public static class PreOpReadinessEngine
             : started ? "in-progress"
             : "not-started";
         return new StepReadinessDto(
-            "anaesthesia",
+            "pac",
             done,
             1,
             locked || done == 1 ? 0 : 1,
             status,
             locked,
             true);
+    }
+
+    private static readonly HashSet<string> EvaluationReadinessExclude = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "risk_classification",
+        "doctor_evaluation_completed",
+    };
+
+    private static StepReadinessDto ComputeEvaluation(
+        bool locked,
+        IReadOnlyList<PreOpCompletionDto> completions,
+        IReadOnlyList<PreOpSectionClearanceDto>? sectionClearances)
+    {
+        var items = completions.Where(c =>
+            string.Equals(c.Category, "Evaluation", StringComparison.OrdinalIgnoreCase)
+            && !EvaluationReadinessExclude.Contains(c.ItemKey)
+            && c.FormCode != WardChecklistService.WardFormCode
+            && c.FormCode != WardInvestigationChecklistService.InvestigationFormCode).ToList();
+
+        var blockingItems = items.Where(i => i.IsBlocking).ToList();
+        var pool = blockingItems.Count > 0 ? blockingItems : items;
+        var completed = pool.Count(i => i.IsCompleted || i.IsBypassed);
+        var blocking = blockingItems.Count(i => !(i.IsCompleted || i.IsBypassed));
+        var sectionStatus = SectionStatusFor(sectionClearances, "Evaluation");
+        var status = DeriveStatus(locked, completed, pool.Count, sectionStatus);
+
+        return new StepReadinessDto(
+            "evaluation",
+            completed,
+            pool.Count,
+            locked ? 0 : blocking,
+            status,
+            locked,
+            pool.Count > 0);
     }
 
     private static StepReadinessDto ComputeCategoryStep(
@@ -121,9 +155,11 @@ public static class PreOpReadinessEngine
         params string[] categories)
     {
         var c = CountByCategories(completions, categories);
-        var sectionStatus = key == "evaluation"
-            ? SectionStatusFor(sectionClearances, "Evaluation")
-            : null;
+        var sectionStatus = key switch
+        {
+            "evaluation" => SectionStatusFor(sectionClearances, "Evaluation"),
+            _             => null,
+        };
         var status = DeriveStatus(locked, c.Completed, c.Total, sectionStatus);
         return new StepReadinessDto(key, c.Completed, c.Total, locked ? 0 : c.Blocking, status, locked, c.Total > 0);
     }

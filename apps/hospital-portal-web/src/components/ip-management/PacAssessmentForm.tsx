@@ -1,10 +1,26 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, HeartPulse, Loader2, Plus, Stethoscope, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  Plus,
+  Stethoscope,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { PacInvestigationSummary } from '@/components/ip-management/PacInvestigationSummary';
-import { PacAccordionSection } from '@/components/ip-management/preop/primitives/PacAccordionSection';
+import { PacAnaesthesiaClearanceSection } from '@/components/ip-management/preop/PacAnaesthesiaClearanceSection';
+import { PacClinicalSection } from '@/components/ip-management/preop/primitives/PacClinicalSection';
+import {
+  PacClinicalTable,
+  PacFieldInput,
+  PacFieldTextarea,
+  PacIconLink,
+  PacSegmentedControl,
+  PacTableRow,
+} from '@/components/ip-management/preop/primitives/PacClinicalTable';
 import { usePreOpClearanceOptional } from '@/components/ip-management/preop/PreOpClearanceProvider';
 import {
   ipManagementApi,
@@ -19,15 +35,12 @@ import { WARD_PREOP_TEST_IDS } from '@/lib/ip-management/ward-preop-test-ids';
 
 export interface PacAssessmentFormProps {
   journeyId: string;
+  anaesthetistName?: string | null;
   readOnly?: boolean;
   onStatusChange?: (completed: boolean) => void;
-  /** Deep-link to §1 Investigations (single editable lab source). */
   onNavigateInvestigations?: () => void;
-  /** Deep-link to Step ⑧ Nursing & Records (single vitals source). */
   onNavigateVitals?: () => void;
-  /** Deep-link to §2 Clinical Evaluation (pre-op diagnosis owner). */
   onNavigateEvaluation?: () => void;
-  /** Notify the workspace that data changed so the step rail rollup can refresh. */
   onChanged?: () => void;
 }
 
@@ -61,8 +74,6 @@ const AIRWAY_TEXT_FIELDS: Array<{ key: keyof NonNullable<PacAssessmentDto['airwa
   { key: 'venousAccess', label: 'Venous access' },
 ];
 
-type PacAccordionKey = 'assessment' | 'airway' | 'systemic' | 'plan' | 'reference' | 'complete';
-
 function toLocalInput(dt: string | null | undefined): string {
   if (!dt) return '';
   const d = new Date(dt);
@@ -77,25 +88,13 @@ function formatBpFromVital(v: VitalSignDto): string | null {
   return null;
 }
 
-function applyVitalsPrefill(
-  pac: PacAssessmentDto,
-  vitals: VitalSignDto[],
-): { data: PacAssessmentDto; note: string | null } {
-  if (vitals.length === 0 || (pac.bp && pac.hr != null)) {
-    return { data: pac, note: null };
-  }
+function applyVitalsPrefill(pac: PacAssessmentDto, vitals: VitalSignDto[]): PacAssessmentDto {
+  if (vitals.length === 0 || (pac.bp && pac.hr != null)) return pac;
   const latest = vitals[0];
   const bp = !pac.bp ? formatBpFromVital(latest) : null;
   const hr = pac.hr == null ? latest.pulseRate : null;
-  if (!bp && hr == null) return { data: pac, note: null };
-  return {
-    data: {
-      ...pac,
-      bp: pac.bp ?? bp,
-      hr: pac.hr ?? hr,
-    },
-    note: 'Prefilled from latest Vitals tab entry — review before completing PAC.',
-  };
+  if (!bp && hr == null) return pac;
+  return { ...pac, bp: pac.bp ?? bp, hr: pac.hr ?? hr };
 }
 
 function systemicComplete(review: PacAssessmentDto['systemicReview'] | undefined): boolean {
@@ -114,36 +113,44 @@ function planComplete(data: PacAssessmentDto): boolean {
   return !!(data.anaesthesiaPlan && data.consentType);
 }
 
-function sectionStatus(data: PacAssessmentDto, key: PacAccordionKey): PreOpStatus {
+function sectionStatus(data: PacAssessmentDto, key: string): PreOpStatus {
   switch (key) {
     case 'assessment':
-      return assessmentComplete(data) ? 'completed' : data.bp || data.hr != null || data.physicalStatusAsa ? 'in-progress' : 'not-started';
+      return assessmentComplete(data)
+        ? 'completed'
+        : data.bp || data.hr != null || data.physicalStatusAsa
+          ? 'in-progress'
+          : 'not-started';
     case 'airway':
-      return airwayComplete(data) ? 'completed' : Object.values(data.airwayExam ?? {}).some(v => v != null && v !== '') ? 'in-progress' : 'not-started';
+      return airwayComplete(data)
+        ? 'completed'
+        : Object.values(data.airwayExam ?? {}).some(v => v != null && v !== '')
+          ? 'in-progress'
+          : 'not-started';
     case 'systemic':
       return systemicComplete(data.systemicReview) ? 'completed' : 'not-started';
     case 'plan':
-      return planComplete(data) ? 'completed' : data.anaesthesiaPlan || data.consentType ? 'in-progress' : 'not-started';
+      return planComplete(data)
+        ? 'completed'
+        : data.anaesthesiaPlan || data.consentType
+          ? 'in-progress'
+          : 'not-started';
     case 'reference':
       return 'verified';
     case 'complete':
-      return data.assessmentStatus === 'Completed' ? 'completed' : data.isComplete ? 'pending-verification' : 'not-started';
+      return data.assessmentStatus === 'Completed'
+        ? 'completed'
+        : data.isComplete
+          ? 'pending-verification'
+          : 'not-started';
     default:
       return 'not-started';
   }
 }
 
-function pickDefaultOpen(data: PacAssessmentDto): PacAccordionKey {
-  if (!assessmentComplete(data)) return 'assessment';
-  if (!airwayComplete(data)) return 'airway';
-  if (!systemicComplete(data.systemicReview)) return 'systemic';
-  if (!planComplete(data)) return 'plan';
-  if (data.assessmentStatus !== 'Completed') return 'complete';
-  return 'reference';
-}
-
 export function PacAssessmentForm({
   journeyId,
+  anaesthetistName,
   readOnly = false,
   onStatusChange,
   onNavigateInvestigations,
@@ -155,11 +162,9 @@ export function PacAssessmentForm({
   const [vitals, setVitals] = useState<VitalSignDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
-  const [vitalsPrefillNote, setVitalsPrefillNote] = useState<string | null>(null);
   const [completeDialog, setCompleteDialog] = useState<{ keys: string[] } | null>(null);
-  const [openSection, setOpenSection] = useState<PacAccordionKey | null>(null);
-  const [initialOpenSet, setInitialOpenSet] = useState(false);
   const sharedClearance = usePreOpClearanceOptional();
 
   const load = useCallback(async () => {
@@ -170,9 +175,8 @@ export function PacAssessmentForm({
     ]);
     setVitals(vitalsList);
     if (result) {
-      const { data: withPrefill, note } = applyVitalsPrefill(result, vitalsList);
+      const withPrefill = applyVitalsPrefill(result, vitalsList);
       setData(withPrefill);
-      setVitalsPrefillNote(note);
       onStatusChange?.(withPrefill.assessmentStatus === 'Completed');
     } else {
       setData(null);
@@ -181,33 +185,26 @@ export function PacAssessmentForm({
   }, [journeyId, onStatusChange]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
-
-  useEffect(() => {
-    if (data && !initialOpenSet) {
-      setOpenSection(pickDefaultOpen(data));
-      setInitialOpenSet(true);
-    }
-  }, [data, initialOpenSet]);
 
   const isLocked = readOnly || data?.assessmentStatus === 'Completed';
 
   async function persist(patch: SavePacAssessmentRequest) {
     if (isLocked || !data) return;
     setSaving(true);
-    const updated = await ipManagementApi.savePacAssessment(journeyId, patch);
+    setSaveError(null);
+    const { data: updated, error } = await ipManagementApi.savePacAssessment(journeyId, patch);
     if (updated) {
       setData(updated);
-      setVitalsPrefillNote(null);
       onStatusChange?.(updated.assessmentStatus === 'Completed');
       onChanged?.();
-    } else toast.error('Failed to save PAC assessment');
+    } else {
+      const message = error ?? 'Failed to save PAC assessment';
+      setSaveError(message);
+      toast.error(message);
+    }
     setSaving(false);
-  }
-
-  function toggleSection(key: PacAccordionKey) {
-    setOpenSection(prev => (prev === key ? null : key));
   }
 
   function persistSystemicField(key: keyof PacAssessmentDto['systemicReview'], raw: string) {
@@ -220,21 +217,21 @@ export function PacAssessmentForm({
   async function doComplete() {
     if (isLocked || !data) return;
     setCompleting(true);
-    const result = await ipManagementApi.completePacAssessment(journeyId);
+    const { data: result, error } = await ipManagementApi.completePacAssessment(journeyId);
     if (result) {
       setData(result.assessment);
       onStatusChange?.(true);
       onChanged?.();
       if (result.unverifiedCriticalWarnings.length > 0) {
         toast(
-          `PAC completed. ${result.unverifiedCriticalWarnings.length} critical investigation(s) remain unverified at ward.`,
+          `PAC completed. ${result.unverifiedCriticalWarnings.length} critical investigation(s) remain unverified.`,
           { icon: '⚠️' },
         );
       } else {
-        toast.success('PAC assessment completed — ward checklist synced');
+        toast.success('PAC assessment completed');
       }
     } else {
-      toast.error('Could not complete PAC assessment');
+      toast.error(error ?? 'Could not complete PAC assessment');
     }
     setCompleting(false);
     setCompleteDialog(null);
@@ -243,7 +240,7 @@ export function PacAssessmentForm({
   async function handleCompleteClick() {
     if (isLocked || !data) return;
     if (!data.isComplete) {
-      toast.error('Fill required fields (BP, HR, ASA, anaesthesia plan, consent) before completing.');
+      toast.error('Complete required fields: BP, HR, ASA, anaesthesia plan, consent type.');
       return;
     }
     const summary = await ipManagementApi.getWardInvestigationSummary(journeyId);
@@ -259,7 +256,7 @@ export function PacAssessmentForm({
     const fromEvaluation = getPreOpDiagnosisFromClearance(sharedClearance?.detail?.completions ?? []);
     if (fromEvaluation) return fromEvaluation;
     if (!data) return '—';
-    return data.preOpDiagnosis?.trim() || 'Not recorded in Clinical Evaluation';
+    return data.preOpDiagnosis?.trim() || '—';
   }, [data, sharedClearance?.detail?.completions]);
 
   if (loading) {
@@ -276,239 +273,202 @@ export function PacAssessmentForm({
 
   return (
     <div className="space-y-3" data-testid={WARD_PREOP_TEST_IDS.sectionPac}>
-      <div className="mb-1 flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-200 pb-2">
         <div className="flex items-center gap-2">
-          <Stethoscope className="h-4 w-4 text-violet-600" />
-          <h3 className="text-sm font-semibold text-gray-800">Pre-Anaesthesia Check-up</h3>
+          <Stethoscope className="h-4 w-4 text-gray-700" aria-hidden="true" />
+          <h3 className="text-sm font-semibold text-gray-900">Pre-Anaesthesia Check-up</h3>
         </div>
         <div className="flex items-center gap-2">
-          {saving && <span className="text-xs text-gray-400">Saving…</span>}
+          {saving && <span className="text-xs text-gray-500">Saving…</span>}
+          {saveError && !saving && (
+            <span className="max-w-[14rem] truncate text-xs text-red-600" title={saveError}>
+              Save failed
+            </span>
+          )}
           {readOnly && data.assessmentStatus !== 'Completed' && (
-            <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-500">View only</span>
+            <span className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500">
+              View only
+            </span>
           )}
           {data.assessmentStatus === 'Completed' ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Completed
+            <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> Completed
             </span>
           ) : data.isComplete ? (
-            <span className="text-xs text-amber-600">Ready to complete</span>
+            <span className="text-xs font-medium text-amber-700">Ready to complete</span>
           ) : (
-            <span className="text-xs text-gray-400">Draft</span>
+            <span className="text-xs text-gray-500">Draft</span>
           )}
         </div>
       </div>
 
       {(data.patientName || data.procedureName) && (
-        <div className="rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 text-xs text-violet-900">
-          <p className="font-medium">
-            {data.patientName ?? '—'} · {data.uhid ?? '—'}
-          </p>
-          <p className="mt-0.5 text-violet-700">
-            {data.procedureName ?? '—'} · {data.eyeOperated ?? '—'}
-          </p>
+        <div className="border border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-800">
+          <span className="font-medium">{data.patientName ?? '—'}</span>
+          <span className="text-gray-500"> · </span>
+          <span>{data.uhid ?? '—'}</span>
+          <span className="text-gray-500"> · </span>
+          <span>{data.procedureName ?? '—'}</span>
+          <span className="text-gray-500"> · </span>
+          <span>{data.eyeOperated ?? '—'}</span>
         </div>
       )}
 
-      <PacAccordionSection
+      <PacClinicalSection
         sectionKey="assessment"
-        title="Pre-op assessment"
-        subtitle="Vitals snapshot, ASA, allergies, anaesthetic history"
+        title="Assessment"
         status={sectionStatus(data, 'assessment')}
-        open={openSection === 'assessment'}
-        onToggle={() => toggleSection('assessment')}
       >
-        {vitalsPrefillNote && !isLocked && (
-          <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
-            {vitalsPrefillNote}
-          </p>
-        )}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">Assessed at</label>
-            <input
+        <PacClinicalTable>
+          <PacTableRow label="Assessed at">
+            <PacFieldInput
               type="datetime-local"
               disabled={isLocked}
               value={toLocalInput(data.assessedAt)}
               onChange={e =>
-                persist({ assessedAt: e.target.value ? new Date(e.target.value).toISOString() : null })
+                setData(d =>
+                  d
+                    ? {
+                        ...d,
+                        assessedAt: e.target.value
+                          ? new Date(e.target.value).toISOString()
+                          : null,
+                      }
+                    : d,
+                )
               }
-              className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs disabled:bg-gray-50"
+              onBlur={e =>
+                void persist({
+                  assessedAt: e.target.value ? new Date(e.target.value).toISOString() : null,
+                })
+              }
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">BP *</label>
-            <input
+          </PacTableRow>
+          <PacTableRow label="BP" required>
+            <PacFieldInput
               type="text"
               disabled={isLocked}
-              placeholder="120/80"
+              testId={WARD_PREOP_TEST_IDS.pacFieldBp}
               value={data.bp ?? ''}
               onChange={e => setData(d => (d ? { ...d, bp: e.target.value } : d))}
-              onBlur={e => persist({ bp: e.target.value || null })}
-              className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs disabled:bg-gray-50"
+              onBlur={e => void persist({ bp: e.target.value || null })}
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">HR (bpm) *</label>
-            <input
+          </PacTableRow>
+          <PacTableRow label="HR (bpm)" required>
+            <PacFieldInput
               type="number"
               disabled={isLocked}
+              testId={WARD_PREOP_TEST_IDS.pacFieldHr}
               value={data.hr ?? ''}
               onChange={e =>
-                setData(d => (d ? { ...d, hr: e.target.value ? Number(e.target.value) : null } : d))
+                setData(d =>
+                  d ? { ...d, hr: e.target.value ? Number(e.target.value) : null } : d,
+                )
               }
-              onBlur={e => persist({ hr: e.target.value ? Number(e.target.value) : null })}
-              className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs disabled:bg-gray-50"
+              onBlur={e => void persist({ hr: e.target.value ? Number(e.target.value) : null })}
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">ASA grade *</label>
-            <div className="flex flex-wrap gap-1">
-              {ASA_OPTIONS.map(n => (
-                <button
-                  key={n}
-                  type="button"
-                  disabled={isLocked}
-                  onClick={() => {
-                    setData(d => (d ? { ...d, physicalStatusAsa: n } : d));
-                    persist({ physicalStatusAsa: n });
-                  }}
-                  className={`rounded border px-2 py-1 text-xs ${
-                    data.physicalStatusAsa === n
-                      ? 'border-violet-600 bg-violet-600 text-white'
-                      : 'border-gray-300 text-gray-600'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-3">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <label className="text-xs text-gray-600">Pre-op diagnosis (read-only)</label>
-            {onNavigateEvaluation && (
-              <button
-                type="button"
-                onClick={onNavigateEvaluation}
-                className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-              >
-                Edit in Clinical Evaluation
-                <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
-              </button>
-            )}
-          </div>
-          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800">
-            {displayDiagnosis}
-          </p>
-          <p className="mt-1 text-[10px] text-gray-500">
-            Diagnosis is owned by Clinical Evaluation; PAC references it for anaesthesia planning.
-          </p>
-        </div>
-
-        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">Allergies</label>
-            <textarea
+          </PacTableRow>
+          <PacTableRow label="ASA grade" required>
+            <PacSegmentedControl
+              options={ASA_OPTIONS}
+              value={data.physicalStatusAsa}
+              disabled={isLocked}
+              onChange={n => {
+                setData(d => (d ? { ...d, physicalStatusAsa: n } : d));
+                void persist({ physicalStatusAsa: n });
+              }}
+            />
+          </PacTableRow>
+          <PacTableRow
+            label="Pre-op diagnosis"
+            action={
+              onNavigateEvaluation ? (
+                <PacIconLink
+                  label="Open Clinical Evaluation"
+                  testId={WARD_PREOP_TEST_IDS.pacEvaluationLink}
+                  onClick={onNavigateEvaluation}
+                />
+              ) : undefined
+            }
+          >
+            <span className="text-sm text-gray-800">{displayDiagnosis}</span>
+          </PacTableRow>
+          <PacTableRow label="Allergies">
+            <PacFieldTextarea
               rows={2}
               disabled={isLocked}
               value={data.allergies ?? ''}
               onChange={e => setData(d => (d ? { ...d, allergies: e.target.value } : d))}
-              onBlur={e => persist({ allergies: e.target.value || null })}
-              className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-xs disabled:bg-gray-50"
+              onBlur={e => void persist({ allergies: e.target.value || null })}
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">Past anaesthetic history</label>
-            <textarea
+          </PacTableRow>
+          <PacTableRow label="Past anaesthetic history">
+            <PacFieldTextarea
               rows={2}
               disabled={isLocked}
               value={data.pastAnaestheticHistory ?? ''}
-              onChange={e => setData(d => (d ? { ...d, pastAnaestheticHistory: e.target.value } : d))}
-              onBlur={e => persist({ pastAnaestheticHistory: e.target.value || null })}
-              className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-xs disabled:bg-gray-50"
+              onChange={e =>
+                setData(d => (d ? { ...d, pastAnaestheticHistory: e.target.value } : d))
+              }
+              onBlur={e => void persist({ pastAnaestheticHistory: e.target.value || null })}
             />
-          </div>
-        </div>
-      </PacAccordionSection>
+          </PacTableRow>
+        </PacClinicalTable>
+      </PacClinicalSection>
 
-      <PacAccordionSection
+      <PacClinicalSection
         sectionKey="airway"
         title="Airway examination"
-        subtitle="Mallampati and bedside airway assessment"
         status={sectionStatus(data, 'airway')}
-        open={openSection === 'airway'}
-        onToggle={() => toggleSection('airway')}
       >
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">Mallampati *</label>
-            <div className="flex flex-wrap gap-2">
-              {MALLAMPATI_OPTIONS.map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={isLocked}
-                  onClick={() => {
-                    const airwayExam = { ...(data.airwayExam ?? {}), mallampati: value };
-                    setData(d => (d ? { ...d, airwayExam } : d));
-                    persist({ airwayExam });
-                  }}
-                  className={`min-w-[2.5rem] rounded-lg border px-3 py-1.5 text-xs font-medium ${
-                    data.airwayExam?.mallampati === value
-                      ? 'border-violet-600 bg-violet-600 text-white'
-                      : 'border-gray-300 text-gray-600'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {AIRWAY_TEXT_FIELDS.map(({ key, label }) => (
-              <div key={key}>
-                <label className="mb-0.5 block text-[10px] text-gray-500">{label}</label>
-                <input
-                  type="text"
-                  disabled={isLocked}
-                  value={data.airwayExam?.[key] ?? ''}
-                  onChange={e =>
-                    setData(d =>
-                      d
-                        ? {
-                            ...d,
-                            airwayExam: { ...(d.airwayExam ?? {}), [key]: e.target.value },
-                          }
-                        : d,
-                    )
-                  }
-                  onBlur={() => persist({ airwayExam: data.airwayExam ?? {} })}
-                  className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs disabled:bg-gray-50"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </PacAccordionSection>
-
-      <PacAccordionSection
-        sectionKey="systemic"
-        title="Systemic review"
-        subtitle="NAD by default — document exceptions"
-        status={sectionStatus(data, 'systemic')}
-        open={openSection === 'systemic'}
-        onToggle={() => toggleSection('systemic')}
-      >
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {SYSTEMIC_FIELDS.map(({ key, label }) => (
-            <div key={key}>
-              <label className="mb-0.5 block text-[10px] text-gray-500">{label}</label>
-              <input
+        <PacClinicalTable>
+          <PacTableRow label="Mallampati" required>
+            <PacSegmentedControl
+              options={MALLAMPATI_OPTIONS.map(o => o.value)}
+              value={data.airwayExam?.mallampati}
+              disabled={isLocked}
+              formatLabel={v => MALLAMPATI_OPTIONS.find(o => o.value === v)?.label ?? String(v)}
+              onChange={value => {
+                const airwayExam = { ...(data.airwayExam ?? {}), mallampati: value };
+                setData(d => (d ? { ...d, airwayExam } : d));
+                void persist({ airwayExam });
+              }}
+            />
+          </PacTableRow>
+          {AIRWAY_TEXT_FIELDS.map(({ key, label }) => (
+            <PacTableRow key={key} label={label}>
+              <PacFieldInput
                 type="text"
                 disabled={isLocked}
-                placeholder="NAD"
+                value={data.airwayExam?.[key] ?? ''}
+                onChange={e =>
+                  setData(d =>
+                    d
+                      ? {
+                          ...d,
+                          airwayExam: { ...(d.airwayExam ?? {}), [key]: e.target.value },
+                        }
+                      : d,
+                  )
+                }
+                onBlur={() => void persist({ airwayExam: data.airwayExam ?? {} })}
+              />
+            </PacTableRow>
+          ))}
+        </PacClinicalTable>
+      </PacClinicalSection>
+
+      <PacClinicalSection
+        sectionKey="systemic"
+        title="Systemic review"
+        status={sectionStatus(data, 'systemic')}
+      >
+        <PacClinicalTable>
+          {SYSTEMIC_FIELDS.map(({ key, label }) => (
+            <PacTableRow key={key} label={label}>
+              <PacFieldInput
+                type="text"
+                disabled={isLocked}
                 value={data.systemicReview?.[key] ?? ''}
                 onChange={e =>
                   setData(d =>
@@ -521,331 +481,297 @@ export function PacAssessmentForm({
                   )
                 }
                 onBlur={e => persistSystemicField(key, e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs disabled:bg-gray-50"
               />
-            </div>
+            </PacTableRow>
           ))}
-        </div>
-        <p className="mt-2 text-[10px] text-gray-500">
-          Empty fields save as NAD on blur. Expand only when a system needs documentation.
-        </p>
-      </PacAccordionSection>
+        </PacClinicalTable>
+      </PacClinicalSection>
 
-      <PacAccordionSection
+      <PacClinicalSection
         sectionKey="plan"
         title="Plan & consent"
-        subtitle="Anaesthesia plan, consent type, medications, advisories"
         status={sectionStatus(data, 'plan')}
-        open={openSection === 'plan'}
-        onToggle={() => toggleSection('plan')}
       >
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">Anaesthesia plan *</label>
-            <div className="flex flex-wrap gap-2">
-              {ANAESTHESIA_PLANS.map(plan => (
-                <button
-                  key={plan}
-                  type="button"
-                  disabled={isLocked}
-                  onClick={() => {
-                    setData(d => (d ? { ...d, anaesthesiaPlan: plan } : d));
-                    persist({ anaesthesiaPlan: plan });
-                  }}
-                  className={`rounded-lg border px-3 py-1.5 text-xs ${
-                    data.anaesthesiaPlan === plan
-                      ? 'border-violet-600 bg-violet-600 text-white'
-                      : 'border-gray-300 text-gray-600'
-                  }`}
-                >
-                  {plan}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">Consent type *</label>
-            <div className="flex flex-wrap gap-2">
-              {CONSENT_TYPES.map(ct => (
-                <button
-                  key={ct}
-                  type="button"
-                  disabled={isLocked}
-                  onClick={() => {
-                    setData(d => (d ? { ...d, consentType: ct } : d));
-                    persist({ consentType: ct });
-                  }}
-                  className={`rounded-lg border px-3 py-1.5 text-xs ${
-                    data.consentType === ct
-                      ? 'border-violet-600 bg-violet-600 text-white'
-                      : 'border-gray-300 text-gray-600'
-                  }`}
-                >
-                  {ct}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
+        <PacClinicalTable>
+          <PacTableRow label="Anaesthesia plan" required>
+            <PacSegmentedControl
+              options={ANAESTHESIA_PLANS}
+              value={data.anaesthesiaPlan}
               disabled={isLocked}
-              checked={data.periOpExplained}
-              onChange={e => {
-                setData(d => (d ? { ...d, periOpExplained: e.target.checked } : d));
-                persist({ periOpExplained: e.target.checked });
+              onChange={plan => {
+                setData(d => (d ? { ...d, anaesthesiaPlan: plan } : d));
+                void persist({ anaesthesiaPlan: plan });
               }}
-              className="rounded border-gray-300"
             />
-            Peri-operative instructions explained to patient
-          </label>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Current medications</p>
-              {!isLocked && (
+          </PacTableRow>
+          <PacTableRow label="Consent type" required>
+            <PacSegmentedControl
+              options={CONSENT_TYPES}
+              value={data.consentType}
+              disabled={isLocked}
+              onChange={ct => {
+                setData(d => (d ? { ...d, consentType: ct } : d));
+                void persist({ consentType: ct });
+              }}
+            />
+          </PacTableRow>
+          <PacTableRow label="Peri-operative instructions">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-800">
+              <input
+                type="checkbox"
+                disabled={isLocked}
+                checked={data.periOpExplained}
+                onChange={e => {
+                  setData(d => (d ? { ...d, periOpExplained: e.target.checked } : d));
+                  void persist({ periOpExplained: e.target.checked });
+                }}
+                className="rounded border-gray-300"
+              />
+              Explained to patient
+            </label>
+          </PacTableRow>
+          <PacTableRow
+            label="Current medications"
+            action={
+              !isLocked ? (
                 <button
                   type="button"
+                  data-testid={WARD_PREOP_TEST_IDS.pacMedicationAdd}
                   onClick={() => {
                     const meds: PacMedicationLineDto[] = [
                       ...(data.currentMedications ?? []),
                       { name: '', dose: '', frequency: '' },
                     ];
                     setData(d => (d ? { ...d, currentMedications: meds } : d));
-                    persist({ currentMedications: meds });
+                    void persist({ currentMedications: meds });
                   }}
-                  className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800"
+                  className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
                 >
-                  <Plus className="h-3.5 w-3.5" /> Add
+                  <Plus className="h-3 w-3" aria-hidden="true" /> Add
                 </button>
-              )}
-            </div>
-            {(data.currentMedications ?? []).length === 0 ? (
-              <p className="text-xs text-gray-400">No medications recorded.</p>
-            ) : (
-              <div className="space-y-2">
+              ) : undefined
+            }
+          >
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-gray-500">
+                  <th className="pb-1 pr-2 font-medium">Drug</th>
+                  <th className="pb-1 pr-2 font-medium">Dose</th>
+                  <th className="pb-1 pr-2 font-medium">Frequency</th>
+                  <th className="pb-1 w-8" />
+                </tr>
+              </thead>
+              <tbody>
                 {(data.currentMedications ?? []).map((med, idx) => (
-                  <div key={idx} className="flex items-start gap-2">
-                    <input
-                      placeholder="Drug"
-                      disabled={isLocked}
-                      value={med.name}
-                      onChange={e => {
-                        const meds = [...(data.currentMedications ?? [])];
-                        meds[idx] = { ...meds[idx], name: e.target.value };
-                        setData(d => (d ? { ...d, currentMedications: meds } : d));
-                      }}
-                      onBlur={() => persist({ currentMedications: data.currentMedications ?? [] })}
-                      className="flex-1 rounded-lg border border-gray-300 px-2 py-1.5 text-xs disabled:bg-gray-50"
-                    />
-                    <input
-                      placeholder="Dose"
-                      disabled={isLocked}
-                      value={med.dose ?? ''}
-                      onChange={e => {
-                        const meds = [...(data.currentMedications ?? [])];
-                        meds[idx] = { ...meds[idx], dose: e.target.value };
-                        setData(d => (d ? { ...d, currentMedications: meds } : d));
-                      }}
-                      onBlur={() => persist({ currentMedications: data.currentMedications ?? [] })}
-                      className="w-24 rounded-lg border border-gray-300 px-2 py-1.5 text-xs disabled:bg-gray-50"
-                    />
-                    <input
-                      placeholder="Freq"
-                      disabled={isLocked}
-                      value={med.frequency ?? ''}
-                      onChange={e => {
-                        const meds = [...(data.currentMedications ?? [])];
-                        meds[idx] = { ...meds[idx], frequency: e.target.value };
-                        setData(d => (d ? { ...d, currentMedications: meds } : d));
-                      }}
-                      onBlur={() => persist({ currentMedications: data.currentMedications ?? [] })}
-                      className="w-24 rounded-lg border border-gray-300 px-2 py-1.5 text-xs disabled:bg-gray-50"
-                    />
-                    {!isLocked && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const meds = (data.currentMedications ?? []).filter((_, i) => i !== idx);
+                  <tr key={idx}>
+                    <td className="py-1 pr-2">
+                      <PacFieldInput
+                        disabled={isLocked}
+                        value={med.name}
+                        onChange={e => {
+                          const meds = [...(data.currentMedications ?? [])];
+                          meds[idx] = { ...meds[idx], name: e.target.value };
                           setData(d => (d ? { ...d, currentMedications: meds } : d));
-                          persist({ currentMedications: meds });
                         }}
-                        className="rounded p-1.5 text-red-500 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
+                        onBlur={() => void persist({ currentMedications: data.currentMedications ?? [] })}
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <PacFieldInput
+                        disabled={isLocked}
+                        value={med.dose ?? ''}
+                        onChange={e => {
+                          const meds = [...(data.currentMedications ?? [])];
+                          meds[idx] = { ...meds[idx], dose: e.target.value };
+                          setData(d => (d ? { ...d, currentMedications: meds } : d));
+                        }}
+                        onBlur={() => void persist({ currentMedications: data.currentMedications ?? [] })}
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <PacFieldInput
+                        disabled={isLocked}
+                        value={med.frequency ?? ''}
+                        onChange={e => {
+                          const meds = [...(data.currentMedications ?? [])];
+                          meds[idx] = { ...meds[idx], frequency: e.target.value };
+                          setData(d => (d ? { ...d, currentMedications: meds } : d));
+                        }}
+                        onBlur={() => void persist({ currentMedications: data.currentMedications ?? [] })}
+                      />
+                    </td>
+                    <td className="py-1">
+                      {!isLocked && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const meds = (data.currentMedications ?? []).filter((_, i) => i !== idx);
+                            setData(d => (d ? { ...d, currentMedications: meds } : d));
+                            void persist({ currentMedications: meds });
+                          }}
+                          className="rounded p-1 text-red-600 hover:bg-red-50"
+                          aria-label="Remove medication"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
                 ))}
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            {(
-              [
-                { key: 'preOpConsultations' as const, label: 'Pre-op consultations' },
-                { key: 'medicationsAdvised' as const, label: 'Medications advised' },
-                { key: 'investigationsAdvised' as const, label: 'Investigations advised (orders only)' },
-              ] as const
-            ).map(({ key, label }) => (
-              <div key={key}>
-                <label className="mb-1 block text-xs text-gray-600">{label}</label>
-                <textarea
-                  rows={2}
-                  disabled={isLocked}
-                  value={data[key] ?? ''}
-                  onChange={e => setData(d => (d ? { ...d, [key]: e.target.value } : d))}
-                  onBlur={e => {
-                    const v = e.target.value || null;
-                    if (key === 'preOpConsultations') persist({ preOpConsultations: v });
-                    else if (key === 'medicationsAdvised') persist({ medicationsAdvised: v });
-                    else persist({ investigationsAdvised: v });
-                  }}
-                  className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-xs disabled:bg-gray-50"
-                />
-              </div>
-            ))}
-            <div>
-              <label className="mb-1 block text-xs text-gray-600">Completed by (designation)</label>
-              <input
-                type="text"
+              </tbody>
+            </table>
+          </PacTableRow>
+          {(
+            [
+              { key: 'preOpConsultations' as const, label: 'Pre-op consultations' },
+              { key: 'medicationsAdvised' as const, label: 'Medications advised' },
+              { key: 'investigationsAdvised' as const, label: 'Investigations advised' },
+            ] as const
+          ).map(({ key, label }) => (
+            <PacTableRow key={key} label={label}>
+              <PacFieldTextarea
+                rows={2}
                 disabled={isLocked}
-                placeholder="Anaesthetist / Junior Doctor"
-                value={data.completedByDesignation ?? ''}
-                onChange={e => setData(d => (d ? { ...d, completedByDesignation: e.target.value } : d))}
-                onBlur={e => persist({ completedByDesignation: e.target.value || null })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs disabled:bg-gray-50"
+                value={data[key] ?? ''}
+                onChange={e => setData(d => (d ? { ...d, [key]: e.target.value } : d))}
+                onBlur={e => {
+                  const v = e.target.value || null;
+                  if (key === 'preOpConsultations') void persist({ preOpConsultations: v });
+                  else if (key === 'medicationsAdvised') void persist({ medicationsAdvised: v });
+                  else void persist({ investigationsAdvised: v });
+                }}
               />
-            </div>
-          </div>
-        </div>
-      </PacAccordionSection>
+            </PacTableRow>
+          ))}
+          <PacTableRow label="Completed by">
+            <PacFieldInput
+              type="text"
+              disabled={isLocked}
+              value={data.completedByDesignation ?? ''}
+              onChange={e =>
+                setData(d => (d ? { ...d, completedByDesignation: e.target.value } : d))
+              }
+              onBlur={e => void persist({ completedByDesignation: e.target.value || null })}
+            />
+          </PacTableRow>
+        </PacClinicalTable>
+      </PacClinicalSection>
 
-      <PacAccordionSection
+      <PacAnaesthesiaClearanceSection
+        journeyId={journeyId}
+        pac={data}
+        anaesthetistName={anaesthetistName}
+        completions={sharedClearance?.detail?.completions}
+        disabled={isLocked}
+        onChanged={onChanged}
+      />
+
+      <PacClinicalSection
         sectionKey="reference"
         title="Reference"
-        subtitle="Investigations and vitals (read-only sources)"
         status={sectionStatus(data, 'reference')}
-        open={openSection === 'reference'}
-        onToggle={() => toggleSection('reference')}
       >
-        <div className="space-y-4">
-          <PacInvestigationSummary
-            journeyId={journeyId}
-            onEditInInvestigations={onNavigateInvestigations}
-            defaultCollapsed
-          />
-
-          <div
-            data-testid={WARD_PREOP_TEST_IDS.pacVitalsReference}
-            className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/70 px-3 py-2.5"
+        <PacClinicalTable>
+          <PacTableRow
+            label="Investigations"
+            action={
+              onNavigateInvestigations ? (
+                <PacIconLink
+                  label="Open Investigations"
+                  testId={WARD_PREOP_TEST_IDS.pacInvestigationEditLink}
+                  onClick={onNavigateInvestigations}
+                />
+              ) : undefined
+            }
           >
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <HeartPulse className="h-3.5 w-3.5 text-violet-600" />
-                <span className="text-[11px] font-bold uppercase tracking-wide text-gray-500">
-                  Latest vitals (Step ⑧ — read-only)
-                </span>
-              </div>
-              {onNavigateVitals && (
-                <button
-                  type="button"
-                  data-testid={WARD_PREOP_TEST_IDS.pacVitalsOpenLink}
+            <PacInvestigationSummary
+              journeyId={journeyId}
+              onEditInInvestigations={onNavigateInvestigations}
+              defaultCollapsed
+              compact
+            />
+          </PacTableRow>
+          <PacTableRow
+            label="Latest vitals"
+            action={
+              onNavigateVitals ? (
+                <PacIconLink
+                  label="Open Nursing & Records"
+                  testId={WARD_PREOP_TEST_IDS.pacVitalsOpenLink}
                   onClick={onNavigateVitals}
-                  className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-                >
-                  Record vitals
-                  <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
-                </button>
+                />
+              ) : undefined
+            }
+          >
+            <div data-testid={WARD_PREOP_TEST_IDS.pacVitalsReference}>
+              {vitals.length === 0 ? (
+                <span className="text-sm text-gray-500">—</span>
+              ) : (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-800">
+                  <span>
+                    BP <strong>{formatBpFromVital(vitals[0]) ?? '—'}</strong>
+                  </span>
+                  <span>
+                    HR <strong>{vitals[0].pulseRate ?? '—'}</strong>
+                  </span>
+                  <span>
+                    SpO₂{' '}
+                    <strong>
+                      {vitals[0].oxygenSaturation ?? '—'}
+                      {vitals[0].oxygenSaturation != null ? '%' : ''}
+                    </strong>
+                  </span>
+                  <span>
+                    Temp <strong>{vitals[0].temperature ?? '—'}</strong>
+                  </span>
+                  <span className="text-gray-500">
+                    {new Date(vitals[0].recordedAt).toLocaleString('en-IN')}
+                  </span>
+                </div>
               )}
             </div>
-            {vitals.length === 0 ? (
-              <p className="text-xs text-gray-500">No vitals recorded yet for this admission.</p>
-            ) : (
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
-                <span>
-                  BP <strong>{formatBpFromVital(vitals[0]) ?? '—'}</strong>
-                </span>
-                <span>
-                  HR <strong>{vitals[0].pulseRate ?? '—'}</strong>
-                </span>
-                <span>
-                  SpO₂{' '}
-                  <strong>
-                    {vitals[0].oxygenSaturation ?? '—'}
-                    {vitals[0].oxygenSaturation != null ? '%' : ''}
-                  </strong>
-                </span>
-                <span>
-                  Temp <strong>{vitals[0].temperature ?? '—'}</strong>
-                </span>
-                <span className="text-gray-400">
-                  {new Date(vitals[0].recordedAt).toLocaleString('en-IN')}
-                </span>
-              </div>
-            )}
-            <p className="text-[10px] text-gray-500">
-              Vitals are recorded in Step ⑧ Nursing &amp; Records. PAC keeps a snapshot in Pre-op assessment.
-            </p>
-          </div>
-        </div>
-      </PacAccordionSection>
+          </PacTableRow>
+        </PacClinicalTable>
+      </PacClinicalSection>
 
-      <PacAccordionSection
+      <PacClinicalSection
         sectionKey="complete"
         title="Complete PAC"
-        subtitle="Sign-off and ward checklist sync"
         status={sectionStatus(data, 'complete')}
-        open={openSection === 'complete'}
-        onToggle={() => toggleSection('complete')}
       >
-        {!isLocked ? (
-          <div className="flex flex-col items-start gap-3">
-            <p
-              data-testid={WARD_PREOP_TEST_IDS.pacAutoSatisfyNote}
-              className="flex items-center gap-1 text-[11px] text-gray-500"
-            >
-              <Activity className="h-3 w-3 text-gray-400" aria-hidden="true" />
-              Completing PAC auto-confirms §2 Anaesthesia clearance and the §3 &ldquo;PAC done&rdquo; safety
-              tick.
-            </p>
+        <div className="px-4 py-3">
+          {!isLocked ? (
             <button
               type="button"
+              data-testid={WARD_PREOP_TEST_IDS.pacCompleteButton}
               disabled={completing || !data.isComplete}
               onClick={handleCompleteClick}
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+              className="rounded border border-gray-800 bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 disabled:opacity-50"
             >
               {completing ? 'Completing…' : 'Complete PAC assessment'}
             </button>
-            {!data.isComplete && (
-              <p className="text-xs text-gray-500">
-                Complete BP, HR, ASA, Mallampati, anaesthesia plan, and consent type in the sections above.
-              </p>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-gray-500">PAC assessment is locked after completion.</p>
-        )}
-        {data.completedAt && (
-          <p className="mt-2 text-xs text-gray-400">
-            Completed {new Date(data.completedAt).toLocaleString('en-IN')}
-          </p>
-        )}
-      </PacAccordionSection>
+          ) : (
+            <p className="text-sm text-gray-600">
+              {data.completedAt
+                ? `Completed ${new Date(data.completedAt).toLocaleString('en-IN')}`
+                : 'PAC assessment is locked.'}
+            </p>
+          )}
+        </div>
+      </PacClinicalSection>
 
       {completeDialog && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
           data-testid={WARD_PREOP_TEST_IDS.pacCompleteWarnDialog}
         >
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-xl">
             <div className="flex items-start gap-3 border-b border-gray-100 px-6 py-4">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
               <div>
                 <h2 className="text-base font-semibold text-gray-900">Unverified critical labs</h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  The following critical investigations are not ward-verified in §1. You may still complete PAC.
+                  Critical investigations are not ward-verified. You may still complete PAC.
                 </p>
               </div>
             </div>
@@ -858,7 +784,7 @@ export function PacAssessmentForm({
               <button
                 type="button"
                 onClick={() => setCompleteDialog(null)}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
               >
                 Cancel
               </button>
@@ -867,7 +793,7 @@ export function PacAssessmentForm({
                 disabled={completing}
                 onClick={doComplete}
                 data-testid={WARD_PREOP_TEST_IDS.pacCompleteConfirm}
-                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                className="rounded border border-amber-700 bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
               >
                 {completing ? 'Completing…' : 'Complete PAC anyway'}
               </button>

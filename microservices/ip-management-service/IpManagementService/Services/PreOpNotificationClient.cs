@@ -49,6 +49,16 @@ public interface IPreOpNotificationClient
     /// <summary>Notify OT that a patient is marked ready for surgery (Admitted → ReadyForSurgery).</summary>
     Task NotifyPreOpMarkReadyAsync(
         Guid tenantId, Guid? branchId, Guid journeyId, string patientName, string? procedureName);
+
+    /// <summary>Fan-out when ward clinical evaluation IOL/diagnosis materially changes.</summary>
+    Task NotifyClinicalEvaluationMaterialChangeAsync(
+        Guid tenantId,
+        Guid? branchId,
+        Guid journeyId,
+        string patientName,
+        string changeType,
+        string details,
+        bool inOt);
 }
 
 public class PreOpNotificationClient : IPreOpNotificationClient
@@ -213,5 +223,37 @@ public class PreOpNotificationClient : IPreOpNotificationClient
             "PreOpMarkReady",
             $"Marked ready for surgery: {patientName}",
             details);
+    }
+
+    public async Task NotifyClinicalEvaluationMaterialChangeAsync(
+        Guid tenantId,
+        Guid? branchId,
+        Guid journeyId,
+        string patientName,
+        string changeType,
+        string details,
+        bool inOt)
+    {
+        var prefix = inOt ? "In-OT clinical evaluation change" : "Clinical evaluation change";
+        var message = $"{prefix}: {patientName} — {changeType.Replace('_', ' ')}";
+
+        var depts = new[]
+        {
+            "COUNSELLING",
+            "BILLING",
+            "OPERATION_THEATRE",
+            "INVENTORY",
+        };
+
+        foreach (var dept in depts)
+        {
+            await NotifyDepartmentAsync(
+                tenantId,
+                branchId,
+                dept,
+                "ClinicalEvaluationChanged",
+                message,
+                details);
+        }
     }
 }

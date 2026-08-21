@@ -24,6 +24,7 @@ public class PatientJourneyService
     private readonly WardChecklistAutoSyncService _wardSync;
     private readonly JourneyMutationGuardService  _mutationGuard;
     private readonly JourneySchedulingGuardService _schedulingGuard;
+    private readonly IIntegrationOutboxService     _outbox;
 
     public PatientJourneyService(
         IpManagementDbContext db,
@@ -35,7 +36,8 @@ public class PatientJourneyService
         PreOpReadinessService readiness,
         WardChecklistAutoSyncService wardSync,
         JourneyMutationGuardService mutationGuard,
-        JourneySchedulingGuardService schedulingGuard)
+        JourneySchedulingGuardService schedulingGuard,
+        IIntegrationOutboxService outbox)
     {
         _db              = db;
         _notifications   = notifications;
@@ -47,6 +49,7 @@ public class PatientJourneyService
         _wardSync        = wardSync;
         _mutationGuard   = mutationGuard;
         _schedulingGuard = schedulingGuard;
+        _outbox          = outbox;
     }
 
     // ── List ───────────────────────────────────────────────────────────────────
@@ -361,10 +364,10 @@ public class PatientJourneyService
         return MapDetail(j, patient, merge);
     }
 
-    // ── Financial: live pre-auth status ──────────────────────────────────────────
+    // ── Financial: live coverage & payment status ──────────────────────────────
 
     /// <summary>
-    /// Read-only insurance pre-auth status for the Ward Pre-Op Financial step,
+    /// Read-only coverage &amp; payment status for the Ward Pre-Op step,
     /// projected from the CCMS coverage case (same source the admit gate uses).
     /// Returns null when the journey does not exist.
     /// </summary>
@@ -374,9 +377,49 @@ public class PatientJourneyService
             .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId && x.DeletedAt == null);
         if (j is null) return null;
 
-        var v = await _ccms.ValidateAdmissionAsync(id, j.CounselingSessionId, tenantId);
+        var coverageBased = PaymentModeCoveragePolicy.IsCoverageBased(j.PaymentMode);
+        var v = await _ccms.ValidateAdmissionAsync(
+            id, j.CounselingSessionId, tenantId, coverageBased, j.EmergencyFcApplied);
+
+        // Journey-level Emergency FC is authoritative for the ward projection even if
+        // the CCMS mirror has not yet been updated.
+        var isEmergencyFc = j.EmergencyFcApplied || v.IsEmergencyFinancialClearance;
+
+        // Coverage-based journeys without a linked case are not admission-ready.
+        var missingCoverageCase = coverageBased && v.CaseId is null && !v.CcmsUnavailable;
+        var allowed = (v.Allowed && !missingCoverageCase) || isEmergencyFc;
+        var blockReason = !allowed
+            ? (missingCoverageCase
+                ? "No Coverage & Claims case is linked for this payment mode."
+                : v.BlockReason)
+            : null;
+        var decision = !allowed
+            ? "BLOCK"
+            : (isEmergencyFc && !v.Allowed ? "WARN" : v.Decision);
+        var warningLevel = !allowed
+            ? "block"
+            : (isEmergencyFc && !v.Allowed ? "warning" : v.WarningLevel);
+        var warningMessage = missingCoverageCase && !isEmergencyFc
+            ? "No coverage case linked. Complete CCMS authorization or apply Emergency FC."
+            : (isEmergencyFc && !v.Allowed
+                ? (v.WarningMessage ?? "Emergency Financial Clearance applied. Coverage decision pending.")
+                : v.WarningMessage);
+
         return new PreauthStatusDto(
-            v.Allowed, v.WarningLevel, v.WarningMessage, v.BlockReason, v.PreAuthNumber, v.ApprovedAmount);
+            allowed,
+            warningLevel,
+            warningMessage,
+            blockReason,
+            v.PreAuthNumber,
+            v.ApprovedAmount,
+            v.CaseId,
+            v.CoverageState,
+            decision,
+            j.PaymentMode,
+            isEmergencyFc,
+            (v.RequiresOverride || missingCoverageCase) && !isEmergencyFc,
+            v.LastUpdatedAt,
+            v.CcmsUnavailable);
     }
 
     // ── Admit ──────────────────────────────────────────────────────────────────
@@ -386,14 +429,35 @@ public class PatientJourneyService
         var j = await RequireJourneyAsync(id, tenantId);
         await _mutationGuard.EnsureMutableAsync(j);
 
-        // CCMS admission gate: check pre-auth status before admitting
-        if (!req.OverrideStateCheck && !req.BypassFinancialClearance)
+        var coverageBased = PaymentModeCoveragePolicy.IsCoverageBased(j.PaymentMode);
+        var emergencyFc = j.EmergencyFcApplied;
+
+        // Explicit admit-time financial bypass requires a reason (privileged override).
+        if (req.BypassFinancialClearance && string.IsNullOrWhiteSpace(req.OverrideReason) && !emergencyFc)
         {
-            var ccmsResult = await _ccms.ValidateAdmissionAsync(id, j.CounselingSessionId, tenantId);
+            throw new InvalidOperationException(
+                "BypassFinancialClearance requires OverrideReason, or apply Emergency Financial Clearance first.");
+        }
+
+        // CCMS admission gate: coverage-based modes require a canonical CCMS decision
+        // unless Emergency FC or an explicit audited financial bypass applies.
+        if (!req.OverrideStateCheck && !req.BypassFinancialClearance && !emergencyFc && coverageBased)
+        {
+            var ccmsResult = await _ccms.ValidateAdmissionAsync(
+                id, j.CounselingSessionId, tenantId, coverageBased: true, emergencyFcApplied: false);
             if (!ccmsResult.Allowed)
             {
                 throw new InvalidOperationException(
-                    ccmsResult.BlockReason ?? "Admission blocked: insurance pre-authorization is required before admission.");
+                    ccmsResult.BlockReason
+                    ?? "Admission blocked: coverage authorization is required before admission.");
+            }
+
+            // CCMS returns informational allow when no case exists — that is only safe
+            // for non-coverage modes. Coverage-based admission requires a linked case.
+            if (ccmsResult.CaseId is null && !ccmsResult.CcmsUnavailable)
+            {
+                throw new InvalidOperationException(
+                    "Admission blocked: no Coverage & Claims case is linked for this payment mode. Create or link a CCMS case before admission.");
             }
         }
 
@@ -425,12 +489,21 @@ public class PatientJourneyService
         j.UpdatedAt                = DateTime.UtcNow;
         j.UpdatedByUserId          = userId;
 
-        var auditAction = req.OverrideStateCheck || req.BypassFinancialClearance
-            ? $"AdmittedWithOverride: {req.OverrideReason ?? "No reason"}"
+        var auditAction = req.OverrideStateCheck || req.BypassFinancialClearance || emergencyFc
+            ? $"AdmittedWithOverride: {(req.OverrideReason ?? j.EmergencyFcReason ?? "No reason")}"
             : "Admitted";
 
-        // Admission and its audit record must commit atomically: an admitted patient
-        // without an audit trail is a medico-legal compliance gap.
+        // Reliable lifecycle event (Phase 2 outbox) — same transaction as admission.
+        _outbox.Enqueue(
+            tenantId,
+            IntegrationEventTypes.JourneyAdmitted,
+            id,
+            payload: LifecycleEventPayload.Build(
+                tenantId, id, j.CounselingSessionId, j.PatientId, userId),
+            correlationId: id,
+            idempotencyKey: $"{IntegrationEventTypes.JourneyAdmitted}:{id:N}");
+
+        // Admission, outbox, and audit must commit atomically.
         await using var tx = await _db.Database.BeginTransactionAsync();
         await _db.SaveChangesAsync();
         await LogAsync(j, userId, auditAction, "ClinicalState",
@@ -569,8 +642,15 @@ public class PatientJourneyService
                 _ = _notifications.MarkOtSurgeryDoneAsync(
                         j.OtFinalizeScheduleId.Value, tenantId, userId.ToString());
 
-            // CCMS: fire-and-forget surgery-completed event
-            await _ccms.NotifySurgeryCompletedAsync(id, j.CounselingSessionId, tenantId, userId);
+            // Phase 2: reliable outbox delivery to CCMS (replaces fire-and-forget HTTP).
+            _outbox.Enqueue(
+                tenantId,
+                IntegrationEventTypes.SurgeryCompleted,
+                id,
+                payload: LifecycleEventPayload.Build(
+                    tenantId, id, j.CounselingSessionId, j.PatientId, userId),
+                correlationId: id,
+                idempotencyKey: $"{IntegrationEventTypes.SurgeryCompleted}:{id:N}");
         }
         else if (req.NewState == ClinicalState.Discharged)
         {
@@ -579,8 +659,14 @@ public class PatientJourneyService
             j.IsDischarged    = true;
             j.IsLocked        = true;
 
-            // CCMS: fire-and-forget patient-discharged event
-            await _ccms.NotifyPatientDischargedAsync(id, j.CounselingSessionId, tenantId, userId);
+            _outbox.Enqueue(
+                tenantId,
+                IntegrationEventTypes.PatientClinicallyDischarged,
+                id,
+                payload: LifecycleEventPayload.Build(
+                    tenantId, id, j.CounselingSessionId, j.PatientId, userId),
+                correlationId: id,
+                idempotencyKey: $"{IntegrationEventTypes.PatientClinicallyDischarged}:{id:N}");
         }
 
         await _db.SaveChangesAsync();
@@ -879,6 +965,26 @@ public class PatientJourneyService
         j.UpdatedAt       = DateTime.UtcNow;
         j.UpdatedByUserId = userId;
 
+        // Phase 2 residual: Billing (OpdBill finalize) is the canonical BillFinalized producer.
+        // IP FinancialState.Settled is a secondary bridge for IP journeys that never hit OPD finalize.
+        if (req.NewState == FinancialState.Settled && prev != FinancialState.Settled)
+        {
+            _outbox.Enqueue(
+                tenantId,
+                IntegrationEventTypes.BillFinalized,
+                id,
+                payload: LifecycleEventPayload.Build(
+                    tenantId, id, j.CounselingSessionId, j.PatientId, userId,
+                    extra: new
+                    {
+                        financialState = req.NewState,
+                        totalPaid = j.TotalPaid,
+                        source = "ip.financial_state.settled_bridge",
+                    }),
+                correlationId: id,
+                idempotencyKey: $"{IntegrationEventTypes.BillFinalized}:ip-bridge:{id:N}");
+        }
+
         await _db.SaveChangesAsync();
         await LogAsync(j, userId, "FinancialStateChanged", "FinancialState",
                        prev, req.NewState, null, null);
@@ -890,21 +996,62 @@ public class PatientJourneyService
     public async Task<PatientJourneyDetailDto> ApplyEmergencyFcAsync(
         Guid id, Guid tenantId, Guid userId, EmergencyFcRequest req)
     {
+        if (string.IsNullOrWhiteSpace(req.Reason))
+            throw new ArgumentException("Emergency Financial Clearance requires a reason.");
+
         var j = await RequireJourneyAsync(id, tenantId);
         await _mutationGuard.EnsureMutableAsync(j);
 
+        var reason = req.Reason.Trim();
+        var approvedAt = DateTime.UtcNow;
+
+        // Capture linked coverage case id (best-effort) before persisting so the
+        // audit trail records CoverageCaseId when available.
+        Guid? coverageCaseId = null;
+        try
+        {
+            var coverageBased = PaymentModeCoveragePolicy.IsCoverageBased(j.PaymentMode);
+            var projection = await _ccms.ValidateAdmissionAsync(
+                id, j.CounselingSessionId, tenantId, coverageBased, emergencyFcApplied: true);
+            coverageCaseId = projection.CaseId;
+        }
+        catch
+        {
+            // Non-fatal — Emergency FC on the journey must still succeed.
+        }
+
         j.EmergencyFcApplied          = true;
-        j.EmergencyFcReason           = req.Reason;
+        j.EmergencyFcReason           = reason;
         j.EmergencyFcApprovedBy       = userId;
-        j.EmergencyFcApprovedAt       = DateTime.UtcNow;
-        j.GovernmentApprovalSubmitted = req.GovernmentApprovalSubmitted;
-        j.InsurancePreauthSubmitted   = req.InsurancePreauthSubmitted;
+        j.EmergencyFcApprovedAt       = approvedAt;
+        // Phase 3 — do not treat GovernmentApprovalSubmitted / InsurancePreauthSubmitted
+        // as coverage SoT. Authorization truth is CCMS. Camp flag remains clinical.
+        // Deprecated InsurancePreauthSubmitted is no longer written from Emergency FC.
         j.IsCampPatient               = req.IsCampPatient;
         j.UpdatedAt                   = DateTime.UtcNow;
         j.UpdatedByUserId             = userId;
 
         await _db.SaveChangesAsync();
-        await LogAsync(j, userId, "EmergencyFcApplied", null, null, null, null, null);
+        await LogAsync(
+            j, userId, "EmergencyFcApplied",
+            "EmergencyFc",
+            oldValue: null,
+            newValue: JsonSerializer.Serialize(new
+            {
+                Reason = reason,
+                ApprovedBy = userId,
+                ApprovedAt = approvedAt,
+                JourneyId = j.Id,
+                CoverageCaseId = coverageCaseId,
+                PaymentMode = j.PaymentMode,
+            }),
+            previousState: null,
+            newState: null);
+
+        // Mirror onto CCMS coverage case so validate-admission sees EmergencyFcApplied.
+        await _ccms.NotifyEmergencyFcAppliedAsync(
+            id, j.CounselingSessionId, tenantId, userId, reason);
+
         return MapDetail(j);
     }
 

@@ -76,7 +76,9 @@ public class PatientJourney
     public string?  EmergencyFcReason        { get; set; }
     public Guid?    EmergencyFcApprovedBy    { get; set; }
     public DateTime? EmergencyFcApprovedAt  { get; set; }
+    /// <summary>Legacy compatibility — scheme doc hint. Authorization truth is CCMS.</summary>
     public bool     GovernmentApprovalSubmitted { get; set; }
+    /// <summary>Deprecated Phase 3 — do not treat as coverage SoT; use CCMS PreauthStatus.</summary>
     public bool     InsurancePreauthSubmitted   { get; set; }
     public bool     IsCampPatient            { get; set; }
     public bool     DischargeOverrideApplied { get; set; }
@@ -101,6 +103,7 @@ public class PatientJourney
     public DateTime? WhoSupervisorOverrideAt       { get; set; }
 
     // Financial snapshot (nullable — may not be set at time of journey creation)
+    // Phase 3: billing projections for ward display — Billing owns charges; CCMS owns payer settlement.
     public string?   PaymentMode              { get; set; }  // payer category: Insurance|CGHS|ESI|Camp|Cash
     public decimal?  PackageAmount            { get; set; }
     public decimal?  TotalAdvances            { get; set; }

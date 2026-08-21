@@ -31,7 +31,11 @@ public static class OtState
     public const string Completed  = "Completed";
 }
 
-/// <summary>Values for patient_journey.financial_state</summary>
+/// <summary>
+/// Values for patient_journey.financial_state.
+/// Phase 3: clinical / ward workflow compatibility only — not Billing or CCMS settlement SoT.
+/// Settled may emit a BillFinalized bridge event; charges and payer settlement remain elsewhere.
+/// </summary>
 public static class FinancialState
 {
     public const string NotCreated    = "NotCreated";

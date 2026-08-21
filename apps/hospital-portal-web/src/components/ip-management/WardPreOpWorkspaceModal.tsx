@@ -3,13 +3,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { Activity, Building2, ClipboardList, History, Lock, MessageSquare, Pill, Printer, Wallet, X } from 'lucide-react';
-import { PatientJourneyRowDto, WardDto } from '@/lib/api/ip-management.api';
+import { PatientJourneyRowDto, WardDto, ipManagementApi } from '@/lib/api/ip-management.api';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { usePreOpReadiness } from '@/hooks/use-preop-readiness';
 import { WardPreOpGateChip } from '@/components/ip-management/WardPreOpGateChip';
 import { WardPreOpStepNav } from '@/components/ip-management/preop/WardPreOpStepNav';
 import { PreOpReadinessBar } from '@/components/ip-management/preop/PreOpReadinessBar';
-import { SafetyStrip } from '@/components/ip-management/preop/SafetyStrip';
 import { InvestigationsResultsPanel } from '@/components/ip-management/investigations/InvestigationsResultsPanel';
 import { PacAssessmentForm } from '@/components/ip-management/PacAssessmentForm';
 import { DepartmentClearancePanel } from '@/components/ip-management/department-clearance/DepartmentClearancePanel';
@@ -100,7 +99,7 @@ function WardPreOpWorkspaceModalInner({
   onRequestSendToOt,
   onRequestCancelToday,
 }: WardPreOpWorkspaceModalProps) {
-  const { canEditWardChecklist, canEditPac, canEnterInvestigation, canVerifyInvestigation } =
+  const { canEditWardChecklist, canEditPac, canEnterInvestigation, canVerifyInvestigation, canSignClinicalEvaluation, canAmendClinicalEvaluationInOt } =
     useIpChecklistPermissions();
   const { primaryDeptCode, loading: deptLoading } = useUserDepartment();
 
@@ -117,8 +116,19 @@ function WardPreOpWorkspaceModalInner({
   const [careTab, setCareTab] = useState<WardPreOpCareTab>(legacyCareTab(initialTopTab));
   const [markingReady, setMarkingReady] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [journeyDiagnosis, setJourneyDiagnosis] = useState<string | null>(null);
   const careRef = useRef<WardPreOpCareTabsHandle>(null);
   const clearanceCtx = usePreOpClearanceOptional();
+
+  useEffect(() => {
+    let cancelled = false;
+    void ipManagementApi.getJourneyDetail(journey.id).then(detail => {
+      if (!cancelled) setJourneyDiagnosis(detail?.diagnosis ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [journey.id]);
 
   // A11y (Phase 12): trap focus inside the dialog, restore on close, Escape to close.
   const dialogRef = useFocusTrap(true);
@@ -135,7 +145,7 @@ function WardPreOpWorkspaceModalInner({
   // Decoupled from navigation (Phase 14): the rollup refreshes only when data actually
   // changes — each panel reports edits via `onChanged` → `reloadReadiness()`. Clicking a
   // step therefore reloads only the right-hand panel, never the whole shell.
-  const { readiness, safetySignals, markReadyGates, pac, loading: readinessLoading, reload: reloadReadiness } = usePreOpReadiness({
+  const { readiness, markReadyGates, pac, loading: readinessLoading, reload: reloadReadiness } = usePreOpReadiness({
     journeyId: journey.id,
     clinicalState: journey.clinicalState,
     paymentMode: journey.paymentMode ?? undefined,
@@ -277,12 +287,16 @@ function WardPreOpWorkspaceModalInner({
       return (
         <ClinicalEvaluationPanel
           journeyId={journey.id}
+          counselingSessionId={journey.counselingSessionId}
+          journeyDiagnosis={journeyDiagnosis}
           clinicalState={journey.clinicalState}
           paymentMode={journey.paymentMode ?? undefined}
           procedureName={journey.procedureName ?? undefined}
           eyeOperated={journey.eyeOperated ?? undefined}
-          currentUserDeptCode={primaryDeptCode}
           forceReadOnly={isMergedReadOnly}
+          canEditClinicalEvaluation={canEditWardChecklist}
+          canSignClinicalEvaluation={canSignClinicalEvaluation}
+          canAmendClinicalEvaluationInOt={canAmendClinicalEvaluationInOt}
           onChanged={reloadReadiness}
         />
       );
@@ -405,6 +419,7 @@ function WardPreOpWorkspaceModalInner({
             )}
             <PacAssessmentForm
               journeyId={journey.id}
+              anaesthetistName={journey.anaesthetistName}
               readOnly={pacReadOnly}
               onNavigateInvestigations={() => setActiveStep('investigations')}
               onNavigateVitals={() => setActiveStep('records')}
@@ -458,7 +473,7 @@ function WardPreOpWorkspaceModalInner({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="bg-white rounded-2xl shadow-xl w-full max-w-5xl mx-4 max-h-[90vh] flex flex-col"
+        className="bg-white rounded-2xl shadow-xl w-full max-w-6xl mx-4 max-h-[92vh] min-h-[min(85vh,900px)] flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-2xl shrink-0">
@@ -533,7 +548,7 @@ function WardPreOpWorkspaceModalInner({
           </div>
         </div>
 
-        {/* Safety + readiness — persistent patient-safety strip, then operate verdict */}
+        {/* Readiness rollup + optional gate chip */}
         <div className="px-3 pt-2 shrink-0 border-b border-gray-100 space-y-2">
           {isMergedReadOnly && (
             <div className="px-1 pt-1">
@@ -543,11 +558,6 @@ function WardPreOpWorkspaceModalInner({
               />
             </div>
           )}
-          <SafetyStrip
-            signals={safetySignals}
-            loading={readinessLoading}
-            onNavigateStep={handleStepChange}
-          />
           <PreOpReadinessBar
             readiness={readiness}
             loading={readinessLoading}
@@ -561,7 +571,7 @@ function WardPreOpWorkspaceModalInner({
 
         {/* Two-pane: vertical step rail (no horizontal scroll) + active step body */}
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          <aside className="shrink-0 overflow-y-auto border-b border-gray-100 p-2 lg:w-60 lg:border-b-0 lg:border-r">
+          <aside className="shrink-0 overflow-y-auto border-b border-gray-100 p-2 lg:w-72 lg:border-b-0 lg:border-r xl:w-80">
             <WardPreOpStepNav
               activeStep={activeStep}
               onStepChange={handleStepChange}

@@ -18,17 +18,18 @@ export interface NotificationEvent {
   timestamp: Date;
 }
 
-export function useNotifications() {
+export function useNotifications(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled !== false;
   const [connection, setConnection] = useState<signalR.HubConnection | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [notifications, setNotifications] = useState<NotificationEvent[]>([]);
-  const { token } = useAuthStore();
+  const token = useAuthStore(s => s.token);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
   const handlersForConnection = useRef<signalR.HubConnection | null>(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!enabled || !token) return;
 
     let mounted = true;
     const newConnection = acquireNotificationConnection(token);
@@ -329,7 +330,7 @@ export function useNotifications() {
       mounted = false;
       releaseNotificationConnection();
     };
-  }, [token]);
+  }, [enabled, token]);
 
   const clearNotifications = () => {
     setNotifications([]);

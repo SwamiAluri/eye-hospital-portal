@@ -5,9 +5,16 @@ import { formatDistanceToNow } from 'date-fns';
 import { Bell, X, CheckCircle, AlertTriangle, Info, Shield } from 'lucide-react';
 import { useState } from 'react';
 
+/**
+ * Live activity bell. SignalR connects only after the first open so dashboard
+ * routes do not pay hub cost on every page mount.
+ */
 export default function LiveActivityFeed() {
-  const { notifications, clearNotifications, isConnected } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
+  const [hasOpened, setHasOpened] = useState(false);
+  const { notifications, clearNotifications, isConnected } = useNotifications({
+    enabled: hasOpened,
+  });
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -47,11 +54,16 @@ export default function LiveActivityFeed() {
     }
   };
 
+  function toggleOpen() {
+    if (!hasOpened) setHasOpened(true);
+    setIsOpen(prev => !prev);
+  }
+
   return (
     <div className="relative">
-      {/* Notification bell button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+        onClick={toggleOpen}
         className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors"
         title="Activity Feed"
       >
@@ -61,23 +73,19 @@ export default function LiveActivityFeed() {
             {notifications.length > 99 ? '99+' : notifications.length}
           </span>
         )}
-        {!isConnected && (
+        {hasOpened && !isConnected && (
           <span className="absolute bottom-0 right-0 w-3 h-3 bg-gray-400 border-2 border-white rounded-full" title="Disconnected"></span>
         )}
-        {isConnected && (
+        {hasOpened && isConnected && (
           <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full animate-pulse" title="Connected"></span>
         )}
       </button>
 
-      {/* Activity feed panel */}
       {isOpen && (
         <>
-          {/* Backdrop */}
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
 
-          {/* Panel */}
           <div className="absolute right-0 mt-2 w-96 max-h-[600px] bg-white rounded-lg shadow-2xl border border-gray-200 z-50 overflow-hidden">
-            {/* Header */}
             <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between z-10">
               <div className="flex items-center space-x-2">
                 <Bell className="w-5 h-5 text-gray-700" />
@@ -92,6 +100,7 @@ export default function LiveActivityFeed() {
               <div className="flex items-center space-x-2">
                 {notifications.length > 0 && (
                   <button
+                    type="button"
                     onClick={clearNotifications}
                     className="text-xs text-gray-600 hover:text-gray-900 font-medium"
                     title="Clear all"
@@ -100,6 +109,7 @@ export default function LiveActivityFeed() {
                   </button>
                 )}
                 <button
+                  type="button"
                   onClick={() => setIsOpen(false)}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
                 >
@@ -108,7 +118,6 @@ export default function LiveActivityFeed() {
               </div>
             </div>
 
-            {/* Notifications list */}
             <div className="overflow-y-auto max-h-[550px]">
               {notifications.length === 0 ? (
                 <div className="px-4 py-12 text-center text-gray-500">
@@ -118,7 +127,7 @@ export default function LiveActivityFeed() {
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {notifications.map((notification, index) => (
+                  {notifications.map((notification: NotificationEvent, index: number) => (
                     <div
                       key={index}
                       className={`px-4 py-3 hover:bg-gray-50 transition-colors ${getNotificationColor(notification.type)}`}
@@ -145,7 +154,6 @@ export default function LiveActivityFeed() {
               )}
             </div>
 
-            {/* Footer */}
             {notifications.length > 0 && (
               <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-4 py-2 text-center">
                 <p className="text-xs text-gray-600">

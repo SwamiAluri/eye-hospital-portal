@@ -1,11 +1,11 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCachedAuthStore } from '@/lib/permission-cache';
+import { useHasPermission } from '@/lib/permission-cache';
 import { logoutEverywhere } from '@/lib/logout-everywhere';
 import { SIDEBAR_MENU_SECTIONS } from '@/lib/navigation/sidebar-menu-sections';
-import { useState, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, memo, type ComponentType } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -22,8 +22,18 @@ interface SidebarProps {
   drawerOnly?: boolean;
 }
 
+function SidebarIcon({
+  icon: Icon,
+  className,
+}: {
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+  className: string;
+}) {
+  return <Icon className={className} strokeWidth={2.5} />;
+}
+
 function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarProps) {
-  const { hasPermission } = useCachedAuthStore();
+  const hasPermission = useHasPermission();
   const pathname = usePathname();
   const [openSection, setOpenSection] = useState<string | null>('Dashboard');
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
@@ -104,7 +114,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
 
   return (
     <>
-    {/* Desktop sidebar — hidden below lg (1024px) */}
+    {/* Desktop sidebar � hidden below lg (1024px) */}
     {!drawerOnly && (
     <nav className={`hidden lg:flex ${isCollapsed ? 'lg:w-16' : 'lg:w-60'} flex-col h-full font-sans transition-all duration-300 overflow-hidden`} style={{backgroundColor:'#0f1e3c'}} aria-label="Main navigation">
       {/* Header */}
@@ -176,7 +186,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
               >
                 <div className={`flex items-center ${isCollapsed ? 'justify-center w-full' : 'gap-2.5'}`}>
                   <span className="flex-shrink-0">
-                    {section.icon}
+                    <SidebarIcon icon={section.icon} className="h-5 w-5" />
                   </span>
                   {!isCollapsed && <span className="text-xs font-semibold uppercase tracking-wider">{section.title}</span>}
                 </div>
@@ -213,7 +223,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                         return (
                           <div key={item.label}>
                             <div className="px-4 py-2 text-xs font-semibold text-gray-600 mt-2 flex items-center gap-2">
-                              {item.icon}
+                              <SidebarIcon icon={item.icon} className="h-4 w-4" />
                               <span>{item.label}</span>
                             </div>
                             {item.subItems.map((subItem) => {
@@ -233,7 +243,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                   `}
                                 >
                                   <span className={`text-xs ${subActive ? 'text-teal-600' : 'text-gray-600'}`}>
-                                    {subItem.icon}
+                                    <SidebarIcon icon={subItem.icon} className="h-4 w-4" />
                                   </span>
                                   <span className="text-sm">{subItem.label}</span>
                                 </Link>
@@ -259,7 +269,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                           `}
                         >
                           <span className={`${active ? 'text-teal-600' : 'text-gray-600'}`}>
-                            {item.icon}
+                            <SidebarIcon icon={item.icon} className="h-4 w-4" />
                           </span>
                           <span className="text-sm">{item.label}</span>
                         </Link>
@@ -337,7 +347,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                             title={item.label}
                           >
                             <span className={`font-bold ${active ? 'text-teal-600' : 'text-gray-600'}`}>
-                              {item.icon}
+                              <SidebarIcon icon={item.icon} className="h-4 w-4" />
                             </span>
                           </button>
                           {showPopover && item.subItems && (
@@ -362,7 +372,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                     `}
                                   >
                                     <span className={`font-bold ${subActive ? 'text-teal-600' : 'text-gray-600'}`}>
-                                      {subItem.icon}
+                                      <SidebarIcon icon={subItem.icon} className="h-4 w-4" />
                                     </span>
                                     <span className="font-bold text-sm">{subItem.label}</span>
                                   </Link>
@@ -388,7 +398,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                         >
                           <div className="flex items-center gap-3">
                             <span className={`font-bold ${active ? 'text-teal-600' : 'text-gray-600'}`}>
-                              {item.icon}
+                              <SidebarIcon icon={item.icon} className="h-4 w-4" />
                             </span>
                             <span className="font-bold text-sm">{item.label}</span>
                           </div>
@@ -413,7 +423,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                               style={{color: subActive ? 'white' : 'rgba(255,255,255,0.6)', backgroundColor: subActive ? 'rgba(16,185,129,0.15)' : undefined}}
                             >
                               <span className={`font-bold ${subActive ? 'text-teal-600' : 'text-gray-600'}`}>
-                                {subItem.icon}
+                                <SidebarIcon icon={subItem.icon} className="h-4 w-4" />
                               </span>
                               <span className="font-bold text-sm">{subItem.label}</span>
                             </Link>
@@ -436,7 +446,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                           `}
                           style={{color: active ? '#34d399' : 'rgba(255,255,255,0.55)', backgroundColor: active ? 'rgba(16,185,129,0.15)' : undefined}}
                         >
-                          {item.icon}
+                          <SidebarIcon icon={item.icon} className="h-4 w-4" />
                         </Link>
                       </div>
                     );
@@ -455,7 +465,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                         onMouseLeave={e => { if(!active) e.currentTarget.style.backgroundColor='transparent'; }}
                       >
                         <span className="flex-shrink-0">
-                          {item.icon}
+                          <SidebarIcon icon={item.icon} className="h-4 w-4" />
                         </span>
                         <span className="text-sm flex-1 truncate">{item.label}</span>
                         {item.badge}
@@ -499,7 +509,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
     </nav>
     )}
 
-    {/* Mobile / tablet slide-in drawer — visible only when isMobileOpen=true, on screens < lg */}
+    {/* Mobile / tablet slide-in drawer � visible only when isMobileOpen=true, on screens < lg */}
     {isMobileOpen && (
       <>
         {/* Backdrop overlay */}
@@ -535,7 +545,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
             </button>
           </div>
 
-          {/* Drawer nav items — same structure as desktop, never collapsed */}
+          {/* Drawer nav items � same structure as desktop, never collapsed */}
           <div className="flex-1 overflow-y-auto py-3" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
             {filteredSections.map((section) => {
               const visibleItems = section.items;
@@ -548,7 +558,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                     style={{color: isOpen ? 'white' : 'rgba(255,255,255,0.65)'}}
                   >
                     <div className="flex items-center gap-2.5">
-                      <span className="flex-shrink-0">{section.icon}</span>
+                      <span className="flex-shrink-0"><SidebarIcon icon={section.icon} className="h-5 w-5" /></span>
                       <span className="text-xs font-semibold uppercase tracking-wider">{section.title}</span>
                     </div>
                     <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} style={{color:'rgba(255,255,255,0.4)'}} />
@@ -574,7 +584,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                 style={{color: active ? 'white' : 'rgba(255,255,255,0.7)', backgroundColor: active ? 'rgba(16,185,129,0.15)' : undefined}}
                               >
                                 <div className="flex items-center gap-3">
-                                  <span className={`font-bold ${active ? 'text-teal-600' : 'text-gray-600'}`}>{item.icon}</span>
+                                  <span className={`font-bold ${active ? 'text-teal-600' : 'text-gray-600'}`}><SidebarIcon icon={item.icon} className="h-4 w-4" /></span>
                                   <span className="font-bold text-sm">{item.label}</span>
                                 </div>
                                 <ChevronRight className={`h-3.5 w-3.5 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
@@ -592,7 +602,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                     }`}
                                     style={{color: subActive ? 'white' : 'rgba(255,255,255,0.65)', backgroundColor: subActive ? 'rgba(16,185,129,0.15)' : undefined}}
                                   >
-                                    <span>{subItem.icon}</span>
+                                    <span><SidebarIcon icon={subItem.icon} className="h-4 w-4" /></span>
                                     <span className="text-sm">{subItem.label}</span>
                                   </Link>
                                 );
@@ -611,7 +621,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                               }`}
                               style={{color: active ? 'white' : 'rgba(255,255,255,0.7)', backgroundColor: active ? 'rgba(16,185,129,0.15)' : undefined}}
                             >
-                              <span className="flex-shrink-0">{item.icon}</span>
+                              <span className="flex-shrink-0"><SidebarIcon icon={item.icon} className="h-4 w-4" /></span>
                               <span className="text-sm flex-1 truncate">{item.label}</span>
                               {item.badge}
                             </Link>

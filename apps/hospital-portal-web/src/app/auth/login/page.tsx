@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { authApi, initializeApi, getApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
 import { Smartphone, Key } from 'lucide-react';
-import { useAuthTenants } from '@/components/auth/useAuthTenants';
+import { useAuthTenants, DEFAULT_LOGIN_TENANT_ID } from '@/components/auth/useAuthTenants';
 import { useAuthTenant } from '@/components/auth/AuthTenantContext';
 import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader';
 import {
@@ -67,7 +67,7 @@ export default function LoginPage() {
 
     try {
       const api = getApi();
-      const createTenantId = tenantId || '155fe198-6ae5-4a01-9254-ead5b427247e';
+      const createTenantId = tenantId || DEFAULT_LOGIN_TENANT_ID;
       await api.post(`/auth/debug/create-admin?tenantId=${createTenantId}`);
       alert('Admin user created successfully! Email: admin@hospital.com, Password: Admin@123456');
       setEmail('admin@hospital.com');

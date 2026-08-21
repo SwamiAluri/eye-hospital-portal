@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Ban, Loader2 } from 'lucide-react';
+import { Ban, Loader2 } from 'lucide-react';
 import type { MarkReadyGateResult } from '@/lib/ip-management/preop-mark-ready-gates';
 import type { PreOpStepKey } from '@/lib/ip-management/preop-steps';
 import { WARD_PREOP_TEST_IDS } from '@/lib/ip-management/ward-preop-test-ids';
@@ -59,16 +59,6 @@ export function PreOpMarkReadyFooter({
             </div>
           </div>
         </div>
-      )}
-
-      {!loading && gates?.canMarkReady && (
-        <p
-          data-testid={WARD_PREOP_TEST_IDS.markReadyReadyNote}
-          className="flex items-center gap-1.5 text-[11px] text-emerald-700"
-        >
-          <AlertTriangle className="h-3 w-3 text-emerald-600" aria-hidden="true" />
-          Surgery hard stops cleared — you can mark ready. Other checklist items may still warn.
-        </p>
       )}
 
       <div className="flex justify-end">

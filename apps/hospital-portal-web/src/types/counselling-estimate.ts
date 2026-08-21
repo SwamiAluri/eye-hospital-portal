@@ -33,6 +33,7 @@ export interface CounsellingPackageAddonsBlob {
   /** Phase 1+ estimate engine fields */
   estimateMode?: CounsellingEstimateMode;
   packageTemplateId?: string;
+  selectedIolId?: string;
   discountType?: CounsellingDiscountType | null;
   discountValue?: number;
   discountReason?: string;

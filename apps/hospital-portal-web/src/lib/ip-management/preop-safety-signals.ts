@@ -139,7 +139,7 @@ export function computePreOpSafetySignals(input: SafetySignalsInput): PreOpSafet
       tone: 'alert',
       label: 'Allergies',
       detail: allergies.text ?? 'Documented',
-      navigateStep: 'anaesthesia',
+      navigateStep: 'pac',
     });
   } else if (allergies.status === 'nkda') {
     segments.push({
@@ -147,7 +147,7 @@ export function computePreOpSafetySignals(input: SafetySignalsInput): PreOpSafet
       tone: 'neutral',
       label: 'Allergies',
       detail: 'NKDA',
-      navigateStep: 'anaesthesia',
+      navigateStep: 'pac',
     });
   } else {
     segments.push({
@@ -155,7 +155,7 @@ export function computePreOpSafetySignals(input: SafetySignalsInput): PreOpSafet
       tone: 'caution',
       label: 'Allergies',
       detail: 'Not documented',
-      navigateStep: 'anaesthesia',
+      navigateStep: 'pac',
     });
   }
 

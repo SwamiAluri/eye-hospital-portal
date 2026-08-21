@@ -239,7 +239,7 @@ export async function apiSavePacAssessment(
   request: APIRequestContext,
   login: LoginPayload,
   journeyId: string,
-): Promise<boolean> {
+): Promise<{ ok: boolean; anaesthesiaPlan?: string; error?: string }> {
   const res = await request.put(
     `${E2E_IP_API_BASE}/ip-management/journeys/${journeyId}/pac-assessment`,
     {
@@ -250,10 +250,32 @@ export async function apiSavePacAssessment(
         physicalStatusAsa: 2,
         anaesthesiaPlan: 'Local',
         consentType: 'Written',
+        airwayExam: { mallampati: 2, mouthOpening: 'Normal' },
+        systemicReview: { cvs: 'NAD', respiratory: 'NAD' },
       },
     },
   );
-  return res.ok();
+  const body = (await res.json().catch(() => ({}))) as {
+    anaesthesiaPlan?: string;
+    error?: string;
+  };
+  if (!res.ok()) {
+    return { ok: false, error: body.error ?? res.statusText() };
+  }
+  return { ok: true, anaesthesiaPlan: body.anaesthesiaPlan };
+}
+
+export async function apiGetPacAssessment(
+  request: APIRequestContext,
+  login: LoginPayload,
+  journeyId: string,
+): Promise<{ bp?: string; anaesthesiaPlan?: string; error?: string } | null> {
+  const res = await request.get(
+    `${E2E_IP_API_BASE}/ip-management/journeys/${journeyId}/pac-assessment`,
+    { headers: ipApiHeaders(login.accessToken) },
+  );
+  if (!res.ok()) return null;
+  return (await res.json()) as { bp?: string; anaesthesiaPlan?: string; error?: string };
 }
 
 export function findExpectedJourneyForSession(
@@ -312,11 +334,11 @@ export async function expectWorkspaceOpen(page: Page): Promise<void> {
   await expect(page.getByTestId(WARD_PREOP_TEST_IDS.stepNav)).toBeVisible();
 }
 
-/** Workspace v2 8-step keys (docs/ward-preop-redesign-phase0-mapping.md §2). */
+/** Workspace v2 step keys. */
 export type WardPreOpStep =
   | 'investigations'
   | 'evaluation'
-  | 'anaesthesia'
+  | 'pac'
   | 'consent'
   | 'financial'
   | 'fasting'
@@ -343,7 +365,7 @@ export async function navigateChecklistSection(
         ? 'evaluation'
         : section === 'wardSafety'
           ? 'bedside'
-          : 'anaesthesia';
+          : 'pac';
 
   const panelTestId =
     section === 'investigations'
@@ -515,29 +537,27 @@ export async function gotoCounsellingWrapup(page: Page, sessionId: string): Prom
   await goToPhase(page, 'wrapup');
 }
 
-export async function expandPacAccordion(page: Page, key: string): Promise<void> {
-  const accordion = page.getByTestId(WARD_PREOP_TEST_IDS.pacAccordion(key));
-  await expect(accordion).toBeVisible();
-  const header = accordion.locator('button').first();
-  if ((await header.getAttribute('aria-expanded')) !== 'true') {
-    await header.click();
-  }
+export async function ensurePacSectionVisible(page: Page): Promise<void> {
+  await expect(page.getByTestId(WARD_PREOP_TEST_IDS.sectionPac)).toBeVisible();
+}
+
+/** @deprecated PAC is a continuous sheet — use ensurePacSectionVisible */
+export async function expandPacAccordion(page: Page, _key?: string): Promise<void> {
+  await ensurePacSectionVisible(page);
 }
 
 export async function fillPacRequiredFields(page: Page): Promise<void> {
   const pac = page.getByTestId(WARD_PREOP_TEST_IDS.sectionPac);
-  await expandPacAccordion(page, 'complete');
-  const completeBtn = page.getByRole('button', { name: /complete pac assessment/i });
+  const completeBtn = page.getByTestId(WARD_PREOP_TEST_IDS.pacCompleteButton);
   if (await completeBtn.isEnabled().catch(() => false)) return;
 
-  await expandPacAccordion(page, 'assessment');
-  const bp = pac.getByPlaceholder('120/80');
+  const bp = pac.getByTestId(WARD_PREOP_TEST_IDS.pacFieldBp);
   if ((await bp.inputValue()) !== '120/80') {
     await bp.fill('120/80');
   }
   await bp.blur();
 
-  const hr = pac.locator('div').filter({ hasText: /^HR \(bpm\)/ }).getByRole('spinbutton');
+  const hr = pac.getByTestId(WARD_PREOP_TEST_IDS.pacFieldHr);
   if ((await hr.inputValue()) !== '72') {
     await hr.fill('72');
   }
@@ -545,15 +565,13 @@ export async function fillPacRequiredFields(page: Page): Promise<void> {
 
   await pac.getByRole('button', { name: '2', exact: true }).click();
 
-  await expandPacAccordion(page, 'plan');
   await pac.getByRole('button', { name: 'Local', exact: true }).click();
   await pac.getByRole('button', { name: 'Written', exact: true }).click();
   await expect(pac.getByText('Ready to complete')).toBeVisible({ timeout: 20_000 });
 }
 
 export async function completePacWithUnverifiedWarning(page: Page): Promise<void> {
-  await expandPacAccordion(page, 'complete');
-  const completeBtn = page.getByRole('button', { name: /complete pac assessment/i });
+  const completeBtn = page.getByTestId(WARD_PREOP_TEST_IDS.pacCompleteButton);
   await expect(completeBtn).toBeEnabled({ timeout: 15_000 });
   await completeBtn.click();
   await expect(page.getByTestId(WARD_PREOP_TEST_IDS.pacCompleteWarnDialog)).toBeVisible({

@@ -22,8 +22,9 @@ public record AddBillingTransactionRequest(
 );
 
 /// <summary>
-/// Live insurance pre-auth status for the Ward Pre-Op Financial step, projected
-/// from the CCMS coverage case (read-only guidance). Mirrors CcmsAdmissionValidation.
+/// Live coverage &amp; payment status for the Ward Pre-Op step, projected from the
+/// CCMS coverage case (read-only; not an editable source of truth).
+/// Mirrors CcmsAdmissionValidation / AdmissionCoverageDecision.
 /// </summary>
 public record PreauthStatusDto(
     bool     Allowed,
@@ -31,7 +32,15 @@ public record PreauthStatusDto(
     string?  WarningMessage,
     string?  BlockReason,
     string?  PreAuthNumber,
-    decimal? ApprovedAmount
+    decimal? ApprovedAmount,
+    Guid?    CaseId = null,
+    string?  CoverageState = null,
+    string   Decision = "ALLOW",
+    string?  PaymentMode = null,
+    bool     IsEmergencyFinancialClearance = false,
+    bool     RequiresOverride = false,
+    DateTime? LastUpdatedAt = null,
+    bool     CcmsUnavailable = false
 );
 
 // ─── Intra-Op Notes ───────────────────────────────────────────────────────────

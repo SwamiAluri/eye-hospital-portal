@@ -202,10 +202,21 @@ public class TenantService : ITenantService
         return tenants.ToDictionary(t => t.Id.ToString(), t => t.TenantCode ?? "NO_CODE");
     }
 
+    public async Task EnsureDefaultLoginTenantAsync()
+    {
+        await DevTenantBootstrap.EnsureIndiaEyeTenantAsync(_context);
+        await DevTenantBootstrap.EnsureIndiaEyeAdminUserAsync(_context);
+    }
+
     public async Task<List<object>> GetAllTenantsForLoginAsync()
     {
+        await EnsureDefaultLoginTenantAsync();
+
         var tenants = await _context.Tenants
-            .Where(t => t.Status == "Active")
+            .Where(t => t.Status == "Active" || t.Status == "active")
+            .OrderBy(t => t.Id == DevTenantBootstrap.IndiaEyeTenantId ? 0 : 1)
+            .ThenBy(t => t.TenantCode == DevTenantBootstrap.IndiaEyeTenantCode ? 0 : 1)
+            .ThenBy(t => t.Name)
             .Select(t => new
             {
                 id = t.Id.ToString(),

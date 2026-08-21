@@ -5,6 +5,17 @@ using IpManagementService.Models.Dtos;
 
 namespace IpManagementService.Services;
 
+/// <summary>
+/// Records ward-level advance/payment transactions against a patient journey.
+///
+/// Phase 2 ownership clarification:
+///   • Canonical hospital charges / bill finalization → Billing (Auth OpdBillService)
+///   • Coverage allocation / claims / settlement → CCMS
+///   • This service is a clinical-ward projection helper (advances, receipts shown in IP)
+///     and must not become a competing billing engine.
+///   • IP FinancialState.Settled is only a BillFinalized *bridge* when OPD finalize
+///     is not used for that journey.
+/// </summary>
 public class BillingService
 {
     private readonly IpManagementDbContext _db;

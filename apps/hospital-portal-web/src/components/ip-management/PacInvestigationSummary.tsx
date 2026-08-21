@@ -14,6 +14,8 @@ export interface PacInvestigationSummaryProps {
   onEditInInvestigations?: () => void;
   /** Phase 4: collapsed chip in the PAC Reference accordion (expand for full table). */
   defaultCollapsed?: boolean;
+  /** Inline chip only — hides duplicate navigation and footer notes. */
+  compact?: boolean;
 }
 
 function statusLabel(entryStatus: string): string {
@@ -39,6 +41,7 @@ export function PacInvestigationSummary({
   journeyId,
   onEditInInvestigations,
   defaultCollapsed = false,
+  compact = false,
 }: PacInvestigationSummaryProps) {
   const [summary, setSummary] = useState<WardInvestigationSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +86,74 @@ export function PacInvestigationSummary({
   ]
     .filter(Boolean)
     .join(' · ');
+
+  if (compact) {
+    return (
+      <div data-testid={WARD_PREOP_TEST_IDS.pacInvestigationSummary} className="text-sm text-gray-800">
+        {applicable.length === 0 ? (
+          <span className="text-gray-500">—</span>
+        ) : (
+          <button
+            type="button"
+            data-testid={WARD_PREOP_TEST_IDS.pacInvestigationChip}
+            onClick={() => setExpanded(true)}
+            className="text-left font-medium hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+          >
+            {chipLabel}
+          </button>
+        )}
+        {expanded && (
+          <div className="mt-2 overflow-hidden rounded border border-gray-200">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-gray-500">
+                  <th className="px-3 py-2 text-left font-medium">Test</th>
+                  <th className="px-3 py-2 text-left font-medium">Result</th>
+                  <th className="px-3 py-2 text-left font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {applicable.map(item => {
+                  const hasValue = !!item.resultValue?.trim();
+                  return (
+                    <tr key={item.itemKey}>
+                      <td className="px-3 py-2 text-gray-800">{item.itemLabel}</td>
+                      <td className="px-3 py-2 text-gray-700">
+                        {hasValue ? (
+                          <>
+                            {item.resultValue}
+                            {item.resultUnit ? ` ${item.resultUnit}` : ''}
+                          </>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`inline-flex rounded px-2 py-0.5 text-[10px] font-medium ${statusClass(item.entryStatus, hasValue)}`}
+                        >
+                          {statusLabel(item.entryStatus)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="border-t border-gray-100 px-3 py-2 text-right">
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                className="text-xs font-medium text-gray-600 hover:text-gray-800"
+              >
+                Collapse
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <section className="space-y-2" data-testid={WARD_PREOP_TEST_IDS.pacInvestigationSummary}>

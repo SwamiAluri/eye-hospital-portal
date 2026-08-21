@@ -79,7 +79,7 @@ export function AdmitPanel({ journey, wards, onAdmitted }: AdmitPanelProps) {
         attendantRelationship: attendantRel || undefined,
         primarySurgeonId: primarySurgeonId || undefined,
         primaryNurseId: primaryNurseId || undefined,
-        // Financial bypass / clinical override now live on the Financial step.
+        // Financial bypass / clinical override now live on the Coverage & Payment step.
         // Gates are warn-only and already surfaced on the workspace top bar.
         acknowledgeWarnings: true,
       });
@@ -94,6 +94,8 @@ export function AdmitPanel({ journey, wards, onAdmitted }: AdmitPanelProps) {
       } else {
         setError('Admission failed. Patient may not be in Expected state.');
       }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Admission failed.');
     } finally {
       setSaving(false);
     }

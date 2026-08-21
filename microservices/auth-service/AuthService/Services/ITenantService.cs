@@ -21,5 +21,6 @@ public interface ITenantService
     Task<int> GetOrganizationCountAsync(Guid tenantId);
     Task<int> GetBranchCountAsync(Guid tenantId);
     Task<Dictionary<string, string>> GetAllTenantCodesForDebugAsync();
+    Task EnsureDefaultLoginTenantAsync();
     Task<List<object>> GetAllTenantsForLoginAsync();
 }

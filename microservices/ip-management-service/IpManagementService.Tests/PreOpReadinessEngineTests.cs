@@ -48,7 +48,7 @@ public class PreOpReadinessEngineTests
     }
 
     [Fact]
-    public void Compute_anaesthesia_complete_when_pac_done()
+    public void Compute_pac_complete_when_pac_done()
     {
         var dto = PreOpReadinessEngine.Compute(
             ClinicalState.Admitted,
@@ -59,9 +59,10 @@ public class PreOpReadinessEngineTests
             null,
             new PreOpReadinessEngine.PacSlice("Completed"));
 
-        var anaesthesia = dto.Steps.First(s => s.Key == "anaesthesia");
-        Assert.Equal("completed", anaesthesia.Status);
-        Assert.Equal(1, anaesthesia.Completed);
+        var pacStep = dto.Steps.First(s => s.Key == "pac");
+        Assert.Equal("completed", pacStep.Status);
+        Assert.Equal(1, pacStep.Completed);
+        Assert.DoesNotContain(dto.Steps, s => s.Key == "anaesthesia");
     }
 
     [Fact]

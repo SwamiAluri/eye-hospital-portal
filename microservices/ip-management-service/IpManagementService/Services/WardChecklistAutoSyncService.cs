@@ -22,6 +22,11 @@ public class WardChecklistAutoSyncService
     public const string ConsentSurgeonKey       = "consent_surgeon_signed";
     public const string InformedOtKey           = "informed_surgeon_anaesthesia_ot";
 
+    public const string AnaesthesiaTypeKey           = "anaesthesia_type_selected";
+    public const string AnaesthetistAssignedKey      = "anaesthetist_assigned";
+    public const string FitnessAssessedKey           = "fitness_assessed";
+    public const string ContraindicationsReviewedKey = "contraindications_reviewed";
+
     private static readonly string[] DilatationKeywords =
     [
         "tropicamide", "cyclopentolate", "phenylephrine", "homatropine",
@@ -83,6 +88,68 @@ public class WardChecklistAutoSyncService
             journeyId, tenantId, userId, item.Id,
             new SavePreOpCompletionRequest(
                 item.Id, true, false, null, notes, null));
+    }
+
+    public async Task SyncClearanceItemByKeyAsync(
+        Guid journeyId,
+        Guid tenantId,
+        Guid userId,
+        string itemKey,
+        bool completed,
+        string? resultValue = null,
+        string? notes = null)
+    {
+        if (!completed) return;
+
+        var item = await _db.PreOpSectionItems
+            .FirstOrDefaultAsync(i => i.ItemKey == itemKey
+                                      && i.Category == "Anaesthesia"
+                                      && i.DeletedAt == null
+                                      && i.Status == "active");
+        if (item is null) return;
+
+        await PreOp.GetOrInitClearanceAsync(
+            journeyId, tenantId, userId,
+            new InitPreOpClearanceRequest(null, null));
+
+        var clearance = await _db.PreOpClearances
+            .FirstAsync(c => c.JourneyId == journeyId && c.TenantId == tenantId && c.DeletedAt == null);
+
+        var existing = await _db.PreOpCompletions
+            .FirstOrDefaultAsync(c => c.ClearanceId == clearance.Id
+                                      && c.ItemId == item.Id
+                                      && c.DeletedAt == null);
+
+        if (existing is { IsCompleted: true } or { IsBypassed: true })
+            return;
+
+        await PreOp.SaveCompletionAsync(
+            journeyId, tenantId, userId, item.Id,
+            new SavePreOpCompletionRequest(
+                item.Id, true, false, null, notes, null, resultValue));
+    }
+
+    public async Task SyncAnaesthesiaFromPacAsync(
+        Guid journeyId,
+        Guid tenantId,
+        Guid userId,
+        PatientJourney journey,
+        PacAssessment pac)
+    {
+        await SyncClearanceItemByKeyAsync(
+            journeyId, tenantId, userId, AnaesthesiaTypeKey, true, pac.AnaesthesiaPlan);
+        await SyncClearanceItemByKeyAsync(
+            journeyId, tenantId, userId, FitnessAssessedKey, true);
+        await SyncClearanceItemByKeyAsync(
+            journeyId, tenantId, userId, ContraindicationsReviewedKey, true);
+
+        var anaesthetist = journey.AnaesthetistName?.Trim()
+                           ?? pac.CompletedByDesignation?.Trim();
+        if (!string.IsNullOrWhiteSpace(anaesthetist))
+        {
+            await SyncClearanceItemByKeyAsync(
+                journeyId, tenantId, userId, AnaesthetistAssignedKey, true, anaesthetist);
+        }
     }
 
     public async Task SyncFromInvestigationsAsync(
