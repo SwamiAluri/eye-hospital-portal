@@ -13,28 +13,43 @@ public class ChecklistGateService
     private readonly AnaesthesiaMonitoringService _monitoring;
     private readonly PacAssessmentService       _pac;
     private readonly WardInvestigationChecklistService _investigation;
+    private readonly ICcmsAdmissionClient?      _ccms;
+    private readonly IAuthBillingClient?        _billing;
+    private readonly IAuthAppointmentStatusClient? _appointments;
 
     public ChecklistGateService(
         IpManagementDbContext db,
         SurgicalSafetyService surgicalSafety,
         AnaesthesiaMonitoringService monitoring,
         PacAssessmentService pac,
-        WardInvestigationChecklistService investigation)
+        WardInvestigationChecklistService investigation,
+        ICcmsAdmissionClient? ccms = null,
+        IAuthBillingClient? billing = null,
+        IAuthAppointmentStatusClient? appointments = null)
     {
         _db          = db;
         _surgicalSafety = surgicalSafety;
         _monitoring  = monitoring;
         _pac         = pac;
         _investigation = investigation;
+        _ccms        = ccms;
+        _billing     = billing;
+        _appointments = appointments;
     }
 
-    public async Task<ChecklistGateResultDto> EvaluateTransitionAsync(
+    public virtual async Task<ChecklistGateResultDto> EvaluateTransitionAsync(
         PatientJourney journey, string newState, Guid tenantId)
     {
         var key = $"{journey.ClinicalState}->{newState}";
         var warnings = new List<ChecklistGateWarningDto>();
 
-        switch (key)
+        // Typed LAMA/Death/Transfer and clinical close from PostOp/Admitted skip ReadyForDischarge.
+        // Money + follow-up still belong on any → Discharged, not only the routine edge.
+        if (newState == ClinicalState.Discharged)
+        {
+            await AddDischargeWarningsAsync(journey, tenantId, warnings);
+        }
+        else switch (key)
         {
             case $"{ClinicalState.Expected}->{ClinicalState.Admitted}":
                 await AddAdmissionPhaseWarningsAsync(journey, tenantId, warnings);
@@ -42,6 +57,7 @@ public class ChecklistGateService
 
             case $"{ClinicalState.Admitted}->{ClinicalState.ReadyForSurgery}":
                 await AddMarkReadyHardBlocksAsync(journey, tenantId, warnings);
+                await AddMarkReadySoftWarningsAsync(journey, tenantId, warnings);
                 break;
 
             case $"{ClinicalState.ReadyForSurgery}->{ClinicalState.SentToOT}":
@@ -54,10 +70,6 @@ public class ChecklistGateService
 
             case $"{ClinicalState.PostOp}->{ClinicalState.ReadyForDischarge}":
                 await AddPostOpWarningAsync(journey, tenantId, warnings);
-                break;
-
-            case $"{ClinicalState.ReadyForDischarge}->{ClinicalState.Discharged}":
-                await AddDischargeWarningsAsync(journey.Id, tenantId, warnings);
                 break;
         }
 
@@ -116,11 +128,22 @@ public class ChecklistGateService
         // Financial: warn (never block) when an outstanding balance has not been
         // collected and Emergency FC has not been applied. Insurance pre-auth is a
         // separate hard gate (CcmsAdmissionClient); this covers self-pay & copay.
-        if (journey.BalanceDue is > 0 && !journey.EmergencyFcApplied)
+        decimal outstanding = journey.BalanceDue ?? 0;
+        try
+        {
+            if (_billing is not null)
+            {
+                var billing = await _billing.GetSummaryAsync(journey.Id);
+                outstanding = billing.PatientBalance > 0 ? billing.PatientBalance : billing.BalanceDue;
+            }
+        }
+        catch { /* billing overlay optional on admit warn */ }
+
+        if (outstanding > 0 && !journey.EmergencyFcApplied)
         {
             warnings.Add(new ChecklistGateWarningDto(
                 "financial_balance_outstanding",
-                $"Outstanding balance of \u20B9{journey.BalanceDue:N0} not yet collected.",
+                $"Outstanding patient balance of \u20B9{outstanding:N0} not yet collected.",
                 "warn",
                 false));
         }
@@ -273,7 +296,8 @@ public class ChecklistGateService
                                       && c.DeletedAt == null);
         if (clearance is not null)
         {
-            if (!await IsCompletionDoneAsync(clearance.Id, tenantId, "surgery_consent_signed"))
+            if (await HasCompletionRowAsync(clearance.Id, tenantId, "surgery_consent_signed")
+                && !await IsCompletionDoneAsync(clearance.Id, tenantId, "surgery_consent_signed"))
             {
                 warnings.Add(new ChecklistGateWarningDto(
                     "surgical_consent_unsigned",
@@ -282,7 +306,8 @@ public class ChecklistGateService
                     false));
             }
 
-            if (!await IsLateralityAttestedAsync(journey.EyeOperated, clearance.Id, tenantId))
+            if (await HasCompletionRowAsync(clearance.Id, tenantId, "surgery_site_marked")
+                && !await IsLateralityAttestedAsync(journey.EyeOperated, clearance.Id, tenantId))
             {
                 warnings.Add(new ChecklistGateWarningDto(
                     "laterality_not_attested",
@@ -302,6 +327,49 @@ public class ChecklistGateService
                 "block",
                 false));
         }
+    }
+
+    /// <summary>
+    /// Dilation countdown and vitals thresholds. Severity is always warn (D-A).
+    /// Do not add these codes to <see cref="AddMarkReadyHardBlocksAsync"/>.
+    /// </summary>
+    private async Task AddMarkReadySoftWarningsAsync(
+        PatientJourney journey, Guid tenantId, List<ChecklistGateWarningDto> warnings)
+    {
+        var meds = await _db.PreOpMedicationLogs
+            .AsNoTracking()
+            .Where(m => m.PatientJourneyId == journey.Id
+                        && m.TenantId == tenantId
+                        && m.DeletedAt == null)
+            .ToListAsync();
+        DilationReadiness.AddMarkReadyWarning(warnings, DilationReadiness.From(meds, DateTime.UtcNow));
+
+        var latest = await _db.VitalSigns
+            .AsNoTracking()
+            .Where(v => v.JourneyId == journey.Id
+                        && v.TenantId == tenantId
+                        && v.DeletedAt == null
+                        && v.Context == null)
+            .OrderByDescending(v => v.RecordedAt)
+            .FirstOrDefaultAsync();
+        var threshold = await _db.IpVitalThresholds
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.TenantId == tenantId)
+            ?? IpVitalThreshold.Defaults(tenantId);
+        VitalThresholdPolicy.AddMarkReadyWarning(warnings, VitalThresholdPolicy.Evaluate(latest, threshold));
+    }
+
+    private async Task<bool> HasCompletionRowAsync(Guid clearanceId, Guid tenantId, string itemKey)
+    {
+        return await (
+            from cp in _db.PreOpCompletions
+            join item in _db.PreOpSectionItems on cp.ItemId equals item.Id
+            where cp.ClearanceId == clearanceId
+                  && cp.TenantId == tenantId
+                  && cp.DeletedAt == null
+                  && item.ItemKey == itemKey
+            select cp.Id
+        ).AnyAsync();
     }
 
     private async Task<bool> IsCompletionDoneAsync(Guid clearanceId, Guid tenantId, string itemKey)
@@ -457,8 +525,60 @@ public class ChecklistGateService
     }
 
     private async Task AddDischargeWarningsAsync(
-        Guid journeyId, Guid tenantId, List<ChecklistGateWarningDto> warnings)
+        PatientJourney journey, Guid tenantId, List<ChecklistGateWarningDto> warnings)
     {
+        var journeyId = journey.Id;
+        var coverageBased = PaymentModeCoveragePolicy.IsCoverageBased(journey.PaymentMode);
+        decimal? patientShare = null;
+        var ccmsUnavailable = false;
+        decimal collected = 0;
+        var billingLedgerAvailable = false;
+        decimal patientBalance = 0;
+        if (_ccms is not null && coverageBased)
+        {
+            var v = await _ccms.ValidateAdmissionAsync(
+                journey.Id, journey.CounselingSessionId, tenantId, coverageBased: true, journey.EmergencyFcApplied);
+            patientShare = v.PatientShareAmount;
+            ccmsUnavailable = v.CcmsUnavailable;
+        }
+        try
+        {
+            if (_billing is not null)
+            {
+                var billing = await _billing.GetSummaryAsync(journey.Id);
+                collected = billing.PatientPaid > 0 ? billing.PatientPaid : billing.TotalCollected;
+                if (billing.OpdBillId is Guid billId && billId != Guid.Empty)
+                {
+                    billingLedgerAvailable = true;
+                    patientBalance = billing.PatientBalance;
+                }
+            }
+        }
+        catch { /* billing overlay is optional for the gate */ }
+
+        var cashDue = DischargeFinancialClearancePolicy.CashLedgerDue(
+            billingLedgerAvailable, patientBalance, journey.BalanceDue);
+        if (DischargeFinancialClearancePolicy.IsOutstanding(
+                coverageBased, cashDue, patientShare, ccmsUnavailable, collected))
+        {
+            var due = DischargeFinancialClearancePolicy.PatientObligationDue(
+                coverageBased, cashDue, patientShare, ccmsUnavailable, collected);
+            var dueLabel = due == decimal.MaxValue ? "unknown (CCMS unavailable)" : $"₹{due:N0}";
+            warnings.Add(new ChecklistGateWarningDto(
+                "patient_obligation_outstanding",
+                $"Clinical discharge blocked until patient share / cash due is collected ({dueLabel}). CCMS payer settlement does not hold the bed. Apply discharge override with a reason to proceed.",
+                "block",
+                true,
+                DischargeBlockerCategory.Financial));
+        }
+
+        var followupId = await _db.PostOpInstructions
+            .Where(i => i.PatientJourneyId == journeyId && i.TenantId == tenantId && i.DeletedAt == null)
+            .Select(i => i.FollowupAppointmentId)
+            .FirstOrDefaultAsync();
+        await FollowupAppointmentLock.AddDischargeBlockAsync(
+            warnings, followupId, journey, tenantId, _appointments);
+
         var clearanceOk = await _monitoring.IsDischargeClearanceCompleteAsync(journeyId, tenantId);
         if (!clearanceOk)
         {

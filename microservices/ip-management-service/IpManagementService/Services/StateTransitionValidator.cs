@@ -15,17 +15,19 @@ public static class StateTransitionValidator
     {
         [ClinicalState.Expected]         = new() { ClinicalState.Admitted },
         [ClinicalState.Admitted]         = new() { ClinicalState.ReadyForSurgery },
-        [ClinicalState.ReadyForSurgery]  = new() { ClinicalState.SentToOT },
+        [ClinicalState.ReadyForSurgery]  = new() { ClinicalState.SentToOT, ClinicalState.Admitted },
         // SentToOT → ReadyForSurgery allows OT to return a patient before surgery starts
         [ClinicalState.SentToOT]         = new() { ClinicalState.InOT, ClinicalState.ReadyForSurgery },
         [ClinicalState.InOT]             = new() { ClinicalState.SurgeryCompleted, ClinicalState.ReadyForSurgery },
         [ClinicalState.SurgeryCompleted] = new() { ClinicalState.PostOp },
         [ClinicalState.PostOp]           = new() { ClinicalState.ReadyForDischarge },
         [ClinicalState.ReadyForDischarge]= new() { ClinicalState.Discharged },
-        [ClinicalState.Discharged]       = new(),
+        [ClinicalState.Discharged]       = new() { ClinicalState.ReadyForDischarge },
         // Cancelled-surgery off-ramp (Phase 1): single exit is Rebook → Expected.
         // Entry is via CancelTodaySurgeryAsync (ValidateCancelToday), not the forward graph.
         [ClinicalState.CancelledSurgery] = new() { ClinicalState.Expected },
+        // Admission-cancelled off-ramp: terminal. Entry via CancelAdmissionAsync.
+        [ClinicalState.AdmissionCancelled] = new(),
     };
 
     // ── OT state ───────────────────────────────────────────────────────────────
@@ -46,9 +48,10 @@ public static class StateTransitionValidator
         [FinancialState.NotCreated]    = new() { FinancialState.Draft },
         [FinancialState.Draft]         = new() { FinancialState.Estimated },
         [FinancialState.Estimated]     = new() { FinancialState.Confirmed },
-        [FinancialState.Confirmed]     = new() { FinancialState.PartiallyPaid, FinancialState.Paid },
-        [FinancialState.PartiallyPaid] = new() { FinancialState.Paid },
-        [FinancialState.Paid]          = new() { FinancialState.Settled },
+        [FinancialState.Confirmed]     = new() { FinancialState.PartiallyPaid },
+        [FinancialState.PartiallyPaid] = new(),
+        // Paid / Settled are Billing / CCMS terminals — IP cannot advance into them.
+        [FinancialState.Paid]          = new(),
         [FinancialState.Settled]       = new(),
     };
 
@@ -70,7 +73,12 @@ public static class StateTransitionValidator
         => Validate("OtState", OtAllowed, from, to);
 
     public static void ValidateFinancial(string from, string to)
-        => Validate("FinancialState", FinancialAllowed, from, to);
+    {
+        if (to is FinancialState.Paid or FinancialState.Settled)
+            throw new ArgumentException(
+                "[FinancialState] Paid and Settled are owned by Billing / Coverage & Claims. IP cannot set them.");
+        Validate("FinancialState", FinancialAllowed, from, to);
+    }
 
     public static void ValidatePostOp(string from, string to)
         => Validate("PostOpState", PostOpAllowed, from, to);
@@ -96,6 +104,46 @@ public static class StateTransitionValidator
             throw new InvalidOperationException(
                 "[CancelToday] Cannot cancel after OT has accepted the patient.");
         }
+    }
+
+    /// <summary>
+    /// Admission cancellation is allowed only from Expected — before irreversible
+    /// clinical activity (admit / OT / surgery).
+    /// </summary>
+    public static void ValidateCancelAdmission(string fromClinical)
+    {
+        if (fromClinical != ClinicalState.Expected)
+            throw new InvalidOperationException(
+                $"[CancelAdmission] Admission can only be cancelled from Expected (current '{fromClinical}').");
+    }
+
+    /// <summary>
+    /// LAMA / death / typed discharge may close from in-hospital states except Expected,
+    /// InOT (use death only), cancelled off-ramps, and already Discharged.
+    /// Does not add extra clinical graph nodes.
+    /// </summary>
+    public static void ValidateTypedDischarge(string fromClinical, string dischargeType)
+    {
+        var type = DischargeType.Normalize(dischargeType);
+        if (fromClinical is ClinicalState.Expected
+            or ClinicalState.Discharged
+            or ClinicalState.CancelledSurgery
+            or ClinicalState.AdmissionCancelled)
+        {
+            throw new InvalidOperationException(
+                $"[DischargeType] Cannot apply {type} from '{fromClinical}'.");
+        }
+
+        if (fromClinical == ClinicalState.InOT && type != DischargeType.Death)
+            throw new InvalidOperationException(
+                "[DischargeType] Only Death outcome is allowed while the patient is InOT.");
+    }
+
+    public static void ValidateCancelDischarge(string fromClinical)
+    {
+        if (fromClinical != ClinicalState.Discharged)
+            throw new InvalidOperationException(
+                $"[CancelDischarge] Only a Discharged journey can be reopened (current '{fromClinical}').");
     }
 
     private static void Validate(

@@ -1,0 +1,84 @@
+---
+description: Platform-wide hospital architecture, domain ownership, stack freeze, source-of-truth, and what Cursor must never do automatically.
+alwaysApply: true
+---
+
+# Hospital platform architecture
+
+This is an **existing production-oriented Eye Hospital Management System**, not a greenfield app. UI lives in `apps/hospital-portal-web` (~294 App Router routes). Backend is existing .NET microservices. Inspect and extend. Do not invent a second architecture.
+
+This file is the platform constitution. Companion rules: `01` design system · `02` healthcare UX · `03` patient/encounter · `04`–`09` IP/ward/OT/billing/cashier/CCMS (glob-scoped) · `10` a11y · `11` frontend · `12` testing. Keep `.cursor/rules/ip-billing-ward-cross-module.mdc` and `figma-mcp.mdc`. Canonical IP/Billing/Ward/CCMS doc: `apps/hospital-portal-web/docs/ip-billing-ward-cross-module-sot.md`.
+
+## Stack freeze (do not replace)
+
+Next.js 14.2.18 · React 18 · TypeScript · App Router · Tailwind CSS 3 · shadcn/ui · Radix · Lucide · Zustand · TanStack Query · SignalR · Recharts · FullCalendar · CornerstoneJS · JWT staff auth · permission-based authorization · `ProtectedRoute`.
+
+Do **not** introduce MUI, Bootstrap, Ant, Chakra, another CSS/icon/state/data-fetching/routing framework, Nx generators, or a second design system unless the user explicitly approves.
+
+Do **not** “upgrade while here” (Next 15, Tailwind 4, React 19, new toast/table libraries).
+
+## Domain coverage (entire platform)
+
+These rules govern **every** current and future module, including:
+
+Auth/public · Patient portal · Front desk/reception · Appointments/scheduling · Queue/kiosk · Patient/MPI · Clinical/EHR · Optometry · Doctor desk · Specialty clinics · Diagnostics/imaging · Laboratory · Pharmacy · Optical · Counsellor · IP management · Ward/nursing · OT · OPD billing · IP billing · Cashier · Finance · Coverage/claims (CCMS) · Inventory · Procurement · Administration · Security/access · Compliance/quality · Operations (CSSD, biomedical, ambulance, stores, housekeeping) · Master data · Documents/medical records · Notifications/communication · Reporting/analytics · Integrations · Realtime · Dev/UAT tooling.
+
+A new module inherits these rules. Do not treat IP/Ward/OT/Billing/CCMS as the whole product.
+
+## Ownership (do not invert for UI convenience)
+
+| Domain | Owns | Must not own |
+|---|---|---|
+| Patient / MPI | Identity, demographics, merge, identifiers | Encounter clinical notes, bills |
+| Appointments | Scheduling, slots, clinic calendars | OT surgical state, billing |
+| Front desk / queue | Registration, check-in, staff queue, TV/kiosk | Clinical documentation |
+| Clinical / EHR / doctor desk / specialties | Documentation, orders, diagnoses, exam review | Billing ledger, claims |
+| Optometry / examination | Exam capture, drafts, optical Rx capture | Optical POS / inventory |
+| Diagnostics / imaging | Studies, DICOM/Cornerstone viewers, reports | Keep viewers lazy-loaded |
+| Laboratory | Lab orders, samples, results, verification | Do not assume it is a mock module — inspect first |
+| Pharmacy | Dispense, pharmacy billing, drug stock | Clinical meds list is EHR; stock is inventory-adjacent |
+| Optical | Shop, frames/lenses, optical POS | Not the same as clinical refraction Rx |
+| Counsellor | Session, estimates, surgery counselling | Not CCMS ops desk; not OT board |
+| IP management | Inpatient/day-care operational journey | Not billing ledger, not claims |
+| Ward / nursing | Bedside/ward operational UX | Not OT financials |
+| OT | Surgical operational workflow | Not billing or coverage |
+| Billing (`OpdBill`) | Charges, advances, payments, refunds, receipts | Not payer/claim lifecycle |
+| Coverage / CCMS | Eligibility, auth, claims, settlement vs payer | Not the cashier ledger |
+| Inventory / procurement | Stock vs purchasing | Keep responsibilities distinct |
+| Admin / IAM | Users, roles, permissions, org, devices, audit | Not a second clinical chart |
+| Master data | Canonical reference config | No duplicate catalogs per screen |
+| Finance / reporting | Reporting and analytics | Must not mutate transactional data |
+| Integrations / SignalR | Existing hub + outbox | No second realtime bus |
+
+IP journey financial fields are **projections**, not accounting records.
+
+## Source of truth
+
+Before any feature: identify UI owner, backend owner, DB SoT, API SoT, workflow owner, audit source.
+
+- Frontend is **never** the source of truth for transactional, clinical, financial, or coverage state.
+- Do not create a second frontend-owned store of the same records.
+- Trace changes FE → API → BE → DB → integrations.
+- Server-side validation of business-critical transitions is mandatory.
+
+## Route / navigation trees
+
+Multiple live trees exist (`/dashboard/*`, `/dashboard/admin/*`, `/admin/inventory/*`, `/patient/*`, `/auth/*`) plus historical duplicates. **Do not merge, delete, or rename routes automatically.** Canonical nav config is `src/lib/navigation/sidebar-menu-sections.tsx`. Role landing is `DashboardRouter.tsx` — change only with a real target page and explicit approval.
+
+Dev/UAT (`/dashboard/dev/uat`, widget gallery, showcases) must not become production workflows.
+
+## Required process
+
+Inspect existing implementation → search reusable UI/domain code → ownership → SoT → APIs → permissions → workflow states → realtime/integrations → downstream modules → plan → **wait for approval** if architectural, cross-domain, destructive, financial, clinical, or security-sensitive → smallest safe change → validate → report files and behavior.
+
+Do not refactor unrelated modules in the same change.
+
+## Conflict priority
+
+1. Patient safety  2. Privacy/security  3. Financial integrity  4. Backend/SoT  5. Authorization  6. Clinical correctness  7. Domain ownership  8. Accessibility  9. Existing architecture  10. Design-system consistency  11. Performance  12. Cosmetics
+
+Never sacrifice a higher item for visual consistency.
+
+## Never do automatically (needs explicit approval)
+
+Replace the frontend stack, shadcn, Radix, Tailwind, Lucide, Zustand, TanStack Query, SignalR, Cornerstone, auth, authorization, patient/encounter architecture, billing/coverage/clinical/OT ownership, DB schema, or API contracts. Delete/merge routes or “cleanup” duplicate components. Migrate whole modules. Redesign the app. Add another design system, UI framework, store, toast lib, or icon pack. Ship mock data as production. Bypass backend validation, permissions, or audit. Silently change workflow, financial, clinical, or integration behavior. Expose PHI/PII/tokens. Remove realtime. Modify unrelated modules. Use Nx MCP on this Turbo repo.

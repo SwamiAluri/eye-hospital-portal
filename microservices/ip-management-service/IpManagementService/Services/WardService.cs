@@ -8,10 +8,12 @@ namespace IpManagementService.Services;
 public class WardService
 {
     private readonly IpManagementDbContext _db;
+    private readonly IAuthBedLifecycleClient _beds;
 
-    public WardService(IpManagementDbContext db)
+    public WardService(IpManagementDbContext db, IAuthBedLifecycleClient beds)
     {
         _db = db;
+        _beds = beds;
     }
 
     public async Task<List<WardDto>> ListAsync(Guid tenantId, Guid branchId)
@@ -96,14 +98,32 @@ public class WardService
             .Select(j => new { j.WardId, j.ClinicalState })
             .ToListAsync();
 
+        IReadOnlyList<AuthBedSnapshot> inventory = [];
+        try
+        {
+            inventory = await _beds.ListAsync(tenantId, branchId, wardName: null);
+        }
+        catch
+        {
+            inventory = [];
+        }
+
         return wards.Select(w =>
         {
             var jForWard = activeJourneys.Where(j => j.WardId == w.Id).ToList();
             var byState  = jForWard
                 .GroupBy(j => j.ClinicalState)
                 .ToDictionary(g => g.Key, g => g.Count());
-            return new WardStatsDto(w.Id, w.WardName, w.WardType, w.TotalBeds,
-                                    jForWard.Count, Math.Max(0, w.TotalBeds - jForWard.Count), byState);
+            var beds = inventory
+                .Where(b => BelongsToWard(b, w))
+                .ToList();
+            var occupied = beds.Count(b =>
+                string.Equals(b.BedStatus, "Occupied", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(b.BedStatus, "Reserved", StringComparison.OrdinalIgnoreCase));
+            var available = beds.Count(b =>
+                string.Equals(b.BedStatus, "Available", StringComparison.OrdinalIgnoreCase));
+            return new WardStatsDto(w.Id, w.WardName, w.WardType, beds.Count,
+                                    occupied, available, byState);
         }).ToList();
     }
 
@@ -113,26 +133,108 @@ public class WardService
             w => w.Id == wardId && w.TenantId == tenantId && w.DeletedAt == null);
         if (ward is null) return [];
 
-        var occupiedBedNumbers = await _db.PatientJourneys
-            .Where(j => j.WardId == wardId && j.TenantId == tenantId
-                        && j.ClinicalState != "Discharged" && j.DeletedAt == null
-                        && j.BedNumber != null)
-            .Select(j => j.BedNumber!)
-            .ToListAsync();
+        var inventory = await _beds.ListAsync(tenantId, ward.BranchId, ward.WardName, ward.Id);
+        var ofWard = inventory.Where(b => BelongsToWard(b, ward)).ToList();
+        var occupants = await LoadOccupantsAsync(tenantId, ofWard.Select(b => b.BedId).ToList());
 
-        var occupiedSet = occupiedBedNumbers.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        return Enumerable.Range(1, ward.TotalBeds).Select(i =>
+        return ofWard.Select(b =>
         {
-            var bedKey = $"Bed {i}";
-            var occupied = occupiedSet.Contains(bedKey);
+            var occupied = string.Equals(b.BedStatus, "Occupied", StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(b.BedStatus, "Reserved", StringComparison.OrdinalIgnoreCase);
+            var typeLabel = FormatBedType(b.BedType);
+            var core = string.IsNullOrWhiteSpace(b.RoomNumber)
+                ? b.BedNumber
+                : $"{b.RoomNumber} · {b.BedNumber}";
+            occupants.TryGetValue(b.BedId, out var who);
             return new WardBedDto(
-                BedId:            $"{wardId}-{i}",
-                Description:      $"Room {i:D2} · Bed {i}",
-                RoomNo:           $"B{i:D2}",
+                BedId:            b.BedId.ToString(),
+                Description:      string.IsNullOrEmpty(typeLabel) ? core : $"{core} · {typeLabel}",
+                RoomNo:           b.RoomNumber ?? b.BedNumber,
                 Capacity:         1,
                 CurrentOccupancy: occupied ? 1 : 0,
-                IsAvailable:      !occupied);
+                IsAvailable:      string.Equals(b.BedStatus, "Available", StringComparison.OrdinalIgnoreCase),
+                BedType:          b.BedType,
+                BedStatus:        b.BedStatus,
+                BedNumber:        b.BedNumber,
+                OccupantJourneyId: who?.JourneyId,
+                OccupantUhid:     who?.Uhid,
+                OccupantName:     who?.Name);
         }).ToList();
+    }
+
+    /// <summary>Occupant identity is IP journey; occupancy status stays on Auth beds.</summary>
+    private async Task<Dictionary<Guid, Occupant>> LoadOccupantsAsync(Guid tenantId, List<Guid> bedIds)
+    {
+        if (bedIds.Count == 0) return [];
+        var inHouse = new[]
+        {
+            ClinicalState.Admitted, ClinicalState.ReadyForSurgery, ClinicalState.SentToOT,
+            ClinicalState.InOT, ClinicalState.SurgeryCompleted, ClinicalState.PostOp,
+            ClinicalState.ReadyForDischarge,
+        };
+        var rows = await _db.PatientJourneys
+            .AsNoTracking()
+            .Where(j =>
+                j.TenantId == tenantId
+                && j.DeletedAt == null
+                && j.AssignedBedId != null
+                && bedIds.Contains(j.AssignedBedId.Value)
+                && inHouse.Contains(j.ClinicalState))
+            .Select(j => new { j.Id, j.AssignedBedId, j.Uhid, j.PatientId, j.AdmittedAt })
+            .ToListAsync();
+        if (rows.Count == 0) return [];
+
+        var patientIds = rows.Select(r => r.PatientId).Distinct().ToList();
+        var names = await _db.Patients.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.FirstName, p.LastName })
+            .ToListAsync();
+        var nameById = names.ToDictionary(
+            p => p.Id,
+            p => $"{p.FirstName} {p.LastName}".Trim());
+
+        return rows
+            .GroupBy(r => r.AssignedBedId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var pick = g.OrderByDescending(r => r.AdmittedAt ?? DateTime.MinValue).First();
+                    return new Occupant(
+                        pick.Id,
+                        pick.Uhid,
+                        nameById.GetValueOrDefault(pick.PatientId));
+                });
+    }
+
+    private sealed record Occupant(Guid JourneyId, string? Uhid, string? Name);
+
+    /// <summary>DB-004. Prefer ward_id; fall back to ward_name only when the FK is unset.</summary>
+    internal static bool BelongsToWard(AuthBedSnapshot bed, Ward ward)
+    {
+        if (bed.WardId.HasValue)
+            return bed.WardId == ward.Id;
+        return string.Equals(bed.WardName?.Trim(), ward.WardName?.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string FormatBedType(string? bedType)
+        => bedType switch
+        {
+            "Recliner" => "Recliner",
+            "DayCareChair" => "Day-care chair",
+            _ => string.IsNullOrWhiteSpace(bedType) ? "" : bedType.Trim(),
+        };
+
+    /// <summary>Map cell kind. Recliner / day-care chair are labelled Chair, never colour-only.</summary>
+    internal static string MapSurfaceLabel(string? bedType)
+        => bedType is "Recliner" or "DayCareChair" ? "Chair"
+            : string.IsNullOrWhiteSpace(bedType) ? "Bed"
+            : bedType.Trim();
+
+    internal static string MapStatusLabel(string? bedStatus)
+    {
+        var raw = (bedStatus ?? "").Trim();
+        if (raw.Length == 0) return "Unknown";
+        return char.ToUpperInvariant(raw[0]) + raw[1..].ToLowerInvariant();
     }
 }

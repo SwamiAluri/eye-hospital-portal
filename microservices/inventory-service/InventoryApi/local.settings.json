@@ -6,7 +6,9 @@
     "AzureWebJobs.AutoReorderTimer.Disabled": "true",
     "AzureWebJobs.BillTransferSlaEvaluator.Disabled": "true",
     "AzureWebJobs.SettlementOverdueSweeper.Disabled": "true",
-    "AzureWebJobs.InvoiceDocumentPurgeSweeper.Disabled": "true"
+    "AzureWebJobs.InvoiceDocumentPurgeSweeper.Disabled": "true",
+    "InternalApi__Key": "hp-internal-svc-key-change-in-production-2026",
+    "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026"
   },
   "BlobStorage": {
     "ConnectionString": "UseDevelopmentStorage=true",
@@ -30,5 +32,11 @@
   },
   "InvoiceExtraction": {
     "Enabled": "true"
+  },
+  "InternalApi": {
+    "Key": "hp-internal-svc-key-change-in-production-2026"
+  },
+  "AuthService": {
+    "InternalApiKey": "hp-internal-svc-key-change-in-production-2026"
   }
 }

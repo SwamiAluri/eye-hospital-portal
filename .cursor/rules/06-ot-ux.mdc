@@ -1,0 +1,39 @@
+---
+description: Operation theatre operational UX — slot board, safety, implants, anaesthesia, and OT ownership boundaries.
+globs:
+  - apps/hospital-portal-web/src/app/dashboard/ip-management/operation-theatre/**
+  - apps/hospital-portal-web/src/app/dashboard/ip-management/slots/**
+  - apps/hospital-portal-web/src/app/dashboard/operations/ot/**
+  - apps/hospital-portal-web/src/components/ip-management/IpSlotBoard.tsx
+  - apps/hospital-portal-web/src/components/ip-management/Ot*.tsx
+  - apps/hospital-portal-web/src/components/ip-management/Implant*.tsx
+  - apps/hospital-portal-web/src/components/ip-management/Anaesthesia*.tsx
+  - apps/hospital-portal-web/src/components/counsellors-desk/FinalizeOtModal.tsx
+  - apps/hospital-portal-web/src/components/counsellors-desk/ScheduleSurgeryModal.tsx
+  - apps/hospital-portal-web/e2e/ip-ot*.spec.ts
+alwaysApply: false
+---
+
+# Operation theatre UX
+
+OT owns **surgical operational workflow**: OT scheduling/queue, procedure readiness, surgical safety, procedure state, surgeon/anaesthesia, implants/IOL, consumable/implant scan, surgical documentation, recovery handoff, finalization/cancellation, OT reporting.
+
+Canonical board: `/dashboard/ip-management/operation-theatre` with `IpSlotBoard`, `OtSurgicalSafetyChecklist`, `ImplantScanPanel`, `AnaesthesiaMonitoringPanel`. Complementary: `/dashboard/ip-management/slots`. Overlays: `IpOverlayDialog`. Visual scope: `.ip-target`.
+
+## Complementary vs competing
+
+| Surface | Treat as |
+|---|---|
+| IP OT + slots | **Canonical production** |
+| Counsellor `ScheduleSurgeryModal` / `FinalizeOtModal` | Upstream counselling handoff — do not replace the OT board |
+| `/admin/inventory/surgery` | OT consumables/inventory, not the surgical board |
+| Appointment FullCalendar | Clinic appointments, not IP OT |
+| `/dashboard/operations/ot*`, `/dashboard/surgery-schedule` | Legacy/mock — do not extend as the OT product; do not delete without an approved nav plan |
+
+## Must not duplicate
+
+OT state and surgical workflow must not be reimplemented inside Billing or Coverage. Implant/IOL clinical capture stays OT/IP; charging stays Billing; payer rules stay CCMS.
+
+## Safety
+
+Safety checklist, implant mismatch, and anaesthesia panels are clinical-safety surfaces: no silent discards, explicit overrides where the domain already has them, permissions (e.g. `ot.safety.sign`) enforced, audit preserved. Failed scans/integrations must not look successful.

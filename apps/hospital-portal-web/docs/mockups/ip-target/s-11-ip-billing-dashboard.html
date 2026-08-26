@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-11">
+<main>
+
+  <p class="lede">
+    Finance&rsquo;s view of in-patient money. <strong>This screen is already architecturally correct</strong> &mdash;
+    it reads the ledger through <code>IpBillingDashboardCalculator</code> rather than the journey projection. Two
+    changes: the access resolver becomes fail-closed, and an unbilled-activity tile makes revenue leakage visible
+    daily instead of at month-end.
+  </p>
+
+  <div class="frame">
+    <div class="app-header">
+      <h1>IP Billing</h1>
+      <span class="scope">Downtown Hospital &middot; 24 Aug 2026</span>
+      <span class="spacer"></span>
+      <span class="btn sm">Export</span>
+      <span class="btn sm">&#8635; Refresh</span>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="label">Active IP bills</div><div class="value num">142</div></div>
+      <div class="kpi"><div class="label">Billed today</div><div class="value num">&#8377;18.4 L</div></div>
+      <div class="kpi"><div class="label">Collected today</div><div class="value num">&#8377;11.2 L</div></div>
+      <div class="kpi is-alert"><div class="label">Outstanding</div><div class="value num">&#8377;1.62 Cr</div></div>
+      <div class="kpi is-ot"><div class="label">Unbilled activity <span class="mark new">2</span></div><div class="value num">&#8377;1.28 L</div><div class="src">from reconciliation</div></div>
+    </div>
+
+    <div class="strip">
+      <span class="badge info no-dot">Scope: full &mdash; resolved from <code>bill.view</code></span>
+      <span class="badge no-dot">Aging</span>
+      <span class="badge no-dot">Payer mix</span>
+      <span class="badge no-dot">Collection pipeline</span>
+    </div>
+
+    <div style="padding:14px 16px">
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Aging &mdash; patient obligation</p>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th>Bucket</th><th>Bills</th><th class="right">Amount</th></tr></thead>
+            <tbody>
+              <tr><td>Current</td><td class="num">96</td><td class="num right">&#8377;62.4 L</td></tr>
+              <tr><td>1&ndash;7 days</td><td class="num">28</td><td class="num right">&#8377;41.0 L</td></tr>
+              <tr><td>8&ndash;30 days</td><td class="num">12</td><td class="num right">&#8377;34.8 L</td></tr>
+              <tr><td>&gt; 30 days</td><td class="num">6</td><td class="num right" style="color:var(--danger)">&#8377;23.8 L</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Payer mix</p>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th>Payer</th><th>Cases</th><th class="right">Payer share</th></tr></thead>
+            <tbody>
+              <tr><td>Self-pay</td><td class="num">64</td><td class="num right">&#8377;0</td></tr>
+              <tr><td>Star Health</td><td class="num">38</td><td class="num right">&#8377;28.6 L</td></tr>
+              <tr><td>Government scheme</td><td class="num">27</td><td class="num right">&#8377;19.2 L</td></tr>
+              <tr><td>Corporate</td><td class="num">13</td><td class="num right">&#8377;9.4 L</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-h">In-patient bills</p>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead>
+            <tr><th>Bill</th><th>Patient</th><th>State</th><th class="right">Net</th><th class="right">Collected</th><th class="right">Patient due</th><th>Charge status</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">IPD-2026-00841</td>
+              <td>Meena Iyer <span class="cell-sub">UAT-002</span></td>
+              <td><span class="badge inhouse">Admitted</span></td>
+              <td class="num right">&#8377;1,20,000</td><td class="num right">&#8377;30,000</td><td class="num right" style="color:var(--danger)">&#8377;10,000</td>
+              <td><span class="badge ok">Complete</span></td>
+            </tr>
+            <tr>
+              <td class="mono">IPD-2026-00902</td>
+              <td>Amit Verma <span class="cell-sub">UAT-021</span></td>
+              <td><span class="badge ot">In OT</span></td>
+              <td class="num right">&#8377;1,84,000</td><td class="num right">&#8377;50,000</td><td class="num right" style="color:var(--danger)">&#8377;54,000</td>
+              <td><span class="badge danger">1 unmapped</span></td>
+            </tr>
+            <tr>
+              <td class="mono">IPD-2026-00778</td>
+              <td>Rekha Menon <span class="cell-sub">UAT-009</span></td>
+              <td><span class="badge inhouse">Ready for discharge</span></td>
+              <td class="num right">&#8377;96,000</td><td class="num right">&#8377;96,000</td><td class="num right">&#8377;0</td>
+              <td><span class="badge ok">Complete</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker new">2</span><span><b>Unbilled activity tile</b>, fed by <a href="s-15-reconciliation.html">S-15</a>: implants and consumables recorded in theatre but not yet charged. This is the number that makes asynchronous charge capture safe to trust, because leakage becomes visible the same day it happens.</span></li>
+    <li><span class="marker fix">3</span><span><b><code>resolveBillingDashboardAccess</code> becomes fail-closed.</b> Today an empty JWT permission claim resolves to <code>'full'</code>, so a token-shape change silently grants finance-wide visibility.</span></li>
+    <li><span class="marker">1</span><span>A per-row <b>charge status</b> column tells finance which bills are still moving before they chase a patient for a figure that is about to change.</span></li>
+  </ul>
+
+  <h2 class="sec">Access scopes</h2>
+  <p class="lede" style="margin-bottom:14px">The same route renders three different dashboards.
+  <code>resolveBillingDashboardAccess</code> decides which, and it must
+  <strong>fail closed on an empty permission claim</strong> &mdash; today it does the opposite.</p>
+
+  <div class="variants c3">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Finance &mdash; full scope</span></div>
+      <div class="frame">
+        <div class="app-header"><h1>IP Billing</h1><span class="scope">All units &middot; today</span></div>
+        <div class="kpis">
+          <div class="kpi"><span class="l">Billed today</span><span class="v">&#8377;42.8L</span></div>
+          <div class="kpi"><span class="l">Collected</span><span class="v">&#8377;31.2L</span></div>
+          <div class="kpi danger"><span class="l">Outstanding</span><span class="v">&#8377;11.6L</span></div>
+          <div class="kpi"><span class="l">Refunds pending</span><span class="v">7</span></div>
+          <div class="kpi"><span class="l">Unbilled implants</span><span class="v">3</span></div>
+          <div class="kpi"><span class="l">Claims unsent</span><span class="v">12</span></div>
+        </div>
+        <div class="listfoot">Unit switcher, export and reconciliation links all available.</div>
+      </div>
+      <p class="vc">Everything, across units. This persona is accountable for the numbers, so hiding any of them
+      creates blind spots rather than security.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Cashier &mdash; own counter</span></div>
+      <div class="frame">
+        <div class="app-header"><h1>IP Billing</h1><span class="scope">Downtown unit &middot; my collections</span></div>
+        <div class="kpis">
+          <div class="kpi"><span class="l">Collected by me</span><span class="v">&#8377;2.4L</span></div>
+          <div class="kpi"><span class="l">Receipts issued</span><span class="v">18</span></div>
+          <div class="kpi danger"><span class="l">Due at discharge</span><span class="v">&#8377;1.1L</span></div>
+        </div>
+        <table class="grid">
+          <thead><tr><th>Patient</th><th>Bed</th><th>Due</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="cell-primary">Rekha Menon</td><td>B-02</td><td class="num">&#8377;10,000</td><td><a class="btn sm primary" href="s-03-collect-payment.html">Collect</a></td></tr>
+            <tr><td class="cell-primary">Meena Iyer</td><td>B-04</td><td class="num">&#8377;10,000</td><td><a class="btn sm primary" href="s-03-collect-payment.html">Collect</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="vc">A worklist, not a report. Unit-scoped, no cross-unit totals, no refund queue &mdash; refunds are
+      authorised elsewhere.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">No billing permission</span></div>
+      <div class="frame">
+        <div class="empty" style="padding:56px 20px">
+          <div class="big">You do not have access to IP Billing</div>
+          Ask an administrator for the <code>bill.view</code> permission.
+          <div style="margin-top:12px"><a class="btn sm" href="s-01-ip-census.html">Back to IP Management</a></div>
+        </div>
+      </div>
+      <p class="vc">A clean refusal that names the missing permission. No partial dashboard, no zeroed KPIs &mdash;
+      zeros read as &ldquo;nothing outstanding&rdquo;, which is a dangerous lie.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Worklist tabs</h2>
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Outstanding at discharge</span></div>
+      <div class="frame">
+        <table class="grid">
+          <thead><tr><th>Patient</th><th>Bed</th><th>State</th><th>Billed</th><th>Collected</th><th>Patient due</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="cell-primary">Rekha Menon</td><td>B-02</td><td><span class="badge inhouse">Ready D/C</span></td><td class="num">&#8377;1,20,000</td><td class="num">&#8377;1,10,000</td><td class="num" style="color:var(--danger)">&#8377;10,000</td><td><a class="btn sm primary" href="s-03-collect-payment.html">Collect</a></td></tr>
+            <tr><td class="cell-primary">Vikram Shah</td><td>B-06</td><td><span class="badge inhouse">Ready D/C</span></td><td class="num">&#8377;88,000</td><td class="num">&#8377;88,000</td><td class="num">&#8377;0</td><td class="muted">&mdash;</td></tr>
+          </tbody>
+        </table>
+        <div class="listfoot">Sorted by discharge readiness, because these are the beds waiting on money.</div>
+      </div>
+      <p class="vc">The highest-value list in the product: every row is a bed that cannot turn over.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Refunds pending</span></div>
+      <div class="frame">
+        <table class="grid">
+          <thead><tr><th>Patient</th><th>Reason</th><th>Advance</th><th>Refund due</th><th>Requested</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="cell-primary">Latha S.</td><td class="cell-sub">Admission cancelled</td><td class="num">&#8377;30,000</td><td class="num">&#8377;30,000</td><td>23 Aug &middot; P. Rao</td><td><a class="btn sm" href="s-12-bill-detail.html">Review</a></td></tr>
+            <tr><td class="cell-primary">Farid Khan</td><td class="cell-sub">Surgery cancelled, package downgraded</td><td class="num">&#8377;45,000</td><td class="num">&#8377;12,000</td><td>24 Aug &middot; R. Kumar</td><td><a class="btn sm" href="s-12-bill-detail.html">Review</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="vc">Refunds need an approver who is not the requester. This queue is that separation of duties made
+      visible.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Unbilled implants</span></div>
+      <div class="frame">
+        <table class="grid">
+          <thead><tr><th>Patient</th><th>Implant</th><th>Serial</th><th>Used</th><th>Value</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="cell-primary">Suresh Babu</td><td>Alcon SN60WF +20.0 D</td><td class="mono">88131</td><td>24 Aug 09:40</td><td class="num" style="color:var(--danger)">&#8377;14,000</td><td><a class="btn sm primary" href="s-15-reconciliation.html">Resolve</a></td></tr>
+            <tr><td class="cell-primary">Priya Das</td><td>Capsular tension ring</td><td class="mono">CTR-882</td><td>24 Aug 11:15</td><td class="num" style="color:var(--danger)">&#8377;3,200</td><td><a class="btn sm primary" href="s-15-reconciliation.html">Resolve</a></td></tr>
+          </tbody>
+        </table>
+        <div class="listfoot">Direct revenue leakage &mdash; devices used but never charged.</div>
+      </div>
+      <p class="vc">This tab exists because &ldquo;the implant was scanned&rdquo; and &ldquo;the implant was
+      charged&rdquo; are two different facts that drift apart.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">4</span><span class="t">Claims not yet sent</span></div>
+      <div class="frame">
+        <table class="grid">
+          <thead><tr><th>Patient</th><th>Payer</th><th>Discharged</th><th>Claim value</th><th>Blocker</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="cell-primary">Nisha Rao</td><td>Star Health</td><td>22 Aug</td><td class="num">&#8377;76,000</td><td class="cell-sub">Bill not finalized</td><td><a class="btn sm" href="s-12-bill-detail.html">Finalize</a></td></tr>
+            <tr><td class="cell-primary">Vikram Shah</td><td>CGHS</td><td>21 Aug</td><td class="num">&#8377;54,000</td><td class="cell-sub">Discharge summary unsigned</td><td><a class="btn sm" href="s-09-discharge-workspace.html">Open</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="vc">Each row names the specific blocker and links to the screen that clears it. A claim ageing list
+      without blockers is just an anxiety generator.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">States</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Loading</span></div>
+      <div class="frame">
+        <div class="kpis">
+          <div class="kpi"><span class="sk w60"></span><span class="sk tall w50"></span></div>
+          <div class="kpi"><span class="sk w60"></span><span class="sk tall w50"></span></div>
+          <div class="kpi"><span class="sk w60"></span><span class="sk tall w50"></span></div>
+        </div>
+        <div class="sk-row"><span class="sk w30"></span><span class="sk w20"></span><span class="sk w20"></span></div>
+        <div class="sk-row"><span class="sk w40"></span><span class="sk w20"></span><span class="sk w20"></span></div>
+      </div>
+      <p class="vc">KPI tiles keep their footprint so the layout does not shift when figures arrive.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n ok">2</span><span class="t">Nothing outstanding</span></div>
+      <div class="frame"><div class="empty">
+        <div class="big">Nothing outstanding</div>
+        All discharged patients are settled and every implant used today is charged.
+      </div></div>
+      <p class="vc">Explicitly worded as a good outcome rather than &ldquo;No records found&rdquo;.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Figures unavailable</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout danger" style="margin:0"><b>Cannot load billing figures.</b> No totals are shown, because
+        a partial total is worse than none. <a href="#">Retry</a></div>
+      </div></div>
+      <p class="vc">Financial dashboards must never render a plausible-looking wrong number.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr><td>KPIs, aging, payer mix, pipeline</td><td><code>useIpBillingDashboardQuery</code></td><td><code>GET /api/OpdBills/ip-dashboard</code></td><td><code>OpdBillsController.GetIpDashboard</code> &rarr; <code>OpdBillService.GetIpBillingDashboardAsync</code> &rarr; <code>IpBillingDashboardCalculator</code></td><td><code>opd_bills</code>, <code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td>enforced <b>in the service, not the controller</b>: any of <code>bill.view</code>, <code>opd_bill.view</code>, <code>bill.update</code>, <code>ip.view</code>, <code>ward.checklist.edit</code></td></tr>
+      <tr><td>Column scope <span class="mark fix">3</span></td><td><code>resolveBillingDashboardAccess</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td class="owner o-fe">FE</td><td><b>fail-closed after SEC-041</b></td></tr>
+      <tr><td>Refunds awaiting approval</td><td><code>usePendingRefundsQuery</code></td><td><code>GET /api/Refunds/pending</code></td><td><code>RefundService.GetPendingRefundsAsync</code></td><td><code>refunds</code></td><td class="owner o-billing">Billing</td><td><code>opd_bill.refund.authorize</code></td></tr>
+      <tr><td>Refund statistics</td><td><code>useRefundStatsQuery</code></td><td><code>GET /api/Refunds/statistics</code></td><td><code>GetRefundStatisticsAsync</code></td><td><code>refunds</code></td><td class="owner o-billing">Billing</td><td><code>opd_bill.view</code></td></tr>
+      <tr><td>Outstanding for one patient</td><td>drill-down</td><td><code>GET /api/OpdBills/outstanding/{patientId}</code></td><td><code>GetByPatientIdAsync</code>, filtered</td><td><code>opd_bills</code></td><td class="owner o-billing">Billing</td><td>&mdash; <b>no permission attribute</b> <span class="badge danger no-dot">defect</span></td></tr>
+      <tr><td>Unbilled activity <span class="mark new">2</span></td><td><code>useReconciliationQuery</code> (summary)</td><td><code>GET /api/ChargeReconciliation</code> · live via <code>charge-reconciliation.api.ts</code></td><td><code>ChargeReconciliationService</code></td><td><code>journey_implant_usage</code>, <code>inv_surgery_consumables</code>, <code>opd_bill_items</code></td><td class="owner o-billing">Billing</td><td><code>bill.view</code></td></tr>
+      <tr><td>Row &rarr; bill detail</td><td>deep link</td><td><code>GET /api/OpdBills/{id}</code></td><td><code>OpdBillsController.GetById</code></td><td><code>opd_bills</code></td><td class="owner o-fe">FE</td><td><code>bill.view</code></td></tr>
+      <tr><td>Live refresh</td><td><code>useNotificationHubInvalidation</code></td><td>SignalR <code>/notificationHub</code>, group <code>tenant_{tenantId}</code></td><td><code>NotificationService.SendTenantNotificationAsync</code> &rarr; <code>ReceiveNotification(type, message, details)</code></td><td>&mdash;</td><td class="owner o-auth">Auth</td><td>&mdash;</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>Two access findings worth acting on.</b> The dashboard&rsquo;s permission check lives in
+    <code>OpdBillService</code> rather than on the controller, and it accepts <code>ward.checklist.edit</code>
+    &mdash; a clinical permission &mdash; as sufficient to read hospital-wide financial aggregates. Several read
+    routes on <code>OpdBillsController</code>, including patient outstanding balances, carry no
+    <code>[RequirePermission]</code> at all.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Figures unavailable</td><td><b>We can&rsquo;t show today&rsquo;s figures right now.</b> Rather than show a number that might be wrong, we&rsquo;ve left this blank. <a href="#">Try again</a></td></tr>
+      <tr><td>Nothing outstanding</td><td><b>Everything is collected.</b> No inpatient balances are outstanding today.</td></tr>
+      <tr><td>Partial scope</td><td><b>You&rsquo;re seeing your branch only.</b> Hospital-wide figures need a finance role.</td></tr>
+      <tr><td>Refunds waiting</td><td><b>3 refunds are waiting for your approval</b>, totalling &#8377;7,300.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

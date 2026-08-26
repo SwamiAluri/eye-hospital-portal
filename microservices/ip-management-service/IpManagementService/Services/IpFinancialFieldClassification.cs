@@ -21,7 +21,7 @@ public static class IpFinancialFieldClassification
     public static readonly IReadOnlyList<FieldMeta> All =
     [
         new("FinancialState", ClinicalWorkflow, "IP",
-            "Ward/OT workflow compatibility. Settled may emit BillFinalized bridge; Billing remains charge SoT."),
+            "Ward/OT workflow projection. Paid/Settled cannot be set from IP; Billing and CCMS own those terminals."),
         new("PaymentMode", ClinicalWorkflow, "IP",
             "Drives coverage-based admit policy; not payer approval."),
         new("PackageAmount", BillingProjection, "Billing",

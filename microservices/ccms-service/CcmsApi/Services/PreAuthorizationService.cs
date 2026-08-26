@@ -139,8 +139,15 @@ public class PreAuthorizationService
 
         var alreadySubmitted = auth.SubmittedAt.HasValue;
 
+        CcmsCoverageCase? coverageCase = null;
         if (!alreadySubmitted)
         {
+            coverageCase = await _db.CoverageCases
+                .FirstOrDefaultAsync(c => c.Id == auth.CoverageCase_Id && c.DeletedAt == null, ct)
+                ?? throw new KeyNotFoundException($"Coverage case {auth.CoverageCase_Id} not found.");
+
+            await EnsureRequiredPreAuthDocumentsAsync(coverageCase, ct);
+
             auth.SubmittedAt = DateTime.UtcNow;
         }
 
@@ -153,31 +160,47 @@ public class PreAuthorizationService
         auth.UpdatedByUserId    = actorUserId;
         auth.RowVersion         += 1;
 
-        if (!alreadySubmitted)
+        if (!alreadySubmitted && coverageCase is not null && coverageCase.WorkflowInstanceId.HasValue)
         {
-            var coverageCase = await _db.CoverageCases
-                .FirstOrDefaultAsync(c => c.Id == auth.CoverageCase_Id && c.DeletedAt == null, ct);
+            await _workflow.FireAsync(
+                coverageCase.WorkflowInstanceId.Value,
+                "SEND_PREAUTH", actorUserId, null, ct);
 
-            if (coverageCase is not null && coverageCase.WorkflowInstanceId.HasValue)
-            {
-                await _workflow.FireAsync(
-                    coverageCase.WorkflowInstanceId.Value,
-                    "SEND_PREAUTH", actorUserId, null, ct);
+            // Then auto-transition to WAITING_APPROVAL
+            await _workflow.FireAsync(
+                coverageCase.WorkflowInstanceId.Value,
+                "WAIT_RESPONSE", actorUserId, null, ct);
 
-                // Then auto-transition to WAITING_APPROVAL
-                await _workflow.FireAsync(
-                    coverageCase.WorkflowInstanceId.Value,
-                    "WAIT_RESPONSE", actorUserId, null, ct);
-
-                coverageCase.CurrentState    = "WAITING_APPROVAL";
-                coverageCase.UpdatedAt       = DateTime.UtcNow;
-                coverageCase.UpdatedByUserId = actorUserId;
-                coverageCase.RowVersion      += 1;
-            }
+            coverageCase.CurrentState    = "WAITING_APPROVAL";
+            coverageCase.UpdatedAt       = DateTime.UtcNow;
+            coverageCase.UpdatedByUserId = actorUserId;
+            coverageCase.RowVersion      += 1;
         }
 
         await _db.SaveChangesAsync(ct);
         return ToDto(auth);
+    }
+
+    internal async Task EnsureRequiredPreAuthDocumentsAsync(
+        CcmsCoverageCase coverageCase, CancellationToken ct)
+    {
+        var requirements = await _db.DocumentRequirements
+            .AsNoTracking()
+            .Where(d => d.TenantId == coverageCase.TenantId && d.DeletedAt == null && d.IsRequired)
+            .ToListAsync(ct);
+
+        var applicable = PreAuthDocumentGate.ApplicablePreAuthRequirements(requirements, coverageCase);
+        if (applicable.Count == 0)
+            return;
+
+        var documents = await _db.Documents
+            .AsNoTracking()
+            .Where(d => d.CoverageCase_Id == coverageCase.Id && d.DeletedAt == null)
+            .ToListAsync(ct);
+
+        var missing = PreAuthDocumentGate.MissingRequired(applicable, documents);
+        if (missing.Count > 0)
+            throw new InvalidOperationException(PreAuthDocumentGate.FormatBlockMessage(missing));
     }
 
     // ── Record TPA Response ──────────────────────────────────────────────────

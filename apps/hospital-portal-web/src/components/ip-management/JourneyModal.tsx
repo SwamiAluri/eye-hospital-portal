@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   X, User, Stethoscope, CreditCard, ClipboardList,
   FileText, Activity, Clock, Building2, Lock, AlertTriangle,
-  Plus, CheckCircle2,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   ipManagementApi,
@@ -13,7 +14,6 @@ import {
   IntraOpNoteDto,
   DischargeSummaryDto,
   PostOpInstructionDto,
-  AddBillingTransactionRequest,
   SaveDischargeSummaryRequest,
   UpdateWardAssignmentRequest,
   PatientJourneyRowDto,
@@ -21,6 +21,7 @@ import {
 import { StatusBadge } from '@/components/counsellors-desk/StatusBadge';
 import { JourneyPreOpSummary } from '@/components/ip-management/JourneyPreOpSummary';
 import { JourneyPostOpSummary } from '@/components/ip-management/JourneyPostOpSummary';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,16 +42,6 @@ const STEP_LABELS: Record<string, string> = {
   PostOp: 'Post-Op',
   ReadyForDischarge: 'Ready D/C',
   Discharged: 'Discharged',
-};
-
-const FINANCIAL_TRANSITIONS: Record<string, string[]> = {
-  NotCreated: ['Draft'],
-  Draft: ['Estimated', 'Confirmed'],
-  Estimated: ['Confirmed'],
-  Confirmed: ['PartiallyPaid'],
-  PartiallyPaid: ['Paid'],
-  Paid: ['Settled'],
-  Settled: [],
 };
 
 function getInitialTab(clinicalState: string): JourneyTab {
@@ -115,90 +106,6 @@ function TxBadge({ type }: { type: string }) {
   );
 }
 
-// ─── Add Transaction Sub-Modal ────────────────────────────────────────────────
-
-function AddTransactionModal({ onClose, onSave }: {
-  onClose: () => void;
-  onSave: (req: AddBillingTransactionRequest) => Promise<void>;
-}) {
-  const [form, setForm] = useState<AddBillingTransactionRequest>({
-    transactionType: 'Advance',
-    amount: 0,
-    paymentMode: 'Cash',
-    referenceNumber: '',
-    notes: '',
-  });
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    if (form.amount <= 0) return;
-    setSaving(true);
-    try {
-      await onSave(form);
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">Add Transaction</h2>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="px-6 py-4 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Transaction Type</label>
-            <select value={form.transactionType} onChange={e => setForm(f => ({ ...f, transactionType: e.target.value }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-              {['Advance', 'Payment', 'Refund', 'Package', 'Charge'].map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₹) *</label>
-            <input type="number" min="0" value={form.amount}
-              onChange={e => setForm(f => ({ ...f, amount: +e.target.value }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Payment Mode</label>
-            <select value={form.paymentMode ?? ''} onChange={e => setForm(f => ({ ...f, paymentMode: e.target.value }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-              {['Cash', 'Card', 'UPI', 'Cheque', 'NEFT', 'RTGS'].map(m => <option key={m}>{m}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Reference Number</label>
-            <input type="text" value={form.referenceNumber ?? ''}
-              onChange={e => setForm(f => ({ ...f, referenceNumber: e.target.value }))}
-              placeholder="UTR / Cheque / Receipt #"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-            <textarea rows={2} value={form.notes ?? ''}
-              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
-          </div>
-        </div>
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving || form.amount <= 0}
-            className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
-            {saving ? 'Saving…' : 'Add Transaction'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── JourneyModal Props ───────────────────────────────────────────────────────
 
 export type JourneyDeepLinkTarget = 'preop-workspace' | 'postop-workspace';
@@ -226,6 +133,7 @@ export default function JourneyModal({
   onStateChange,
   onDeepLink,
 }: JourneyModalProps) {
+  const router = useRouter();
   const [journey, setJourney] = useState<PatientJourneyDetailDto | null>(null);
   const [billing, setBilling] = useState<BillingTransactionDto[]>([]);
   const [intraOp, setIntraOp] = useState<IntraOpNoteDto | null>(null);
@@ -235,8 +143,6 @@ export default function JourneyModal({
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<JourneyTab>(() => getInitialTab(clinicalState));
 
-  const [showAddTx, setShowAddTx] = useState(false);
-  const [transitioningTo, setTransitioningTo] = useState<string | null>(null);
   const [isEditingDischarge, setIsEditingDischarge] = useState(false);
   // Bug #6 fix: initialize with required formatType field
   const [dsForm, setDsForm] = useState<SaveDischargeSummaryRequest>({ formatType: 'Short' });
@@ -288,21 +194,6 @@ export default function JourneyModal({
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
-  async function handleAddTransaction(req: AddBillingTransactionRequest) {
-    const added = await ipManagementApi.addBilling(journeyId, req);
-    if (added) setBilling(prev => [added, ...prev]);
-  }
-
-  async function handleFinancialTransition(toState: string) {
-    setTransitioningTo(toState);
-    try {
-      const updated = await ipManagementApi.transitionFinancial(journeyId, { newState: toState });
-      if (updated) setJourney(updated);
-    } finally {
-      setTransitioningTo(null);
-    }
-  }
-
   async function handleSaveWardEdit() {
     setSavingWardEdit(true);
     try {
@@ -345,7 +236,10 @@ export default function JourneyModal({
   async function handleMarkReady() {
     setMarkingReady(true);
     try {
-      const updated = await ipManagementApi.transitionClinical(journeyId, { newState: 'ReadyForDischarge' });
+      const updated = await ipManagementApi.transitionClinical(journeyId, {
+        newState: 'ReadyForDischarge',
+        expectedUpdatedAt: journey?.updatedAt,
+      });
       if (updated) {
         setJourney(prev => prev ? { ...prev, clinicalState: updated.clinicalState } : null);
         onStateChange?.({ clinicalState: updated.clinicalState });
@@ -373,6 +267,7 @@ export default function JourneyModal({
           postOpIssued ? 'Post-op instructions issued' : '',
           dischargeDateTime ? `Discharge time: ${dischargeDateTime}` : '',
         ].filter(Boolean).join('; ') || undefined,
+        expectedUpdatedAt: journey?.updatedAt,
       });
       if (updated) {
         setJourney(prev => prev ? { ...prev, clinicalState: updated.clinicalState } : null);
@@ -387,10 +282,6 @@ export default function JourneyModal({
 
   const journeyState = journey?.clinicalState ?? clinicalState;
   const currentStep = CLINICAL_STEPS.indexOf(journeyState);
-  const totalPaid = billing
-    .filter(t => ['Payment', 'Advance'].includes(t.transactionType))
-    .reduce((s, t) => s + t.amount, 0);
-  const allowedFinancial = journey ? (FINANCIAL_TRANSITIONS[journey.financialState] ?? []) : [];
   const isReadOnly = journeyState === 'Discharged';
 
   const TABS: { id: JourneyTab; label: string; icon: React.ReactNode }[] = [
@@ -406,12 +297,14 @@ export default function JourneyModal({
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-        <div
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
-          data-testid="journey-modal"
-        >
+    <IpOverlayDialog
+      onClose={onClose}
+      size="6xl"
+      title="Patient journey"
+      testId="journey-modal"
+      className="max-h-[92vh]"
+    >
+      <div className="flex flex-col max-h-[92vh] overflow-hidden">
 
           {/* ── Sticky Header ───────────────────────────────────────────── */}
           <div className="shrink-0 bg-white border-b border-gray-200">
@@ -574,7 +467,7 @@ export default function JourneyModal({
                       <InfoRow label="Financial State" value={journey.financialState} />
                       <InfoRow label="Package Amount" value={fmtINR(journey.packageAmount)} />
                       <InfoRow label="Total Billed" value={fmtINR(journey.totalBilled)} />
-                      <InfoRow label="Total Paid" value={fmtINR(totalPaid)} />
+                      <InfoRow label="Total Paid" value={fmtINR(journey.totalPaid)} />
                       <InfoRow label="Balance Due" value={fmtINR(journey.balanceDue)} />
                     </SectionCard>
                   </div>
@@ -689,12 +582,14 @@ export default function JourneyModal({
                 {activeTab === 'billing' && (
                   <>
                     <SectionCard title="Financial State" icon={<CreditCard className="h-4 w-4" />}
-                      action={!journey.isLocked ? (
-                        <button onClick={() => setShowAddTx(true)}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium">
-                          <Plus className="h-3 w-3" /> Add Transaction
+                      action={(
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/dashboard/billing/opd?patientId=${journey.patientId}&journeyId=${journeyId}`)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium">
+                          Open Billing
                         </button>
-                      ) : undefined}>
+                      )}>
                       <div className="flex flex-wrap items-center gap-3">
                         <StatusBadge status={journey.financialState} size="sm" />
                         {journey.isBillingLocked && (
@@ -716,7 +611,7 @@ export default function JourneyModal({
                         </div>
                         <div className="text-center p-3 bg-green-50 rounded-lg">
                           <p className="text-xs text-gray-500">Total Paid</p>
-                          <p className="text-base font-bold text-green-700">{fmtINR(totalPaid)}</p>
+                          <p className="text-base font-bold text-green-700">{fmtINR(journey.totalPaid)}</p>
                         </div>
                         <div className="text-center p-3 bg-blue-50 rounded-lg">
                           <p className="text-xs text-gray-500">Balance Due</p>
@@ -724,18 +619,13 @@ export default function JourneyModal({
                         </div>
                       </div>
 
-                      {allowedFinancial.length > 0 && !journey.isLocked && (
-                        <div className="pt-2 flex flex-wrap gap-2 border-t border-gray-100">
-                          <span className="text-xs text-gray-400 self-center">Advance to:</span>
-                          {allowedFinancial.map(state => (
-                            <button key={state} onClick={() => handleFinancialTransition(state)}
-                              disabled={!!transitioningTo}
-                              className="px-3 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium disabled:opacity-50">
-                              {transitioningTo === state ? 'Saving…' : state}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/dashboard/billing/opd?patientId=${journey.patientId}&journeyId=${journeyId}`)}
+                        className="mt-2 text-xs font-medium text-emerald-700 hover:text-emerald-800"
+                      >
+                        Open Billing module →
+                      </button>
 
                       {journey.isEmergencyFc && journey.emergencyFcReason && (
                         <InfoRow label="Emergency FC Reason" value={journey.emergencyFcReason} />
@@ -1056,16 +946,7 @@ export default function JourneyModal({
               </>
             )}
           </div>
-        </div>
       </div>
-
-      {/* Add Transaction sub-modal renders above the Journey modal */}
-      {showAddTx && (
-        <AddTransactionModal
-          onClose={() => setShowAddTx(false)}
-          onSave={handleAddTransaction}
-        />
-      )}
-    </>
+    </IpOverlayDialog>
   );
 }

@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-16">
+<main>
+
+  <p class="lede">
+    Both integration outboxes retry eight times and then mark an event <code>Dead</code>. Today
+    <strong>nobody is told</strong>. A dead <code>PaymentReceived</code> means CCMS never learns the patient paid; a
+    dead implant charge means a device is never billed. This screen makes silent failure loud.
+  </p>
+
+  <div class="frame">
+    <div class="app-header">
+      <h1>Integration health</h1>
+      <span class="scope">Downtown Hospital &middot; live</span>
+      <span class="spacer"></span>
+      <span class="btn sm">Last 24h &#9662;</span>
+      <span class="btn sm">&#8635; Refresh</span>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi is-inhouse"><div class="label">Published 24h</div><div class="value num">4,281</div></div>
+      <div class="kpi"><div class="label">Pending</div><div class="value num">12</div></div>
+      <div class="kpi is-ot"><div class="label">Retrying</div><div class="value num">5</div></div>
+      <div class="kpi is-alert"><div class="label">Dead-lettered</div><div class="value num">3</div></div>
+      <div class="kpi"><div class="label">Oldest pending</div><div class="value num">4m</div></div>
+    </div>
+
+    <div class="cols-2" style="padding:14px 16px">
+      <div class="panel">
+        <p class="panel-h">IP Management outbox &middot; <code>integration_outbox_event</code></p>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>Event type</th><th>Pending</th><th>Retrying</th><th>Dead</th></tr></thead>
+          <tbody>
+            <tr><td><code>ImplantUsed</code></td><td class="num">2</td><td class="num" style="color:var(--ot)">3</td><td class="num" style="color:var(--danger)">1</td></tr>
+            <tr><td><code>SurgeryCompleted</code></td><td class="num">4</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td><code>JourneyReadyForOt</code></td><td class="num">1</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td><code>PatientClinicallyDischarged</code></td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Billing &rarr; CCMS outbox &middot; <code>billing_ccms_outbox</code></p>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>Event type</th><th>Pending</th><th>Retrying</th><th>Dead</th></tr></thead>
+          <tbody>
+            <tr><td><code>PaymentReceived</code></td><td class="num">3</td><td class="num" style="color:var(--ot)">2</td><td class="num" style="color:var(--danger)">2</td></tr>
+            <tr><td><code>BillFinalized</code></td><td class="num">2</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td><code>PatientObligationChanged</code></td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td><code>RefundCreated</code></td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="group-h"><span>Dead letters (3)</span><span class="src">requeue resets the attempt counter and preserves the idempotency key</span></div>
+    <table class="grid">
+      <thead><tr><th>Event</th><th>Source</th><th>Subject</th><th>Failed at</th><th>Attempts</th><th>Last error</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>PaymentReceived</code></td><td>Billing</td>
+          <td>RCP-20260824-00001188 &middot; Meena Iyer</td><td>24 Aug 13:02</td><td class="num">8</td>
+          <td class="cell-sub">CCMS 503 &mdash; upstream unavailable</td>
+          <td><span class="btn sm primary">Requeue</span></td>
+        </tr>
+        <tr>
+          <td><code>PaymentReceived</code></td><td>Billing</td>
+          <td>RCP-20260824-00001191 &middot; Suresh Babu</td><td>24 Aug 13:02</td><td class="num">8</td>
+          <td class="cell-sub">CCMS 503 &mdash; upstream unavailable</td>
+          <td><span class="btn sm primary">Requeue</span></td>
+        </tr>
+        <tr>
+          <td><code>ImplantUsed</code></td><td>IP</td>
+          <td>Serial 77120 &middot; Kavya Reddy</td><td>23 Aug 14:07</td><td class="num">8</td>
+          <td class="cell-sub">Billing 422 &mdash; no billable variant for INV-2044</td>
+          <td><a class="btn sm" href="s-14-charge-mapping.html">Map item first</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="padding:12px 16px;border-top:1px solid var(--line);background:var(--surface-alt)">
+      <div class="callout warn">
+        <b>Two dead <code>PaymentReceived</code> events share one root cause</b> (a CCMS outage at 13:00) and can be
+        requeued together. The third is a data problem and will fail again until the item is mapped &mdash; requeue is
+        offered only after the mapping exists.
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker new">2</span><span><b>Grouped by root cause, not just listed.</b> A transient upstream outage and a permanent data defect need different responses, and an operator should not have to work that out from stack traces.</span></li>
+    <li><span class="marker new">2</span><span>Requeue <b>preserves the idempotency key</b>, so replaying a payment event can never produce a duplicate allocation in CCMS.</span></li>
+    <li><span class="marker new">2</span><span>The dead-letter count should drive an <b>alert</b>, not just a screen. Anything above zero for more than an hour is an incident.</span></li>
+  </ul>
+
+  <h2 class="sec">Operator actions</h2>
+  <p class="lede" style="margin-bottom:14px">Four things an operator can do to a stuck event, and the guard on each.
+  Every one is <strong>idempotent by consumer</strong>, which is what makes replaying a financial event safe.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Inspect an event</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Event evt-8841a</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <dl class="kv">
+              <dt>Type</dt><dd><code>ImplantCharged</code></dd>
+              <dt>Source</dt><dd>ip-management-service</dd>
+              <dt>Target</dt><dd>auth / OpdBillService</dd>
+              <dt>Journey</dt><dd>J-2026-0841 &middot; Meena Iyer</dd>
+              <dt>Correlation</dt><dd class="mono">c-8841a</dd>
+              <dt>Attempts</dt><dd>3 of 8 &middot; next retry 08:52</dd>
+              <dt>Last error</dt><dd>503 from billing at 08:44</dd>
+            </dl>
+            <div class="callout info" style="margin-top:8px">Payload is shown with patient identifiers masked. Viewing
+            it is itself audited.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Close</span><span class="btn">View payload</span><span class="btn primary">Requeue</span></div>
+        </div>
+      </div>
+      <p class="vc">Everything needed to decide, on one panel &mdash; including the correlation id that ties this
+      event to the audit row and the downstream effect.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Requeue</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Requeue 1 event</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout info"><b>Safe to repeat.</b> The consumer is keyed on the event id, so if the charge
+            already landed this is a no-op rather than a duplicate.</div>
+            <div class="rail-line" style="margin-top:8px"><span class="k">Effect if it succeeds</span><span class="v">&#8377;14,000 posts to IPD-2026-00841</span></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Requeue now</span></div>
+        </div>
+      </div>
+      <p class="vc">Naming the financial effect before the click is what separates an operations tool from a
+      dangerous button.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">3</span><span class="t">Bulk requeue</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Requeue 12 dead events</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout warn"><b>Check the root cause first.</b> Bulk replay against a still-broken consumer
+            just moves 12 events back to dead.</div>
+            <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:8px">
+              <thead><tr><th>Type</th><th>Count</th><th>Value at stake</th></tr></thead>
+              <tbody>
+                <tr><td><code>ImplantCharged</code></td><td class="num">7</td><td class="num">&#8377;98,000</td></tr>
+                <tr><td><code>PaymentReceived</code></td><td class="num">3</td><td class="num">&#8377;42,000</td></tr>
+                <tr><td><code>PatientClinicallyDischarged</code></td><td class="num">2</td><td class="muted">&mdash;</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Requeue all 12</span></div>
+        </div>
+      </div>
+      <p class="vc">Grouped by type with the value at stake, so the operator knows what they are about to set in
+      motion.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">4</span><span class="t">Abandon an event</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Abandon evt-8712c</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>The downstream effect will never happen.</b> For a financial event this
+            means a charge that is never posted, and the gap must be closed manually.</div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Duplicate of evt-8712b; charge already posted manually" readonly></div>
+            <div class="field"><label>Compensating action taken</label>
+              <input class="input" value="Adjustment raised on IPD-2026-00744" readonly></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn danger disabled">Abandon</span></div>
+        </div>
+      </div>
+      <p class="vc">Requires both a reason and a statement of the compensating action. An abandoned financial event
+      with no explanation is an unexplained hole in the ledger.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">States</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n ok">1</span><span class="t">All healthy</span></div>
+      <div class="frame"><div class="empty">
+        <div class="big">All integrations healthy</div>
+        0 dead &middot; 2 pending within normal retry &middot; oldest unprocessed 4 seconds
+      </div></div>
+      <p class="vc">The normal state. Latency of the oldest unprocessed event is the number that matters, not the
+      queue depth.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Backlog growing</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout warn" style="margin:0"><b>Billing consumer is falling behind.</b> 148 pending, oldest
+        11 minutes. Depth has grown steadily for 20 minutes.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm">View consumer</span><span class="btn sm ghost">Silence 1 h</span></div>
+      </div></div>
+      <p class="vc">A growing backlog is the early warning; the dead-letter queue is the late one.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Consumer down</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout danger" style="margin:0"><b>CCMS consumer has not acknowledged for 34 minutes.</b>
+        41 events queued, &#8377;3.2L of claim value affected.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm primary">Page on-call</span><span class="btn sm ghost">View runbook</span></div>
+      </div></div>
+      <p class="vc">Escalation is part of the screen. An observability tool with no route to a human is decoration.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <p class="lede" style="margin-bottom:14px">
+    <b>There are two independent outboxes, not one.</b> IP Management owns
+    <code>integration_outbox_event</code> and publishes only <code>JourneyAdmitted</code>,
+    <code>SurgeryCompleted</code>, <code>PatientClinicallyDischarged</code> and <code>EmergencyFcApplied</code>.
+    Auth owns <code>billing_ccms_outbox</code> and publishes <code>BillFinalized</code>,
+    <code>PaymentReceived</code>, <code>PaymentReversed</code> and <code>PatientObligationChanged</code>. They have
+    different processors, different retry behaviour and different status vocabularies, which is precisely why one
+    screen has to show both.
+  </p>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr><td>IP outbox stats <span class="badge ok no-dot">exists</span></td><td><code>useOutboxStatsQuery</code></td><td><code>GET /api/ip-management/integration/outbox/stats</code></td><td><code>OutboxFunctions</code> &rarr; <code>IntegrationOutboxService.GetStatsAsync</code></td><td><code>integration_outbox_event</code></td><td class="owner o-ip">IP</td><td>function key today; <code>integration.admin</code> <span class="cell-sub">to create</span></td></tr>
+      <tr><td>Force a drain <span class="badge ok no-dot">exists</span></td><td><code>processOutboxNow</code></td><td><code>POST /api/ip-management/integration/outbox/process</code></td><td><code>ProcessPendingAsync</code>; normally driven by a Hangfire job, with a 30-second timer as backup</td><td><code>integration_outbox_event</code></td><td class="owner o-ip">IP</td><td>function key</td></tr>
+      <tr><td>Billing outbox stats <span class="badge ok no-dot">exists</span></td><td><code>useBillingOutboxStatsQuery</code></td><td><code>GET /api/billingoutbox/stats</code> · <b>live</b></td><td><code>BillingCcmsOutboxService</code>; drained by <code>BillingCcmsOutboxProcessor</code></td><td><code>billing_ccms_outbox</code></td><td class="owner o-billing">Billing</td><td><code>integration.admin</code></td></tr>
+      <tr><td>Dead-letter list <span class="badge ok no-dot">exists</span></td><td><code>useDeadLettersQuery</code></td><td><code>GET …/outbox/dead</code> on IP and Billing · <b>live</b></td><td>outbox services</td><td>both outbox tables</td><td class="owner o-ip">IP + <span class="o-billing">Billing</span></td><td><code>integration.admin</code></td></tr>
+      <tr><td>Inspect one event <span class="badge ok no-dot">exists</span></td><td><code>useOutboxEventQuery</code></td><td><code>GET …/outbox/events/{eventId}</code> · <b>live</b></td><td>outbox services</td><td>both outbox tables</td><td class="owner o-ip">IP + <span class="o-billing">Billing</span></td><td><code>integration.admin</code></td></tr>
+      <tr><td>Requeue <span class="badge ok no-dot">exists</span></td><td><code>requeueEvent</code></td><td><code>POST …/outbox/requeue</code> · <b>live</b></td><td>outbox services</td><td>both outbox tables</td><td class="owner o-ip">IP + <span class="o-billing">Billing</span></td><td><code>integration.admin</code></td></tr>
+      <tr><td>Abandon <span class="badge ok no-dot">exists</span></td><td><a href="s-17-reason-confirm.html">S-17</a></td><td><code>POST …/outbox/abandon</code> · <b>live</b></td><td>outbox services</td><td>both outbox tables + audit</td><td class="owner o-ip">IP + <span class="o-billing">Billing</span></td><td><code>integration.admin</code></td></tr>
+      <tr><td>Delivery target</td><td>&mdash;</td><td>IP &rarr; <code>CcmsAdmissionClient.DeliverOutboxEventAsync</code>; Auth &rarr; <code>POST {ccms}/ccms/integration/bill-finalized</code> and siblings</td><td>CCMS integration endpoints</td><td>CCMS tables</td><td class="owner o-ccms">CCMS</td><td>internal</td></tr>
+      <tr><td>Alerting</td><td>&mdash;</td><td>metrics scrape</td><td>outbox services</td><td>&mdash;</td><td class="owner o-auth">Platform</td><td>&mdash;</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <b>This is the one screen where technical language is the right language.</b> The reader is an engineer, so event
+    types, attempt counts and HTTP status belong here. The rule that still holds is that the headline says what it
+    means for patients or money &mdash; &ldquo;14 payments haven&rsquo;t reached the insurer&rdquo; before
+    &ldquo;queue depth 14&rdquo;. See <a href="conventions.html">conventions &sect;2</a>.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Backlog growing</td><td><b>14 billing events haven&rsquo;t reached CCMS</b>, the oldest from 08:44. Claims for those patients can&rsquo;t be submitted until they clear. <span class="cell-sub">billing_ccms_outbox &middot; Pending 14 &middot; Failed 2</span></td></tr>
+      <tr><td>Consumer down</td><td><b>CCMS isn&rsquo;t accepting events.</b> Nothing is lost &mdash; everything is queued and will send automatically when it recovers.</td></tr>
+      <tr><td>All healthy</td><td><b>Everything is up to date.</b> Both queues are empty and the last event delivered 12 seconds ago.</td></tr>
+      <tr><td>Abandoning an event</td><td><b>This event will never be delivered.</b> CCMS will not know about this &#8377;18,000 bill unless someone enters it manually.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

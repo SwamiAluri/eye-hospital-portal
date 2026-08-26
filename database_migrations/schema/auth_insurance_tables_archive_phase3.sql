@@ -1,5 +1,9 @@
 -- Phase 3 residual — Archive Auth Module insurance workflow tables (retention)
 --
+-- DO NOT APPLY without written retention sign-off.
+-- This is opt-in only. Default run is a no-op unless:
+--   SELECT set_config('app.phase3_archive_insurance', 'true', false);
+--
 -- Renames live tables → archived_* then recreates READ-ONLY compatible views
 -- under the original names so Auth historical GETs / EF keep working.
 -- Writes remain frozen in API; views are intentionally non-updatable for safety
@@ -8,8 +12,9 @@
 --
 -- Prerequisites:
 --   1. apply_phase3_legacy_insurance_bridge(NULL, true) then false
---   2. Review orphan_report rows
---   3. SELECT set_config('app.phase3_archive_insurance', 'true', false);
+--   2. Review orphan_report rows via review_phase3_orphan_legacy_preauths()
+--   3. Written retention sign-off
+--   4. SELECT set_config('app.phase3_archive_insurance', 'true', false);
 --
 -- Rollback: DROP VIEW original; ALTER TABLE archived_* RENAME TO original;
 

@@ -1,0 +1,36 @@
+---
+description: Master source of truth for IP Management, Billing, Ward/Inpatient, CCMS, beds, and cross-module work. Extends existing services; never a greenfield rewrite.
+alwaysApply: true
+---
+
+# IP + Billing + Ward + Cross-Module SoT
+
+Canonical doc: `apps/hospital-portal-web/docs/ip-billing-ward-cross-module-sot.md`
+
+This is a production Eye Hospital Management System. Inspect and extend existing architecture. Do not duplicate services, introduce a second framework, or remove functionality unless this prompt requires it or the current implementation is demonstrably wrong.
+
+## Ownership (do not invert)
+
+| Domain | Source of truth | Existing home |
+|---|---|---|
+| Clinical / operational / admission lifecycle | IP Management `PatientJourney` | `microservices/ip-management-service` |
+| Charges, advances, payments, refunds, receipts, settlement | Billing `OpdBill` | Auth `OpdBillService` |
+| Coverage, claims, payer responsibility | CCMS | `microservices/ccms-service` |
+| Bed occupancy | Auth bed inventory | `InternalIpBedController` / `BedLifecyclePolicy` |
+| Realtime | Existing `NotificationHub` | Auth SignalR |
+| Cross-module events | Existing integration outbox | `IntegrationOutboxService` |
+
+IP journey financial fields (`FinancialState`, `TotalPaid`, `IpBillingTransaction`, …) are **projections / clinical workflow**, not accounting records. Classify via `IpFinancialFieldClassification`. Do not silently overwrite financial totals. Do not use frontend state as clinical or financial truth.
+
+## Required process
+
+- Trace every change FE → API → BE → DB → integrations.
+- Validate every business-critical state transition server-side.
+- Make every financial operation auditable.
+- Preserve backward compatibility where practical.
+- Complete required work across frontend, backend, database, APIs, integrations, and tests — not UI-only.
+- After each phase: build, lint, type-check, migration validation, unit/integration/existing tests. Fix issues you introduce before completing the phase.
+
+## Phase close-out (required)
+
+files changed · database changes · APIs changed/added · integrations changed · tests added/updated · remaining risks · exact validation commands

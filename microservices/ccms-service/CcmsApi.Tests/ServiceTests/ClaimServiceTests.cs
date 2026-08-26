@@ -96,6 +96,18 @@ public class ClaimServiceTests : IDisposable
         dtos.Should().AllSatisfy(d => d.Should().BeOfType<ClaimPacketDto>());
     }
 
+    [Fact]
+    public async Task RaiseClaimQuery_AfterSubmit_SetsQueryStatus()
+    {
+        var c = _fix.SeedCase(state: "CLAIM_SUBMITTED");
+        var claim = _fix.SeedClaim(c.Id);
+
+        var dto = await _svc.RaiseClaimQueryAsync(claim.Id, _fix.ActorId, "Need OT notes", false);
+
+        dto.QueryStatus.Should().Be("query_raised");
+        (await _fix.Db.CoverageCases.FindAsync(c.Id))!.CurrentState.Should().Be("CLAIM_QUERY_RAISED");
+    }
+
     // ── GetQueueAsync ────────────────────────────────────────────────────────
 
     [Fact]

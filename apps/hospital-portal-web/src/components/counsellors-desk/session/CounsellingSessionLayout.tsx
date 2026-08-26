@@ -18,7 +18,7 @@ export const COUNSELLING_MOBILE_SCROLL_PAD_PX =
 /** Workspace column + quote rail; session flow lives inside phase cards. */
 export function CounsellingSessionLayout({ workspace, quotePanel }: CounsellingSessionLayoutProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:flex-row lg:items-stretch">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden lg:flex-row lg:items-stretch">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain max-lg:pb-[144px] lg:flex-[1_1_55%] lg:scrollbar-hide">
         {workspace}
       </div>

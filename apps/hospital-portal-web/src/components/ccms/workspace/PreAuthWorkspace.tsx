@@ -42,9 +42,11 @@ function Row({ label, value, highlight }: { label: string; value: React.ReactNod
 
 function StatusChip({ status }: { status: string }) {
   const map: Record<string, { cls: string; label: string }> = {
+    PREAUTH_GENERATED:        { cls: 'bg-indigo-50 text-indigo-700', label: 'Ready to send' },
     PREAUTH_SENT:           { cls: 'bg-blue-50 text-blue-700',   label: 'Sent to TPA' },
-    WAITING_APPROVAL:       { cls: 'bg-amber-50 text-amber-700', label: 'Awaiting Approval' },
-    CLARIFICATION_REQUIRED: { cls: 'bg-red-50 text-red-700',     label: 'Clarification Due' },
+    WAITING_APPROVAL:       { cls: 'bg-amber-50 text-amber-700', label: 'Waiting for approval' },
+    CLARIFICATION_REQUIRED: { cls: 'bg-red-50 text-red-700',     label: 'Query from TPA' },
+    RESUBMITTED:            { cls: 'bg-blue-50 text-blue-700',   label: 'Resubmitted' },
     PARTIAL_APPROVAL:       { cls: 'bg-purple-50 text-purple-700', label: 'Partial Approval' },
     APPROVED:               { cls: 'bg-green-50 text-green-700', label: 'Approved' },
     REJECTED:               { cls: 'bg-red-100 text-red-800',    label: 'Rejected' },
@@ -207,7 +209,7 @@ export function PreAuthWorkspace({ item, onClose, onUpdated }: Props) {
             <div className="bg-indigo-50 rounded-xl p-3 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-gray-500">Current state</span>
-                <StatusChip status={item.status} />
+                <StatusChip status={item.caseState || item.status} />
               </div>
               {item.processStatus && (
                 <Row label="Process Status" value={item.processStatus.replace(/_/g, ' ')} />

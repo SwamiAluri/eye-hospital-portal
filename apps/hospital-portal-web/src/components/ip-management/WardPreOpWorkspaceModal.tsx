@@ -2,10 +2,10 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import { Activity, Building2, ClipboardList, History, Lock, MessageSquare, Pill, Printer, Wallet, X } from 'lucide-react';
+import { Activity, ClipboardList, History, Lock, MessageSquare, Pill, Printer, Wallet, X } from 'lucide-react';
 import { PatientJourneyRowDto, WardDto, ipManagementApi } from '@/lib/api/ip-management.api';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { usePreOpReadiness } from '@/hooks/use-preop-readiness';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
 import { WardPreOpGateChip } from '@/components/ip-management/WardPreOpGateChip';
 import { WardPreOpStepNav } from '@/components/ip-management/preop/WardPreOpStepNav';
 import { PreOpReadinessBar } from '@/components/ip-management/preop/PreOpReadinessBar';
@@ -41,6 +41,7 @@ import {
 } from '@/lib/ip-management/preop-steps';
 import { canCancelTodaySurgery } from '@/lib/ip-management/ward-journey-helpers';
 import { MergedMrGuardBanner } from '@/components/ip-management/MergedMrGuardBanner';
+import { preOpPayerChipLabel } from '@/lib/ip-management/preop-payer-chip';
 import {
   PreOpClearanceChangedBridge,
   PreOpClearanceProvider,
@@ -55,6 +56,8 @@ export interface WardPreOpWorkspaceModalProps {
   branchId?: string;
   onClose: () => void;
   onJourneyUpdated: (updated: PatientJourneyRowDto) => void;
+  /** Preferred v2 step. Wins over the legacy tab/section pair when set (IP-010). */
+  initialStep?: PreOpStepKey;
   /** Legacy deep-link entry point — mapped to the v2 8-step model. */
   initialTopTab?: WardPreOpTopTab;
   /** Legacy checklist section deep-link — mapped to the v2 8-step model. */
@@ -94,6 +97,7 @@ function WardPreOpWorkspaceModalInner({
   branchId,
   onClose,
   onJourneyUpdated,
+  initialStep: initialStepProp,
   initialTopTab = 'wardChecklist',
   initialChecklistSection = 'investigations',
   onRequestSendToOt,
@@ -104,13 +108,17 @@ function WardPreOpWorkspaceModalInner({
   const { primaryDeptCode, loading: deptLoading } = useUserDepartment();
 
   const initialStep = useMemo(() => {
-    const step = legacyToStep(initialTopTab, initialChecklistSection);
-    // Don't open on the care-only step before admission — start at investigations.
-    if (step === 'records' && journey.clinicalState === 'Expected') return 'investigations';
-    // Admission-only steps (Evaluation / Anaesthesia) aren't shown pre-admit.
-    if (isStepHidden(getPreOpStep(step), journey.clinicalState)) return 'investigations';
+    const step = initialStepProp ?? legacyToStep(initialTopTab, initialChecklistSection);
+    // Expected patients land on Admission & bed (S-05 mockup step 1).
+    if (journey.clinicalState === 'Expected' && !initialStepProp && initialTopTab === 'wardChecklist' && initialChecklistSection === 'investigations') {
+      return 'admit';
+    }
+    if (step === 'records' && journey.clinicalState === 'Expected') return 'admit';
+    if (isStepHidden(getPreOpStep(step), journey.clinicalState)) {
+      return journey.clinicalState === 'Expected' ? 'admit' : 'investigations';
+    }
     return step;
-  }, [initialTopTab, initialChecklistSection, journey.clinicalState]);
+  }, [initialStepProp, initialTopTab, initialChecklistSection, journey.clinicalState]);
 
   const [activeStep, setActiveStep] = useState<PreOpStepKey>(initialStep);
   const [careTab, setCareTab] = useState<WardPreOpCareTab>(legacyCareTab(initialTopTab));
@@ -130,22 +138,13 @@ function WardPreOpWorkspaceModalInner({
     };
   }, [journey.id]);
 
-  // A11y (Phase 12): trap focus inside the dialog, restore on close, Escape to close.
-  const dialogRef = useFocusTrap(true);
   const titleId = useId();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   // Readiness rollup (Phase 13): single load powering the top bar + per-step counts.
   // Decoupled from navigation (Phase 14): the rollup refreshes only when data actually
   // changes — each panel reports edits via `onChanged` → `reloadReadiness()`. Clicking a
   // step therefore reloads only the right-hand panel, never the whole shell.
-  const { readiness, markReadyGates, pac, loading: readinessLoading, reload: reloadReadiness } = usePreOpReadiness({
+  const { readiness, markReadyGates, dilation, pac, loading: readinessLoading, reload: reloadReadiness } = usePreOpReadiness({
     journeyId: journey.id,
     clinicalState: journey.clinicalState,
     paymentMode: journey.paymentMode ?? undefined,
@@ -182,16 +181,17 @@ function WardPreOpWorkspaceModalInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deptLoading, explicitDeepLink, primaryDeptCode]);
 
-  function handleStepChange(step: PreOpStepKey) {
+  function handleStepChange(step: PreOpStepKey, extras?: { careTab?: WardPreOpCareTab }) {
     roleDefaultApplied.current = true;
     setActiveStep(step);
+    if (extras?.careTab) setCareTab(extras.careTab);
   }
 
-  // Safety net: never leave the active step on an admission-only step that is hidden
+  // Safety net: never leave the active step on an admission-gated step that is hidden
   // pre-admit (e.g. a programmatic "go to PAC" while still Expected).
   useEffect(() => {
     if (isStepHidden(getPreOpStep(activeStep), journey.clinicalState)) {
-      setActiveStep('investigations');
+      setActiveStep(journey.clinicalState === 'Expected' ? 'admit' : 'investigations');
     }
   }, [activeStep, journey.clinicalState]);
 
@@ -264,9 +264,9 @@ function WardPreOpWorkspaceModalInner({
           wards={wards}
           onAdmitted={updated => {
             onJourneyUpdated(updated);
-            setActiveStep('records');
-            setCareTab('vitals');
+            setActiveStep('evaluation');
           }}
+          onCancelled={updated => onJourneyUpdated(updated)}
         />
       );
     }
@@ -463,40 +463,35 @@ function WardPreOpWorkspaceModalInner({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      data-testid={WARD_PREOP_TEST_IDS.workspace}
+    <>
+    <IpOverlayDialog
+      onClose={onClose}
+      size="6xl"
+      title="Ward Pre-Operative Workspace"
+      testId={WARD_PREOP_TEST_IDS.workspace}
+      className="max-h-[92vh] min-h-[min(85vh,900px)]"
     >
       <PreOpClearanceChangedBridge onChanged={reloadReadiness} />
       <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
         aria-labelledby={titleId}
-        className="bg-white rounded-2xl shadow-xl w-full max-w-6xl mx-4 max-h-[92vh] min-h-[min(85vh,900px)] flex flex-col"
+        className="flex flex-col max-h-[92vh] min-h-[min(85vh,900px)]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-2xl shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <Building2 className="h-4 w-4 text-blue-600 shrink-0" />
-            <div className="min-w-0">
-              <h2 id={titleId} className="text-base font-semibold text-gray-900 truncate">
-                Ward Pre-Operative Workspace
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5 truncate">
-                {journey.patientName ?? '—'}
-                {journey.uhid ? ` · MR: ${journey.uhid}` : ''}
-                {journey.procedureName ? ` · ${journey.procedureName}` : ''}
-                {journey.eyeOperated ? ` · ${journey.eyeOperated}` : ''}
-              </p>
+        <div className="ws-head shrink-0 sticky top-0 z-10">
+          <div className="min-w-0">
+            <div className="name" id={titleId}>Ward Pre-Operative Workspace</div>
+            <div className="ident">
+              {journey.patientName ?? '—'}
+              {journey.uhid ? ` · MR: ${journey.uhid}` : ''}
+              {journey.procedureName ? ` · ${journey.procedureName}` : ''}
+              {journey.eyeOperated ? ` · ${journey.eyeOperated}` : ''}
+            </div>
               {/* Context line (Phase 13 §5): payer + outpatient handoff at a glance */}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                {(journey.paymentMode || journey.financialState) && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
-                    <Wallet className="h-3 w-3" aria-hidden="true" />
-                    Payer: {journey.paymentMode || journey.financialState}
-                  </span>
-                )}
+                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                  <Wallet className="h-3 w-3" aria-hidden="true" />
+                  Payer: {preOpPayerChipLabel(journey.paymentMode)}
+                </span>
                 {(journey.balanceDue ?? 0) > 0 && (
                   <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
                     Balance ₹{(journey.balanceDue ?? 0).toLocaleString('en-IN')}
@@ -509,7 +504,7 @@ function WardPreOpWorkspaceModalInner({
                 )}
               </div>
             </div>
-          </div>
+          <span className="spacer" />
           <div className="flex items-center gap-3 shrink-0">
             <StatusBadge status={journey.clinicalState} size="sm" />
             {journey.patientId && (
@@ -612,6 +607,7 @@ function WardPreOpWorkspaceModalInner({
               markingReady={markingReady}
               onMarkReady={() => void handleMarkReady()}
               onNavigateStep={handleStepChange}
+              dilation={dilation}
             />
           )}
           <div className="flex justify-end gap-2">
@@ -645,13 +641,13 @@ function WardPreOpWorkspaceModalInner({
           </div>
         </div>
       </div>
-
+    </IpOverlayDialog>
       <PreOpAuditDrawer
         journeyId={journey.id}
         open={auditOpen}
         onClose={() => setAuditOpen(false)}
       />
-    </div>
+    </>
   );
 }
 

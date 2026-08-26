@@ -1,0 +1,32 @@
+---
+description: Accessibility requirements for hospital portal UI — keyboard, semantics, dialogs, forms, tables, and contrast.
+globs:
+  - apps/hospital-portal-web/src/**/*.tsx
+  - apps/hospital-portal-web/src/**/*.css
+alwaysApply: false
+---
+
+# Accessibility
+
+All new or modified UI must be operable without a mouse and usable with assistive technology.
+
+## Required
+
+- Keyboard navigation and logical tab order
+- Visible focus (`focus-visible`; do not remove outlines without a replacement)
+- Semantic HTML first (`button`, `a`, `label`, `table`, headings). Do not use ARIA to paper over wrong elements
+- Accessible names, labels, descriptions; form controls associated with labels and errors
+- Dialogs/drawers: prefer Radix Dialog/Sheet/`IpOverlayDialog` (focus trap, Escape, title). No unlabeled `fixed inset-0` overlays
+- Tables: header cells, caption or `aria-label` when the purpose is not obvious
+- Validation announced and visible — never hide errors
+- Sufficient contrast on dashboard, IP target, counselling, auth, and portal scopes
+- Screen-reader text via existing `sr-only` / visually hidden patterns; skip link `#main-content` already exists — do not remove it
+- Icon-only controls need an accessible name
+
+## Reuse
+
+IP census keyboard helpers, `useFocusTrap`, and Radix primitives already exist — extend them rather than inventing a parallel a11y toolkit.
+
+## Do not
+
+Do not claim “accessible” because a role attribute was added. Do not block keyboard on custom grid cells that are the primary interaction. Kiosk/TV views still need sensible focus when they are interactive.

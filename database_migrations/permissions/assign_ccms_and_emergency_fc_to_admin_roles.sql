@@ -1,8 +1,36 @@
--- Staging: assign CCMS + Emergency FC permissions to operational admin roles.
--- Targets app_roles named/coded as Admin / IT_ADMIN / HEALTHCARE_ADMINISTRATOR.
--- Idempotent.
+-- Staging: ensure ip.emergency_fc.apply exists, then assign CCMS + Emergency FC
+-- only to Admin / IT_ADMIN / HEALTHCARE_ADMINISTRATOR.
+-- Idempotent. Do not attach Emergency FC to every CCMS role.
 
 BEGIN;
+
+-- Ensure the fail-closed Emergency FC permission exists (system + live tenants)
+WITH tenants_target AS (
+    SELECT '00000000-0000-0000-0000-000000000000'::uuid AS tenant_id
+    UNION
+    SELECT id FROM tenant WHERE COALESCE(is_active, true) = true
+)
+INSERT INTO permissions (
+    id, "TenantId", "Code", "Name", "Module", "Action", "ResourceType", "Scope",
+    "Description", "IsSystemPermission", "DepartmentSpecific", "IsCustom", "IsActive",
+    "CreatedAt", "UpdatedAt")
+SELECT
+    gen_random_uuid(),
+    t.tenant_id,
+    'ip.emergency_fc.apply',
+    'Apply Emergency FC',
+    'ip_management',
+    'apply',
+    'emergency_fc',
+    'branch',
+    'Apply Emergency Financial Clearance on IP journey',
+    true, false, false, true,
+    NOW(), NOW()
+FROM tenants_target t
+WHERE NOT EXISTS (
+    SELECT 1 FROM permissions p
+    WHERE p."TenantId" = t.tenant_id AND p."Code" = 'ip.emergency_fc.apply'
+);
 
 WITH target_roles AS (
     SELECT r.id AS role_id
@@ -51,4 +79,3 @@ WHERE p."Code" IN (
 )
 GROUP BY p."Code"
 ORDER BY 1;
-

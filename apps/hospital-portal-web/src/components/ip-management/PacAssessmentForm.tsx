@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
 import { PacInvestigationSummary } from '@/components/ip-management/PacInvestigationSummary';
 import { PacAnaesthesiaClearanceSection } from '@/components/ip-management/preop/PacAnaesthesiaClearanceSection';
 import { PacClinicalSection } from '@/components/ip-management/preop/primitives/PacClinicalSection';
@@ -761,11 +762,14 @@ export function PacAssessmentForm({
       </PacClinicalSection>
 
       {completeDialog && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
-          data-testid={WARD_PREOP_TEST_IDS.pacCompleteWarnDialog}
+        <IpOverlayDialog
+          onClose={() => setCompleteDialog(null)}
+          size="md"
+          title="Unverified critical labs"
+          testId={WARD_PREOP_TEST_IDS.pacCompleteWarnDialog}
+          dismissOnOverlay={false}
         >
-          <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-xl">
+          <div>
             <div className="flex items-start gap-3 border-b border-gray-100 px-6 py-4">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
               <div>
@@ -799,7 +803,7 @@ export function PacAssessmentForm({
               </button>
             </div>
           </div>
-        </div>
+        </IpOverlayDialog>
       )}
     </div>
   );

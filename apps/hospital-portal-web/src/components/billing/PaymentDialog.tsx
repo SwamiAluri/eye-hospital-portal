@@ -30,7 +30,7 @@ import {
   IndianRupee,
   AlertCircle,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useMasterValues } from '@/hooks/use-master-values';
 
 export type PaymentMode = 'cash' | 'card' | 'upi' | 'online' | 'insurance' | 'credit';

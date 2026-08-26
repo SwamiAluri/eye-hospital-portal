@@ -256,13 +256,36 @@ public class MasterDataService
     // ── Document Requirements ────────────────────────────────────────────────
 
     public async Task<List<CcmsDocumentRequirement>> ListDocumentRequirementsAsync(
-        Guid tenantId, string? payerType, string? stage, CancellationToken ct = default)
+        Guid tenantId,
+        string? payerType,
+        string? stage,
+        Guid? insuranceProviderId = null,
+        Guid? tpaProviderId = null,
+        Guid? governmentSchemeId = null,
+        bool caseScoped = false,
+        CancellationToken ct = default)
     {
         var q = _db.DocumentRequirements.AsNoTracking()
             .Where(d => d.TenantId == tenantId && d.DeletedAt == null);
         if (!string.IsNullOrEmpty(stage))
-            q = q.Where(d => d.AppliesAt == stage);
-        return await q.OrderBy(d => d.DocumentName).ToListAsync(ct);
+        {
+            var stageNorm = stage.Trim();
+            q = q.Where(d => d.AppliesAt == stageNorm);
+        }
+
+        var list = await q.OrderBy(d => d.DocumentName).ToListAsync(ct);
+
+        if (!caseScoped)
+            return list;
+
+        var caseProbe = new CcmsCoverageCase
+        {
+            InsuranceProviderId = insuranceProviderId,
+            TpaProviderId       = tpaProviderId,
+            GovernmentSchemeId  = governmentSchemeId,
+            PayerType           = payerType ?? "insurance",
+        };
+        return list.Where(r => PreAuthDocumentGate.RequirementAppliesToCase(r, caseProbe)).ToList();
     }
 
     public async Task<CcmsDocumentRequirement> CreateDocumentRequirementAsync(

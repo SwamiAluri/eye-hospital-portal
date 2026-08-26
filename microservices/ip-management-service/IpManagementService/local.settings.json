@@ -11,7 +11,11 @@
     "AuthService__BaseUrl": "http://localhost:5073",
     "CcmsService__BaseUrl": "http://localhost:7075/api",
     "CcmsService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
-    "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026"
+    "AuthService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
+    "InventoryService__BaseUrl": "http://localhost:7072",
+    "InventoryService__InternalApiKey": "hp-internal-svc-key-change-in-production-2026",
+    "EnableUatDataSeeder": "true",
+    "AZURE_FUNCTIONS_ENVIRONMENT": "Development"
   },
   "Host": {
     "LocalHttpPort": 5074,

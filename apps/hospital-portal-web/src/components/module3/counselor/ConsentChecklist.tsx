@@ -12,7 +12,7 @@ import { SignatureCanvas } from './SignatureCanvas';
 import { useConsents, useRenderConsent, useSignConsent } from '@/hooks/use-consents';
 import { useConsentTemplates } from '@/hooks/use-consents';
 import { FileCheck, FileX, FileClock, Loader2, Eye, Pen, CheckCircle2, XCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { PatientConsent, ConsentTemplate } from '@/types/counselor';
 
 interface ConsentChecklistProps {

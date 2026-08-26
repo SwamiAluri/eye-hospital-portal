@@ -41,4 +41,8 @@
     <Compile Remove="Services\ProbationService.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AuthService.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -58,6 +58,9 @@ public class PacAssessmentService
 
         ApplySave(row, req);
         row.UpdatedAt = DateTime.UtcNow;
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "PacAssessmentSaved", "PAC",
+            null, row.AssessmentStatus, correlationId: row.Id));
         await _db.SaveChangesAsync();
 
         return await BuildDtoAsync(journey, row);
@@ -79,6 +82,9 @@ public class PacAssessmentService
         row.CompletedByUserId   = userId;
         row.AssessedAt        ??= now;
         row.UpdatedAt           = now;
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "PacAssessmentCompleted", "PAC",
+            "InProgress", "Completed", correlationId: row.Id));
 
         await _db.SaveChangesAsync();
         await _wardSync.SyncItemAsync(

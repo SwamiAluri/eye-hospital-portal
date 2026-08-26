@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using AuthService.Authorization;
 using AuthService.DTOs.Billing;
+using AuthService.Services;
 using AuthService.Services.Interfaces;
 
 namespace AuthService.Controllers;
@@ -128,6 +130,23 @@ public class OpdBillsController : ControllerBase
     }
 
     /// <summary>
+    /// Inpatient financial dashboard from OpdBill (not PatientJourney snapshots).
+    /// Billed metrics use bill_date; collected/refunds use payment_date.
+    /// </summary>
+    [HttpGet("ip-dashboard")]
+    public async Task<IActionResult> GetIpDashboard(
+        [FromQuery] Guid branchId,
+        [FromQuery] string? preset = "this_month",
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null)
+    {
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "branchId is required." });
+        var data = await _opdBillService.GetIpBillingDashboardAsync(branchId, preset, from, to);
+        return Ok(data);
+    }
+
+    /// <summary>
     /// Check billing rules for an appointment (determines if free visit)
     /// </summary>
     [HttpGet("check-rules/{appointmentId:guid}")]
@@ -230,6 +249,7 @@ public class OpdBillsController : ControllerBase
     /// Create a new OPD bill
     /// </summary>
     [HttpPost]
+    [RequirePermission("bill.create")]
     public async Task<IActionResult> CreateBill([FromBody] CreateOpdBillDto request)
     {
         try
@@ -254,9 +274,51 @@ public class OpdBillsController : ControllerBase
     }
 
     /// <summary>
+    /// JWT cashier path: create or reuse the inpatient OpdBill for a journey.
+    /// Package explosion (BILL-031 / D1) runs inside EnsureInpatientBillAsync.
+    /// </summary>
+    [HttpPost("ip-ensure")]
+    [RequirePermission("bill.create")]
+    public async Task<IActionResult> EnsureIpBill([FromBody] EnsureIpBillDto request)
+    {
+        try
+        {
+            var userId = GetUserId();
+            var bill = await _opdBillService.EnsureIpBillForJourneyAsync(request.PatientJourneyId, userId);
+            return Ok(bill);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (ChargePostingException ex)
+        {
+            return Conflict(new { code = ex.Code, error = ex.Message, billId = ex.BillId, failedLines = ex.FailedLines });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error ensuring IP bill for journey {JourneyId}", request.PatientJourneyId);
+            return StatusCode(500, new { message = "Failed to ensure inpatient bill", error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Add payment to a bill
     /// </summary>
     [HttpPost("payment")]
+    [RequirePermission("bill.update")]
     public async Task<IActionResult> AddPayment([FromBody] AddPaymentDto request)
     {
         try
@@ -290,6 +352,7 @@ public class OpdBillsController : ControllerBase
     /// Approve credit for a bill
     /// </summary>
     [HttpPost("credit")]
+    [RequirePermission("bill.update")]
     public async Task<IActionResult> ApproveCredit([FromBody] ApplyCreditDto request)
     {
         try
@@ -315,6 +378,7 @@ public class OpdBillsController : ControllerBase
     /// Apply discount to a bill
     /// </summary>
     [HttpPost("discount")]
+    [RequirePermission("bill.update")]
     public async Task<IActionResult> ApplyDiscount([FromBody] ApplyDiscountDto request)
     {
         try
@@ -348,6 +412,7 @@ public class OpdBillsController : ControllerBase
     /// Finalize a bill (make it immutable)
     /// </summary>
     [HttpPost("{id:guid}/finalize")]
+    [RequirePermission("bill.update")]
     public async Task<IActionResult> FinalizeBill(Guid id)
     {
         try
@@ -362,6 +427,14 @@ public class OpdBillsController : ControllerBase
 
             return Ok(bill);
         }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error finalizing bill {BillId}", id);
@@ -373,6 +446,7 @@ public class OpdBillsController : ControllerBase
     /// Cancel a bill
     /// </summary>
     [HttpPost("{id:guid}/cancel")]
+    [RequirePermission("bill.update")]
     public async Task<IActionResult> CancelBill(Guid id, [FromBody] CancelBillRequest request)
     {
         try
@@ -397,9 +471,11 @@ public class OpdBillsController : ControllerBase
     // ============ Bill Locking Endpoints (Day 5 - Feb 7, 2026) ============
 
     /// <summary>
-    /// Lock a bill to prevent further modifications
+    /// Lock a bill after the same finalization gates as POST {id}/finalize.
+    /// Does not bypass completeness or patient obligation.
     /// </summary>
     [HttpPost("{id:guid}/lock")]
+    [RequirePermission("bill.update")]
     public async Task<IActionResult> LockBill(Guid id)
     {
         try
@@ -416,7 +492,11 @@ public class OpdBillsController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return Conflict(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
         }
         catch (Exception ex)
         {
@@ -429,6 +509,7 @@ public class OpdBillsController : ControllerBase
     /// Unlock a bill (admin only) - requires reason for audit trail
     /// </summary>
     [HttpPost("{id:guid}/unlock")]
+    [RequirePermission("bill.update")]
     public async Task<IActionResult> UnlockBill(Guid id, [FromBody] UnlockBillRequest request)
     {
         try
@@ -482,6 +563,7 @@ public class OpdBillsController : ControllerBase
     /// Get all billing rules
     /// </summary>
     [HttpGet("rules")]
+    [RequirePermission("bill.admin")]
     public async Task<IActionResult> GetBillingRules([FromQuery] Guid? branchId = null)
     {
         var rules = await _opdBillService.GetBillingRulesAsync(branchId);
@@ -492,6 +574,7 @@ public class OpdBillsController : ControllerBase
     /// Create a billing rule
     /// </summary>
     [HttpPost("rules")]
+    [RequirePermission("bill.admin")]
     public async Task<IActionResult> CreateBillingRule([FromBody] CreateBillingRuleDto request)
     {
         try
@@ -511,6 +594,7 @@ public class OpdBillsController : ControllerBase
     /// Update a billing rule
     /// </summary>
     [HttpPut("rules/{id:guid}")]
+    [RequirePermission("bill.admin")]
     public async Task<IActionResult> UpdateBillingRule(Guid id, [FromBody] UpdateBillingRuleDto request)
     {
         try
@@ -536,6 +620,7 @@ public class OpdBillsController : ControllerBase
     /// Delete a billing rule
     /// </summary>
     [HttpDelete("rules/{id:guid}")]
+    [RequirePermission("bill.admin")]
     public async Task<IActionResult> DeleteBillingRule(Guid id)
     {
         try

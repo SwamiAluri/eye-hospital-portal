@@ -1,7 +1,6 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { generateCSSVariables } from './tokens';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -48,14 +47,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.classList.add(resolved);
     root.style.colorScheme = resolved;
 
-    // Inject CSS variables
-    let styleEl = document.getElementById('theme-variables');
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = 'theme-variables';
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = generateCSSVariables(resolved);
+    // generateCSSVariables() output (--color-*, --spacing-*, --radius-*, --shadow-*, --transition-*)
+    // is not consumed by loaded application CSS. Stop injecting it; drop a leftover HMR node if present.
+    document.getElementById('theme-variables')?.remove();
   }, [theme, mounted]);
 
   // Listen for system theme changes

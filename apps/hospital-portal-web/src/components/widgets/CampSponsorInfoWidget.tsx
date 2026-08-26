@@ -10,7 +10,7 @@ import { Users, Activity as Heart, CheckCircle, FileText, AlertCircle as Info, A
 import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { useCounselingSession } from '@/hooks/use-counseling-sessions';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 export default function CampSponsorInfoWidget({
   widgetId,

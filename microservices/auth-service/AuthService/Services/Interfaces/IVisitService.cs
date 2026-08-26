@@ -75,4 +75,12 @@ public interface IOpdBillService
     Task<BillingRuleDto> CreateBillingRuleAsync(CreateBillingRuleDto request, Guid userId);
     Task<BillingRuleDto?> UpdateBillingRuleAsync(Guid id, UpdateBillingRuleDto request, Guid userId);
     Task<bool> DeleteBillingRuleAsync(Guid id, Guid userId);
+    Task<OpdBillDto> EnsureInpatientBillAsync(EnsureInpatientBillRequest request, Guid userId);
+    Task<OpdBillDto> EnsureIpBillForJourneyAsync(Guid patientJourneyId, Guid userId);
+    Task<InpatientFinancialSummaryDto> GetInpatientSummaryAsync(Guid patientJourneyId);
+    Task<InpatientFinancialSummaryDto?> ApplyCoverageAllocationAsync(ApplyCoverageAllocationRequest request);
+    Task<IpBillingDashboardDto> GetIpBillingDashboardAsync(Guid branchId, string? preset, DateTime? fromUtc, DateTime? toUtc);
+    Task<OpdBillDto?> ReversePaymentAsync(ReversePaymentRequest request, Guid userId);
+    Task<int> SoftDeleteInpatientBillsForUatAsync(IReadOnlyList<Guid> journeyIds, Guid userId);
+    Task<ChargeItemsResultDto> ChargeItemsAsync(ChargeItemsRequest request);
 }

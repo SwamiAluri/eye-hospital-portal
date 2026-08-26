@@ -68,55 +68,11 @@ COMMENT ON COLUMN opd_bills.unlocked_at IS 'Timestamp when bill was last unlocke
 -- Add comment on unlocked_by_user_id column
 COMMENT ON COLUMN opd_bills.unlocked_by_user_id IS 'User who unlocked the bill (requires admin permission)';
 
--- Create audit trigger for bill lock/unlock events
+-- Lock/unlock audit is application `audit_log` (BillLocked / BillUnlocked).
+-- Do not INSERT into `audit_logs` — that relation does not exist (migration 179).
 CREATE OR REPLACE FUNCTION audit_bill_lock_unlock()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Only log if lock status changed
-    IF (OLD.is_locked IS DISTINCT FROM NEW.is_locked) THEN
-        INSERT INTO audit_logs (
-            id,
-            tenant_id,
-            user_id,
-            action,
-            resource_type,
-            resource_id,
-            old_values,
-            new_values,
-            ip_address,
-            user_agent,
-            status,
-            created_at
-        ) VALUES (
-            gen_random_uuid(),
-            NEW.tenant_id,
-            COALESCE(NEW.locked_by_user_id, NEW.unlocked_by_user_id),
-            CASE 
-                WHEN NEW.is_locked = TRUE THEN 'bill.lock'
-                ELSE 'bill.unlock'
-            END,
-            'opd_bill',
-            NEW.id::TEXT,
-            jsonb_build_object(
-                'is_locked', OLD.is_locked,
-                'locked_at', OLD.locked_at,
-                'locked_by_user_id', OLD.locked_by_user_id
-            ),
-            jsonb_build_object(
-                'is_locked', NEW.is_locked,
-                'locked_at', NEW.locked_at,
-                'locked_by_user_id', NEW.locked_by_user_id,
-                'unlocked_at', NEW.unlocked_at,
-                'unlocked_by_user_id', NEW.unlocked_by_user_id,
-                'unlock_reason', NEW.unlock_reason
-            ),
-            NULL,
-            NULL,
-            'success',
-            NOW()
-        );
-    END IF;
-    
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

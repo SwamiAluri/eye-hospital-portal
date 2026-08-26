@@ -229,7 +229,8 @@ public record ClaimPacketDto(
     string? TpaClaimNumber,
     DateTime? ExpectedSettlementDate,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    string QueryStatus = "none"
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

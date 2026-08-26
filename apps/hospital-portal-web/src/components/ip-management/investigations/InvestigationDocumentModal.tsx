@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { Download, ExternalLink, FileText, RefreshCw, X } from 'lucide-react';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
 
 export interface InvestigationDocumentModalProps {
   open: boolean;
@@ -25,32 +24,21 @@ export function InvestigationDocumentModal({
   onClose,
   onReplace,
 }: InvestigationDocumentModalProps) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  if (!open || typeof document === 'undefined') return null;
+  if (!open) return null;
 
   const label = fileName ?? 'Report';
   const isImage = isImageName(fileName);
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Preview ${label}`}
-      onClick={onClose}
+  return (
+    <IpOverlayDialog
+      open={open}
+      onClose={onClose}
+      size="4xl"
+      title={label}
+      dismissOnOverlay
+      className="max-h-[90vh]"
     >
-      <div
-        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="flex max-h-[90vh] flex-col overflow-hidden">
         <header className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <FileText className="h-4 w-4 shrink-0 text-gray-500" />
@@ -110,7 +98,6 @@ export function InvestigationDocumentModal({
           )}
         </div>
       </div>
-    </div>,
-    document.body,
+    </IpOverlayDialog>
   );
 }

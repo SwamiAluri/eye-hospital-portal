@@ -9,7 +9,8 @@ public class StockLedger
     public Guid? StockBatchId { get; set; }
     /// <summary>
     /// GRN_IN | PHARMACY_ISSUE | OT_ISSUE | TRANSFER_OUT | TRANSFER_IN |
-    /// RETURN_TO_VENDOR | ADJUSTMENT | PATIENT_IOL_ISSUE | EXPIRY_WRITE_OFF
+    /// RETURN_TO_VENDOR | ADJUSTMENT | PATIENT_IOL_ISSUE | EXPIRY_WRITE_OFF |
+    /// IMPLANT_WASTE | IMPLANT_RETURN
     /// </summary>
     public string TransactionType { get; set; } = string.Empty;
     public string? ReferenceId { get; set; }

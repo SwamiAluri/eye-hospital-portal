@@ -213,3 +213,13 @@ public class UpsertBranchVariantPriceRequest
     [Range(0, double.MaxValue)]
     public decimal Amount { get; set; }
 }
+
+public class PayerPricingRowDto
+{
+    public Guid VariantId { get; set; }
+    public string VariantCode { get; set; } = string.Empty;
+    public string VariantName { get; set; } = string.Empty;
+    public string CategoryCode { get; set; } = string.Empty;
+    public decimal GlobalAmount { get; set; }
+    public decimal? PayerAmount { get; set; }
+}

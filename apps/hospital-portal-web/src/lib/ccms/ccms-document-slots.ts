@@ -19,6 +19,7 @@ export type CcmsDocumentKey =
   | 'investigation_reports'
   | 'clinical_notes'
   | 'bills'
+  | 'biometry_record'
   | 'other_1'
   | 'other_2';
 
@@ -42,7 +43,77 @@ export const CLAIMS_DOC_SLOTS: Omit<DocumentSlot, 'uploadedUrl' | 'uploadedAt' |
   { key: 'discharge_summary',    label: 'Discharge Summary',                           required: false, accept: 'image/*,application/pdf' },
   { key: 'investigation_reports',label: 'Investigation Reports',                       required: false, accept: 'image/*,application/pdf' },
   { key: 'clinical_notes',       label: 'Clinical Notes',                              required: false, accept: 'image/*,application/pdf' },
+  { key: 'biometry_record',      label: 'Biometry print',                              required: false, accept: '*' },
 ];
 
-/** All slots combined — used on the full CCMS documents page. */
+/** All slots combined — used as known-type labels only. Checklist source is master data. */
 export const ALL_DOC_SLOTS = [...INTAKE_DOC_SLOTS, ...CLAIMS_DOC_SLOTS];
+
+export interface DocumentRequirementRow {
+  id?: string;
+  documentType: string;
+  documentName?: string;
+  isRequired: boolean;
+  appliesAt?: string;
+  insuranceProviderId?: string | null;
+  tpaProviderId?: string | null;
+  governmentSchemeId?: string | null;
+}
+
+export type SlotDef = Omit<DocumentSlot, 'uploadedUrl' | 'uploadedAt' | 'docId'>;
+
+/** Shown when master has no rows for this payer — optional uploads still allowed. */
+export const OPTIONAL_FALLBACK_SLOTS: SlotDef[] = [
+  { key: 'other_1', label: 'Other document', required: false, accept: '*' },
+  { key: 'other_2', label: 'Other document 2', required: false, accept: '*' },
+];
+
+function labelForKnownKey(key: string): string {
+  const known = ALL_DOC_SLOTS.find(s => s.key === key);
+  if (known) return known.label;
+  return key.replace(/_/g, ' ');
+}
+
+export function requirementsToSlots(rows: DocumentRequirementRow[]): SlotDef[] {
+  const seen = new Set<string>();
+  const slots: SlotDef[] = [];
+  for (const r of rows) {
+    const key = (r.documentType ?? '').trim();
+    if (!key) continue;
+    const k = key.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    slots.push({
+      key,
+      label: (r.documentName ?? '').trim() || labelForKnownKey(key),
+      required: Boolean(r.isRequired),
+      accept: 'image/*,application/pdf',
+    });
+  }
+  return slots;
+}
+
+export function slotsFromMasterOrFallback(rows: DocumentRequirementRow[]): SlotDef[] {
+  const slots = requirementsToSlots(rows);
+  return slots.length > 0 ? slots : OPTIONAL_FALLBACK_SLOTS;
+}
+
+/** Always show the OPD biometry pointer slot so Attach from OPD has a home. */
+export function withBiometrySlot(slots: SlotDef[]): SlotDef[] {
+  if (slots.some(s => s.key.toLowerCase() === 'biometry_record')) return slots;
+  return [
+    ...slots,
+    { key: 'biometry_record', label: 'Biometry print', required: false, accept: '*' },
+  ];
+}
+
+export function formatMissingDocumentsMessage(missingLabels: string[]): string {
+  if (missingLabels.length === 0) {
+    return 'Pre-authorization cannot be sent until required documents are attached.';
+  }
+  if (missingLabels.length === 1) {
+    return `Pre-authorization cannot be sent until ${missingLabels[0]} is attached.`;
+  }
+  const head = missingLabels.slice(0, -1).join(', ');
+  return `Pre-authorization cannot be sent until ${head} and ${missingLabels[missingLabels.length - 1]} are attached.`;
+}

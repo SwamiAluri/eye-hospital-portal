@@ -59,6 +59,7 @@ public sealed class VendorService : IVendorService
             // VendorCode is left null — DB trigger auto-generates it
             VendorCategory          = string.IsNullOrWhiteSpace(req.VendorCategory) ? "general" : req.VendorCategory,
             IsPreferred             = req.IsPreferred,
+            IsConsignmentVendor     = req.IsConsignmentVendor,
             ContactPerson           = req.ContactPerson,
             Phone                   = req.Phone,
             Email                   = req.Email,
@@ -109,6 +110,7 @@ public sealed class VendorService : IVendorService
         vendor.Name                    = req.Name;
         vendor.VendorCategory          = string.IsNullOrWhiteSpace(req.VendorCategory) ? vendor.VendorCategory : req.VendorCategory;
         vendor.IsPreferred             = req.IsPreferred;
+        vendor.IsConsignmentVendor     = req.IsConsignmentVendor;
         vendor.ContactPerson           = req.ContactPerson;
         vendor.Phone                   = req.Phone;
         vendor.Email                   = req.Email;
@@ -192,5 +194,6 @@ public sealed class VendorService : IVendorService
         v.BankAccountType,
         v.CreditDays,
         v.OutstandingBalance,
-        v.Status);
+        v.Status,
+        v.IsConsignmentVendor);
 }

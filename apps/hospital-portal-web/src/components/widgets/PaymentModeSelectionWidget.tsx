@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { usePatientTypeMaster } from '@/hooks/use-patient-type-master';
 import { useCounselingSession, useUpdateCounselingSession } from '@/hooks/use-counseling-sessions';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { CustomDocumentModal } from '@/components/widgets/CustomDocumentModal';
 
 // ── Icon config per type ─────────────────────────────────────────────────────
@@ -251,35 +251,38 @@ const PaymentModeSelectionWidget = memo(function PaymentModeSelectionWidget({
       return;
     }
 
-    // Optimistic update — confirm locally immediately so Next button is enabled
-    setIsConfirmed(true);
-    onDataChange?.({
-      selectedPaymentMode: selectedPatientType,
-      patientType: selectedPatientType,
-      isConfirmed: true,
-      confirmed: true,
-    });
-    onAction?.({
-      type: 'PAYMENT_MODE_CONFIRMED',
-      payload: { patientType: selectedPatientType },
-      timestamp: new Date(),
-    });
-    toast.success('Payment mode confirmed', {
-      description: `Selected: ${selectedPatientType}`,
-    });
+    const markConfirmed = () => {
+      setIsConfirmed(true);
+      onDataChange?.({
+        selectedPaymentMode: selectedPatientType,
+        patientType: selectedPatientType,
+        isConfirmed: true,
+        confirmed: true,
+      });
+      onAction?.({
+        type: 'PAYMENT_MODE_CONFIRMED',
+        payload: { patientType: selectedPatientType },
+        timestamp: new Date(),
+      });
+      toast.success('Payment mode confirmed', {
+        description: `Selected: ${selectedPatientType}`,
+      });
+    };
 
-    // Async sync to backend (non-blocking for UX)
     const isMockSession = sessionId.includes('temp-session') || sessionId.includes('mock');
-    if (!isMockSession) {
-      try {
-        await updateSessionMutation.mutateAsync({
-          id: sessionId,
-          data: { patientType: selectedPatientType },
-        });
-      } catch (error: any) {
-        console.warn('⚠️ Payment mode sync to backend failed — confirmed locally:', error.message);
-        // Don't revert UI — user can still proceed; backend will sync on next save
-      }
+    if (isMockSession) {
+      markConfirmed();
+      return;
+    }
+
+    try {
+      await updateSessionMutation.mutateAsync({
+        id: sessionId,
+        data: { patientType: selectedPatientType },
+      });
+      markConfirmed();
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to save payment mode');
     }
   };
 

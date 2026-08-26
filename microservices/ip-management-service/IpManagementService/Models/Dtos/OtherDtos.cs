@@ -40,7 +40,12 @@ public record PreauthStatusDto(
     bool     IsEmergencyFinancialClearance = false,
     bool     RequiresOverride = false,
     DateTime? LastUpdatedAt = null,
-    bool     CcmsUnavailable = false
+    bool     CcmsUnavailable = false,
+    decimal? PayerShareAmount = null,
+    decimal? PatientShareAmount = null,
+    string?  CoverageStatus = null,
+    decimal? CollectedAmount = null,
+    decimal? PatientObligationAmount = null
 );
 
 // ─── Intra-Op Notes ───────────────────────────────────────────────────────────
@@ -122,7 +127,8 @@ public record PostOpInstructionDto(
     string?  EyeCareInstructions,
     string?  WarningSigns,
     bool     IsSaved,
-    DateTime? SavedAt
+    DateTime? SavedAt,
+    Guid?    FollowupAppointmentId = null
 );
 
 public record SavePostOpInstructionRequest(
@@ -132,7 +138,8 @@ public record SavePostOpInstructionRequest(
     DateTime? FollowupDate,
     Guid?    FollowupDoctorId,
     string?  EyeCareInstructions,
-    string?  WarningSigns
+    string?  WarningSigns,
+    Guid?    FollowupAppointmentId = null
 );
 
 // ─── Discharge Summary ────────────────────────────────────────────────────────
@@ -223,7 +230,11 @@ public record JourneyAuditLogDto(
     string?  OldValue,
     string?  NewValue,
     Guid?    PerformedByUserId,
-    DateTime PerformedAt
+    DateTime PerformedAt,
+    string?  Reason = null,
+    Guid?    CorrelationId = null,
+    string?  PreviousState = null,
+    string?  NewState = null
 );
 
 // ─── IOL Barcode Verification ─────────────────────────────────────────────────
@@ -233,7 +244,17 @@ public record VerifyIolBarcodeRequest(string Barcode);
 public record VerifyIolBarcodeResponse(
     bool    IsValid,
     string? CatalogEntry,
-    string? Message
+    string? Message,
+    Guid?   CatalogId = null,
+    string? Brand = null,
+    string? Model = null,
+    string? ProductCode = null,
+    Guid?   ExistingUsageId = null,
+    string? Gtin = null,
+    string? Serial = null,
+    string? Lot = null,
+    string? Expiry = null,
+    string? Symbology = null
 );
 
 // ─── Vital Signs ──────────────────────────────────────────────────────────────
@@ -316,6 +337,38 @@ public record UpdateNurseRecordRequest(
     int?      PainScore,
     string?   AlertnessLevel
 );
+
+// ─── Post-op taper (W-08 B1) ─────────────────────────────────────────────────
+
+public record PostOpTaperStepDto(
+    Guid     Id,
+    string   DrugName,
+    string   Eye,
+    int      StepNo,
+    string   FrequencyLabel,
+    int      Days,
+    string?  Instructions,
+    DateTime CreatedAt,
+    Guid     CreatedBy,
+    string?  CreatedByName,
+    DateTime? DeletedAt
+);
+
+public record PostOpTaperDto(
+    IReadOnlyList<PostOpTaperStepDto> Steps,
+    IReadOnlyList<PostOpTaperStepDto> History
+);
+
+public record SavePostOpTaperStepRequest(
+    string  DrugName,
+    string  Eye,
+    string  FrequencyLabel,
+    int     Days,
+    int?    StepNo = null,
+    string? Instructions = null
+);
+
+public record SavePostOpTaperRequest(IReadOnlyList<SavePostOpTaperStepRequest> Steps);
 
 // ─── Master Data DTOs ─────────────────────────────────────────────────────────
 public record OphthMedicationDto(

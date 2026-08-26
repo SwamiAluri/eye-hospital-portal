@@ -1,0 +1,74 @@
+---
+description: Canonical UI primitives, tokens, themes, icons, overlays, and reuse-before-create for the entire hospital portal.
+alwaysApply: true
+---
+
+# Design system
+
+Canonical primitive layer: `apps/hospital-portal-web/src/components/ui/` (shadcn/ui + Radix, Lucide, `cn()` in `src/lib/utils.ts`). Config: `components.json` (new-york). Dashboard identity: navy sidebar + emerald `primary-*` in `globals.css` / `tailwind.config.js`.
+
+## Reuse before create
+
+Before any new primitive or shared widget:
+
+1. Search `src/components/ui`
+2. Search `src/components` and the owning domain folder
+3. Search existing usages
+4. Prefer composition over a new primitive
+
+Do **not** duplicate Button, Card, Dialog, Sheet/Drawer, Table, Input, Select, Combobox, Tabs, Badge, Alert, Tooltip, Popover, Calendar, form controls, or toast primitives.
+
+## Canonical primitives (prefer these)
+
+| Need | Use |
+|---|---|
+| Dialog | `ui/dialog.tsx` |
+| Side panel | `ui/sheet.tsx` |
+| Confirm | `ui/alert-dialog.tsx` or `common/ConfirmationDialog.tsx` |
+| IP/ward/OT overlay | `IpOverlayDialog` (wraps Dialog; do not add a third overlay stack) |
+| Tabs | Prefer `ui/radix-tabs.tsx` for new work; `ui/tabs.tsx` is a legacy custom fork — do not add a third |
+| Thin modal wrapper | Avoid expanding `ui/Modal.tsx`; use Dialog |
+| Icons | Lucide only |
+| Toasts | `react-hot-toast` (mounted in dashboard + admin layouts) |
+| Staff chrome | `Sidebar.tsx` + `TopNav.tsx` + `sidebar-menu-sections.tsx` |
+| Permissions UI | `PermissionGate` + `ProtectedRoute` |
+
+## Domain kits (reuse; do not clone)
+
+`components/examination` · `ip-management` · `patients` · `ccms` · `appointments` · `counsellors-desk` · `auth` · `billing` · `frontdesk` · `queue-display` · `imaging` · `inventory` · `admin`
+
+A domain kit is **not** a second design system. Extend it; do not copy it into a new folder.
+
+## Scoped visual systems (do not unify or spread)
+
+These are intentional overlays. Do not delete them and do not promote them globally:
+
+| Scope | Where | Do |
+|---|---|---|
+| Dashboard tokens | `globals.css`, Tailwind `navy`/`primary` | Default for staff app chrome |
+| `.ip-target` | `ip-target.css` + `IpTargetFrame` | Keep on IP/ward/OT (and already-ported billing/admin surfaces). Do not restyle the whole portal to IP blue |
+| `.counselling-session` | counselling theme + session primitives | Session chrome only |
+| `.auth-oc` | `auth-theme.css` | Auth shell only |
+| Patient portal | `src/app/patient/layout.tsx` | Distinct patient UX is allowed; do not silently replace with staff Sidebar |
+| ThemeProvider | `src/lib/theme/tokens.ts` | Do not enable `dark-mode.css` as a global default without approval |
+| Mockup CSS | `docs/mockups/` | Design reference, not runtime |
+
+Do **not** create a new token file or a fourth “primary” color. `primary` already means emerald (dashboard), blue (IP target), and counselling HSL — pick the existing scope for the screen you are on.
+
+## Competing stacks — do not expand
+
+Do not add new Headless UI dialogs, `fixed inset-0` overlay shells, sonner toasts, `react-select`, or Material Symbols outside their existing files. Do not start using installed-but-unused `@tanstack/react-table` or `socket.io-client` without approval. Do not paste Figma/MCP Tailwind as a new component language.
+
+## Tables, forms, status
+
+No shared `DataTable` exists — compose `ui/table` or the domain table already used on that worklist. Do not introduce TanStack Table as a drive-by standard.
+
+Do not add another global `StatusBadge`. Domain badges/chips already exist (UI, IP `StatusChip`, CCMS, counselling). Reuse the one in that domain.
+
+## Layout
+
+Follow existing App Router layouts. Do not create a new top-level shell. Immersive routes (queue TV) must keep chrome-off behavior. Desktop workstation efficiency beats mobile-first gimmicks; still keep layouts usable on laptop/tablet.
+
+## Shared component changes
+
+Search all consumers before changing `ui/*` or shared domain primitives. Do not break other modules to satisfy one screen.

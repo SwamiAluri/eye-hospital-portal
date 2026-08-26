@@ -53,7 +53,29 @@ public record PatientJourneyRowDto(
     int      ReadinessCompleted      = 0,
     int      ReadinessTotal          = 0,
     // Primary surgeon display name, resolved from the read-only users table (Phase 2 follow-up).
-    string?  SurgeonName             = null
+    string?  SurgeonName             = null,
+    // IP-013 current slot (optional trailing so existing positional call sites compile).
+    Guid?    SlotId                  = null,
+    string?  SlotLabel               = null,
+    string?  SlotSession             = null,
+    int?     SlotSequenceNo          = null,
+    DateTime? PlannedArrivalAt       = null,
+    Guid?    SlotTheatreId           = null,
+    Guid?    PatientId               = null,
+    bool     DischargeOverrideApplied = false
+);
+
+/// <summary>B13. Server-side census tab badges so the FE does not recount a full list.</summary>
+public record CensusTabCountsDto(
+    int All,
+    int InHouse,
+    int ReadyForOt,
+    int SentToOt,
+    int InOt,
+    int PostOp,
+    int ReadyForDischarge,
+    int Discharged,
+    int Cancelled
 );
 
 // ─── Ward dashboard summary (Phase 2) ──────────────────────────────────────────
@@ -157,7 +179,19 @@ public record PatientJourneyDetailDto(
     Guid?    CanonicalPatientId,
     string?  CanonicalUhid,
     // Financial / payer (migration 146)
-    string?  PaymentMode
+    string?  PaymentMode,
+    Guid?    AssignedBedId = null,
+    bool     DischargePlanningReady = false,
+    DateTime UpdatedAt = default,
+    string?  DischargeType = null,
+    string?  DischargeTypeReason = null,
+    Guid?    PriorJourneyId = null,
+    Guid?    SlotId = null,
+    string?  SlotLabel = null,
+    string?  SlotSession = null,
+    int?     SlotSequenceNo = null,
+    DateTime? PlannedArrivalAt = null,
+    Guid?    SlotTheatreId = null
 );
 
 // ─── Admit ────────────────────────────────────────────────────────────────────
@@ -173,10 +207,12 @@ public record AdmitPatientRequest(
     string? AttendantRelationship,
     Guid?   PrimaryNurseId,
     Guid?   PrimarySurgeonId,
+    Guid?   AssignedBedId,
     bool    OverrideStateCheck,
     bool    BypassFinancialClearance,
     string? OverrideReason,
-    bool    AcknowledgeWarnings = false
+    bool    AcknowledgeWarnings = false,
+    DateTime? ExpectedUpdatedAt = null
 );
 
 // ─── Ward Updation Modal (update ward, bed, doctor, nurse) ────────────────────
@@ -190,11 +226,13 @@ public record UpdateWardAssignmentRequest(
     string? AdmissionType,
     string? AttendantName,
     string? AttendantPhone,
-    string? AttendantRelationship
+    string? AttendantRelationship,
+    Guid?   AssignedBedId
 );
 
 // ─── OT inline form (surgical team + IOL) ────────────────────────────────────
 
+/// <summary>OT Details. IolBarcode / IolBarcodeVerified are accepted for backward-compatible JSON and ignored (E4).</summary>
 public record UpdateOtDetailsRequest(
     string? AnaesthetistName,
     string? OperationTheatreName,
@@ -213,7 +251,8 @@ public record UpdateOtDetailsRequest(
 public record TransitionRequest(
     string  NewState,
     string? Reason = null,
-    bool    AcknowledgeWarnings = false);
+    bool    AcknowledgeWarnings = false,
+    DateTime? ExpectedUpdatedAt = null);
 
 // ─── Emergency FC Modal ───────────────────────────────────────────────────────
 
@@ -233,10 +272,75 @@ public record EmergencyFcRequest(
 
 public record DischargeOverrideRequest(string Reason);
 
-public record CancelTodaySurgeryRequest(string Reason);
+public record CancelTodaySurgeryRequest(string Reason, DateTime? ExpectedUpdatedAt = null);
+
+public record CancelAdmissionRequest(string Reason, DateTime? ExpectedUpdatedAt = null);
 
 public record ApplyCounsellingRebookRequest(
     Guid     OtScheduleId,
     Guid     TenantId,
     DateTime? SurgeryScheduledAt,
     string?  ActorUserId);
+
+public record ApplyOpdClinicalCopyRequest(
+    Guid     OtScheduleId,
+    Guid     TenantId,
+    string?  ProcedureName,
+    string?  EyeOperated,
+    string?  IolPower,
+    bool     ForceRefresh,
+    string?  ActorUserId);
+
+public record RefreshOpdClinicalResponse(
+    PatientJourneyDetailDto Journey,
+    bool BiometryMissing,
+    string? EyePhrase,
+    string? IolPower);
+
+public record TransferBedRequest(
+    Guid AssignedBedId,
+    Guid? WardId = null,
+    string? Reason = null,
+    DateTime? ExpectedUpdatedAt = null);
+
+public record DischargeWithTypeRequest(
+    string DischargeType,
+    string Reason,
+    bool Confirmed = false,
+    bool AcknowledgeWarnings = false,
+    DateTime? ExpectedUpdatedAt = null);
+
+public record CancelDischargeRequest(
+    string Reason,
+    Guid? AssignedBedId = null,
+    DateTime? ExpectedUpdatedAt = null);
+
+public record JourneyBedAssignmentDto(
+    Guid Id,
+    Guid PatientJourneyId,
+    Guid PatientId,
+    Guid? WardId,
+    string? WardName,
+    string? RoomNumber,
+    string? BedNumber,
+    Guid? AssignedBedId,
+    string AssignmentType,
+    Guid? AssignedFromBedId,
+    Guid? AssignedToBedId,
+    DateTime StartedAt,
+    DateTime? EndedAt,
+    Guid? PerformedByUserId,
+    string? Reason,
+    DateTime CreatedAt);
+
+/// <summary>W-05 A5 inpatient wristband. One active token per journey.</summary>
+public record JourneySafetyTokenDto(
+    Guid      Id,
+    Guid      JourneyId,
+    string    TokenCode,
+    string    BarcodeValue,
+    string?   Laterality,
+    DateTime? PrintedAt,
+    Guid?     PrintedBy,
+    DateTime  CreatedAt,
+    bool      AlreadyIssued = false);

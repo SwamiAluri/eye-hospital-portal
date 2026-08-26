@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using IpManagementService.Models.Domain;
+using IpManagementService.Services.Uat;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -48,7 +49,7 @@ public interface ICcmsAdmissionClient
 /// <summary>
 /// Canonical coverage admission projection consumed by IP admit gate and ward UI.
 /// </summary>
-public record CcmsAdmissionValidation(
+    public record CcmsAdmissionValidation(
     bool   Allowed,
     string WarningLevel,    // "none" | "info" | "warning" | "block" | "blocked"
     string? WarningMessage,
@@ -62,7 +63,12 @@ public record CcmsAdmissionValidation(
     bool   RequiresOverride = false,
     string? PaymentType = null,
     DateTime? LastUpdatedAt = null,
-    bool   CcmsUnavailable = false)
+    bool   CcmsUnavailable = false,
+    decimal? PayerShareAmount = null,
+    decimal? PatientShareAmount = null,
+    string? CoverageStatus = null,
+    decimal? CollectedAmount = null,
+    decimal? PatientObligationAmount = null)
 {
     /// <summary>
     /// Canonical fail-closed / fail-open factory used when CCMS cannot be reached.
@@ -112,19 +118,25 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
         bool coverageBased,
         bool emergencyFcApplied = false)
     {
+        if (UatFailureFlags.IsOn("ccms_unavailable"))
+            return UnavailableResult(coverageBased);
+
         try
         {
             var url = $"ccms/integration/validate-admission?journeyId={journeyId}&tenantId={tenantId}"
                 + (sessionId.HasValue ? $"&sessionId={sessionId}" : "")
                 + $"&emergencyFcApplied={emergencyFcApplied}";
-            var resp = await _http.GetAsync(url);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            ApplyInternalAuth(req, tenantId);
+            var resp = await _http.SendAsync(req);
             if (!resp.IsSuccessStatusCode)
             {
                 _logger.LogWarning("CCMS validate-admission returned {Status} for journey {JourneyId}", resp.StatusCode, journeyId);
                 return UnavailableResult(coverageBased);
             }
 
-            var body = await resp.Content.ReadFromJsonAsync<CcmsValidationResponse>();
+            var jsonOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var body = await resp.Content.ReadFromJsonAsync<CcmsValidationResponse>(jsonOpts);
             var warningLevel = NormalizeWarningLevel(body?.WarningLevel);
             return new CcmsAdmissionValidation(
                 body?.Allowed ?? !coverageBased,
@@ -139,7 +151,13 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
                 body?.IsEmergencyFinancialClearance ?? false,
                 body?.RequiresEmergencyFcOverride ?? false,
                 body?.PaymentType,
-                body?.LastUpdatedAt);
+                body?.LastUpdatedAt,
+                CcmsUnavailable: false,
+                body?.PayerShareAmount,
+                body?.PatientShareAmount,
+                body?.CoverageStatus,
+                body?.CollectedAmount,
+                body?.PatientObligationAmount);
         }
         catch (Exception ex)
         {
@@ -156,8 +174,12 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
         {
             var payload = new { tenantId, journeyId, sessionId, actorUserId, reason };
             var json = JsonSerializer.Serialize(payload);
-            var resp = await _http.PostAsync("ccms/integration/emergency-fc",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+            using var req = new HttpRequestMessage(HttpMethod.Post, "ccms/integration/emergency-fc")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            };
+            ApplyInternalAuth(req, tenantId);
+            var resp = await _http.SendAsync(req);
             if (!resp.IsSuccessStatusCode)
                 _logger.LogWarning("CCMS emergency-fc callback returned {Status} for journey {JourneyId}",
                     resp.StatusCode, journeyId);
@@ -170,6 +192,27 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
 
     public async Task DeliverOutboxEventAsync(string eventType, string payloadJson, string idempotencyKey)
     {
+        // IP-012 / IP-011: OT board + analytics consume the outbox row. CCMS has no
+        // route yet — ack so ProcessPending marks Processed instead of retrying to Dead.
+        if (eventType is IntegrationEventTypes.JourneyReadyForOt
+                       or IntegrationEventTypes.JourneyReadyReverted
+                       or IntegrationEventTypes.ImplantUsed
+                       or IntegrationEventTypes.ImplantUsageReversed
+                       or IntegrationEventTypes.ConsumablesConsumed
+                       or IntegrationEventTypes.ConsumablesReturned
+                       or IntegrationEventTypes.JourneyScheduled
+                       or IntegrationEventTypes.BedTransferred)
+            return;
+
+        // Wave 0 ops smoke: only probe keys fail when the UAT flag is on — never
+        // poison real Pending / Failed deliveries that Hangfire may drain mid-run.
+        if (UatFailureFlags.IsOn("ccms_outbox_fail")
+            && idempotencyKey.StartsWith("w7-outbox-probe:", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "CCMS ccms/integration/journey-admitted returned 500: forced UAT outbox failure");
+        }
+
         var route = eventType switch
         {
             IntegrationEventTypes.JourneyAdmitted
@@ -180,6 +223,16 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
                 => "ccms/integration/patient-discharged",
             IntegrationEventTypes.BillFinalized
                 => "ccms/integration/bill-finalized",
+            IntegrationEventTypes.EmergencyFcApplied
+                => "ccms/integration/emergency-fc",
+            IntegrationEventTypes.PatientObligationChanged
+                => "ccms/integration/patient-obligation-changed",
+            IntegrationEventTypes.PaymentReceived
+                => "ccms/integration/payment-received",
+            IntegrationEventTypes.PaymentReversed
+                => "ccms/integration/payment-reversed",
+            IntegrationEventTypes.ClaimStatusChanged
+                => "ccms/integration/claim-status-changed",
             _ => throw new InvalidOperationException($"Unknown outbox event type: {eventType}"),
         };
 
@@ -187,6 +240,7 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
         {
             Content = new StringContent(payloadJson, Encoding.UTF8, "application/json"),
         };
+        req.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
         req.Headers.TryAddWithoutValidation("X-Idempotency-Key", idempotencyKey);
         if (!string.IsNullOrWhiteSpace(_internalKey))
             req.Headers.TryAddWithoutValidation("X-Internal-Key", _internalKey);
@@ -251,6 +305,14 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
         }
     }
 
+    private void ApplyInternalAuth(HttpRequestMessage req, Guid tenantId)
+    {
+        if (!string.IsNullOrWhiteSpace(_internalKey))
+            req.Headers.TryAddWithoutValidation("X-Internal-Key", _internalKey);
+        if (tenantId != Guid.Empty)
+            req.Headers.TryAddWithoutValidation("X-Tenant-ID", tenantId.ToString());
+    }
+
     private static CcmsAdmissionValidation UnavailableResult(bool coverageBased) =>
         CcmsAdmissionValidation.ForCcmsUnavailable(coverageBased);
 
@@ -279,5 +341,10 @@ public class CcmsAdmissionClient : ICcmsAdmissionClient
         public bool RequiresEmergencyFcOverride { get; set; }
         public string? PaymentType { get; set; }
         public DateTime? LastUpdatedAt { get; set; }
+        public decimal? PayerShareAmount { get; set; }
+        public decimal? PatientShareAmount { get; set; }
+        public string? CoverageStatus { get; set; }
+        public decimal? CollectedAmount { get; set; }
+        public decimal? PatientObligationAmount { get; set; }
     }
 }

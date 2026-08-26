@@ -20,6 +20,8 @@ interface BranchCapacitySummaryDto {
   generalBeds: BedTypeCapacity;
   icuBeds: BedTypeCapacity;
   emergencyBeds: BedTypeCapacity;
+  reclinerBeds?: BedTypeCapacity;
+  dayCareChairBeds?: BedTypeCapacity;
   lastUpdated: string;
 }
 
@@ -387,6 +389,14 @@ export default function BranchMapView() {
                           <div className="flex justify-between text-xs">
                             <span className="text-gray-600">General:</span>
                             <span className="font-semibold">{capacity.generalBeds.available}/{capacity.generalBeds.total}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Recliners:</span>
+                            <span className="font-semibold">{capacity.reclinerBeds?.available ?? 0}/{capacity.reclinerBeds?.total ?? 0}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Day-care chairs:</span>
+                            <span className="font-semibold">{capacity.dayCareChairBeds?.available ?? 0}/{capacity.dayCareChairBeds?.total ?? 0}</span>
                           </div>
                         </div>
 

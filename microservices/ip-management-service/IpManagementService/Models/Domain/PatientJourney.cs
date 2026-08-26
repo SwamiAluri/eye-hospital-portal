@@ -13,6 +13,8 @@ public class PatientJourney
     public Guid?    CounselingSessionId      { get; set; }
     public Guid?    AdmissionId              { get; set; }
     public Guid?    WardId                   { get; set; }
+    /// <summary>IP-013. Current <c>journey_slot.id</c>. History stays on journey_slot rows.</summary>
+    public Guid?    SlotId                   { get; set; }
 
     // State machine
     public string   ClinicalState            { get; set; } = Domain.ClinicalState.Expected;
@@ -27,7 +29,8 @@ public class PatientJourney
     public string?  AnaesthesiaType          { get; set; }
     public DateTime? SurgeryScheduledAt      { get; set; }
 
-    // IOL fields
+    // IOL fields — IolPower is planned clinical. Barcode flags are E4 compatibility only
+    // (usage SoT is journey_implant_usage). See IpImplantFieldClassification.
     public string?  IolPower                 { get; set; }
     public bool     IolIssuedFromIp          { get; set; }
     public bool     IolBarcodeVerified       { get; set; }
@@ -44,6 +47,8 @@ public class PatientJourney
     public Guid?    AdmittingDoctorId        { get; set; }
     public Guid?    PrimaryNurseId           { get; set; }
     public string?  BedNumber                { get; set; }
+    public Guid?    AssignedBedId            { get; set; }
+    public bool     DischargePlanningReady   { get; set; }
     public string?  RoomNumber               { get; set; }
     public string?  AttendantName            { get; set; }
     public string?  AttendantPhone           { get; set; }
@@ -88,6 +93,11 @@ public class PatientJourney
     // OT return tracking
     public string?  OtReturnReason           { get; set; }
 
+    // IP-011 un-mark ready
+    public string?   UnmarkReadyReason       { get; set; }
+    public DateTime? UnmarkedReadyAt         { get; set; }
+    public Guid?     UnmarkedReadyByUserId   { get; set; }
+
     // Cancel-today annotations (G1 — not clinical states)
     public DateTime? SurgeryCancelledAt      { get; set; }
     public string?   SurgeryCancelReason     { get; set; }
@@ -118,6 +128,15 @@ public class PatientJourney
     public Guid?     UpdatedByUserId        { get; set; }
     public DateTime? DeletedAt             { get; set; }
     public string    Status                { get; set; } = "active";
+
+    /// <summary>How the episode closed when ClinicalState is Discharged. Null while in-hospital.</summary>
+    public string?   DischargeType                 { get; set; }
+    public string?   DischargeTypeReason           { get; set; }
+    public string?   ClinicalStateBeforeDischarge  { get; set; }
+    /// <summary>Previous closed episode for this patient. New admissions always create a new journey.</summary>
+    public Guid?     PriorJourneyId                { get; set; }
+    /// <summary>Pointer to Billing OpdBill. Not a ledger.</summary>
+    public Guid?     OpdBillId                     { get; set; }
 }
 
 /// <summary>

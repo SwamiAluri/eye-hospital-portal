@@ -179,6 +179,9 @@ function VendorDetailModal({ vendor, onClose, onEdit }: {
                 {vendor.isColdChainVendor && (
                   <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-100 text-cyan-700">❄ Cold Chain</span>
                 )}
+                {vendor.isConsignmentVendor && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Consignment</span>
+                )}
               </div>
             </div>
             <button
@@ -311,6 +314,7 @@ const BLANK: CreateVendorRequest = {
   vendorCategory: 'general',
   isPreferred: false,
   isColdChainVendor: false,
+  isConsignmentVendor: false,
   bankAccountType: 'current',
   creditDays: 30,
 };
@@ -321,6 +325,7 @@ function buildInitial(v: VendorDto): CreateVendorRequest {
     vendorCode:             v.vendorCode,
     vendorCategory:         v.vendorCategory,
     isPreferred:            v.isPreferred,
+    isConsignmentVendor:    v.isConsignmentVendor ?? false,
     contactPerson:          v.contactPerson,
     phone:                  v.phone,
     email:                  v.email,
@@ -453,6 +458,11 @@ function VendorFormModal({ initial, onClose, onSaved }: {
                 <input type="checkbox" checked={form.isColdChainVendor} onChange={e => set('isColdChainVendor', e.target.checked)}
                   className="w-4 h-4 text-blue-600 rounded border-gray-300" />
                 <span className="text-sm text-gray-700">Cold Chain Vendor</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={!!form.isConsignmentVendor} onChange={e => set('isConsignmentVendor', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded border-gray-300" />
+                <span className="text-sm text-gray-700">Consignment stock</span>
               </label>
             </div>
           </div>

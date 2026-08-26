@@ -7,6 +7,8 @@ public class SurgeryConsumable
     public Guid TenantId { get; set; }
     public Guid StoreId { get; set; }
     public Guid? SurgeryId { get; set; }
+    /// <summary>INV-050. IP patient journey. Null issues are exception-queued, not charged.</summary>
+    public Guid? JourneyId { get; set; }
     public Guid ItemId { get; set; }
     public Guid? StockBatchId { get; set; }
     /// <summary>Bulk | PatientSpecific</summary>
@@ -24,6 +26,9 @@ public class SurgeryConsumable
     public decimal ReturnedQuantity { get; set; } = 0;
     public DateTime? ReturnedAt { get; set; }
     public DateTime? ClosedAt { get; set; }
+    /// <summary>INV-050 billing projection. Pending | Posted | Suppressed | Exception | UnmappedJourney | Credited.</summary>
+    public string ChargeStatus { get; set; } = ConsumableChargeStatus.Pending;
+    public Guid? ChargeItemId { get; set; }
     public DateTime IssuedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -36,4 +41,14 @@ public class SurgeryConsumable
     public StoreMaster? Store { get; set; }
     public ItemMaster? Item { get; set; }
     public StockBatch? StockBatch { get; set; }
+}
+
+public static class ConsumableChargeStatus
+{
+    public const string Pending         = "Pending";
+    public const string Posted          = "Posted";
+    public const string Suppressed      = "Suppressed";
+    public const string Exception       = "Exception";
+    public const string UnmappedJourney = "UnmappedJourney";
+    public const string Credited        = "Credited";
 }

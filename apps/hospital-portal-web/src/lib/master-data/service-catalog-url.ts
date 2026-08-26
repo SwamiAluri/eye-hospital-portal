@@ -4,9 +4,9 @@ import {
   parseServiceCatalogCategoryParam,
 } from '@/lib/counsellors-desk/investigation-catalog';
 
-export type ServiceCatalogMode = 'investigations' | 'surgery' | 'iol' | 'branch';
+export type ServiceCatalogMode = 'investigations' | 'surgery' | 'iol' | 'branch' | 'payer';
 
-const MODES: ServiceCatalogMode[] = ['investigations', 'surgery', 'iol', 'branch'];
+const MODES: ServiceCatalogMode[] = ['investigations', 'surgery', 'iol', 'branch', 'payer'];
 
 export function parseServiceCatalogMode(params: URLSearchParams): ServiceCatalogMode {
   const mode = params.get('mode')?.toLowerCase();

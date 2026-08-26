@@ -77,6 +77,7 @@ export const counsellingTestIds = {
   btnPhaseNext: 'counselling-btn-phase-next',
   btnPhaseBack: 'counselling-btn-phase-back',
   quoteGoToEstimate: 'counselling-quote-go-to-estimate',
+  refreshFromOpd: 'counselling-refresh-from-opd',
   phase: (id: string) => `counselling-phase-${id}`,
   packageCard: (id: string) => `counselling-package-card-${id}`,
   pricingModeCustom: 'counselling-pricing-mode-custom',

@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-01">
+<main>
+
+  <p class="lede">
+    Answers <strong>who is here, where are they, what is blocking them, what happens next</strong> for the whole
+    branch, and launches the single next action without losing the list. Replaces the blur-backdrop overlay with a
+    docked split pane.
+  </p>
+
+  <div class="frame">
+
+    <div class="app-header">
+      <h1>IP Management</h1>
+      <span class="scope">Downtown Hospital &middot; 24 Aug 2026</span>
+      <span class="spacer"></span>
+      <span class="btn sm">&#8635; Refresh</span>
+      <span class="btn sm">Billing dashboard</span>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi is-inhouse"><div class="label">In-house</div><div class="value num">155</div><div class="src">patient_journey</div></div>
+      <div class="kpi is-ot"><div class="label">In OT</div><div class="value num">6</div><div class="src">patient_journey</div></div>
+      <div class="kpi"><div class="label">Ready for OT</div><div class="value num">12</div><div class="src">patient_journey</div></div>
+      <div class="kpi is-alert"><div class="label">Patient dues <span class="mark fix">3</span></div><div class="value num">&#8377;1.62 Cr</div><div class="src">opd_bill_payments ledger</div></div>
+    </div>
+
+    <div class="filters">
+      <input class="input placeholder" style="width:120px" value="From 24 Aug" readonly>
+      <input class="input placeholder" style="width:120px" value="To 24 Aug" readonly>
+      <input class="input placeholder" style="width:130px" value="UHID" readonly>
+      <input class="input placeholder" style="flex:1;min-width:180px" value="Search name, procedure, bed…" readonly>
+      <span class="btn sm">Slot: AM <span class="mark new">2</span></span>
+      <span class="btn sm ghost">Clear</span>
+    </div>
+
+    <div class="tabs">
+      <span class="tab">All <span class="count">178</span></span>
+      <span class="tab active">In-House <span class="count">108</span></span>
+      <span class="tab">Ready for OT <span class="count">12</span></span>
+      <span class="tab">Sent to OT <span class="count">6</span></span>
+      <span class="tab">In OT <span class="count">1</span></span>
+      <span class="tab">Post-Op <span class="count">3</span></span>
+      <span class="tab">Ready D/C <span class="count">9</span></span>
+      <span class="tab">Discharged <span class="count">37</span></span>
+      <span class="tab">Cancelled <span class="count">2</span></span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="tab muted">Financial: All &#9662;</span>
+    </div>
+
+    <div class="split docked">
+      <div class="list">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>State</th><th>Patient</th><th>Procedure</th><th>Ward / bed</th>
+              <th>Slot <span class="mark new">2</span></th><th>Next action</th><th>Attention</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="row-selected">
+              <td><span class="badge inhouse">Admitted</span></td>
+              <td><div class="cell-primary">Meena Iyer</div><div class="cell-sub">UAT-002 &middot; 54F</div></td>
+              <td>LASIK <span class="cell-sub">OD</span></td>
+              <td>Day Care &middot; B-04</td>
+              <td class="num">AM-3</td>
+              <td><div class="cell-primary">Mark ready for OT</div><div class="cell-sub">Ward</div></td>
+              <td><span class="badge danger">2 blockers</span></td>
+            </tr>
+            <tr>
+              <td><span class="badge inhouse">Admitted</span></td>
+              <td><div class="cell-primary">Ananya Sharma</div><div class="cell-sub">UAT-014 &middot; 61F</div></td>
+              <td>Corneal <span class="cell-sub">OS</span></td>
+              <td>Day Care &middot; B-05</td>
+              <td class="num">AM-4</td>
+              <td><div class="cell-primary">Mark ready for OT</div><div class="cell-sub">Ward</div></td>
+              <td><span class="badge ok">Clear</span></td>
+            </tr>
+            <tr>
+              <td><span class="badge ot">Ready for OT</span></td>
+              <td><div class="cell-primary">Amit Verma</div><div class="cell-sub">UAT-021 &middot; 47M</div></td>
+              <td>Retinal <span class="cell-sub">OD</span></td>
+              <td>Day Care &middot; B-07</td>
+              <td class="num">AM-1</td>
+              <td><div class="cell-primary">Send to OT</div><div class="cell-sub">OT coordinator</div></td>
+              <td><span class="badge ok">Clear</span></td>
+            </tr>
+            <tr>
+              <td><span class="badge inhouse">Admitted</span></td>
+              <td><div class="cell-primary">Harsh Patel</div><div class="cell-sub">UAT-030 &middot; 58M</div></td>
+              <td>Cataract <span class="cell-sub">OS</span></td>
+              <td>Day Care &middot; B-09</td>
+              <td class="num">PM-2</td>
+              <td><div class="cell-primary">Complete PAC</div><div class="cell-sub">Anaesthetist</div></td>
+              <td><span class="badge efc">Emergency FC</span></td>
+            </tr>
+            <tr>
+              <td><span class="badge">Expected</span></td>
+              <td><div class="cell-primary">Tara Nair</div><div class="cell-sub">UAT-033 &middot; 66F</div></td>
+              <td>Cataract <span class="cell-sub">OD</span></td>
+              <td class="muted">Not admitted</td>
+              <td class="num">PM-3</td>
+              <td><div class="cell-primary">Admit patient</div><div class="cell-sub">Ward</div></td>
+              <td><span class="badge danger">Coverage pending</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="listfoot">
+          Showing 24 of 178 &middot;
+          <kbd>&uarr;</kbd><kbd>&darr;</kbd> or <kbd>j</kbd><kbd>k</kbd> move &middot;
+          <kbd>Enter</kbd> open &middot; <kbd>Esc</kbd> clear &middot; <kbd>/</kbd> search &middot;
+          <kbd>Shift</kbd>+<kbd>B</kbd> billing
+        </div>
+      </div>
+
+      <aside class="rail">
+        <div class="pib">
+          <div class="pib-main">
+            <div class="pib-id">
+              <div class="pib-name">Meena Iyer</div>
+              <div class="pib-nums">
+                <span>UHID <b>UAT-002</b></span>
+                <span>54 y &middot; Female</span>
+                <span>DOB <b>14-Mar-1972</b></span>
+              </div>
+            </div>
+            <div class="eye">
+              <span class="eye-k">Operating</span>
+              <span class="eye-v">RIGHT</span>
+              <span class="eye-abbr">OD</span>
+            </div>
+          </div>
+          <div class="pib-alerts">
+            <span class="badge danger">Allergy: Xylocaine</span>
+            <span class="badge ot">Diabetic</span>
+            <span class="badge ot">On anticoagulant</span>
+          </div>
+          <div class="pib-where">
+            <span><span class="k">Ward</span> <span class="v">Day Care</span></span>
+            <span><span class="k">Bed</span> <span class="v">B-04</span></span>
+            <span><span class="k">Slot</span> <span class="v">AM-3 &middot; 07:45</span></span>
+            <span><span class="k">Surgeon</span> <span class="v">Dr. S. Iyer</span></span>
+          </div>
+        </div>
+        <div class="rail-sec" style="padding-top:10px;padding-bottom:10px;">
+          <div class="row"><span class="badge inhouse">Admitted</span><span class="badge">Not sent to OT</span><span class="badge info">Day care</span><span class="small muted">2 h 14 m in state</span></div>
+        </div>
+        <div class="rail-sec">
+          <p class="rail-h">Blockers</p>
+          <ul class="blockers">
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">Surgical consent unsigned<a class="fix" href="s-05-preop-workspace.html">Open consent step &rarr;</a></span></li>
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">PAC incomplete<a class="fix" href="s-05-preop-workspace.html">Open PAC step &rarr;</a></span></li>
+            <li class="soft"><span class="icon">&#9888;</span><span class="body">Patient due &#8377;90,000</span></li>
+          </ul>
+        </div>
+        <div class="rail-sec">
+          <div class="actionstack">
+            <span class="btn primary block disabled">Mark Ready for OT</span>
+            <span class="small muted">Blocked by 2 hard stops above.</span>
+            <span class="btn ghost">Transfer bed</span>
+            <span class="btn ghost">View full journey</span>
+          </div>
+        </div>
+        <div class="rail-sec">
+          <p class="rail-h">Payments</p>
+          <div class="rail-line"><span class="k">Billed</span><span class="v num">&#8377;1,20,000</span></div>
+          <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+          <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;90,000</span></div>
+          <div style="margin-top:8px"><a class="btn sm" href="s-12-bill-detail.html">Open billing</a> <span class="mark fix">3</span></div>
+        </div>
+        <div class="rail-sec">
+          <p class="rail-h">Coverage</p>
+          <div class="row between"><span class="badge ok">Approved</span><span class="small muted">Star Health</span></div>
+          <div class="rail-line" style="margin-top:6px"><span class="k">Payer share</span><span class="v num">&#8377;80,000</span></div>
+        </div>
+        <div class="rail-sec">
+          <p class="rail-h">Activity</p>
+          <ul class="timeline">
+            <li><b>Admitted</b> &middot; 24 Aug 01:21 pm &middot; S. Nair</li>
+            <li><b>Bed B-04 assigned</b> &middot; 01:19 pm &middot; S. Nair</li>
+            <li><b>Advance &#8377;30,000</b> &middot; 12:58 pm &middot; R. Kumar</li>
+          </ul>
+          <a class="small" href="s-10-journey-detail.html">View all &rarr;</a>
+        </div>
+        <div class="rail-foot">
+          <a class="btn primary" href="s-10-journey-detail.html">Open full record</a>
+          <span class="spacer" style="flex:1"></span>
+          <span class="small muted mono">?patient=UAT-002</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker fix">3</span><span><b>Patient dues KPI now reads the ledger aggregate</b> (<code>opd_bill_payments</code>), not the <code>j.balanceDue</code> projection. Today the census and the billing dashboard can show two different numbers for the same money.</span></li>
+    <li><span class="marker new">2</span><span><b>Slot column and slot filter</b> are new &mdash; the day-care batching model the throughput target depends on cannot currently be expressed.</span></li>
+    <li><span class="marker fix">3</span><span><b>One</b> billing link in the rail, replacing four competing billing CTAs. It only works once S-12 reads its search params.</span></li>
+    <li><span class="marker">1</span><span><b>No backdrop.</b> The rail is docked at &ge;1280&nbsp;px, degrades to a Radix <code>Sheet</code> at 1024&ndash;1280&nbsp;px, and to a card list with a sheet below that.</span></li>
+    <li><span class="marker">1</span><span><b>Tab counts come from the server</b>, not from filtering the loaded page &mdash; the current client-side counts are wrong on any paged result.</span></li>
+  </ul>
+
+  <h2 class="sec">What opens when you click a row</h2>
+
+  <div class="callout danger">
+    <b>What the product does today.</b> Clicking a row renders
+    <code>PatientQuickPanel</code>, which mounts
+    <code>fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]</code> &mdash; a scrim that
+    <b>dims and blurs the entire hospital dashboard</b> &mdash; and slides a
+    <code>fixed right-0 top-0 bottom-0 z-50 w-[380px]</code> sheet over the top of it, covering the application&rsquo;s
+    own navigation. Selecting a patient in a worklist is a <em>reading</em> action, and this is the visual language of
+    a modal interruption. That mismatch is the whole reason it reads as unprofessional.
+  </div>
+
+  <h3 class="sub">Recommendation, and why not a modal</h3>
+  <p class="lede" style="margin-bottom:14px">
+    You asked whether this should become a modal popup or a new page. My recommendation is
+    <b>neither on its own</b> &mdash; it should be a <b>docked split pane that resizes the list</b>, escalating to the
+    <b>full patient record</b> at <a href="s-10-journey-detail.html">S-10</a> when someone needs depth. A modal would
+    make the current problem worse rather than better.
+  </p>
+
+  <table class="map">
+    <thead><tr><th>Option</th><th>Verdict</th><th>Reasoning</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Modal popup</b><br><span class="cell-sub">centred dialog over the list</span></td>
+        <td><b style="color:var(--danger)">Reject</b></td>
+        <td>A modal is a contract: it says <em>make one decision, then leave</em>. A patient summary is reference
+        information consulted <em>while</em> working the list, and a coordinator moves through forty patients in a
+        session. A modal blocks the list completely, cannot be compared against the row it came from, and would need
+        dismissing forty times. It is also the pattern the current design is already accidentally imitating, so it
+        would not fix the perception at all.</td>
+      </tr>
+      <tr>
+        <td><b>Full page only</b><br><span class="cell-sub">navigate to the patient record</span></td>
+        <td><b style="color:var(--ot)">Right, but not as the only answer</b></td>
+        <td>The correct destination for depth, and it already exists as S-10. As the <em>only</em> response to a row
+        click it is punishing for triage: navigate, read one number, go back, lose your scroll position and your
+        filters, repeat. High-flow day care is the case this list exists to serve.</td>
+      </tr>
+      <tr>
+        <td><b>Overlay drawer</b><br><span class="cell-sub">today&rsquo;s behaviour</span></td>
+        <td><b style="color:var(--danger)">Reject</b></td>
+        <td>Floats above the page with a scrim, hides the list it belongs to, sits over the app chrome, and squeezes
+        clinical, financial and audit content into 380&nbsp;px. It also holds selection in React state only, so a
+        refresh loses the patient and the view cannot be sent to a colleague.</td>
+      </tr>
+      <tr>
+        <td><b>Docked split pane &rarr; full page</b> <span class="mark fix">3</span></td>
+        <td><b style="color:var(--ok)">Recommended</b></td>
+        <td>The pane is part of the layout: the table narrows, nothing is covered, nothing is dimmed, the navigation
+        stays reachable. It answers the triage question in place, and carries one clear route into the full record
+        for everything else. This is the worklist-and-chart split every serious clinical system settles on, because
+        the two tasks are genuinely different.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub">The change, side by side</h3>
+  <div class="versus">
+    <div>
+      <div class="vh-bad"><span>&#10007;</span><span>Today &mdash; overlay with a blurred scrim</span></div>
+      <div class="frame">
+        <div class="scrim" style="min-height:250px">
+          <div class="under">
+            <div class="app-header" style="border:none"><h1 style="font-size:14px">IP Management</h1></div>
+            <table class="grid">
+              <thead><tr><th>State</th><th>Patient</th><th>Bed</th></tr></thead>
+              <tbody>
+                <tr><td>Admitted</td><td>Meena Iyer</td><td>B-04</td></tr>
+                <tr><td>Admitted</td><td>Ananya Sharma</td><td>B-05</td></tr>
+                <tr><td>Ready</td><td>Amit Verma</td><td>B-07</td></tr>
+                <tr><td>Admitted</td><td>Harsh Patel</td><td>B-09</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="over">
+            <div class="row between"><b style="font-size:13px">Meena Iyer</b><span class="muted">&#10005;</span></div>
+            <div class="small muted" style="margin-bottom:8px">UAT-002 &middot; 54F &middot; LASIK &middot; OD</div>
+            <div class="rail-line"><span class="k">Ward</span><span class="v">Day Care</span></div>
+            <div class="rail-line"><span class="k">Bed</span><span class="v">B-04</span></div>
+            <div class="rail-line total"><span class="k">Due</span><span class="v num">&#8377;90,000</span></div>
+            <p class="hint" style="margin-top:8px">380&nbsp;px, over the nav, list unreadable behind.</p>
+          </div>
+        </div>
+      </div>
+      <p class="vc">The scrim is doing the damage. It tells the user the application is suspended, when in fact they
+      are just looking at a patient.</p>
+    </div>
+    <div>
+      <div class="vh-good"><span>&#10003;</span><span>Recommended &mdash; docked, list stays live</span></div>
+      <div class="frame">
+        <div style="min-height:250px">
+          <div class="app-header" style="border-bottom:1px solid var(--line)"><h1 style="font-size:14px">IP Management</h1></div>
+          <div class="split docked" style="min-height:0">
+            <div class="list">
+              <table class="grid">
+                <thead><tr><th>State</th><th>Patient</th><th>Bed</th></tr></thead>
+                <tbody>
+                  <tr class="row-selected"><td>Admitted</td><td>Meena Iyer</td><td>B-04</td></tr>
+                  <tr><td>Admitted</td><td>Ananya Sharma</td><td>B-05</td></tr>
+                  <tr><td>Ready</td><td>Amit Verma</td><td>B-07</td></tr>
+                  <tr><td>Admitted</td><td>Harsh Patel</td><td>B-09</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <aside class="rail">
+              <div class="pib">
+                <div class="pib-main">
+                  <div class="pib-id">
+                    <div class="pib-name" style="font-size:15px">Meena Iyer</div>
+                    <div class="pib-nums"><span>UHID <b>UAT-002</b></span><span>54 y &middot; F</span></div>
+                  </div>
+                  <div class="eye"><span class="eye-k">Operating</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+                </div>
+                <div class="pib-alerts"><span class="badge danger">Allergy: Xylocaine</span></div>
+              </div>
+              <div class="rail-sec">
+                <p class="rail-h">Blocking</p>
+                <ul class="blockers"><li class="hard"><span class="icon">&#9940;</span><span class="body">Consent unsigned</span></li></ul>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+      <p class="vc">Same information, no scrim, navigation reachable, and the rest of the list still scannable so the
+      coordinator keeps their place.</p>
+    </div>
+  </div>
+
+  <h3 class="sub">Six changes that make it read as clinical software</h3>
+  <table class="map">
+    <thead><tr><th>#</th><th>Change</th><th>Why it matters here</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="num">1</td>
+        <td><b>Remove the scrim and the overlay.</b> The pane lives in the grid and the table column narrows to make
+        room. No <code>fixed</code>, no <code>z-50</code>, no blur, and it starts <em>below</em> the app header.</td>
+        <td>Nothing is hidden and nothing is suspended. This single change removes most of the &ldquo;popup&rdquo;
+        feeling on its own.</td>
+      </tr>
+      <tr>
+        <td class="num">2</td>
+        <td><b>Add a patient identification banner</b> that never scrolls and never truncates: full name, UHID, age,
+        sex, date of birth, allergy and risk alerts, and the operating eye.</td>
+        <td>This is the piece that is genuinely missing rather than merely ugly. Right now laterality appears as the
+        two letters <code>OD</code> inside a grey subtitle line, next to the procedure. In an eye hospital the
+        operating side is the field a wrong-site event turns on, so it is given its own bordered block, spelled out as
+        <b>RIGHT</b> with <code>OD</code> underneath, and never conveyed by colour alone.</td>
+      </tr>
+      <tr>
+        <td class="num">3</td>
+        <td><b>Widen to 440&nbsp;px and order the content by clinical risk</b>, in fixed zones that are always in the
+        same place.</td>
+        <td>380&nbsp;px forces truncation of exactly the things that must not be truncated. Fixed ordering means staff
+        learn where to look instead of reading the panel each time.</td>
+      </tr>
+      <tr>
+        <td class="num">4</td>
+        <td><b>Put the selection in the URL</b> as <code>?patient={id}</code> rather than in
+        <code>useState</code>.</td>
+        <td>A refresh keeps the patient, the browser back button behaves, and a coordinator can send a colleague a
+        link to the patient they are asking about. Today none of that works.</td>
+      </tr>
+      <tr>
+        <td class="num">5</td>
+        <td><b>One primary action</b> in a pinned footer, chosen by state and permission, with the rest demoted.</td>
+        <td>The panel currently offers several similarly weighted calls to action, including four competing routes
+        into billing. A footer that says exactly one thing is what makes it feel decided rather than assembled.</td>
+      </tr>
+      <tr>
+        <td class="num">6</td>
+        <td><b>Escalate, do not expand.</b> The pane answers triage; the full record at S-10 answers everything else,
+        reached by one clear control.</td>
+        <td>Resisting the urge to grow the pane is what keeps it usable. Audit history, implants and the full billing
+        ledger belong on a page with room for them.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub">What the pane shows, in order</h3>
+  <p class="lede" style="margin-bottom:14px">
+    Ordered by the question &ldquo;what would stop this patient progressing in the next hour&rdquo;. Zones 1 to 3 are
+    always present for every persona; zones 4 to 6 are scoped by permission, as set out in
+    <a href="s-02-patient-context-rail.html">S-02</a>.
+  </p>
+  <table class="map">
+    <thead><tr><th>Zone</th><th>Contents</th><th>Behaviour</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>1 &middot; Identification</b><br><span class="cell-sub">always visible</span></td>
+        <td>Name, UHID, age, sex, DOB &middot; <b>operating eye</b> &middot; allergy and risk alerts &middot; ward, bed,
+        slot, surgeon</td>
+        <td>Pinned. Does not scroll away, never abbreviated, no colour-only meaning.</td>
+        <td><code>patient_journey</code>, <code>patient</code></td>
+      </tr>
+      <tr>
+        <td><b>2 &middot; Where they are</b></td>
+        <td>Clinical state, time in state, day-care or inpatient, next step and the role that owns it</td>
+        <td>Static.</td>
+        <td><code>patient_journey</code></td>
+      </tr>
+      <tr>
+        <td><b>3 &middot; What is blocking</b></td>
+        <td>Hard stops first, each naming the reason and carrying the link that clears it; warnings below, visibly
+        separated</td>
+        <td>The reason the pane exists. Empty state says &ldquo;nothing blocking&rdquo; explicitly rather than
+        rendering nothing.</td>
+        <td><code>GET &hellip;/journeys/{id}/transition-gates</code></td>
+      </tr>
+      <tr>
+        <td><b>4 &middot; Money</b><br><span class="cell-sub">permission-scoped</span></td>
+        <td>Billed, collected, patient due, last receipt number, and <b>what each amount blocks</b></td>
+        <td>Hidden entirely without a billing permission &mdash; not greyed out.</td>
+        <td><code>GET &hellip;/financial-summary</code> &rarr; <code>opd_bill_payments</code></td>
+      </tr>
+      <tr>
+        <td><b>5 &middot; Coverage</b><br><span class="cell-sub">permission-scoped</span></td>
+        <td>Payer, authorisation status, payer share; fails closed when CCMS is unreachable</td>
+        <td>Never renders an unknown status as self-pay. See <a href="s-18-coverage-context.html">S-18</a>.</td>
+        <td><code>GET &hellip;/financial/preauth-status</code></td>
+      </tr>
+      <tr>
+        <td><b>6 &middot; Recent activity</b></td>
+        <td>Last three events with actor and time, then a link to the full record</td>
+        <td>Deliberately shallow. Depth lives at S-10.</td>
+        <td><code>GET &hellip;/journeys/{id}/audit</code></td>
+      </tr>
+      <tr>
+        <td><b>Footer</b></td>
+        <td>One primary action, plus <b>Open full record</b></td>
+        <td>Pinned to the bottom, so it is reachable without scrolling the pane.</td>
+        <td>state + permission</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub">The identification banner, in every state</h3>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n bad">1</span><span class="t">Right eye, with alerts</span></div>
+      <div class="frame"><div class="pib">
+        <div class="pib-main">
+          <div class="pib-id">
+            <div class="pib-name">Meena Iyer</div>
+            <div class="pib-nums"><span>UHID <b>UAT-002</b></span><span>54 y &middot; Female</span><span>DOB <b>14-Mar-1972</b></span></div>
+          </div>
+          <div class="eye"><span class="eye-k">Operating</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+        </div>
+        <div class="pib-alerts">
+          <span class="badge danger">Allergy: Xylocaine</span><span class="badge ot">Diabetic</span><span class="badge ot">On anticoagulant</span>
+        </div>
+        <div class="pib-where"><span><span class="k">Ward</span> <span class="v">Day Care</span></span><span><span class="k">Bed</span> <span class="v">B-04</span></span><span><span class="k">Slot</span> <span class="v">AM-3</span></span></div>
+      </div></div>
+      <p class="vc">Allergy is a red chip because it changes what the anaesthetist may give. The eye block is bordered
+      so it survives a glance.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Left eye</span></div>
+      <div class="frame"><div class="pib">
+        <div class="pib-main">
+          <div class="pib-id">
+            <div class="pib-name">Rekha Menon</div>
+            <div class="pib-nums"><span>UHID <b>UAT-041</b></span><span>62 y &middot; Female</span><span>DOB <b>02-Jan-1964</b></span></div>
+          </div>
+          <div class="eye left"><span class="eye-k">Operating</span><span class="eye-v">LEFT</span><span class="eye-abbr">OS</span></div>
+        </div>
+        <div class="pib-alerts"><span class="badge ok">No known allergies</span></div>
+        <div class="pib-where"><span><span class="k">Ward</span> <span class="v">Day Care</span></span><span><span class="k">Bed</span> <span class="v">B-02</span></span></div>
+      </div></div>
+      <p class="vc">Left and right differ in <b>word, position and colour together</b>. &ldquo;No known
+      allergies&rdquo; is stated rather than left blank, because blank could mean nobody asked.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">3</span><span class="t">Laterality not recorded</span></div>
+      <div class="frame"><div class="pib">
+        <div class="pib-main">
+          <div class="pib-id">
+            <div class="pib-name">Tara Nair</div>
+            <div class="pib-nums"><span>UHID <b>UAT-033</b></span><span>66 y &middot; Female</span><span>DOB <b>19-Sep-1959</b></span></div>
+          </div>
+          <div class="eye none"><span class="eye-k">Operating</span><span class="eye-v">Not set</span></div>
+        </div>
+        <div class="pib-alerts"><span class="badge danger">Operating eye must be recorded before theatre</span></div>
+        <div class="pib-where"><span><span class="k">Ward</span> <span class="v">Not admitted</span></span></div>
+      </div></div>
+      <p class="vc">A missing operating eye is rendered as a <b>problem to fix</b>, never as an empty space. This is
+      the case where an ambiguous panel would be most dangerous.</p>
+    </div>
+  </div>
+
+  <h3 class="sub">Where the pane goes when the screen is narrow</h3>
+  <table class="map">
+    <thead><tr><th>Width</th><th>Behaviour</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><b>&ge; 1280 px</b></td><td>Docked pane at 440&nbsp;px; the table narrows and drops its least important columns</td><td>The working case. Both list and patient are readable at once.</td></tr>
+      <tr><td><b>1024 &ndash; 1280 px</b></td><td>Radix <code>Sheet</code> from the right, <b>with</b> a scrim, focus trapped, Escape closes</td><td>At this width a docked pane would leave the table unusable. Here the overlay is honest: it genuinely is a temporary interruption, and it behaves like one.</td></tr>
+      <tr><td><b>&lt; 1024 px</b></td><td>Rows become cards; tapping one navigates to the full record at S-10</td><td>On a tablet at the bedside there is no room for two panes, and the full record is the better destination anyway.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>One part of this banner is not free.</b> Laterality and the identifiers cost nothing to add:
+    <code>PatientJourneyRowDto</code> already returns <code>eyeOperated</code>, <code>uhid</code>,
+    <code>patientName</code>, <code>patientDob</code> and <code>patientAge</code>, so the operating-eye block and the
+    identity line are a pure frontend change. The <b>alert strip is not</b>. The only allergy fields that exist today
+    are <code>allergyKnown</code> and <code>allergyDetails</code> on <code>BeforeAnaesthesiaSectionDto</code>, captured
+    at the WHO sign-in <em>inside theatre</em> &mdash; far too late to warn a ward nurse, and attached to a checklist
+    rather than to the patient. A patient-level clinical alert source has to be added and exposed on the journey row.
+    Until it is, the strip must render <b>nothing</b> rather than an empty state: showing &ldquo;no known
+    allergies&rdquo; when nothing has been wired up would turn a missing feature into a false reassurance, which is
+    worse than the panel we are replacing. The &ldquo;No known allergies&rdquo; chip in variant&nbsp;2 above is
+    therefore only correct once a real answer to that question is being stored.
+  </div>
+
+  <div class="callout ok">
+    <b>The distinction worth keeping.</b> A scrim is correct when the interface really is asking the user to stop and
+    deal with one thing &mdash; collecting a payment, confirming a cancellation. It is wrong when they are simply
+    looking at a patient in a list they are working through. Today&rsquo;s panel uses the strong pattern for the weak
+    case, which is why it feels wrong even though every individual field on it is reasonable.
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead>
+      <tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Row list</td>
+        <td><code>useIpJourneysQuery</code> &rarr; <code>ipManagementApi.listJourneys</code></td>
+        <td><code>GET /ip-management/journeys</code></td>
+        <td><code>JourneyFunctions</code> &rarr; <code>PatientJourneyService.ListAsync</code></td>
+        <td><code>patient_journey</code></td>
+        <td class="owner o-ip">IP</td>
+        <td><code>ip.view</code></td>
+      </tr>
+      <tr>
+        <td>Tab counts</td>
+        <td><code>useIpTabCountsQuery</code></td>
+        <td><code>GET /ip-management/journeys/dashboard-summary</code></td>
+        <td><code>PatientJourneyService.GetDashboardSummaryAsync</code></td>
+        <td><code>patient_journey</code></td>
+        <td class="owner o-ip">IP</td>
+        <td><code>ip.view</code></td>
+      </tr>
+      <tr>
+        <td>Patient dues KPI <span class="mark fix">3</span></td>
+        <td><code>useIpBillingDashboardQuery</code></td>
+        <td><code>GET /opdbills/ip-dashboard</code></td>
+        <td><code>OpdBillsController</code> &rarr; <code>OpdBillService.GetIpBillingDashboardAsync</code> &rarr; <code>IpBillingDashboardCalculator</code></td>
+        <td><code>opd_bills</code>, <code>opd_bill_payments</code></td>
+        <td class="owner o-billing">Billing</td>
+        <td><code>bill.view</code> / <code>ip.view</code></td>
+      </tr>
+      <tr>
+        <td>Next action + attention</td>
+        <td><code>buildIpRowSituation</code> (pure)</td>
+        <td>&mdash;</td>
+        <td>&mdash;</td>
+        <td>derived from the row DTO</td>
+        <td class="owner o-fe">FE</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td>Slot column <span class="mark new">2</span></td>
+        <td><code>useSlotsQuery</code></td>
+        <td><code>GET /ip-management/slots</code></td>
+        <td><code>SlotFunctions</code> (new)</td>
+        <td><code>journey_slot</code> (new)</td>
+        <td class="owner o-ip">IP</td>
+        <td><code>ip.view</code></td>
+      </tr>
+      <tr>
+        <td>Realtime refresh</td>
+        <td><code>useNotificationHubInvalidation</code></td>
+        <td>SignalR <code>/notificationHub</code></td>
+        <td><code>NotificationHub</code> + <code>push-tenant</code></td>
+        <td>&mdash;</td>
+        <td class="owner o-auth">Auth</td>
+        <td>authenticated</td>
+      </tr>
+      <tr>
+        <td>Row selection</td>
+        <td>local state mirrored to <code>?journeyId=</code></td>
+        <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
+        <td class="owner o-fe">FE</td>
+        <td>&mdash;</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Tab views</h2>
+  <p class="lede" style="margin-bottom:14px">Nine clinical tabs. Each changes the row set and the <b>next action</b>
+  column; the column set adapts to what actually varies in that state.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Ready for OT (12)</span></div>
+      <div class="frame">
+        <table class="grid">
+          <thead><tr><th>State</th><th>Patient</th><th>Bed</th><th>Slot</th><th>Next action</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge ot">Ready for OT</span></td><td class="cell-primary">Amit Verma</td><td>B-07</td><td class="num">AM-1</td><td>Send to OT <span class="cell-sub">(OT coordinator)</span></td></tr>
+            <tr><td><span class="badge ot">Ready for OT</span></td><td class="cell-primary">Suresh Babu</td><td>B-09</td><td class="num">AM-4</td><td>Send to OT <span class="cell-sub">(OT coordinator)</span></td></tr>
+            <tr><td><span class="badge ot">Ready for OT</span></td><td class="cell-primary">Priya Das</td><td>B-12</td><td class="num">PM-1</td><td>Send to OT <span class="cell-sub">(OT coordinator)</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="vc">Ownership shifts from Ward to OT coordinator. Naming the owner is what stops a patient sitting
+      ready for an hour because each side assumed the other would move.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">In OT (1)</span></div>
+      <div class="frame">
+        <table class="grid">
+          <thead><tr><th>State</th><th>Patient</th><th>Theatre</th><th>Elapsed</th><th>Next action</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge ot">In progress</span></td><td class="cell-primary">Amit Verma</td><td>Theatre 1</td><td>08:14 &middot; 22m</td><td>Complete surgery <span class="cell-sub">(Surgeon)</span></td></tr>
+          </tbody>
+        </table>
+        <div class="listfoot">Bed and slot are replaced by theatre and live elapsed time.</div>
+      </div>
+      <p class="vc">Column set adapts to the state: bed and slot are irrelevant once a patient is on the table.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">3</span><span class="t">Ready for discharge (9)</span></div>
+      <div class="frame">
+        <table class="grid">
+          <thead><tr><th>State</th><th>Patient</th><th>Bed</th><th>Patient due</th><th>Next action</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge inhouse">Ready D/C</span></td><td class="cell-primary">Rekha Menon</td><td>B-02</td><td class="num" style="color:var(--danger)">&#8377;10,000</td><td>Collect then discharge <span class="cell-sub">(Cashier)</span></td></tr>
+            <tr><td><span class="badge inhouse">Ready D/C</span></td><td class="cell-primary">Vikram Shah</td><td>B-06</td><td class="num">&#8377;0</td><td>Discharge <span class="cell-sub">(Ward)</span></td></tr>
+            <tr><td><span class="badge inhouse">Ready D/C</span></td><td class="cell-primary">Nisha Rao</td><td>B-10</td><td class="num">&#8377;0</td><td>Discharge <span class="cell-sub">(Ward)</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="vc">Patient due replaces procedure, because on this tab money is the only thing that varies between rows
+      and it determines who acts next.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">4</span><span class="t">Cancelled (2)</span></div>
+      <div class="frame">
+        <table class="grid">
+          <thead><tr><th>State</th><th>Patient</th><th>Cancelled</th><th>Reason</th><th>Next action</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge cancel">Surgery cancelled</span></td><td class="cell-primary">Farid Khan</td><td>24 Aug 07:50</td><td class="cell-sub">BP 190/110 on arrival</td><td>Rebook <span class="cell-sub">(Coordinator)</span></td></tr>
+            <tr><td><span class="badge cancel">Admission cancelled</span></td><td class="cell-primary">Latha S.</td><td>23 Aug 16:20</td><td class="cell-sub">Patient withdrew consent</td><td>Refund advance <span class="cell-sub">(Cashier)</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="vc">Cancellations carry their reason inline and still have a next action &mdash; a cancelled patient
+      with a collected advance is unfinished business, not a closed row.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">States</h2>
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Loading</span></div>
+      <div class="frame">
+        <div class="kpis">
+          <div class="kpi"><span class="sk w50"></span><span class="sk tall w70"></span></div>
+          <div class="kpi"><span class="sk w50"></span><span class="sk tall w70"></span></div>
+          <div class="kpi"><span class="sk w50"></span><span class="sk tall w70"></span></div>
+          <div class="kpi"><span class="sk w50"></span><span class="sk tall w70"></span></div>
+        </div>
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w30"></span><span class="sk w20"></span><span class="sk w20"></span></div>
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w40"></span><span class="sk w20"></span><span class="sk w20"></span></div>
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w30"></span><span class="sk w30"></span><span class="sk w20"></span></div>
+      </div>
+      <p class="vc"><b>Skeleton rows, never a spinner.</b> On background refetch the last good data is retained rather
+      than replaced by skeletons &mdash; a census that blanks every 30 seconds is unusable.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Empty &mdash; filters too narrow</span></div>
+      <div class="frame">
+        <div class="filters">
+          <span class="badge info no-dot">UHID: UAT-999 &#10005;</span>
+          <span class="badge info no-dot">Tab: Ready for OT &#10005;</span>
+          <span class="badge info no-dot">Slot: PM &#10005;</span>
+        </div>
+        <div class="empty">
+          <div class="big">No patients match these filters</div>
+          178 patients are in the census today.
+          <div style="margin-top:12px"><span class="btn sm primary">Clear filters</span></div>
+        </div>
+      </div>
+      <p class="vc">Names the active filters and the count that would return without them, so the user knows the data
+      exists and the filter is the problem.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Error &mdash; last good data retained</span></div>
+      <div class="frame">
+        <div style="padding:10px 16px">
+          <div class="callout danger" style="margin:0">
+            <b>We couldn&rsquo;t refresh the patient list.</b> Showing what we had at 1:58 pm, so treat the states
+            below as a few minutes old. <a href="#">Try again</a>
+            <div class="small muted" style="margin-top:6px">Details for IT &middot; <span class="mono">c-4b19c0</span></div>
+          </div>
+        </div>
+        <table class="grid" style="opacity:.65">
+          <thead><tr><th>State</th><th>Patient</th><th>Bed</th><th>Next action</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge inhouse">Admitted</span></td><td>Meena Iyer</td><td>B-04</td><td>Mark ready</td></tr>
+            <tr><td><span class="badge inhouse">Admitted</span></td><td>Ananya Sharma</td><td>B-05</td><td>Mark ready</td></tr>
+          </tbody>
+        </table>
+        <div class="listfoot">Actions are disabled while the data is known to be stale.</div>
+      </div>
+      <p class="vc"><b>Never blank on error.</b> Stale census data is more useful to a coordinator than an error page,
+      but actions are disabled so nobody transitions a patient from a stale row.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">4</span><span class="t">Realtime down &mdash; polling</span></div>
+      <div class="frame">
+        <div class="app-header">
+          <h1>IP Management</h1>
+          <span class="spacer"></span>
+          <span class="badge ot">Live updates off &middot; refreshed 2 min ago</span>
+          <span class="btn sm">&#8635; Refresh</span>
+        </div>
+        <table class="grid">
+          <thead><tr><th>State</th><th>Patient</th><th>Bed</th><th>Next action</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge inhouse">Admitted</span></td><td>Meena Iyer</td><td>B-04</td><td>Mark ready</td></tr>
+            <tr><td><span class="badge ot">Ready for OT</span></td><td>Amit Verma</td><td>B-07</td><td>Send to OT</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="vc">A silent SignalR failure is the dangerous one. The chip makes degradation visible and falls back to
+      polling rather than pretending to be live.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Responsive</h2>
+  <div class="row" style="align-items:flex-start;gap:20px;flex-wrap:wrap">
+    <div>
+      <div class="vh" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+        <span class="n" style="flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--accent);color:#fff">1</span>
+        <span class="t" style="font-size:13px;font-weight:650">1024&ndash;1280 px &mdash; rail becomes a sheet</span>
+      </div>
+      <div class="frame" style="width:520px;max-width:100%">
+        <div class="tabs"><span class="tab active">In-House <span class="count">108</span></span><span class="tab">Ready OT <span class="count">12</span></span><span class="tab muted">&hellip;</span></div>
+        <table class="grid">
+          <thead><tr><th>State</th><th>Patient</th><th>Bed</th><th>Next</th></tr></thead>
+          <tbody>
+            <tr class="row-selected"><td><span class="badge inhouse">Admitted</span></td><td class="cell-primary">Meena Iyer</td><td>B-04</td><td>Mark ready</td></tr>
+            <tr><td><span class="badge inhouse">Admitted</span></td><td>Ananya Sharma</td><td>B-05</td><td>Mark ready</td></tr>
+          </tbody>
+        </table>
+        <div class="listfoot">Tapping a row opens the rail as a Radix <code>Sheet</code> over the list.</div>
+      </div>
+    </div>
+    <div>
+      <div class="vh" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+        <span class="n" style="flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--accent);color:#fff">2</span>
+        <span class="t" style="font-size:13px;font-weight:650">&lt;1024 px &mdash; card list</span>
+      </div>
+      <div class="phone">
+        <div class="bar"></div>
+        <div style="padding:10px">
+          <div class="row between" style="margin-bottom:8px"><b style="font-size:14px">IP Management</b><span class="badge inhouse">108</span></div>
+          <div class="panel" style="margin-bottom:8px">
+            <div class="row between"><b>Meena Iyer</b><span class="badge inhouse">Admitted</span></div>
+            <div class="small muted">UAT-002 &middot; LASIK OD &middot; Day Care B-04 &middot; AM-3</div>
+            <div class="row" style="margin-top:6px"><span class="badge danger">2 blockers</span></div>
+            <div style="margin-top:8px"><span class="btn sm block">Mark ready for OT</span></div>
+          </div>
+          <div class="panel">
+            <div class="row between"><b>Ananya Sharma</b><span class="badge inhouse">Admitted</span></div>
+            <div class="small muted">UAT-014 &middot; Corneal OS &middot; Day Care B-05 &middot; AM-4</div>
+            <div class="row" style="margin-top:6px"><span class="badge ok">Clear</span></div>
+            <div style="margin-top:8px"><span class="btn sm primary block">Mark ready for OT</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Permission behaviour</h2>
+  <table class="map">
+    <thead><tr><th>Condition</th><th>Behaviour</th><th>Rationale</th></tr></thead>
+    <tbody>
+      <tr><td>No <code>ip.view</code></td><td>Route is not reachable; <code>ProtectedRoute</code> redirects</td><td>The census itself is patient data</td></tr>
+      <tr><td>No <code>ip.ot.mark_ready</code></td><td>The Mark Ready button is <b>not rendered</b>; the row still shows the next action and its owner</td><td>Knowing what is needed is useful even when you cannot do it yourself</td></tr>
+      <tr><td>No <code>bill.view</code></td><td>Payments block and the dues KPI are hidden entirely</td><td>Financial data is not incidental context</td></tr>
+      <tr><td>Empty permission claim <span class="mark fix">3</span></td><td><b>Fail closed</b> &mdash; treated as no permissions</td><td>Today this resolves to full access, so a token-shape change silently grants everything</td></tr>
+      <tr><td>Permission present, server rejects</td><td>Toast with the server reason; the row refreshes</td><td>The server is authoritative; the UI is only a hint</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

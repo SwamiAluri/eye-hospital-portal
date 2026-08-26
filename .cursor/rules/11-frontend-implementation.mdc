@@ -1,0 +1,55 @@
+---
+description: Frontend implementation — data fetching, files, modules, performance, and reuse across the entire hospital portal.
+globs:
+  - apps/hospital-portal-web/**
+alwaysApply: false
+---
+
+# Frontend implementation
+
+App: `apps/hospital-portal-web` (Next.js App Router). Keep domain code in existing folders. Do not create new top-level architectural trees without approval.
+
+Prefer: `src/components/ui` · `src/components/<domain>` · `src/app/<route>` · `src/lib` · existing hooks/stores/API clients.
+
+## Data fetching and state
+
+- **Server/cache:** TanStack Query via `ReactQueryProvider`. Reuse existing hooks/API modules (`src/lib/api`, domain `src/lib/<domain>`).
+- **Auth/session:** Zustand `auth-store.ts` + `permission-cache.ts`. Do not switch to next-auth (legacy `use-notifications.ts` only).
+- **Clinical client state:** existing `clinical-store` / domain providers (`PatientWorkspaceProvider`, pre-op providers). Do not add a new global store for the same data.
+- Do not duplicate API clients or raw `fetch` when a service already exists. Do not bypass established error handling.
+
+## Module homes (extend these; do not fork)
+
+| Area | Existing home (typical) |
+|---|---|
+| Auth / public | `src/app/auth`, `components/auth` |
+| Patient portal | `src/app/patient` (distinct shell) |
+| Front desk / queue | `frontdesk`, `queue-display`; canonical queue `/dashboard/frontdesk/queue` + `/queue-display` — do not extend orphan `/dashboard/queue*` |
+| Appointments | `components/appointments`, FullCalendar already used here |
+| Patient / MPI | `components/patients` |
+| EHR / exam / optometry | `components/examination`, `doctors-desk`, `/dashboard/optometrist`, `/dashboard/examination*` |
+| Specialty clinics | `components/specialty-clinics` + `/dashboard/specialty-clinics` — specialty data may differ; shared chart/encounter patterns must not fork |
+| Imaging / DICOM | `components/imaging`, Cornerstone; **keep dynamic/lazy**; canonical diagnostics `/dashboard/diagnostic/*` (imaging routes redirect) |
+| Lab / pharmacy / optical | existing dashboard routes — inspect before assuming mock |
+| Counsellor | `counsellors-desk` (not `module3/counselor` for new work) |
+| Inventory / procurement | `/admin/inventory/*` is the live inventory tree |
+| Admin / IAM / HR | `/dashboard/admin/*` + thin `/dashboard/roles` wrappers; do not grow orphan `/admin/*` mocks |
+| Master data | `components/master-data`, `/dashboard/master-data` |
+| Notifications | SignalR `notification-hub.ts` + `react-hot-toast` |
+| Dev/UAT | `/dashboard/dev/uat`, widget gallery — never promote to production |
+
+Specialty clinics today include glaucoma, cataract, cornea, retina (and future pediatric, oculoplasty, neuro, low vision). Shared patient/encounter/chart patterns stay standardized.
+
+Optical POS ≠ clinical optical prescription. Pharmacy stock ≠ EHR medication list. Lab: inspect implementation; do not assume demo.
+
+## Performance
+
+Preserve existing `dynamic()` / lazy loads for imaging and other heavy widgets. Do not import Cornerstone into the global shell. Avoid duplicate SignalR subscriptions and extra client components. Use Query `staleTime` already configured; do not refetch storms. Virtualize only when a worklist needs it. Measure before large performance rewrites. `next.config.js` `ignoreBuildErrors` is not permission to ship untyped UI.
+
+## Code quality
+
+TypeScript, reuse existing types, no unnecessary `any`, no drive-by refactors, no giant copy-paste components when the domain kit already decomposes the UI. Do not commit secrets.
+
+## Implementation steps
+
+Inspect → search reuse → ownership → SoT → APIs → permissions → states → realtime → downstream → plan → approval if sensitive → smallest change → validate → report files/behavior.

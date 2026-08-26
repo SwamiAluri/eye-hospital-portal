@@ -18,4 +18,5 @@ export const coverageTestIds = {
   visitPoliciesRail: 'coverage-visit-policies-rail',
   manageVisitPolicies: 'coverage-manage-visit-policies',
   submitToClaims: 'coverage-submit-to-claims',
+  counsellingCcmsStatus: 'counselling-ccms-status',
 } as const;

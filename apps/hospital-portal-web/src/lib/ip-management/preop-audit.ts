@@ -98,9 +98,9 @@ function sectionEvents(sections: PreOpSectionClearanceDto[]): PreOpAuditEvent[] 
 function journeyEvents(logs: JourneyAuditLogDto[]): PreOpAuditEvent[] {
   return logs.map(log => ({
     id: `journey-${log.id}`,
-    at: log.changedAt,
+    at: log.performedAt || log.changedAt,
     kind: 'journey' as const,
-    title: log.fieldChanged,
+    title: log.action || log.fieldChanged,
     detail:
       log.oldValue && log.newValue
         ? `${log.oldValue} → ${log.newValue}`

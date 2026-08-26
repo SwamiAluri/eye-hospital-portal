@@ -1,0 +1,35 @@
+---
+description: Ward and nursing operational UX — bed map, checklists, pre/post-op workspaces, discharge readiness.
+globs:
+  - apps/hospital-portal-web/src/app/dashboard/ip-management/ward/**
+  - apps/hospital-portal-web/src/components/ip-management/Ward*.tsx
+  - apps/hospital-portal-web/src/components/ip-management/preop/**
+  - apps/hospital-portal-web/src/components/ip-management/postop/**
+  - apps/hospital-portal-web/src/components/ip-management/discharge/**
+  - apps/hospital-portal-web/e2e/ip-ward*.spec.ts
+  - apps/hospital-portal-web/e2e/ip-checklist*.spec.ts
+alwaysApply: false
+---
+
+# Ward / nursing UX
+
+Ward owns **ward and nursing operational workflow**: ward board, bed map, patient status, nursing tasks, checklist/medication/vitals capture already in this kit, pre-op readiness, post-op care, transfer, discharge readiness, ward dashboards.
+
+Canonical page: `/dashboard/ip-management/ward`. Canonical components: `WardBedMap`, `WardKpiStrip`, `WardChecklist*`, `WardPatientDrawer`, `WardPreOp/PostOp/DischargeWorkspaceModal`, step navs, gate chips. Stay inside `IpTargetFrame` and `IpOverlayDialog`.
+
+Ward is **not** a separate app. Reuse `components/ip-management`. Do not create `components/ward` unless explicitly approved.
+
+## Usability
+
+Prioritize high-frequency desktop use (nurses, ward clerks). Keep primary actions reachable without hunting. Preserve existing testids used by Playwright ward-journey specs. Do not densify for decoration.
+
+## Boundaries
+
+- Clinical chart/EHR remains patient record / doctor desk / examination — ward workspaces collect operational/clinical checklist data in the IP journey, not a second EHR.
+- Billing/coverage indicators may display as projections; collection still goes through Billing APIs.
+- Do not duplicate OT surgical state here.
+- Permissions such as `ward.checklist.edit` are server-enforced; do not expose actions on nav alone.
+
+## Do not clone
+
+Do not extend `module3/counselor` pre-op checklists or widgets as the ward kit. Do not add a second readiness-meter primitive if `WardReadinessMeter` / `preop/primitives/ReadinessMeter` already covers the case — reuse or compose.

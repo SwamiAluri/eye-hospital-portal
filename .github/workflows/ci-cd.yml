@@ -294,21 +294,32 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Validate SQL scripts
-      run: |
-        echo "Checking SQL script syntax..."
-        # Basic SQL validation (check for common errors)
-        for file in ./migrations/*.sql; do
-          if [ -f "$file" ]; then
-            echo "Validating $file"
-            # Add syntax checks here if needed
-          fi
-        done
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Check migration order
+    - name: Validate numbered SQL migrations exist
       run: |
-        echo "Validating migration file naming..."
-        ls -1 ./migrations/*.sql | sort -V
+        echo "Numbered files in consolidated/migrations:"
+        ls -1 ./consolidated/migrations/[0-9]*.sql | sort -V
+        test -f ./consolidated/migrations/164_outbox_versioned_schema.sql
+        test -f ./consolidated/migrations/165_bed_inventory_ward_id_and_daycare_types.sql
+        test -f ./consolidated/migrations/166_journey_slot.sql
+        echo "164 outbox versioned schema is present"
+        echo "165 bed inventory ward_id / day-care types is present"
+        echo "166 journey_slot is present"
+
+    - name: Schema drift (DB-005) — IP EF vs SQL + no runtime outbox DDL
+      run: |
+        dotnet test ./microservices/ip-management-service/IpManagementService.Tests/IpManagementService.Tests.csproj \
+          --filter FullyQualifiedName~SchemaDrift \
+          -p:UseAppHost=false \
+          --verbosity normal
+        dotnet test ./AuthService.Tests/AuthService.Tests.csproj \
+          --filter FullyQualifiedName~SchemaDrift \
+          -p:UseAppHost=false \
+          --verbosity normal
 
   # Deploy to Azure (only on main branch)
   deploy-backend:

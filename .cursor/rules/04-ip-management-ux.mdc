@@ -1,0 +1,44 @@
+---
+description: IP Management operational UX — census, admission, journey, readiness, and what IP must not own.
+globs:
+  - apps/hospital-portal-web/src/components/ip-management/**
+  - apps/hospital-portal-web/src/lib/ip-management/**
+  - apps/hospital-portal-web/src/app/dashboard/ip-management/**
+  - microservices/ip-management-service/**
+alwaysApply: false
+---
+
+# IP Management UX
+
+IP Management owns **inpatient / day-care operational workflow**: census, admission, bed assignment/transfer, ward assignment, `PatientJourney`, IP status, pre-op readiness, discharge/transfer operations, IP dashboards.
+
+Canonical UI: `src/components/ip-management/` + `src/lib/ip-management/` + `/dashboard/ip-management/*`, wrapped in `IpTargetFrame` / `.ip-target`. Canonical overlay: `IpOverlayDialog`. Do not add `fixed inset-0` overlays; `ip-overlays-consolidated.test.ts` enforces this.
+
+Also follow `.cursor/rules/ip-billing-ward-cross-module.mdc`.
+
+## Canonical routes (do not invent parallel IP apps)
+
+| Workflow | Route |
+|---|---|
+| Census | `/dashboard/ip-management` |
+| Ward | `/dashboard/ip-management/ward` |
+| OT board | `/dashboard/ip-management/operation-theatre` |
+| Slots / throughput | `/dashboard/ip-management/slots`, `/throughput` |
+| IP billing worklist | `/dashboard/ip-management/billing` (lens + deep link to OpdBill — not a second ledger) |
+| Journey | `/dashboard/ip-management/journey/[id]` |
+
+Do not revive `/dashboard/operations/ot` mocks as the production OT/IP board. Do not merge IP into a new `/ward` or `/clinical` tree without approval.
+
+## Must not duplicate
+
+- Billing ownership (charges, payments, refunds, receipts) — Billing `OpdBill`
+- Coverage/claims ownership — CCMS
+- OT financial logic
+- Bed occupancy SoT — Auth bed inventory
+- Frontend-owned financial totals (`FinancialState`, `TotalPaid`, `IpBillingTransaction` are projections; use `IpFinancialFieldClassification`; never silently overwrite)
+
+## UX expectations
+
+High-frequency operational board: keyboard where census already supports it, patient identification always visible, readiness/gates explicit, stale/realtime connection visible. Prefer existing primitives (`StatusChip`, bed map, rails, workspace modals) over new chrome.
+
+UAT seeder `/dashboard/dev/uat` is development-only — do not wire it into production journeys.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canCancelTodaySurgery } from './ward-journey-helpers';
+import { canCancelAdmission, canCancelTodaySurgery } from './ward-journey-helpers';
 
 describe('canCancelTodaySurgery', () => {
   const base = {
@@ -21,5 +21,23 @@ describe('canCancelTodaySurgery', () => {
   it('blocks merged MR and locked journeys', () => {
     expect(canCancelTodaySurgery({ ...base, isPatientMerged: true })).toBe(false);
     expect(canCancelTodaySurgery({ ...base, isLocked: true })).toBe(false);
+  });
+});
+
+describe('canCancelAdmission', () => {
+  const base = {
+    clinicalState: 'Expected',
+    isLocked: false,
+    isPatientMerged: false,
+  };
+
+  it('allows Expected only', () => {
+    expect(canCancelAdmission(base)).toBe(true);
+    expect(canCancelAdmission({ ...base, clinicalState: 'Admitted' })).toBe(false);
+  });
+
+  it('blocks locked or merged journeys', () => {
+    expect(canCancelAdmission({ ...base, isLocked: true })).toBe(false);
+    expect(canCancelAdmission({ ...base, isPatientMerged: true })).toBe(false);
   });
 });

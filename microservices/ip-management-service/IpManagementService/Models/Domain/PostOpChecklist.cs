@@ -64,6 +64,7 @@ public class PostOpInstruction
     public string?  DietaryInstructions   { get; set; }
     public DateTime? FollowupDate         { get; set; }
     public Guid?    FollowupDoctorId      { get; set; }
+    public Guid?    FollowupAppointmentId { get; set; }
     public string?  EyeCareInstructions   { get; set; }
     public string?  WarningSigns          { get; set; } // JSONB stored as string
     public bool     IsSaved               { get; set; }

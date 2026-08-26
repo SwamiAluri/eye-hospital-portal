@@ -106,7 +106,113 @@ public class DocumentEngineService
         return doc;
     }
 
-    // ── List ──────────────────────────────────────────────────────────────────
+    public async Task<CcmsDocument> AttachPacsStudyAsync(
+        Guid coverageCaseId,
+        Guid actorUserId,
+        string studyUid,
+        string? accessionNumber = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(studyUid))
+            throw new ArgumentException("DICOM study UID is required.");
+
+        var uid = studyUid.Trim();
+        var blobUrl = $"pacs://study/{uid}";
+
+        var existing = await _db.Documents
+            .FirstOrDefaultAsync(d => d.CoverageCase_Id == coverageCaseId
+                                      && d.BlobUrl == blobUrl
+                                      && d.DeletedAt == null, ct);
+        if (existing is not null)
+            return existing;
+
+        var coverageCase = await _db.CoverageCases
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == coverageCaseId && c.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Coverage case {coverageCaseId} not found.");
+
+        var doc = new CcmsDocument
+        {
+            Id = Guid.NewGuid(),
+            TenantId = coverageCase.TenantId,
+            CoverageCase_Id = coverageCaseId,
+            DocumentCategory = "claim",
+            DocumentType = "dicom_study",
+            DocumentName = string.IsNullOrWhiteSpace(accessionNumber)
+                ? uid
+                : $"{accessionNumber.Trim()} ({uid})",
+            BlobUrl = blobUrl,
+            FileSizeBytes = 0,
+            MimeType = "application/dicom",
+            UploadedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            CreatedByUserId = actorUserId,
+            UpdatedByUserId = actorUserId,
+            UploadedByUserId = actorUserId,
+            Status = "active",
+        };
+        _db.Documents.Add(doc);
+        await _db.SaveChangesAsync(ct);
+        _log.LogInformation("PACS study {StudyUid} attached to case {CaseId}", uid, coverageCaseId);
+        return doc;
+    }
+
+    /// <summary>
+    /// Pointer to an Auth <c>biometry_records</c> row. Does not copy measurements;
+    /// Auth remains the biometry SoT. Idempotent on <c>biometry://record/{id}</c>.
+    /// </summary>
+    public async Task<CcmsDocument> AttachBiometryRecordAsync(
+        Guid coverageCaseId,
+        Guid actorUserId,
+        Guid biometryRecordId,
+        string? eye = null,
+        DateTime? examinationDate = null,
+        decimal? calculatedIol = null,
+        string? device = null,
+        CancellationToken ct = default)
+    {
+        if (biometryRecordId == Guid.Empty)
+            throw new ArgumentException("Biometry record id is required.");
+
+        var blobUrl = $"biometry://record/{biometryRecordId:D}";
+
+        var existing = await _db.Documents
+            .FirstOrDefaultAsync(d => d.CoverageCase_Id == coverageCaseId
+                                      && d.BlobUrl == blobUrl
+                                      && d.DeletedAt == null, ct);
+        if (existing is not null)
+            return existing;
+
+        var coverageCase = await _db.CoverageCases
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == coverageCaseId && c.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Coverage case {coverageCaseId} not found.");
+
+        var doc = new CcmsDocument
+        {
+            Id = Guid.NewGuid(),
+            TenantId = coverageCase.TenantId,
+            CoverageCase_Id = coverageCaseId,
+            DocumentCategory = "preauth",
+            DocumentType = "biometry_record",
+            DocumentName = FormatBiometryName(eye, examinationDate, calculatedIol, device),
+            BlobUrl = blobUrl,
+            FileSizeBytes = 0,
+            MimeType = "application/vnd.hospital.biometry",
+            UploadedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            CreatedByUserId = actorUserId,
+            UpdatedByUserId = actorUserId,
+            UploadedByUserId = actorUserId,
+            Status = "active",
+        };
+        _db.Documents.Add(doc);
+        await _db.SaveChangesAsync(ct);
+        _log.LogInformation("Biometry {RecordId} attached to case {CaseId}", biometryRecordId, coverageCaseId);
+        return doc;
+    }
 
     public async Task<List<CcmsDocument>> GetByCaseAsync(
         Guid coverageCaseId, string? stage = null, CancellationToken ct = default)
@@ -157,6 +263,24 @@ public class DocumentEngineService
 
     private static string SanitizeName(string name)
         => string.Join("_", name.Split(System.IO.Path.GetInvalidFileNameChars()));
+
+    internal static string FormatBiometryName(
+        string? eye, DateTime? examinationDate, decimal? calculatedIol, string? device)
+    {
+        var parts = new List<string> { "Biometry print" };
+        if (!string.IsNullOrWhiteSpace(eye))
+            parts.Add(eye.Trim().ToUpperInvariant());
+        if (examinationDate is DateTime d)
+            parts.Add(d.ToString("dd MMM yyyy", System.Globalization.CultureInfo.InvariantCulture));
+        if (calculatedIol is decimal p)
+        {
+            var body = p.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+            parts.Add(p >= 0 ? $"+{body} D" : $"{body} D");
+        }
+        if (!string.IsNullOrWhiteSpace(device))
+            parts.Add(device.Trim());
+        return string.Join(" · ", parts);
+    }
 }
 
 public record UploadDocumentRequest(
@@ -167,3 +291,12 @@ public record UploadDocumentRequest(
     long?   FileSizeBytes,
     string? MimeType
 );
+
+public record AttachPacsStudyRequest(string StudyUid, string? AccessionNumber);
+
+public record AttachBiometryRecordRequest(
+    Guid BiometryRecordId,
+    string? Eye,
+    DateTime? ExaminationDate,
+    decimal? CalculatedIol,
+    string? Device);

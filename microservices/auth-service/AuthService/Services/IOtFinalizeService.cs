@@ -112,6 +112,8 @@ namespace AuthService.Services
         public string? Address { get; set; }
         // Checklist
         public OtChecklistDto Checklist { get; set; } = new();
+        /// <summary>True when the operating eye is single-eye and no biometry IOL is on file.</summary>
+        public bool BiometryMissingForEye { get; set; }
     }
 
     public class PrepareOtListItem
@@ -271,5 +273,12 @@ namespace AuthService.Services
         /// transitionable state (Cancelled records are skipped silently).
         /// </summary>
         Task<OtScheduleResponse?> MarkSurgeryDoneAsync(Guid id, Guid tenantId, string actorUserId);
+
+        /// <summary>W-01 — OPD snapshot for IP journey refresh (internal).</summary>
+        Task<OpdClinicalSnapshotDto> GetOpdClinicalSnapshotAsync(
+            Guid tenantId, Guid patientId, Guid? sessionId, string? eyeHint, bool preferBiometry);
+
+        /// <summary>W-01 — overwrite session (and linked OT) from latest OPD, then notify IP.</summary>
+        Task<OpdClinicalSnapshotDto> RefreshSessionFromOpdAsync(Guid sessionId, Guid tenantId, Guid userId);
     }
 }

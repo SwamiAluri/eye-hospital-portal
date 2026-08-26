@@ -13,7 +13,7 @@ import { patientCommunicationsApi } from '@/lib/api/patient-communications.api';
 import { labReportsApi } from '@/lib/api/lab-reports.api';
 import { surgeryRequestsApi } from '@/lib/api/surgery-requests.api';
 import { format, parseISO } from 'date-fns';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface TimelineEvent {
   id: string;

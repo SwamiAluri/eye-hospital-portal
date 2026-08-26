@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { History, Loader2, X } from 'lucide-react';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ipManagementApi } from '@/lib/api/ip-management.api';
 import { usePreOpClearanceOptional } from '@/components/ip-management/preop/PreOpClearanceProvider';
 import { buildPreOpAuditTimeline, type PreOpAuditEvent } from '@/lib/ip-management/preop-audit';
@@ -64,20 +65,15 @@ export function PreOpAuditDrawer({ journeyId, open, onClose }: PreOpAuditDrawerP
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end" role="presentation">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/30"
-        aria-label="Close activity log"
-        onClick={onClose}
-      />
-      <aside
+    <Sheet open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <SheetContent
+        side="right"
+        hideCloseButton
+        overlayClassName="bg-black/30"
         data-testid={WARD_PREOP_TEST_IDS.auditDrawer}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="preop-audit-title"
-        className="relative flex h-full w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-xl"
+        className="w-full p-0 sm:max-w-md flex flex-col"
       >
+        <SheetTitle className="sr-only">Activity and audit</SheetTitle>
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <div className="flex items-center gap-2">
             <History className="h-4 w-4 text-gray-500" aria-hidden="true" />
@@ -129,7 +125,7 @@ export function PreOpAuditDrawer({ journeyId, open, onClose }: PreOpAuditDrawerP
             </ul>
           )}
         </div>
-      </aside>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }

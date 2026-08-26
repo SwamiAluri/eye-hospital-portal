@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-10">
+<main>
+
+  <p class="lede">
+    The full record of one admission, for coordinators and auditors &mdash; shell plus all nine tabs. The one
+    substantive change is that <strong>the billing tab becomes read-only</strong>, closing the second money write path
+    that currently bypasses the ledger. A tenth tab, Implants, is added.
+  </p>
+
+  <div class="callout danger">
+    <b>Closing the dual write path.</b> <code>handleAddTransaction</code> on this page and in
+    <code>PatientQuickPanel</code> calls <code>ipManagementApi.addBilling</code>, which writes
+    <code>ip_billing_transactions</code> &mdash; a clinical-workflow <em>projection</em>, not an accounting record.
+    Money entered here gets no receipt number, no idempotency guard, no refund or reversal rules, and never reaches
+    the CCMS outbox.
+  </div>
+
+  <h2 class="sec">The shell &mdash; lifecycle rail and tab strip</h2>
+  <div class="frame">
+    <div class="app-header">
+      <a class="small" href="s-01-ip-census.html">&larr; IP Management</a>
+      <h1 style="margin-left:8px">Meena Iyer</h1>
+      <span class="scope">UAT-002 &middot; 54F &middot; LASIK &middot; OD &middot; Journey #J-2026-0841</span>
+      <span class="spacer"></span>
+      <span class="badge inhouse">Admitted</span>
+      <span class="badge info">Day Care &middot; B-04</span>
+    </div>
+    <div class="split" style="grid-template-columns:230px 1fr;min-height:280px">
+      <aside class="rail" style="border-right:1px solid var(--line)">
+        <div class="rail-sec">
+          <p class="rail-h">Lifecycle</p>
+          <div class="ws-steps" style="border:none;background:transparent;padding:0">
+            <div class="ws-step done"><span class="n">&#10003;</span> Expected</div>
+            <div class="ws-step active"><span class="n">2</span> Admitted</div>
+            <div class="ws-step"><span class="n">3</span> Ready for surgery</div>
+            <div class="ws-step"><span class="n">4</span> Sent to OT</div>
+            <div class="ws-step"><span class="n">5</span> In OT</div>
+            <div class="ws-step"><span class="n">6</span> Surgery completed</div>
+            <div class="ws-step"><span class="n">7</span> Post-op</div>
+            <div class="ws-step"><span class="n">8</span> Ready for discharge</div>
+            <div class="ws-step"><span class="n">9</span> Discharged</div>
+          </div>
+          <p class="hint" style="margin-top:8px">All nine states, matching <code>StateTransitionValidator</code>
+          <span class="mark fix">3</span></p>
+        </div>
+      </aside>
+      <div>
+        <div class="tabs">
+          <span class="tab active">Overview</span>
+          <span class="tab">Ward</span>
+          <span class="tab">Pre-op</span>
+          <span class="tab">Billing</span>
+          <span class="tab">Implants <span class="count">2</span> <span class="mark new">2</span></span>
+          <span class="tab">OT</span>
+          <span class="tab">Post-op</span>
+          <span class="tab">Discharge</span>
+          <span class="tab">Audit</span>
+        </div>
+        <div style="padding:16px">
+          <p class="muted small" style="margin-top:0">Every tab is rendered below.</p>
+          <div class="callout info">
+            The lifecycle rail is persistent across tabs. It replaces the five-step <code>MiniStepper</code> that made
+            four real states &mdash; <code>ReadyForSurgery</code>, <code>SentToOT</code>, <code>PostOp</code>,
+            <code>ReadyForDischarge</code> &mdash; invisible.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Tab 1 &mdash; Overview</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="cols-3">
+        <div class="panel">
+          <p class="panel-h">Patient</p>
+          <dl class="kv">
+            <dt>Name</dt><dd>Meena Iyer</dd>
+            <dt>UHID</dt><dd>UAT-002</dd>
+            <dt>Age / sex</dt><dd>54 / Female</dd>
+            <dt>Contact</dt><dd>+91 98&bull;&bull;&bull; &bull;&bull;210</dd>
+            <dt>Attendant</dt><dd>R. Iyer (son)</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Episode</p>
+          <dl class="kv">
+            <dt>Journey</dt><dd>#J-2026-0841</dd>
+            <dt>Type</dt><dd>Day care</dd>
+            <dt>Procedure</dt><dd>LASIK</dd>
+            <dt>Eye</dt><dd><b>OD (right)</b></dd>
+            <dt>Surgeon</dt><dd>Dr. S. Iyer</dd>
+            <dt>Slot</dt><dd>AM-3 &middot; 07:45</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Status now</p>
+          <dl class="kv">
+            <dt>Clinical</dt><dd><span class="badge inhouse">Admitted</span></dd>
+            <dt>Location</dt><dd>Day Care &middot; B-04</dd>
+            <dt>Readiness</dt><dd>7 of 9</dd>
+            <dt>Financial</dt><dd><span class="badge ot no-dot">Partially paid</span></dd>
+            <dt>Coverage</dt><dd><span class="badge ok no-dot">Approved</span></dd>
+          </dl>
+        </div>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Open blockers</p>
+          <ul class="blockers">
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">Surgical consent unsigned</span></li>
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">PAC incomplete</span></li>
+            <li class="soft"><span class="icon">&#9888;</span><span class="body">Patient due &#8377;90,000</span></li>
+          </ul>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Timeline</p>
+          <ul class="timeline">
+            <li><b>Admitted</b> &middot; 24 Aug 01:21 pm &middot; S. Nair</li>
+            <li><b>Bed B-04 assigned</b> &middot; 01:19 pm</li>
+            <li><b>Advance &#8377;30,000 collected</b> &middot; 12:58 pm &middot; R. Kumar</li>
+            <li><b>Bill created</b> &middot; 12:40 pm</li>
+            <li><b>Coverage approved</b> &middot; 23 Aug 16:12</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Tab 2 &mdash; Ward</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Current assignment</p>
+          <dl class="kv">
+            <dt>Ward</dt><dd>Day Care Ward</dd>
+            <dt>Bed</dt><dd>B-04 (recliner)</dd>
+            <dt>Since</dt><dd>24 Aug 01:19 pm</dd>
+            <dt>Assigned by</dt><dd>S. Nair</dd>
+          </dl>
+          <div class="row" style="margin-top:8px"><span class="btn sm">Transfer bed</span></div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Assignment history</p>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th>Bed</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
+            <tbody>
+              <tr><td>B-04</td><td>24 Aug 01:19 pm</td><td class="muted">current</td><td class="cell-sub">Initial admission</td></tr>
+              <tr><td>B-11</td><td>24 Aug 01:05 pm</td><td>01:19 pm</td><td class="cell-sub">Moved closer to nursing station</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Nursing observations</p>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>Time</th><th>BP</th><th>Pulse</th><th>SpO&#8322;</th><th>Notes</th><th>By</th></tr></thead>
+          <tbody>
+            <tr><td>01:30 pm</td><td>128/82</td><td>76</td><td>98%</td><td class="cell-sub">Settled, no complaints</td><td>S. Nair</td></tr>
+            <tr><td>02:30 pm</td><td>130/84</td><td>78</td><td>98%</td><td class="cell-sub">Pre-op drops started</td><td>S. Nair</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">Bed state is owned by Auth <code>BedLifecyclePolicy</code>. This tab shows the journey&rsquo;s view
+      of it; the authoritative occupancy record lives in <code>bed_inventory</code>.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Tab 3 &mdash; Pre-op</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Pre-op readiness</h3>
+        <div class="meter"><span class="track"><span class="fill" style="width:78%"></span></span><span>7 of 9</span></div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>Step</th><th>Status</th><th>Completed by</th><th>At</th><th>Gate</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Admission &amp; bed</td><td><span class="badge ok">Complete</span></td><td>S. Nair</td><td>24 Aug 01:21 pm</td><td class="cell-sub">Prerequisite</td><td><a class="btn sm ghost" href="s-05-preop-workspace.html">Open</a></td></tr>
+          <tr><td>Clinical evaluation</td><td><span class="badge ok">Complete</span></td><td>Dr. S. Iyer</td><td>24 Aug 01:40 pm</td><td class="cell-sub">Hard</td><td><a class="btn sm ghost" href="s-05-preop-workspace.html">Open</a></td></tr>
+          <tr><td>Consent</td><td><span class="badge danger">Not signed</span></td><td class="muted">&mdash;</td><td class="muted">&mdash;</td><td class="cell-sub"><b>Hard</b></td><td><a class="btn sm" href="s-05-preop-workspace.html">Open</a></td></tr>
+          <tr><td>Investigations</td><td><span class="badge ok">Critical resulted</span></td><td>Lab</td><td>24 Aug 11:20 am</td><td class="cell-sub">Hard (critical only)</td><td><a class="btn sm ghost" href="s-05-preop-workspace.html">Open</a></td></tr>
+          <tr><td>PAC assessment</td><td><span class="badge danger">Incomplete</span></td><td class="muted">&mdash;</td><td class="muted">&mdash;</td><td class="cell-sub"><b>Hard</b></td><td><a class="btn sm" href="s-05-preop-workspace.html">Open</a></td></tr>
+          <tr><td>Department clearance</td><td><span class="badge ok">4 of 4</span></td><td>Multiple</td><td>24 Aug 12:05 pm</td><td class="cell-sub">Hard where required</td><td><a class="btn sm ghost" href="s-05-preop-workspace.html">Open</a></td></tr>
+          <tr><td>Fasting &amp; medication</td><td><span class="badge ok">Complete</span></td><td>S. Nair</td><td>24 Aug 07:10 am</td><td class="cell-sub">Hard</td><td><a class="btn sm ghost" href="s-05-preop-workspace.html">Open</a></td></tr>
+          <tr><td>Coverage &amp; finance</td><td><span class="badge ok">Approved</span></td><td>CCMS</td><td>23 Aug 04:12 pm</td><td class="cell-sub">Not a Mark Ready gate</td><td><a class="btn sm ghost" href="s-18-coverage-context.html">Open</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2 class="sec">Tab 4 &mdash; Billing <span class="badge no-dot">read-only</span></h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:10px">
+        <h3 style="margin:0;font-size:15px">Billing <span class="badge no-dot">Read only</span></h3>
+        <a class="btn sm primary" href="s-12-bill-detail.html">Open in Billing</a>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Bill IPD-2026-00841 &middot; source of truth: Billing</p>
+        <div class="cols-2">
+          <div>
+            <div class="rail-line"><span class="k">Status</span><span class="v"><span class="badge ot no-dot">Partially paid</span></span></div>
+            <div class="rail-line"><span class="k">Gross</span><span class="v num">&#8377;1,20,000</span></div>
+            <div class="rail-line"><span class="k">Discount</span><span class="v num">&#8377;0</span></div>
+            <div class="rail-line"><span class="k">Net</span><span class="v num">&#8377;1,20,000</span></div>
+          </div>
+          <div>
+            <div class="rail-line"><span class="k">Payer share</span><span class="v num">&#8377;80,000</span></div>
+            <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+            <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;10,000</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Receipts <span class="faint">from <code>opd_bill_payments</code></span></p>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>Receipt</th><th>Type</th><th>Mode</th><th>Amount</th><th>By</th><th>When</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">RCP-20260824-00001188</td><td>Advance</td><td>Cash</td><td class="num">&#8377;30,000</td><td>R. Kumar</td><td>24 Aug 12:58 pm</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">No entry form on this page. Collection happens in <a href="s-03-collect-payment.html">S-03</a> or
+        <a href="s-12-bill-detail.html">S-12</a>.</p>
+      </div>
+      <div class="callout warn">
+        <b>Legacy projection entries (3)</b> recorded through the old in-journey form before it was removed. Shown for
+        history, clearly separated from ledger receipts, and <b>excluded from every total on this page</b>. Deleting
+        them would destroy history; summing them would perpetuate the two-numbers problem.
+      </div>
+      <table class="grid">
+        <thead><tr><th>Legacy entry</th><th>Type</th><th>Amount</th><th>Recorded by</th><th>When</th><th>In totals</th></tr></thead>
+        <tbody>
+          <tr><td class="mono faint">IPTX-0219</td><td class="muted">Advance</td><td class="num muted">&#8377;5,000</td><td class="muted">S. Nair</td><td class="muted">21 Aug</td><td><span class="badge danger no-dot">No</span></td></tr>
+          <tr><td class="mono faint">IPTX-0220</td><td class="muted">Advance</td><td class="num muted">&#8377;2,000</td><td class="muted">S. Nair</td><td class="muted">21 Aug</td><td><span class="badge danger no-dot">No</span></td></tr>
+          <tr><td class="mono faint">IPTX-0231</td><td class="muted">Adjustment</td><td class="num muted">&minus;&#8377;500</td><td class="muted">R. Kumar</td><td class="muted">22 Aug</td><td><span class="badge danger no-dot">No</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2 class="sec">Tab 5 &mdash; Implants <span class="badge ok no-dot">new</span></h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:10px">
+        <h3 style="margin:0;font-size:15px">Implant record</h3>
+        <span class="badge no-dot">Per-journey device traceability</span>
+      </div>
+      <table class="grid">
+        <thead><tr><th>Item</th><th>Power</th><th>Eye</th><th>Batch</th><th>Serial</th><th>Status</th><th>Recorded</th><th>Charge</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Alcon SN60WF</td><td>+21.0 D</td><td><b>OD</b></td><td class="mono">B-2291</td><td class="mono">88213</td>
+            <td><span class="badge ok">Implanted</span></td><td>Dr. Rao &middot; 08:41</td><td class="num">&#8377;14,000</td>
+          </tr>
+          <tr>
+            <td>Alcon SN60WF</td><td>+22.5 D</td><td>OD</td><td class="mono">B-2291</td><td class="mono">88214</td>
+            <td><span class="badge cancel">Opened, not used</span></td><td>Dr. Rao &middot; 08:38</td><td class="muted">Write-off</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 0 0">
+        <div class="cols-2">
+          <div class="panel">
+            <p class="panel-h">Why this tab exists</p>
+            <p class="small muted" style="margin:0">A device recall, a payer audit or a medico-legal query all ask the
+            same question: which serial went into which patient, when, and who recorded it. Before
+            <code>journey_implant_usage</code> that question had no single answer.</p>
+          </div>
+          <div class="panel">
+            <p class="panel-h">Write-off reason</p>
+            <dl class="kv">
+              <dt>Serial 88214</dt><dd>Wrong power selected</dd>
+              <dt>Recorded by</dt><dd>Dr. Rao</dd>
+              <dt>Charged</dt><dd>No &mdash; hospital write-off</dd>
+              <dt>Appears in</dt><dd><a href="s-15-reconciliation.html">Wastage report</a></dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Tab 6 &mdash; OT</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Theatre episode</p>
+          <dl class="kv">
+            <dt>Theatre</dt><dd>Theatre 1</dd>
+            <dt>Sent to OT</dt><dd>&mdash; not yet</dd>
+            <dt>Accepted</dt><dd>&mdash;</dd>
+            <dt>Started</dt><dd>&mdash;</dd>
+            <dt>Completed</dt><dd>&mdash;</dd>
+            <dt>Surgeon</dt><dd>Dr. S. Iyer</dd>
+            <dt>Anaesthetist</dt><dd>Not assigned</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Surgical safety checklist</p>
+          <ul class="checklist">
+            <li><span class="bx off"></span> Sign in &mdash; before anaesthesia</li>
+            <li><span class="bx off"></span> Time out &mdash; before incision</li>
+            <li><span class="bx off"></span> Sign out &mdash; before leaving theatre</li>
+          </ul>
+          <p class="hint">Not started. The checklist is signed in <a href="s-06-ot-board.html">S-06</a> and stored in
+          <code>surgical_safety_checklist</code>.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Intra-op note</p>
+        <div class="empty" style="padding:24px">
+          <div class="big">No intra-op note yet</div>
+          Recorded by the surgeon during or immediately after the procedure.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Tab 7 &mdash; Post-op</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="empty">
+        <div class="big">Post-op has not started</div>
+        This tab populates after <code>SurgeryCompleted</code>. It will show recovery observations, the nurse
+        checklist, implant sticker confirmation, post-op instructions and the follow-up booking.
+        <div style="margin-top:10px"><a class="btn sm" href="s-08-postop-workspace.html">See the post-op workspace &rarr;</a></div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-caption">Empty states name the state transition that will populate them, rather than showing a bare
+  &ldquo;No data&rdquo;.</p>
+
+  <h2 class="sec">Tab 8 &mdash; Discharge</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="empty">
+        <div class="big">Not ready for discharge</div>
+        This tab populates at <code>ReadyForDischarge</code>. It will show the discharge summary, medications,
+        follow-up appointments and the clearance record including any override and its reason.
+        <div style="margin-top:10px"><a class="btn sm" href="s-09-discharge-workspace.html">See the discharge workspace &rarr;</a></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Tab 9 &mdash; Audit</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:10px">
+        <h3 style="margin:0;font-size:15px">Audit trail</h3>
+        <div class="row"><span class="btn sm">All actors &#9662;</span><span class="btn sm">All actions &#9662;</span><span class="btn sm ghost">Export</span></div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>When</th><th>Action</th><th>From &rarr; to</th><th>Actor</th><th>Reason / detail</th><th>Correlation</th></tr></thead>
+        <tbody>
+          <tr><td>24 Aug 01:21 pm</td><td>Clinical transition</td><td>Expected &rarr; Admitted</td><td>S. Nair</td><td class="cell-sub">&mdash;</td><td class="mono faint">c-8841a</td></tr>
+          <tr><td>24 Aug 01:19 pm</td><td>Bed assigned</td><td>B-11 &rarr; B-04</td><td>S. Nair</td><td class="cell-sub">Moved closer to nursing station</td><td class="mono faint">c-8840f</td></tr>
+          <tr><td>24 Aug 12:58 pm</td><td>Payment received</td><td class="muted">&mdash;</td><td>R. Kumar</td><td class="cell-sub">Advance &#8377;30,000 &middot; RCP-20260824-00001188</td><td class="mono faint">c-883c1</td></tr>
+          <tr><td>24 Aug 12:40 pm</td><td>Bill created</td><td class="muted">&mdash;</td><td>R. Kumar</td><td class="cell-sub">IPD-2026-00841 &middot; package exploded to 4 lines</td><td class="mono faint">c-883b7</td></tr>
+          <tr><td>23 Aug 04:12 pm</td><td>Coverage approved</td><td>Pending &rarr; Approved</td><td>CCMS (system)</td><td class="cell-sub">Star Health &middot; &#8377;80,000</td><td class="mono faint">c-8802e</td></tr>
+          <tr><td>23 Aug 11:02 am</td><td>Journey created</td><td class="muted">&mdash; &rarr; Expected</td><td>P. Rao</td><td class="cell-sub">From counselling session CS-4471</td><td class="mono faint">c-87f90</td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 0 0">
+        <div class="callout info">
+          <b>Every reason-required action lands here</b> with its reason text and correlation id, so an override can be
+          traced from the audit row to the outbox event to the downstream effect.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker fix">3</span><span><b>The nine-state lifecycle is shown in full</b>, replacing the five-step <code>MiniStepper</code>.</span></li>
+    <li><span class="marker new">2</span><span>A new <b>Implants tab</b> gives per-journey device traceability &mdash; the record a recall or an audit actually requires.</span></li>
+    <li><span class="marker fix">3</span><span>Legacy projection rows are <b>displayed but never summed</b>, and are labelled as excluded so nobody reconciles against them by mistake.</span></li>
+    <li><span class="marker">1</span><span>Not-yet-reached tabs show <b>which transition will populate them</b> rather than an unexplained empty panel.</span></li>
+  </ul>
+
+  <h2 class="sec">Tab map</h2>
+  <p class="lede" style="margin-bottom:14px">
+    Verified against the service. This screen is <b>read-first</b>: it is the case record, so most tabs display
+    history rather than offering an Add. The exceptions are called out in the Add column, and the one Add that is
+    being <em>removed</em> &mdash; the billing transaction form &mdash; is the point of the redesign.
+  </p>
+  <table class="map">
+    <thead><tr><th>Tab</th><th>Read</th><th>Add here?</th><th>Backend</th><th>Table</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1 &middot; Overview</td>
+        <td><code>GET /api/ip-management/journeys/{id}</code></td>
+        <td>No &mdash; actions live on the boards</td>
+        <td><code>PatientJourneyService.GetDetailAsync</code></td>
+        <td><code>patient_journey</code></td><td class="owner o-ip">IP</td>
+      </tr>
+      <tr>
+        <td>2 &middot; Ward</td>
+        <td><code>GET /api/ip-management/journeys/{id}/bed-assignments</code> <span class="cell-sub">full bed history</span>; <code>GET &hellip;/vitals</code>, <code>&hellip;/nurse-records</code>, <code>&hellip;/progress-notes</code></td>
+        <td>No &mdash; recorded in <a href="s-04-ward-board.html">S-04</a></td>
+        <td><code>UpdateWardAssignmentAsync</code> at <code>PUT &hellip;/journeys/{id}/ward</code>; <code>TransferBedAsync</code></td>
+        <td><code>journey_bed_assignment</code>, <code>vital_sign</code>, <code>nurse_record</code>, <code>ip_daily_progress_note</code>, <code>bed_inventory</code></td>
+        <td class="owner o-ip">IP + <span class="o-auth">Auth</span></td>
+      </tr>
+      <tr>
+        <td>3 &middot; Pre-op</td>
+        <td>pre-op read family, <code>GET &hellip;/pre-op/readiness</code>, <code>GET &hellip;/transition-gates</code></td>
+        <td>No &mdash; recorded in <a href="s-05-preop-workspace.html">S-05</a></td>
+        <td><code>PreOpClearanceService</code>, <code>ChecklistGateService</code></td>
+        <td><code>pre_op_clearance</code>, <code>pre_op_completions</code>, <code>preop_section_clearance</code>, <code>pac_assessment</code>, <code>pre_op_medication_log</code></td>
+        <td class="owner o-ip">IP</td>
+      </tr>
+      <tr>
+        <td>4 &middot; <b>Billing</b></td>
+        <td><code>GET &hellip;/journeys/{id}/financial-summary</code>, <code>GET &hellip;/journeys/{id}/billing</code>, one receipt at <code>&hellip;/billing/{txnId}/receipt</code></td>
+        <td><b class="danger-text">Removed.</b> <code>POST &hellip;/journeys/{id}/billing</code> still exists and proxies Auth &mdash; the UI must stop calling it <span class="mark fix">3</span></td>
+        <td><code>BillingService</code> &rarr; <code>AuthBillingClient</code></td>
+        <td><code>opd_bills</code>, <code>opd_bill_payments</code>; <code>ip_billing_transactions</code> legacy read only</td>
+        <td class="owner o-billing">Billing</td>
+      </tr>
+      <tr>
+        <td>5 &middot; <b>Implants</b> <span class="mark new">2</span></td>
+        <td><code>GET /journeys/{id}/implants</code> · <b>live</b>; today only <code>GET &hellip;/iol-returns</code> and IOL fields on the journey</td>
+        <td>No &mdash; scanned in <a href="s-07-implant-scan.html">S-07</a></td>
+        <td>implant usage service (live)</td>
+        <td><code>journey_implant_usage</code> proposed; <code>iol_returns</code> today</td>
+        <td class="owner o-ip">IP</td>
+      </tr>
+      <tr>
+        <td>6 &middot; OT</td>
+        <td><code>GET &hellip;/intra-op</code>, <code>&hellip;/surgical-safety</code>, <code>&hellip;/anaesthesia-monitoring</code></td>
+        <td>No &mdash; recorded in <a href="s-06-ot-board.html">S-06</a></td>
+        <td><code>IntraOpNoteService</code>, <code>SurgicalSafetyService</code>, <code>AnaesthesiaMonitoringService</code></td>
+        <td><code>intra_op_notes</code>, <code>surgical_safety_checklist</code>, <code>anaesthesia_monitoring</code></td>
+        <td class="owner o-ip">IP</td>
+      </tr>
+      <tr>
+        <td>7 &middot; Post-op</td>
+        <td><code>GET &hellip;/nurse-checklist</code>, <code>&hellip;/surgeon-checklist</code>, <code>&hellip;/post-op-instructions</code>, <code>&hellip;/ward-postop-checklist</code></td>
+        <td>No &mdash; recorded in <a href="s-08-postop-workspace.html">S-08</a></td>
+        <td><code>PostOpWorkflowService</code>, <code>WardPostOpChecklistService</code></td>
+        <td><code>nurse_checklist_responses</code>, <code>surgeon_checklist_responses</code>, <code>post_op_instructions</code></td>
+        <td class="owner o-ip">IP</td>
+      </tr>
+      <tr>
+        <td>8 &middot; Discharge</td>
+        <td><code>GET &hellip;/discharge-summary</code> and <code>&hellip;/discharge-summary/preview</code></td>
+        <td>No &mdash; written in <a href="s-09-discharge-workspace.html">S-09</a></td>
+        <td><code>PostOpWorkflowService.GetSummaryAsync</code></td>
+        <td><code>discharge_summary</code></td>
+        <td class="owner o-ip">IP</td>
+      </tr>
+      <tr>
+        <td>9 &middot; Audit</td>
+        <td><code>GET /api/ip-management/journeys/{id}/audit</code></td>
+        <td>No &mdash; written by the server</td>
+        <td><code>PatientJourneyService.GetAuditLogsAsync</code></td>
+        <td><code>journey_audit_log</code></td>
+        <td class="owner o-ip">IP</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>The Audit tab is thinner than it looks.</b> <code>journey_audit_log</code> is written for journey lifecycle
+    actions plus pre-op approval and clinical-evaluation amendment. Vitals, medications, PAC, checklists,
+    investigations and safety sign-offs produce no audit rows, so this tab cannot answer &ldquo;who changed that
+    reading&rdquo;. Each history is currently reconstructed from its own table. Gap 1 in
+    <a href="conventions.html">conventions</a>.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Tab not yet reachable</td><td><b>Nothing here yet.</b> The theatre record starts once the patient is accepted into OT.</td></tr>
+      <tr><td>Billing tab is read-only</td><td><b>Payments are handled at the cashier.</b> <a href="s-12-bill-detail.html">Open the bill</a> to collect, discount or refund.</td></tr>
+      <tr><td>Legacy projection rows</td><td><b>These older entries aren&rsquo;t counted in the totals.</b> They&rsquo;re kept for reference from before billing moved to the cashier.</td></tr>
+      <tr><td>Financial figures unavailable</td><td><b>We can&rsquo;t show the amounts right now.</b> The clinical record below is complete and current.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

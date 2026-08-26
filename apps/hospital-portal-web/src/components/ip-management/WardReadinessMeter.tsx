@@ -106,18 +106,18 @@ export function WardReadinessMeter({
       aria-valuemax={total}
       aria-valuenow={done}
       aria-valuetext={ariaText}
-      className="flex items-center gap-1.5 mt-1"
+      className="meter"
       title={`Pre-op readiness ${done}/${total}`}
       aria-label={ariaText}
     >
-      <span className="block w-20 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+      <span className="track">
         <span
-          className={`block h-full rounded-full transition-all ${fillClass}`}
+          className={`fill ${tone === 'critical' ? 'critical' : isComplete ? 'ok' : ''}`}
           style={{ width: `${Math.max(percent, 4)}%` }}
         />
       </span>
       {blocker && (
-        <span className="text-[10px] font-medium text-gray-400 whitespace-nowrap">{blocker}</span>
+        <span className="cell-sub" style={{ color: tone === 'critical' ? 'var(--ip-danger)' : undefined }}>{blocker}</span>
       )}
     </div>
   );

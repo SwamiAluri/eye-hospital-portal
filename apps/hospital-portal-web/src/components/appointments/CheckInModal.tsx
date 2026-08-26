@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { visitsApi, CheckInValidation, CheckInResult } from '@/lib/api/visits.api';
-import { opdBillingApi, CreateOpdBillRequest, AddPaymentRequest, PaymentMode, OpdBill } from '@/lib/api/opd-billing.api';
+import { opdBillingApi, CreateOpdBillRequest, PaymentMode, OpdBill } from '@/lib/api/opd-billing.api';
+import { buildAddPaymentRequest, reuseOrCreatePaymentKey } from '@/lib/ip-management/collect-payment';
 import { usePaymentModes } from '@/hooks/use-payment-modes';
 import type { LucideIcon } from 'lucide-react';
 import { departmentsApi, Department } from '@/lib/api/departments.api';
@@ -105,6 +106,8 @@ export default function CheckInModal({
   const [generatingBill, setGeneratingBill] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [currentBill, setCurrentBill] = useState<OpdBill | null>(null);
+  const paymentKeyRef = useRef('');
+  const paymentInFlight = useRef(false);
   
   // Bill form state
   const [consultationFee, setConsultationFee] = useState(500);
@@ -307,20 +310,22 @@ export default function CheckInModal({
       alert('Bill not found. Please generate a bill first.');
       return;
     }
-    
+    if (paymentInFlight.current) return;
+
+    paymentInFlight.current = true;
     try {
       setProcessingPayment(true);
-      
-      const request: AddPaymentRequest = {
+      paymentKeyRef.current = reuseOrCreatePaymentKey(paymentKeyRef.current, currentBill.id);
+
+      await opdBillingApi.addPayment(buildAddPaymentRequest({
         opdBillId: currentBill.id,
         paymentMode,
         amount: paymentAmount,
+        paymentKind: 'Payment',
+        idempotencyKey: paymentKeyRef.current,
         notes: paymentNotes || undefined,
-      };
-      
-      console.log('Submitting payment request:', request);
-      
-      await opdBillingApi.addPayment(request);
+      }));
+      paymentKeyRef.current = '';
       
       // Show success notification
       setShowPaymentSuccess(true);
@@ -335,6 +340,7 @@ export default function CheckInModal({
       console.error('Error processing payment:', error);
       alert(error.response?.data?.message || 'Failed to process payment. Please try again.');
     } finally {
+      paymentInFlight.current = false;
       setProcessingPayment(false);
     }
   };

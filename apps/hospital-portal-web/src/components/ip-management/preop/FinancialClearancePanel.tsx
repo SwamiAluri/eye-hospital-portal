@@ -116,7 +116,7 @@ export function FinancialClearancePanel({
 
   const paymentModeKnown = !!paymentMode;
   const advanceReceived = (totalPaid ?? 0) > 0;
-  const coverageApproved = !!(preauth?.allowed);
+  const coverageApproved = preauth?.coverageStatus === 'CoverageApproved';
   const emergencyFcActive = isEmergencyFc || !!preauth?.isEmergencyFinancialClearance;
 
   const patchCompletion = useCallback(
@@ -243,7 +243,14 @@ export function FinancialClearancePanel({
 
   function coverageLiveText(p: PreauthStatusDto): string {
     const parts: string[] = [];
+    const statusLabel =
+      p.coverageStatus === 'CoverageApproved' ? 'Coverage Approved'
+      : p.coverageStatus === 'CoverageRejected' ? 'Coverage Rejected'
+      : p.coverageStatus === 'CoverageChanged' ? 'Coverage Changed'
+      : p.coverageStatus === 'CoveragePending' ? 'Coverage Pending'
+      : null;
     if (p.ccmsUnavailable) parts.push('CCMS unavailable');
+    else if (statusLabel) parts.push(statusLabel);
     else if (p.coverageState) parts.push(`CCMS: ${p.coverageState}`);
     else if (p.allowed) parts.push('CCMS: Ready');
     else if (p.warningLevel === 'block') parts.push('CCMS: Blocks admission');
@@ -348,6 +355,25 @@ export function FinancialClearancePanel({
               Last updated {new Date(preauth.lastUpdatedAt).toLocaleString()}
             </p>
           )}
+        </div>
+      )}
+
+      {preauth && (preauth.decision === 'WARN' || preauth.coverageState === 'PARTIAL_APPROVAL'
+        || (preauth.payerShareAmount != null && preauth.payerShareAmount > 0)
+        || (preauth.patientShareAmount != null && preauth.patientShareAmount > 0)) && (
+        <div className="grid grid-cols-2 gap-3 rounded-xl border border-amber-100 bg-amber-50/40 px-4 py-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-gray-500">{CoveragePaymentTerms.payerPaymentStatus}</p>
+            <p data-testid={WARD_PREOP_TEST_IDS.financialPayerShare} className="mt-0.5 text-sm font-medium text-gray-800">
+              {formatInr(preauth.payerShareAmount ?? preauth.approvedAmount)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-gray-500">{CoveragePaymentTerms.patientPaymentStatus}</p>
+            <p data-testid={WARD_PREOP_TEST_IDS.financialPatientShare} className="mt-0.5 text-sm font-medium text-gray-800">
+              {formatInr(preauth.patientShareAmount)}
+            </p>
+          </div>
         </div>
       )}
 

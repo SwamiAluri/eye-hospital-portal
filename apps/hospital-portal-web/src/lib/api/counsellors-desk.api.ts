@@ -287,6 +287,7 @@ export const counsellorsDeskApi = {
         // Carry the restored eye as a top-level field so page.tsx can set selectedEye
         // even when selectedSurgeryId is null (no blob saved yet).
         restoredEye: restoredEye as string,
+        iolPower: typeof raw.iolPower === 'string' ? raw.iolPower : undefined,
         patientType: restoredPaymentType,
         paymentMode: restoredPaymentType,
         company: cd.insuranceCompany ?? '',
@@ -519,7 +520,19 @@ export const counsellorsDeskApi = {
       emergencyContactPhone:        r.emergencyContactPhone,
       emergencyContactRelationship: r.emergencyContactRelationship,
       address:                      r.address,
+      biometryMissingForEye:        r.biometryMissingForEye === true,
     } as OtScheduleDetail;
+  },
+
+  async refreshSessionFromOpd(sessionId: string): Promise<{
+    procedureName?: string | null;
+    eyeOperated?: string | null;
+    iolPower?: string | null;
+    biometryMissing?: boolean;
+    eyePhrase?: string | null;
+  }> {
+    const response = await getApi().post(`/Counseling/sessions/${sessionId}/refresh-from-opd`);
+    return response.data;
   },
 
   async updateOtDetails(id: string, data: UpdateOtDetailsPayload): Promise<FinalizeSurgeryRecord> {

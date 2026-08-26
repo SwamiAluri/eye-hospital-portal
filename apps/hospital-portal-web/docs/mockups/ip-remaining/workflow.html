@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How each screen opens — remaining-work mockups</title>
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="sid">Click</span>
+  <span class="title">W-01 to W-09 — which live screen, which click, where the new UI appears</span>
+  <span class="spacer"></span>
+  <a href="readiness.html">API / BE / DB map</a>
+  <a href="index.html">Build order</a>
+  <a href="../ip-target/index.html">S-01–S-18</a>
+</header>
+<main>
+  <p class="lede">
+    These are <strong>not new pages</strong>. Each W mockup is a change on an existing screen.
+    Read: sidebar → click this → the W UI appears here. Then open the mockup to see the states.
+  </p>
+  <div class="callout warn">
+    <b>W-01 is not “after OPD” as a second app.</b> OPD / Doctors Desk finishes the exam and the patient
+    lands on the Counsellor Waiting List. You open W-01 by clicking Meena’s row on that list.
+    Doctors Desk treatment plan “Surgery” only queues her — it does not open the counsellor session.
+  </div>
+  <div class="callout info">
+    <b>Implementation gate.</b> Full API / backend / database / integration map is on
+    <a href="readiness.html">readiness.html</a>. Code starts only after you approve one screen (recommended: W-07 A2).
+  </div>
+  <div class="start-row">
+    <a class="btn primary" href="w-01-counsellor-opd.html">Start at W-01 (then Next at the bottom)</a>
+    <span class="small muted">Patient: Meena Iyer · UAT-002 · RIGHT · +21.00 D</span>
+  </div>
+
+  <h2 class="sec">Click path for every mockup</h2>
+  <div id="paths"></div>
+
+  <h2 class="sec">Every remaining gap → mockup</h2>
+  <p class="small muted">P0/P1 in this pack. P2/P3 and E1 (no UI) on W-11 so they are not forgotten.</p>
+  <table class="map" id="gaps">
+    <thead><tr><th>ID</th><th>Gap</th><th>Status</th><th>Mockup</th><th>FRD</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script>
+(function () {
+  var root = document.getElementById('paths');
+  var screens = window.REMAINING_SCREENS || [];
+  screens.forEach(function (s, i) {
+    var next = screens[i + 1];
+    var art = document.createElement('article');
+    art.className = 'path-card';
+    art.id = s.id;
+    art.innerHTML =
+      '<div class="path-head">' +
+        '<span class="id">' + s.id + '</span>' +
+        '<span class="t">' + s.short + '</span>' +
+        '<span class="meta">' + s.clock + ' · ' + s.tasks + '</span>' +
+        '<a class="btn sm primary" href="' + s.file + '">Open this mockup</a>' +
+      '</div>' +
+      '<ol class="path-steps">' +
+        '<li><b>You are in the app here</b>' +
+          '<div class="host-frame">' +
+            '<div class="hf-side">' + s.sidebar + '</div>' +
+            '<div class="hf-main">' +
+              '<div class="hf-title">' + s.hostScreen + '</div>' +
+              '<div class="hf-route"><code>' + s.hostRoute + '</code></div>' +
+              '<div class="hf-click"><span class="btn sm primary">' + s.click + '</span></div>' +
+            '</div>' +
+          '</div>' +
+        '</li>' +
+        '<li><b>That click opens</b> ' + s.opens +
+          ' <code>' + s.opensRoute + '</code></li>' +
+        '<li><b>' + s.id + ' appears as</b> ' + s.appearsWhere + '</li>' +
+        '<li><b>Next click after this work</b> ' + s.nextClick +
+          (next ? ' → then review <a href="' + next.file + '">' + next.id + ' ' + next.short + '</a>' : '') +
+        '</li>' +
+      '</ol>';
+    root.appendChild(art);
+  });
+
+  var gbody = document.querySelector('#gaps tbody');
+  (window.GAP_COVERAGE || []).forEach(function (g) {
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><b>' + g.id + '</b></td>' +
+      '<td>' + g.gap + '</td>' +
+      '<td>' + g.status + '</td>' +
+      '<td><a href="' + g.file + '">' + g.mockup + '</a></td>' +
+      '<td>' + g.frd + '</td>';
+    gbody.appendChild(tr);
+  });
+})();
+</script>
+</body>
+</html>

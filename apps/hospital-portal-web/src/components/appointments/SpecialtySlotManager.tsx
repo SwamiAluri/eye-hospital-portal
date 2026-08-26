@@ -39,7 +39,7 @@ import {
   Stethoscope,
   Search
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // Eye Hospital Specific Appointment Types
 export interface EyeAppointmentType {

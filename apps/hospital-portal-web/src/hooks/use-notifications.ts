@@ -1,7 +1,7 @@
 import { HubConnectionBuilder, HubConnection, LogLevel } from '@microsoft/signalr';
 import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface NotificationHookOptions {
   onAppointmentUpdate?: (appointmentId: string, status: string) => void;

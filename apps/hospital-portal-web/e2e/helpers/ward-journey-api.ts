@@ -1,18 +1,56 @@
 import { type APIRequestContext, expect } from '@playwright/test';
 import { E2E_IP_API_BASE, type WardJourneySummary } from './ward-preop';
-import { E2E_TENANT_ID, apiHeaders, type LoginPayload } from './auth';
+import { E2E_API_BASE, E2E_TENANT_ID, apiHeaders, type LoginPayload } from './auth';
 
 export interface JourneyDetailApi {
   id: string;
   clinicalState: string;
   otState: string;
   patientId?: string;
+  branchId?: string;
+  paymentMode?: string | null;
+  counselingSessionId?: string | null;
   eyeOperated?: string | null;
   pendingRebook?: boolean;
   otFinalizeScheduleId?: string | null;
   surgeryScheduledAt?: string | null;
   surgeryCancelledAt?: string | null;
   cancelledFromState?: string | null;
+  assignedBedId?: string | null;
+  priorJourneyId?: string | null;
+  emergencyFcApplied?: boolean;
+  opdBillId?: string | null;
+}
+
+export interface JourneyBedAssignmentApi {
+  id: string;
+  assignedBedId?: string | null;
+  assignmentType?: string;
+  endedAt?: string | null;
+  startedAt?: string;
+}
+
+export interface AuthIpPaymentLineApi {
+  id: string;
+  paymentKind?: string | null;
+  amount: number;
+}
+
+export interface AuthIpFinancialSummaryApi {
+  opdBillId?: string | null;
+  billedAmount?: number;
+  totalCollected?: number;
+  refundsAndReversals?: number;
+  patientBalance?: number;
+  insuranceResponsibility?: number;
+  patientResponsibility?: number;
+  payments?: AuthIpPaymentLineApi[];
+}
+
+function actorUserId(login: LoginPayload): string | undefined {
+  const u = login.user;
+  const id = u.id ?? u.Id ?? u.userId ?? u.UserId;
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
 }
 
 function ipHeaders(token: string): Record<string, string> {
@@ -158,6 +196,134 @@ export async function apiAcceptInOt(
   );
   if (!res.ok()) return null;
   return (await res.json()) as JourneyDetailApi;
+}
+
+export async function apiSaveBeforeAnaesthesiaWithBillingOverride(
+  request: APIRequestContext,
+  login: LoginPayload,
+  journeyId: string,
+): Promise<boolean> {
+  const res = await request.put(
+    `${E2E_IP_API_BASE}/ip-management/journeys/${journeyId}/surgical-safety/before-anaesthesia`,
+    {
+      headers: ipHeaders(login.accessToken),
+      data: {
+        identityConfirmed: true,
+        eyeRe: true,
+        eyeLe: false,
+        topicalAntibioticsUsed: true,
+        surgeryType: 'Phaco',
+        billingVerifiedOverride: true,
+        ascanVerified: true,
+        allergyKnown: false,
+        allergyDetails: null,
+        consentFormChecked: true,
+        fitnessConfirmed: true,
+      },
+    },
+  );
+  return res.ok();
+}
+
+export async function apiSaveWhoTimeout(
+  request: APIRequestContext,
+  login: LoginPayload,
+  journeyId: string,
+): Promise<boolean> {
+  const uid = actorUserId(login);
+  const res = await request.put(
+    `${E2E_IP_API_BASE}/ip-management/journeys/${journeyId}/surgical-safety/who-timeout`,
+    {
+      headers: ipHeaders(login.accessToken),
+      data: {
+        patientIdentity: true,
+        correctEye: true,
+        correctProcedure: true,
+        consentConfirmed: true,
+        surgeonUserId: uid ?? null,
+        nurseUserId: uid ?? null,
+      },
+    },
+  );
+  return res.ok();
+}
+
+/** Billing override + WHO + Accept so Start Surgery can enter InOT. */
+export async function apiPrepareAcceptedInOt(
+  request: APIRequestContext,
+  login: LoginPayload,
+  journeyId: string,
+): Promise<JourneyDetailApi | null> {
+  await apiSaveBeforeAnaesthesiaWithBillingOverride(request, login, journeyId);
+  await apiSaveWhoTimeout(request, login, journeyId);
+  await apiAcceptInOt(request, login, journeyId);
+  return apiFetchJourneyDetail(request, login, journeyId);
+}
+
+export async function apiTransferBed(
+  request: APIRequestContext,
+  login: LoginPayload,
+  journeyId: string,
+  assignedBedId: string,
+  reason = 'Phase 9 E2E ward transfer',
+): Promise<{ ok: boolean; status: number; detail: JourneyDetailApi | null }> {
+  const res = await request.post(
+    `${E2E_IP_API_BASE}/ip-management/journeys/${journeyId}/transfer-bed`,
+    {
+      headers: ipHeaders(login.accessToken),
+      data: { assignedBedId, reason },
+    },
+  );
+  const detail = res.ok() ? ((await res.json()) as JourneyDetailApi) : null;
+  return { ok: res.ok(), status: res.status(), detail };
+}
+
+export async function apiListBedAssignments(
+  request: APIRequestContext,
+  login: LoginPayload,
+  journeyId: string,
+): Promise<JourneyBedAssignmentApi[]> {
+  const res = await request.get(
+    `${E2E_IP_API_BASE}/ip-management/journeys/${journeyId}/bed-assignments`,
+    { headers: ipHeaders(login.accessToken) },
+  );
+  if (!res.ok()) return [];
+  const json = await res.json();
+  return Array.isArray(json) ? (json as JourneyBedAssignmentApi[]) : [];
+}
+
+export async function apiGetFinancialSummary(
+  request: APIRequestContext,
+  login: LoginPayload,
+  journeyId: string,
+): Promise<AuthIpFinancialSummaryApi | null> {
+  const res = await request.get(
+    `${E2E_IP_API_BASE}/ip-management/journeys/${journeyId}/financial-summary`,
+    { headers: ipHeaders(login.accessToken) },
+  );
+  if (!res.ok()) return null;
+  return (await res.json()) as AuthIpFinancialSummaryApi;
+}
+
+export async function apiListInternalBeds(
+  request: APIRequestContext,
+  branchId: string,
+): Promise<Array<{ bedId: string; bedStatus?: string }>> {
+  const internalKey =
+    process.env.E2E_INTERNAL_API_KEY
+    ?? process.env.AuthService__InternalApiKey
+    ?? 'hp-internal-svc-key-change-in-production-2026';
+  const res = await request.get(`${E2E_API_BASE}/internal/ip-beds`, {
+    headers: { 'X-Internal-Key': internalKey },
+    params: { tenantId: E2E_TENANT_ID, branchId },
+  });
+  if (!res.ok()) return [];
+  const json = await res.json();
+  const rows = Array.isArray(json) ? json : [];
+  return rows.map((r: Record<string, unknown>) => ({
+    bedId: String(r.bedId ?? r.BedId ?? ''),
+    bedStatus: String(r.bedStatus ?? r.BedStatus ?? ''),
+  })).filter((b) => b.bedId);
 }
 
 export async function apiStartSurgery(

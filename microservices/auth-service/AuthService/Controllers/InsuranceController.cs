@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Http;
 using AuthService.Models.Counselor;
 using AuthService.Services;
 using AuthService.Authorization;
@@ -49,7 +49,11 @@ namespace AuthService.Controllers
         {
             message,
             ccmsRedirect = "/dashboard/ccms/cases",
+            code = "CCMS_LEGACY_WRITE_FROZEN",
         };
+
+        private ObjectResult LegacyGone(string message) =>
+            StatusCode(StatusCodes.Status410Gone, LegacyFrozen(message));
 
         #region Pre-Authorization
 
@@ -95,7 +99,7 @@ namespace AuthService.Controllers
                 _logger.LogWarning(
                     "Blocked legacy pre-auth creation (session {SessionId}). Use CCMS or X-CCMS-Bypass.",
                     request.SessionId);
-                return Conflict(LegacyFrozen(
+                return StatusCode(410, LegacyFrozen(
                     "New insurance pre-authorizations must be created via CCMS. " +
                     "Legacy Auth Module writes are frozen."));
             }
@@ -120,11 +124,7 @@ namespace AuthService.Controllers
                 && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
             if (!isBypass)
             {
-                return Conflict(new
-                {
-                    message = "Legacy insurance pre-auth updates are frozen. Use CCMS.",
-                    ccmsRedirect = "/dashboard/ccms/cases",
-                });
+                return LegacyGone("Legacy insurance pre-auth updates are frozen. Use CCMS.");
             }
 
             try
@@ -151,11 +151,7 @@ namespace AuthService.Controllers
                 && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
             if (!isBypass)
             {
-                return Conflict(new
-                {
-                    message = "Legacy TPA submit is frozen. Use CCMS pre-authorization workspace.",
-                    ccmsRedirect = "/dashboard/ccms/cases",
-                });
+                return LegacyGone("Legacy TPA submit is frozen. Use CCMS pre-authorization workspace.");
             }
 
             try
@@ -182,11 +178,7 @@ namespace AuthService.Controllers
                 && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
             if (!isBypass)
             {
-                return Conflict(new
-                {
-                    message = "Legacy TPA response processing is frozen. Use CCMS.",
-                    ccmsRedirect = "/dashboard/ccms/cases",
-                });
+                return LegacyGone("Legacy TPA response processing is frozen. Use CCMS.");
             }
 
             try
@@ -206,17 +198,11 @@ namespace AuthService.Controllers
 
         [HttpDelete("pre-auths/{id}")]
         [RequirePermission("insurance.preauth.delete")]
-        public async Task<IActionResult> DeletePreAuth(Guid id)
+        public IActionResult DeletePreAuth(Guid id)
         {
-            try
-            {
-                await _insuranceService.DeletePreAuthAsync(id, GetTenantId(), GetCurrentUserId());
-                return NoContent();
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound(new { message = "Pre-authorization not found" });
-            }
+            if (!IsCcmsBypass())
+                return LegacyGone("Legacy insurance pre-auth delete is frozen. Use CCMS.");
+            return NoContent();
         }
 
         #endregion
@@ -237,7 +223,7 @@ namespace AuthService.Controllers
         public async Task<ActionResult<ApprovalWorkflowDto>> ProcessApprovalStage(Guid workflowId, [FromBody] ProcessApprovalRequest request)
         {
             if (!IsCcmsBypass())
-                return Conflict(LegacyFrozen("Legacy insurance approval workflow is frozen. Use CCMS."));
+                return StatusCode(410, LegacyFrozen("Legacy insurance approval workflow is frozen. Use CCMS."));
 
             try
             {
@@ -272,7 +258,7 @@ namespace AuthService.Controllers
         public async Task<ActionResult<InsuranceDocumentDto>> UploadDocument([FromBody] UploadInsuranceDocumentRequest request)
         {
             if (!IsCcmsBypass())
-                return Conflict(LegacyFrozen("Legacy insurance document uploads are frozen. Use CCMS."));
+                return StatusCode(410, LegacyFrozen("Legacy insurance document uploads are frozen. Use CCMS."));
 
             var document = await _insuranceService.UploadDocumentAsync(request, GetTenantId(), GetCurrentUserId());
             return CreatedAtAction(nameof(GetDocuments), new { preAuthId = request.PreAuthId }, document);
@@ -284,7 +270,7 @@ namespace AuthService.Controllers
         public async Task<ActionResult<InsuranceDocumentDto>> VerifyDocument(Guid documentId)
         {
             if (!IsCcmsBypass())
-                return Conflict(LegacyFrozen("Legacy insurance document verify is frozen. Use CCMS."));
+                return StatusCode(410, LegacyFrozen("Legacy insurance document verify is frozen. Use CCMS."));
 
             try
             {
@@ -303,7 +289,7 @@ namespace AuthService.Controllers
         public async Task<IActionResult> DeleteDocument(Guid documentId)
         {
             if (!IsCcmsBypass())
-                return Conflict(LegacyFrozen("Legacy insurance document delete is frozen. Use CCMS."));
+                return StatusCode(410, LegacyFrozen("Legacy insurance document delete is frozen. Use CCMS."));
 
             try
             {
@@ -334,7 +320,7 @@ namespace AuthService.Controllers
         public async Task<ActionResult<TPACommunicationDto>> LogCommunication([FromBody] LogTPACommunicationRequest request)
         {
             if (!IsCcmsBypass())
-                return Conflict(LegacyFrozen("Legacy TPA communication create is frozen. Use CCMS."));
+                return StatusCode(410, LegacyFrozen("Legacy TPA communication create is frozen. Use CCMS."));
 
             var communication = await _insuranceService.LogCommunicationAsync(request, GetTenantId(), GetCurrentUserId());
             return CreatedAtAction(nameof(GetCommunications), new { preAuthId = request.PreAuthId }, communication);
@@ -346,7 +332,7 @@ namespace AuthService.Controllers
         public async Task<ActionResult<TPACommunicationDto>> RecordResponse(Guid communicationId, [FromBody] string responseText)
         {
             if (!IsCcmsBypass())
-                return Conflict(LegacyFrozen("Legacy TPA communication response is frozen. Use CCMS."));
+                return StatusCode(410, LegacyFrozen("Legacy TPA communication response is frozen. Use CCMS."));
 
             try
             {

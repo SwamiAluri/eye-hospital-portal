@@ -104,11 +104,48 @@ Artifacts added:
 
 ---
 
-## How to re-run
+## P1 Playwright journeys (2026-08-22)
+
+Spec: `apps/hospital-portal-web/e2e/ip-ccms-phase5-p1.spec.ts`
 
 ```powershell
-powershell -File scripts/staging-smoke-phase5.ps1
+cd apps/hospital-portal-web
+npm run test:e2e:ip-ccms-p1
+# Full cash OT/discharge (destructive): $env:E2E_WARD_FULL_FLOWS='1'
+```
+
+| Journey | Coverage |
+|---|---|
+| Admit block reason | Coverage & Payment Status live text (not Admit panel) |
+| Warning/block + deep-link | `financialPreauthLive` + `financialCcmsLink` |
+| Cash | Non-coverage panel; full clinical path opt-in |
+| Insurance | Approved/partial case workspace + claims ops page |
+| BillFinalized replay | Same idempotency key → enhancement + allocation counts unchanged |
+
+---
+
+## Cross-check P0–P3 (2026-08-22)
+
+| Item | Status |
+|---|---|
+| P0-1 Re-login / JWT | **Done** — `scripts/p0-jwt-ui-smoke.ps1` + Playwright `ip-ccms-p0-jwt-ui.spec.ts` |
+| P0-2 Enhancement UI JWT | **Done** — HTTP smoke + UI draft→submit→decide |
+| P0-3 Outbox after DDL | **Done** — `scripts/p0-outbox-drain.ps1` |
+| P0-4 Emergency FC E2E | **Done** — CCMS + IP unit/integration tests + ward Playwright apply |
+| P0-5 Shared idempotency | **Done** — DB unique key table |
+| P1 cash / insurance / admit block / deep-link / BillFinalized | **Done** (allocate/claim mutate only with `E2E_WARD_FULL_FLOWS=1`) |
+| P2 17 orphans | Review SQL `review_phase3_orphan_legacy_preauths()` — historical-only |
+| P2 Archive SQL | **Applied** 2026-08-22 — tables renamed to `archived_*`; original names are views |
+| P2 snake_case permission seed | Deprecated; use PascalCase seed |
+| P3 Phase 4 A/B/D/E/F, extra events, shared DB | Not implemented / already correct |
+
+```powershell
 powershell -File scripts/p0-jwt-ui-smoke.ps1
+powershell -File scripts/p0-outbox-drain.ps1
+cd apps/hospital-portal-web
+npm run test:e2e:ip-ccms-p0
+$env:E2E_WARD_FULL_FLOWS='1'
+npm run test:e2e:ip-ccms-p1
 ```
 
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using InventoryApi.Data;
 using InventoryApi.Models.DTOs;
 using InventoryApi.Models.Entities;
@@ -25,6 +26,11 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
     private readonly InventoryDbContext _db;
     private readonly IStockService _stock;
 
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     public SurgeryConsumableService(InventoryDbContext db, IStockService stock)
     {
         _db = db;
@@ -49,6 +55,7 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
                 sc.Id,
                 sc.StoreId,
                 sc.SurgeryId,
+                sc.JourneyId,
                 sc.ItemId,
                 IssuedQuantity = sc.Quantity,
                 sc.ReturnedQuantity,
@@ -56,6 +63,8 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
                 sc.PatientName,
                 sc.PatientIpNo,
                 sc.ConsumableStatus,
+                sc.ChargeStatus,
+                sc.ChargeItemId,
                 sc.EscalationReason,
                 sc.IssuedAt,
                 sc.ClosedAt,
@@ -68,6 +77,12 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
 
     public async Task IssueSurgeryConsumablesAsync(Guid tenantId, Guid userId, IssueSurgeryConsumableRequest req, CancellationToken ct)
     {
+        var consumptionId = Guid.NewGuid();
+        var chargeStatus = req.JourneyId is { } j && j != Guid.Empty
+            ? ConsumableChargeStatus.Pending
+            : ConsumableChargeStatus.UnmappedJourney;
+        var issued = new List<SurgeryConsumable>();
+
         foreach (var itemReq in req.Items)
         {
             var batch = await _stock.DeductFefoAsync(
@@ -77,12 +92,13 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
                 $"OT-{req.SurgeryId?.ToString("N")[..8] ?? "NOSURG"}",
                 ct);
 
-            _db.SurgeryConsumables.Add(new SurgeryConsumable
+            var row = new SurgeryConsumable
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenantId,
                 StoreId = req.StoreId,
                 SurgeryId = req.SurgeryId,
+                JourneyId = req.JourneyId,
                 ItemId = itemReq.ItemId,
                 StockBatchId = itemReq.StockBatchId ?? batch.Id,
                 IolBillingMode = req.IolBillingMode,
@@ -94,14 +110,18 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
                 Barcode = itemReq.Barcode,
                 Remarks = itemReq.Remarks,
                 ConsumableStatus = "IssuedInOT",
+                ChargeStatus = chargeStatus,
                 IssuedAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 CreatedByUserId = userId,
                 UpdatedByUserId = userId
-            });
+            };
+            _db.SurgeryConsumables.Add(row);
+            issued.Add(row);
         }
 
+        TryEnqueueConsumablesConsumed(tenantId, req.JourneyId, consumptionId, userId, issued);
         await _db.SaveChangesAsync(ct);
     }
 
@@ -114,10 +134,12 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
         if (consumable.ConsumableStatus == "IssuedInOT")
             await ReverseStockAsync(consumable, ct);
 
+        var remaining = consumable.Quantity - consumable.ReturnedQuantity;
         consumable.ConsumableStatus = "Cancelled";
         consumable.DeletedAt = DateTime.UtcNow;
         consumable.UpdatedAt = DateTime.UtcNow;
         consumable.UpdatedByUserId = userId;
+        ApplyWithdrawFinancials(tenantId, userId, consumable, remaining, "cancel");
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -136,6 +158,7 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
                 TenantId = tenantId,
                 StoreId = req.StoreId,
                 SurgeryId = req.SurgeryId,
+                JourneyId = req.JourneyId,
                 ItemId = item.ItemId,
                 StockBatchId = item.StockBatchId,
                 IolBillingMode = req.IolBillingMode,
@@ -197,9 +220,13 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
         consumable.UnitRate = batch.PurchaseRate;
         consumable.Amount = Math.Round(consumable.Quantity * batch.PurchaseRate, 2);
         consumable.ConsumableStatus = "IssuedInOT";
+        consumable.ChargeStatus = consumable.JourneyId is { } j && j != Guid.Empty
+            ? ConsumableChargeStatus.Pending
+            : ConsumableChargeStatus.UnmappedJourney;
         consumable.IssuedAt = DateTime.UtcNow;
         consumable.UpdatedAt = DateTime.UtcNow;
         consumable.UpdatedByUserId = userId;
+        TryEnqueueConsumablesConsumed(tenantId, consumable.JourneyId, consumable.Id, userId, [consumable]);
         await _db.SaveChangesAsync(ct);
         return consumable;
     }
@@ -259,6 +286,7 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
         consumable.ConsumableStatus = "ReturnPosted";
         consumable.UpdatedAt = DateTime.UtcNow;
         consumable.UpdatedByUserId = userId;
+        ApplyWithdrawFinancials(tenantId, userId, consumable, returnedQty, "return");
         await _db.SaveChangesAsync(ct);
         return consumable;
     }
@@ -293,5 +321,145 @@ public sealed class SurgeryConsumableService : ISurgeryConsumableService
         batch.QuantityOut -= consumable.Quantity - consumable.ReturnedQuantity;
         batch.QuantityAvailable += consumable.Quantity - consumable.ReturnedQuantity;
         batch.UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// INV-050. One outbox row per consumption. Payload is item identity + quantity only —
+    /// never purchase rate. Caller must SaveChanges in the same unit of work as the issue rows.
+    /// </summary>
+    internal void TryEnqueueConsumablesConsumed(
+        Guid tenantId,
+        Guid? journeyId,
+        Guid consumptionId,
+        Guid actorUserId,
+        IReadOnlyList<SurgeryConsumable> lines)
+    {
+        if (lines.Count == 0) return;
+
+        var key = $"{InventoryIntegrationEventTypes.ConsumablesConsumed}:{consumptionId:N}";
+        var exists = _db.IntegrationOutboxEvents.Local
+            .Any(e => e.IdempotencyKey == key);
+        if (!exists)
+            exists = _db.IntegrationOutboxEvents.Any(e => e.IdempotencyKey == key);
+        if (exists) return;
+
+        var now = DateTime.UtcNow;
+        _db.IntegrationOutboxEvents.Add(new SharedIntegrationOutboxEvent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            EventType = InventoryIntegrationEventTypes.ConsumablesConsumed,
+            AggregateType = "PatientJourney",
+            AggregateId = journeyId is { } j && j != Guid.Empty ? j : consumptionId,
+            CorrelationId = journeyId is { } c && c != Guid.Empty ? c : consumptionId,
+            PayloadJson = JsonSerializer.Serialize(new
+            {
+                tenantId,
+                journeyId,
+                consumptionId,
+                actorUserId,
+                lines = lines.Select(l => new
+                {
+                    consumableId = l.Id,
+                    itemId = l.ItemId,
+                    quantity = l.Quantity,
+                }),
+            }, JsonOpts),
+            IdempotencyKey = key,
+            OccurredAt = now,
+            Status = "Pending",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+    }
+
+    /// <summary>
+    /// Posted/Credited issues credit catalog qty via ConsumablesReturned. Still-pending
+    /// issues are suppressed and the 1:1 consume outbox is abandoned so ChargeItems
+    /// cannot debit after cancel. Bulk consume events are left for Auth to suppress
+    /// cancelled lines individually.
+    /// </summary>
+    private void ApplyWithdrawFinancials(
+        Guid tenantId, Guid userId, SurgeryConsumable consumable, decimal creditQty, string kind)
+    {
+        var billed = consumable.ChargeStatus is ConsumableChargeStatus.Posted
+            or ConsumableChargeStatus.Credited;
+        if (billed
+            && consumable.JourneyId is Guid journeyId && journeyId != Guid.Empty
+            && creditQty > 0)
+        {
+            TryEnqueueConsumablesReturned(tenantId, journeyId, userId, consumable, creditQty, kind);
+            return;
+        }
+
+        if (consumable.ChargeStatus is ConsumableChargeStatus.Pending
+            or ConsumableChargeStatus.Exception
+            or ConsumableChargeStatus.UnmappedJourney)
+        {
+            consumable.ChargeStatus = ConsumableChargeStatus.Suppressed;
+            TryAbandonPendingSingleLineConsume(consumable.Id);
+        }
+    }
+
+    internal void TryEnqueueConsumablesReturned(
+        Guid tenantId,
+        Guid journeyId,
+        Guid actorUserId,
+        SurgeryConsumable line,
+        decimal quantity,
+        string kind)
+    {
+        if (quantity <= 0) return;
+
+        var key = $"{InventoryIntegrationEventTypes.ConsumablesReturned}:{line.Id:N}:{kind}";
+        var exists = _db.IntegrationOutboxEvents.Local.Any(e => e.IdempotencyKey == key);
+        if (!exists)
+            exists = _db.IntegrationOutboxEvents.Any(e => e.IdempotencyKey == key);
+        if (exists) return;
+
+        var now = DateTime.UtcNow;
+        _db.IntegrationOutboxEvents.Add(new SharedIntegrationOutboxEvent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            EventType = InventoryIntegrationEventTypes.ConsumablesReturned,
+            AggregateType = "PatientJourney",
+            AggregateId = journeyId,
+            CorrelationId = journeyId,
+            PayloadJson = JsonSerializer.Serialize(new
+            {
+                tenantId,
+                journeyId,
+                consumptionId = line.Id,
+                actorUserId,
+                lines = new[]
+                {
+                    new
+                    {
+                        consumableId = line.Id,
+                        itemId = line.ItemId,
+                        quantity,
+                    },
+                },
+            }, JsonOpts),
+            IdempotencyKey = key,
+            OccurredAt = now,
+            Status = "Pending",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+    }
+
+    internal void TryAbandonPendingSingleLineConsume(Guid consumableId)
+    {
+        var key = $"{InventoryIntegrationEventTypes.ConsumablesConsumed}:{consumableId:N}";
+        var pending = _db.IntegrationOutboxEvents.Local.FirstOrDefault(e => e.IdempotencyKey == key)
+                      ?? _db.IntegrationOutboxEvents.FirstOrDefault(e => e.IdempotencyKey == key);
+        if (pending is null) return;
+        if (pending.Status is not ("Pending" or "Failed")) return;
+
+        pending.Status = "Abandoned";
+        pending.Error = "Consumable withdrawn before charge.";
+        pending.UpdatedAt = DateTime.UtcNow;
     }
 }

@@ -51,7 +51,6 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
           <div className="flex items-center gap-2.5">
             <div
               className="w-8 h-8 rounded-full bg-navy-900 flex items-center justify-center text-white text-xs font-semibold select-none flex-shrink-0"
-              style={{ backgroundColor: '#0f1e3c' }}
               title={`${user.firstName} ${user.lastName}`}
             >
               {initials}

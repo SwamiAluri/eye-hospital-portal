@@ -1,27 +1,49 @@
 ﻿'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { StatusChip } from '@/components/ip-management/preop/primitives/StatusChip';
 import {
-  IndianRupee, Search, AlertTriangle, Clock, Activity,
-  CheckCircle2, ArrowRight, Stethoscope, RefreshCw, X,
-  TrendingUp, Users, CreditCard, AlertCircle,
-} from 'lucide-react';
-import {
-  ipManagementApi,
   PatientJourneyRowDto,
+  WardDto,
+  ipManagementApi,
 } from '@/lib/api/ip-management.api';
 import { useAuthStore } from '@/lib/auth-store';
+import { useIpJourneysQuery } from '@/hooks/use-ip-journeys-query';
+import { useIpBillingDashboardQuery } from '@/hooks/use-ip-billing-dashboard-query';
+import { deriveCensusDuesKpi } from '@/lib/ip-management/census-dues-kpi';
 import { PatientQuickPanel } from '@/components/ip-management/PatientQuickPanel';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtDateTime(dt: string | null): string {
-  if (!dt) return '—';
-  return new Date(dt).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-  });
-}
+import { WardPreOpWorkspaceModal } from '@/components/ip-management/WardPreOpWorkspaceModal';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { IP_DASHBOARD_TABS, matchesIpDashboardTab, matchesIpFinancialFilter, type IpDashboardTab, type IpFinancialFilter } from '@/lib/ip-management/ip-dashboard-tabs';
+import { buildCensusAttention, buildIpRowSituation } from '@/lib/ip-management/ip-row-situation';
+import {
+  censusAgeSex,
+  censusClinicalChip,
+  censusOtChip,
+  censusProcedureLine,
+  formatCensusAdmitted,
+  formatCensusSlot,
+} from '@/lib/ip-management/ip-census-display';
+import { resolveCensusTabCount, useCensusTabCountsQuery } from '@/hooks/use-census-tab-counts-query';
+import { useCensusPresentation } from '@/hooks/use-census-presentation';
+import { parseIpCensusSearchParams, serializeIpCensusSearchParams } from '@/lib/ip-management/ip-census-url';
+import { CENSUS_RAIL_WIDTH_PX, censusColumnsVisible } from '@/lib/ip-management/ip-census-layout';
+import { isEditableKeyboardTarget, nextCensusIndex } from '@/lib/ip-management/ip-census-keyboard';
+import { IP_CENSUS_TEST_IDS } from '@/lib/ip-management/ip-census-test-ids';
+import type { PreOpStepKey } from '@/lib/ip-management/preop-steps';
+import {
+  matchesSlotSession,
+  sortIpCensusRows,
+  type IpSlotSessionFilter,
+} from '@/lib/ip-management/ip-slot-display';
+import {
+  CENSUS_PAGE_SIZE,
+  localDateKey,
+  matchesAdmittedCensusFilter,
+  matchesCensusSearch,
+} from '@/lib/ip-management/ip-census-filters';
 
 function fmtINR(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -29,485 +51,740 @@ function fmtINR(amount: number): string {
   }).format(amount);
 }
 
-function calcAge(dob: string | null, ageOverride: number | null): string {
-  if (ageOverride !== null && ageOverride !== undefined) return `${ageOverride}y`;
-  if (!dob) return '—';
-  return `${Math.floor((Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24 * 365))}y`;
-}
-
-// ─── Clinical State Display ────────────────────────────────────────────────────
-
-const CLINICAL_DISPLAY: Record<string, {
-  label: string; dotColor: string; textColor: string; bgColor: string; icon: React.ReactNode;
-}> = {
-  Expected:          { label: 'Expected',       dotColor: 'bg-blue-400',    textColor: 'text-blue-700',    bgColor: 'bg-blue-50',    icon: <Clock className="h-3 w-3" /> },
-  PreOpInProgress:   { label: 'Pre-Op',         dotColor: 'bg-indigo-400',  textColor: 'text-indigo-700',  bgColor: 'bg-indigo-50',  icon: <Activity className="h-3 w-3" /> },
-  Admitted:          { label: 'Admitted',        dotColor: 'bg-teal-500',    textColor: 'text-teal-700',    bgColor: 'bg-teal-50',    icon: <CheckCircle2 className="h-3 w-3" /> },
-  ReadyForSurgery:   { label: 'Ready for OT',   dotColor: 'bg-violet-500',  textColor: 'text-violet-700',  bgColor: 'bg-violet-50',  icon: <Stethoscope className="h-3 w-3" /> },
-  SentToOT:          { label: 'Sent to OT',     dotColor: 'bg-purple-500',  textColor: 'text-purple-700',  bgColor: 'bg-purple-50',  icon: <ArrowRight className="h-3 w-3" /> },
-  InOT:              { label: 'In OT',           dotColor: 'bg-amber-500',   textColor: 'text-amber-700',   bgColor: 'bg-amber-50',   icon: <Activity className="h-3 w-3" /> },
-  SurgeryCompleted:  { label: 'Surgery Done',   dotColor: 'bg-green-500',   textColor: 'text-green-700',   bgColor: 'bg-green-50',   icon: <CheckCircle2 className="h-3 w-3" /> },
-  PostOpInProgress:  { label: 'Post-Op',        dotColor: 'bg-cyan-500',    textColor: 'text-cyan-700',    bgColor: 'bg-cyan-50',    icon: <Activity className="h-3 w-3" /> },
-  ReadyForDischarge: { label: 'Ready for D/C',  dotColor: 'bg-emerald-500', textColor: 'text-emerald-700', bgColor: 'bg-emerald-50', icon: <ArrowRight className="h-3 w-3" /> },
-  Discharged:        { label: 'Discharged',      dotColor: 'bg-gray-400',    textColor: 'text-gray-600',    bgColor: 'bg-gray-100',   icon: <CheckCircle2 className="h-3 w-3" /> },
-};
-
-function ClinicalBadge({ state }: { state: string }) {
-  const cfg = CLINICAL_DISPLAY[state] ?? {
-    label: state, dotColor: 'bg-gray-400', textColor: 'text-gray-600', bgColor: 'bg-gray-50', icon: null,
-  };
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${cfg.bgColor} ${cfg.textColor}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dotColor} shrink-0`} />
-      {cfg.label}
-    </span>
-  );
-}
-
-function FinancialBadge({ state }: { state: string }) {
-  const styles: Record<string, string> = {
-    NotCreated:    'bg-gray-100 text-gray-500',
-    Draft:         'bg-slate-100 text-slate-600',
-    Estimated:     'bg-blue-50 text-blue-600',
-    Confirmed:     'bg-indigo-50 text-indigo-700 font-semibold',
-    PartiallyPaid: 'bg-amber-50 text-amber-700',
-    Paid:          'bg-green-50 text-green-700 font-semibold',
-    Settled:       'bg-teal-50 text-teal-700',
-  };
-  const labels: Record<string, string> = {
-    NotCreated: 'No Bill', Draft: 'Draft', Estimated: 'Estimated',
-    Confirmed: 'Confirmed', PartiallyPaid: 'Partial', Paid: 'Paid', Settled: 'Settled',
-  };
-  return (
-    <span className={`inline-flex px-2 py-0.5 rounded-md text-xs ${styles[state] ?? 'bg-gray-100 text-gray-500'}`}>
-      {labels[state] ?? state}
-    </span>
-  );
-}
-
-// ─── Business Status Tabs ─────────────────────────────────────────────────────
-
-type BizTab = 'All' | 'Pending' | 'SurgeryDone' | 'BillPrepared' | 'EmergencyFC' | 'ReadyForUpgrade';
-
-const BIZ_TABS: { key: BizTab; label: string; activeClass: string; dot: string }[] = [
-  { key: 'All',             label: 'All',               activeClass: 'bg-gray-800 text-white',   dot: 'bg-gray-400' },
-  { key: 'Pending',         label: 'Pending',           activeClass: 'bg-amber-500 text-white',  dot: 'bg-amber-400' },
-  { key: 'SurgeryDone',     label: 'Surgery Done',      activeClass: 'bg-green-600 text-white',  dot: 'bg-green-500' },
-  { key: 'BillPrepared',    label: 'Bill Prepared',     activeClass: 'bg-blue-600 text-white',   dot: 'bg-blue-500' },
-  { key: 'EmergencyFC',     label: 'Emergency FC',      activeClass: 'bg-orange-500 text-white', dot: 'bg-orange-400' },
-  { key: 'ReadyForUpgrade', label: 'Ready for Upgrade', activeClass: 'bg-violet-600 text-white', dot: 'bg-violet-400' },
-];
-
-function matchesTab(j: PatientJourneyRowDto, tab: BizTab): boolean {
-  switch (tab) {
-    case 'All':             return true;
-    case 'Pending':         return ['NotCreated', 'Draft'].includes(j.financialState);
-    case 'SurgeryDone':     return ['SurgeryCompleted', 'PostOpInProgress', 'ReadyForDischarge'].includes(j.clinicalState);
-    case 'BillPrepared':    return ['Estimated', 'Confirmed'].includes(j.financialState);
-    case 'EmergencyFC':     return j.isEmergencyFc === true;
-    case 'ReadyForUpgrade': return j.financialState === 'PartiallyPaid';
-    default:                return true;
-  }
-}
-
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-
-function KpiCard({ label, value, sub, icon, accent }: {
-  label: string; value: string | number; sub?: string;
-  icon: React.ReactNode; accent: string;
+function CensusEmpty({
+  noSourceRows,
+  onClear,
+}: {
+  noSourceRows: boolean;
+  onClear?: () => void;
 }) {
+  if (noSourceRows) {
+    return (
+      <div className="empty" data-testid={IP_CENSUS_TEST_IDS.emptyCensus}>
+        <div className="big">No patients on the census</div>
+        There are no admissions in this branch for the current range.
+      </div>
+    );
+  }
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
-      <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${accent}`}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs text-gray-500 font-medium">{label}</p>
-        <p className="text-2xl font-bold text-gray-900 leading-tight">{value}</p>
-        {sub && <p className="text-xs text-gray-400">{sub}</p>}
-      </div>
+    <div className="empty" data-testid={IP_CENSUS_TEST_IDS.emptyFilter}>
+      <div className="big">No patients match these filters</div>
+      Try adjusting your filters or date range
+      {onClear && (
+        <div className="mt-3">
+          <button type="button" onClick={onClear} className="btn sm ghost">Clear</button>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Skeleton Row ─────────────────────────────────────────────────────────────
-
-function SkeletonRow() {
+function JourneyCells({
+  journey,
+}: {
+  journey: PatientJourneyRowDto;
+}) {
+  const situation = buildIpRowSituation(journey);
+  const attention = buildCensusAttention(journey);
+  const slot = formatCensusSlot(journey.slotLabel);
+  const clinical = censusClinicalChip(journey.clinicalState);
+  const ot = censusOtChip(journey.otState);
+  const procedure = censusProcedureLine(journey.procedureName, journey.eyeOperated);
+  const ageSex = censusAgeSex(journey.patientDob, journey.patientAge, journey.patientGender);
+  const attentionLabel = attention.level === 'information'
+    ? attention.label
+    : `${attention.level}: ${attention.label}`;
   return (
-    <tr className="border-b border-gray-50">
-      {Array.from({ length: 9 }).map((_, i) => (
-        <td key={i} className="px-4 py-3.5">
+    <>
+      <div role="cell">
+        <StatusChip status={clinical.status} label={clinical.label} size="sm" />
+      </div>
+      <div role="cell">
+        <div className="cell-primary">{journey.patientName ?? '—'}</div>
+        <div className="cell-sub">{[journey.uhid ?? '—', ageSex].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div role="cell" title={[procedure.procedure, procedure.laterality].filter(Boolean).join(' · ')}>
+        <div className="cell-clip">{procedure.procedure}</div>
+        {procedure.laterality ? (
+          <div className="cell-sub">{procedure.laterality}</div>
+        ) : (
+          <div className="cell-sub">Eye not set</div>
+        )}
+      </div>
+      <div role="cell" title={[journey.wardName, journey.bedNumber].filter(Boolean).join(' · ') || '—'}>
+        {[journey.wardName, journey.bedNumber].filter(Boolean).join(' · ') || '—'}
+      </div>
+      <div
+        role="cell"
+        data-testid={IP_CENSUS_TEST_IDS.slotCell(journey.id)}
+        className={slot.unassigned ? 'muted' : 'num'}
+      >
+        {slot.text}
+      </div>
+      <div role="cell" className="cell-sub">
+        {formatCensusAdmitted(journey.admittedAt)}
+      </div>
+      <div role="cell">
+        <StatusChip status={ot.status} label={ot.label} size="sm" />
+      </div>
+      <div role="cell" data-testid={IP_CENSUS_TEST_IDS.nextAction}>
+        <div className="cell-primary">{situation.nextAction}</div>
+        <div className="cell-sub">{situation.nextActionOwner}</div>
+      </div>
+      <div role="cell">
+        <span
+          data-testid={IP_CENSUS_TEST_IDS.attention}
+          className={`badge ${attention.tone}`}
+          title={attentionLabel}
+        >
+          {attention.label}
+        </span>
+      </div>
+    </>
+  );
+}
+
+function SkeletonRow({ columns }: { columns: number }) {
+  return (
+    <div className="census-grid census-row" role="row">
+      {Array.from({ length: columns }).map((_, i) => (
+        <div key={i} role="cell">
           <div
             className="h-3.5 bg-gray-100 rounded-full animate-pulse"
             style={{ width: `${40 + (i * 13) % 45}%` }}
           />
-        </td>
+        </div>
       ))}
-    </tr>
+    </div>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-export default function IpManagementPage() {
+function IpManagementPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const presentation = useCensusPresentation();
   const { user } = useAuthStore();
   const branchId = user?.branchId;
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const [journeys, setJourneys] = useState<PatientJourneyRowDto[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<BizTab>('All');
-  const [selectedJourney, setSelectedJourney] = useState<PatientJourneyRowDto | null>(null);
-  const [filters, setFilters] = useState({ fromDate: '', toDate: '', uhid: '', search: '' });
-  const [appliedFilters, setAppliedFilters] = useState({ fromDate: '', toDate: '', uhid: '', search: '' });
+  const urlState = useMemo(() => parseIpCensusSearchParams(searchParams), [searchParams]);
+  const activeTab = urlState.tab;
+  const financialFilter = urlState.fin;
+  const sessionFilter = urlState.session;
+  const patientId = urlState.patient;
 
-  const loadData = useCallback(async (flt?: typeof appliedFilters) => {
-    setIsLoading(true);
-    try {
-      const applied = flt ?? appliedFilters;
-      const data = await ipManagementApi.listJourneys({
-        branchId,
-        fromDate: applied.fromDate || undefined,
-        toDate: applied.toDate || undefined,
-        uhid: applied.uhid || undefined,
-        patientName: applied.search || undefined,
-      });
-      setJourneys(Array.isArray(data) ? data : []);
-    } finally {
-      setIsLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchId]);
+  const [filters, setFilters] = useState(() => {
+    const today = localDateKey();
+    return { fromDate: today, toDate: today, uhid: '', search: '' };
+  });
+  const [appliedFilters, setAppliedFilters] = useState(() => {
+    const today = localDateKey();
+    return { fromDate: today, toDate: today, uhid: '', search: '' };
+  });
+  const [page, setPage] = useState(1);
+  const [preopStep, setPreopStep] = useState<PreOpStepKey | null>(null);
+  const [wards, setWards] = useState<WardDto[]>([]);
 
-  useEffect(() => {
-    if (branchId) loadData({ fromDate: '', toDate: '', uhid: '', search: '' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchId]);
+  const journeysQuery = useIpJourneysQuery(
+    branchId,
+    { fromDate: '', toDate: '', uhid: '', search: '' },
+    Boolean(branchId),
+  );
+  const tabCountsQuery = useCensusTabCountsQuery(branchId, Boolean(branchId));
+  const journeys = useMemo(() => journeysQuery.data ?? [], [journeysQuery.data]);
+  const showSkeleton = journeysQuery.isPending && journeys.length === 0;
+  const loadFailed = journeysQuery.isError && journeys.length === 0;
+  const refreshFailed = journeysQuery.isError && journeys.length > 0;
+  const isRefreshing = journeysQuery.isFetching && !journeysQuery.isPending;
+  const liveLabel = loadFailed || refreshFailed
+    ? 'Error'
+    : isRefreshing
+      ? 'Updating'
+      : 'Live';
+  const liveTone = loadFailed || refreshFailed ? 'danger' : isRefreshing ? '' : 'ok';
+
+  const duesQuery = useIpBillingDashboardQuery({
+    branchId,
+    preset: 'this_month',
+    customFrom: '',
+    customTo: '',
+    enabled: Boolean(branchId),
+  });
+  const duesKpi = deriveCensusDuesKpi({
+    isPending: duesQuery.isLoading,
+    isError: duesQuery.isError,
+    data: duesQuery.data,
+  });
+
+  const writeCensusUrl = useCallback((
+    patch: Partial<{ tab: IpDashboardTab; patient: string | null; fin: IpFinancialFilter; session: IpSlotSessionFilter }>,
+    mode: 'push' | 'replace',
+  ) => {
+    const next = {
+      tab: patch.tab ?? activeTab,
+      patient: patch.patient !== undefined ? patch.patient : patientId,
+      fin: patch.fin ?? financialFilter,
+      session: patch.session ?? sessionFilter,
+    };
+    const qs = serializeIpCensusSearchParams(next, searchParams);
+    const href = qs ? `${pathname}?${qs}` : pathname;
+    if (mode === 'push') router.push(href, { scroll: false });
+    else router.replace(href, { scroll: false });
+  }, [activeTab, patientId, financialFilter, sessionFilter, searchParams, pathname, router]);
+
+  const clearPatient = useCallback(() => {
+    writeCensusUrl({ patient: null }, 'replace');
+  }, [writeCensusUrl]);
 
   function handleSearch() {
-    const applied = { ...filters };
-    setAppliedFilters(applied);
-    loadData(applied);
+    setAppliedFilters({ ...filters });
   }
 
   function handleClearFilters() {
-    const empty = { fromDate: '', toDate: '', uhid: '', search: '' };
-    setFilters(empty);
-    setAppliedFilters(empty);
-    loadData(empty);
+    const today = localDateKey();
+    const next = { fromDate: today, toDate: today, uhid: '', search: '' };
+    setFilters(next);
+    setAppliedFilters(next);
   }
 
-  const hasActiveFilters = Object.values(appliedFilters).some(v => v !== '');
+  const todayKey = localDateKey();
+  const hasActiveFilters =
+    appliedFilters.uhid !== ''
+    || appliedFilters.search !== ''
+    || appliedFilters.fromDate !== todayKey
+    || appliedFilters.toDate !== todayKey;
 
-  const displayJourneys = useMemo(
-    () => journeys.filter(j => matchesTab(j, activeTab)),
-    [journeys, activeTab],
+  const scopedJourneys = useMemo(() => journeys.filter(j =>
+    matchesAdmittedCensusFilter(j, appliedFilters.fromDate, appliedFilters.toDate)
+    && matchesCensusSearch(j, appliedFilters.uhid, appliedFilters.search)
+    && matchesIpFinancialFilter(j, financialFilter)
+    && matchesSlotSession(j, sessionFilter),
+  ), [journeys, appliedFilters, financialFilter, sessionFilter]);
+
+  const displayJourneys = useMemo(() => {
+    const filtered = scopedJourneys.filter(j => matchesIpDashboardTab(j, activeTab));
+    return sortIpCensusRows(filtered, activeTab);
+  }, [scopedJourneys, activeTab]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, financialFilter, sessionFilter, appliedFilters]);
+
+  const pageCount = Math.max(1, Math.ceil(displayJourneys.length / CENSUS_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * CENSUS_PAGE_SIZE;
+  const pagedJourneys = displayJourneys.slice(pageStart, pageStart + CENSUS_PAGE_SIZE);
+  const showingFrom = displayJourneys.length === 0 ? 0 : pageStart + 1;
+  const showingTo = Math.min(pageStart + CENSUS_PAGE_SIZE, displayJourneys.length);
+
+  const selectedJourney = useMemo(
+    () => (patientId ? journeys.find(j => j.id === patientId) ?? null : null),
+    [journeys, patientId],
   );
 
+  useEffect(() => {
+    setPreopStep(null);
+  }, [patientId]);
+
+  useEffect(() => {
+    if (!preopStep || !branchId) return;
+    void ipManagementApi.listWards({ branchId }).then(setWards);
+  }, [preopStep, branchId]);
+
+  const visibleColumns = censusColumnsVisible();
+  const paneOpen = Boolean(selectedJourney) && presentation !== 'cards';
+
   const tabCounts = useMemo(() => {
-    const map: Partial<Record<BizTab, number>> = {};
-    BIZ_TABS.forEach(({ key }) => {
-      map[key] = journeys.filter(j => matchesTab(j, key)).length;
+    const map: Partial<Record<IpDashboardTab, number>> = {};
+    IP_DASHBOARD_TABS.forEach(({ key }) => {
+      map[key] = resolveCensusTabCount(
+        scopedJourneys.length === journeys.length ? tabCountsQuery.data : undefined,
+        key,
+        scopedJourneys.filter(j => matchesIpDashboardTab(j, key)).length,
+        scopedJourneys.length,
+      );
     });
     return map;
-  }, [journeys]);
+  }, [journeys.length, scopedJourneys, tabCountsQuery.data]);
 
   const kpiStats = useMemo(() => {
-    const inHouse = journeys.filter(j => j.clinicalState !== 'Discharged').length;
+    const inHouse = journeys.filter(j =>
+      !['Discharged', 'CancelledSurgery', 'AdmissionCancelled'].includes(j.clinicalState)).length;
     const inOT = journeys.filter(j => ['InOT', 'SentToOT'].includes(j.clinicalState)).length;
-    const pendingPayment = journeys.filter(j => j.balanceDue > 0).length;
-    const totalOutstanding = journeys.reduce((s, j) => s + (j.balanceDue > 0 ? j.balanceDue : 0), 0);
-    return { inHouse, inOT, pendingPayment, totalOutstanding };
+    const readyForOt = journeys.filter(j => j.clinicalState === 'ReadyForSurgery').length;
+    return { inHouse, inOT, readyForOt };
   }, [journeys]);
 
-  const handleJourneyUpdated = useCallback((updatedFields: Partial<PatientJourneyRowDto>) => {
-    setJourneys(prev =>
-      prev.map(j => (j.id === selectedJourney?.id ? { ...j, ...updatedFields } : j)),
-    );
-    setSelectedJourney(prev => (prev ? { ...prev, ...updatedFields } : null));
-  }, [selectedJourney]);
+  const handleJourneyUpdated = useCallback(() => {
+    void journeysQuery.refetch();
+  }, [journeysQuery]);
+
+  useEffect(() => {
+    if (presentation !== 'cards' || !patientId) return;
+    router.replace(`/dashboard/ip-management/journey/${patientId}`);
+  }, [presentation, patientId, router]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditableKeyboardTarget(e.target)) return;
+
+      if (e.key === '/') {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+
+      if (presentation === 'cards') return;
+
+      if (e.key === 'Escape') {
+        if (presentation === 'sheet' && patientId) {
+          e.preventDefault();
+          clearPatient();
+        }
+        return;
+      }
+
+      const delta = e.key === 'j' || e.key === 'ArrowDown' ? 1
+        : e.key === 'k' || e.key === 'ArrowUp' ? -1
+        : 0;
+      if (delta !== 0) {
+        e.preventDefault();
+        const current = pagedJourneys.findIndex(j => j.id === patientId);
+        const next = nextCensusIndex(current === -1 ? null : current, delta, pagedJourneys.length);
+        if (next !== null) {
+          writeCensusUrl({ patient: pagedJourneys[next].id }, 'replace');
+        }
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        const current = pagedJourneys.findIndex(j => j.id === patientId);
+        const target = current >= 0 ? pagedJourneys[current] : pagedJourneys[0];
+        if (target) {
+          e.preventDefault();
+          writeCensusUrl({ patient: target.id }, 'push');
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [presentation, patientId, pagedJourneys, writeCensusUrl, clearPatient]);
+
+  const onRowActivate = (journey: PatientJourneyRowDto) => {
+    if (presentation === 'cards') return;
+    if (patientId === journey.id) clearPatient();
+    else writeCensusUrl({ patient: journey.id }, 'push');
+  };
+
+  const panel = selectedJourney ? (
+    <PatientQuickPanel
+      journey={selectedJourney}
+      presentation={presentation === 'sheet' ? 'sheet' : 'docked'}
+      onClose={clearPatient}
+      onJourneyUpdated={handleJourneyUpdated}
+      onOpenPreopStep={setPreopStep}
+    />
+  ) : null;
 
   return (
-    <div className="space-y-5 pb-6">
+    <div className="ip-target pb-6">
+      <div className="frame">
+      <div className="app-header">
+        <h1>IP Management</h1>
+        <span className="scope">Clinical census · billing status is per patient, not a primary filter</span>
+        <span className="spacer" />
+        <span
+          data-testid={IP_CENSUS_TEST_IDS.liveState}
+          className={`badge ${liveTone}`.trim()}
+          title={refreshFailed ? 'Last refresh failed. Showing last loaded census.' : undefined}
+        >
+          {liveLabel}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            void journeysQuery.refetch();
+            void duesQuery.refetch();
+            void tabCountsQuery.refetch();
+          }}
+          disabled={showSkeleton || isRefreshing}
+          className="btn sm"
+        >
+          ↻ Refresh
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push('/dashboard/ip-management/billing')}
+          className="btn sm"
+        >
+          Billing dashboard
+        </button>
+        <Link href="/dashboard/ip-management/slots" className="btn sm">Slot board</Link>
+      </div>
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5">
-            <span className="h-8 w-8 rounded-xl bg-blue-600 flex items-center justify-center">
-              <IndianRupee className="text-white" style={{ height: '18px', width: '18px' }} />
-            </span>
-            IP Management
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Financial &amp; administrative tracking for inpatients
-          </p>
+      <div className="kpis">
+        <div className="kpi is-inhouse">
+          <div className="label">In-house</div>
+          <div className="value num">{kpiStats.inHouse}</div>
+          <div className="src">patient_journey</div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => loadData()}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button
-            onClick={() => router.push('/dashboard/ip-management/billing')}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            <TrendingUp className="h-4 w-4" />
-            Billing Dashboard
-          </button>
+        <div className="kpi is-ot">
+          <div className="label">In OT</div>
+          <div className="value num">{kpiStats.inOT}</div>
+          <div className="src">patient_journey</div>
+        </div>
+        <div className="kpi">
+          <div className="label">Ready for OT</div>
+          <div className="value num">{kpiStats.readyForOt}</div>
+          <div className="src">patient_journey</div>
+        </div>
+        <div
+          className={`kpi ${duesKpi.status === 'unavailable' ? 'is-err' : 'is-alert'}`}
+          data-testid={IP_CENSUS_TEST_IDS.kpiDues}
+        >
+          <div className="label">
+            Patient dues
+            {duesKpi.status === 'ok' && duesKpi.patientsWithDue > 0 ? ` · ${duesKpi.patientsWithDue}` : ''}
+          </div>
+          <div className="value num">
+            {duesKpi.status === 'ok' ? fmtINR(duesKpi.patientOutstanding)
+              : duesKpi.status === 'loading' ? '…'
+              : '—'}
+          </div>
+          <div className="src">
+            {duesKpi.status === 'ok' ? 'From billing ledger'
+              : duesKpi.status === 'loading' ? 'Loading ledger…'
+              : (
+                <>
+                  Dues unavailable ·{' '}
+                  <button
+                    type="button"
+                    className="underline font-semibold"
+                    data-testid={IP_CENSUS_TEST_IDS.kpiDuesRetry}
+                    onClick={() => void duesQuery.refetch()}
+                  >
+                    retry
+                  </button>
+                </>
+              )}
+          </div>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard
-          label="In-House Patients" value={kpiStats.inHouse} sub="Currently admitted"
-          icon={<Users className="h-5 w-5 text-blue-600" />} accent="bg-blue-50"
-        />
-        <KpiCard
-          label="In Operation Theatre" value={kpiStats.inOT} sub="Sent to OT / In OT"
-          icon={<Activity className="h-5 w-5 text-amber-600" />} accent="bg-amber-50"
-        />
-        <KpiCard
-          label="Payment Pending" value={kpiStats.pendingPayment} sub="Have outstanding balance"
-          icon={<AlertCircle className="h-5 w-5 text-red-500" />} accent="bg-red-50"
-        />
-        <KpiCard
-          label="Outstanding Dues" value={fmtINR(kpiStats.totalOutstanding)} sub="Total balance due"
-          icon={<CreditCard className="h-5 w-5 text-violet-600" />} accent="bg-violet-50"
-        />
-      </div>
+      {duesKpi.status === 'unavailable' && (
+        <div className="callout warn mx-4 my-3" data-testid={IP_CENSUS_TEST_IDS.kpiDuesCallout}>
+          Outstanding amounts cannot be shown right now. Open a patient to collect using Billing. Do not use a substitute total.
+        </div>
+      )}
+      {(loadFailed || refreshFailed) && (
+        <div className="callout danger mx-4 my-3" data-testid={IP_CENSUS_TEST_IDS.loadError}>
+          {loadFailed ? 'Failed to load the census.' : 'Could not refresh. Showing last loaded patients.'}
+          {' '}
+          <button
+            type="button"
+            className="underline font-semibold"
+            data-testid={IP_CENSUS_TEST_IDS.loadRetry}
+            onClick={() => void journeysQuery.refetch()}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
-      {/* Filter Bar */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">From Date</label>
-            <input
-              type="date" value={filters.fromDate}
-              onChange={e => setFilters(f => ({ ...f, fromDate: e.target.value }))}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">To Date</label>
-            <input
-              type="date" value={filters.toDate}
-              onChange={e => setFilters(f => ({ ...f, toDate: e.target.value }))}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">UHID / MR No</label>
-            <input
-              type="text" value={filters.uhid}
-              onChange={e => setFilters(f => ({ ...f, uhid: e.target.value }))}
-              placeholder="Search by MR No…"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-44"
-            />
-          </div>
-          <div className="flex-1 min-w-[160px]">
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">Patient Name</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+      <div
+        data-testid={IP_CENSUS_TEST_IDS.split}
+        className={paneOpen && presentation === 'docked' ? 'split docked' : undefined}
+      >
+        <div className="list">
+          <div className="filters toolbar">
+            <label className="filter-field">
+              <span>From</span>
               <input
-                type="text" value={filters.search}
+                type="date"
+                value={filters.fromDate}
+                onChange={e => {
+                  const fromDate = e.target.value;
+                  setFilters(f => ({ ...f, fromDate }));
+                  setAppliedFilters(f => ({ ...f, fromDate }));
+                }}
+                className="input"
+                aria-label="From date"
+              />
+            </label>
+            <label className="filter-field">
+              <span>To</span>
+              <input
+                type="date"
+                value={filters.toDate}
+                onChange={e => {
+                  const toDate = e.target.value;
+                  setFilters(f => ({ ...f, toDate }));
+                  setAppliedFilters(f => ({ ...f, toDate }));
+                }}
+                className="input"
+                aria-label="To date"
+              />
+            </label>
+            <label className="filter-field">
+              <span>UHID</span>
+              <input
+                type="text"
+                value={filters.uhid}
+                onChange={e => setFilters(f => ({ ...f, uhid: e.target.value }))}
+                placeholder="e.g. UAT-014"
+                className="input"
+              />
+            </label>
+            <label className="filter-field grow">
+              <span>Search</span>
+              <input
+                id={IP_CENSUS_TEST_IDS.search}
+                ref={searchRef}
+                data-testid={IP_CENSUS_TEST_IDS.search}
+                type="text"
+                value={filters.search}
                 onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                placeholder="Search patient name…"
-                className="pl-9 border border-gray-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Name, procedure, bed…"
+                className="input"
               />
+            </label>
+            <label className="filter-field">
+              <span>Slot</span>
+              <select
+                data-testid={IP_CENSUS_TEST_IDS.sessionFilter}
+                value={sessionFilter}
+                onChange={e => writeCensusUrl({ session: e.target.value as IpSlotSessionFilter }, 'replace')}
+                className="input"
+                aria-label="Session"
+              >
+                <option value="All">All</option>
+                <option value="Morning">AM</option>
+                <option value="Afternoon">PM</option>
+                <option value="Evening">Evening</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>Financial</span>
+              <select
+                value={financialFilter}
+                onChange={e => writeCensusUrl({ fin: e.target.value as IpFinancialFilter }, 'replace')}
+                className="input"
+                aria-label="Financial"
+              >
+                <option value="All">All</option>
+                <option value="HasBalance">Has patient dues</option>
+                <option value="Cleared">No dues</option>
+                <option value="EmergencyFc">Emergency FC</option>
+              </select>
+            </label>
+            <div className="filter-actions">
+              <button type="button" onClick={handleSearch} className="btn sm primary">Search</button>
+              {hasActiveFilters && (
+                <button type="button" onClick={handleClearFilters} className="btn sm ghost">Clear</button>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSearch}
-              className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <Search className="h-4 w-4" /> Search
-            </button>
-            {hasActiveFilters && (
-              <button
-                onClick={handleClearFilters}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <X className="h-3.5 w-3.5" /> Clear
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
 
-      {/* Table Card */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-
-        {/* Tab strip */}
-        <div className="flex items-center gap-1.5 px-4 pt-4 pb-3 overflow-x-auto border-b border-gray-100">
-          {BIZ_TABS.map(({ key, label, activeClass, dot }) => {
-            const count = tabCounts[key] ?? 0;
-            return (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                  activeTab === key
-                    ? `${activeClass} shadow-sm`
-                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                    activeTab === key ? 'bg-white/70' : dot
-                  }`}
-                />
-                {label}
-                <span
-                  className={`text-[11px] font-bold px-1.5 py-0.5 rounded-lg ${
-                    activeTab === key ? 'bg-white/20' : 'bg-white text-gray-500'
-                  }`}
+          <div className="tabs" role="tablist" aria-label="Clinical stage">
+            {IP_DASHBOARD_TABS.map(({ key, label }) => {
+              const count = tabCounts[key] ?? 0;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  onClick={() => writeCensusUrl({ tab: key }, 'replace')}
+                  className={`tab ${activeTab === key ? 'active' : ''}`}
                 >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {!isLoading && displayJourneys.length > 0 && (
-          <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
-            <p className="text-xs text-blue-600">
-              Click any row to view patient details and take quick actions
-            </p>
+                  {label}
+                  <span className="count">{count}</span>
+                </button>
+              );
+            })}
           </div>
-        )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50">
-                {[
-                  'Clinical Status', '#', 'UHID / MR', 'Patient', 'Procedure',
-                  'Admit Time', 'Package', 'Balance', 'Bill Status',
-                ].map(h => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {isLoading
-                ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
-                : displayJourneys.length === 0
-                ? (
-                  <tr>
-                    <td colSpan={9} className="py-16 text-center">
-                      <div className="flex flex-col items-center gap-2 text-gray-400">
-                        <Users className="h-10 w-10 opacity-20" />
-                        <p className="text-sm font-medium">No patients found</p>
-                        <p className="text-xs">Try adjusting your filters or date range</p>
-                      </div>
-                    </td>
-                  </tr>
-                )
-                : displayJourneys.map((j, idx) => {
-                  const isSelected = selectedJourney?.id === j.id;
-                  const age = calcAge(j.patientDob, j.patientAge);
+          {presentation === 'cards' ? (
+            <div data-testid={IP_CENSUS_TEST_IDS.cardList} className="divide-y divide-gray-100">
+              {showSkeleton ? (
+                <p className="px-4 py-8 text-sm text-gray-400">Loading patients…</p>
+              ) : loadFailed ? null : displayJourneys.length === 0 ? (
+                <CensusEmpty
+                  noSourceRows={journeys.length === 0 && !hasActiveFilters && activeTab === 'All' && financialFilter === 'All' && sessionFilter === 'All'}
+                  onClear={hasActiveFilters ? handleClearFilters : undefined}
+                />
+              ) : (
+                pagedJourneys.map(j => {
+                  const situation = buildIpRowSituation(j);
+                  const clinical = censusClinicalChip(j.clinicalState);
+                  const procedure = censusProcedureLine(j.procedureName, j.eyeOperated);
                   return (
-                    <tr
+                    <Link
                       key={j.id}
-                      onClick={() => setSelectedJourney(isSelected ? null : j)}
-                      className={`cursor-pointer transition-all ${
-                        isSelected
-                          ? 'bg-blue-50 border-l-4 border-l-blue-500'
-                          : 'hover:bg-gray-50 border-l-4 border-l-transparent'
-                      }`}
+                      href={`/dashboard/ip-management/journey/${j.id}`}
+                      data-testid={IP_CENSUS_TEST_IDS.card(j.id)}
+                      className="block px-4 py-3 hover:bg-gray-50"
                     >
-                      <td className="px-4 py-3.5">
-                        <div className="flex flex-col gap-1">
-                          <ClinicalBadge state={j.clinicalState} />
-                          {j.isEmergencyFc && (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-orange-600 font-medium">
-                              <AlertTriangle className="h-2.5 w-2.5" /> Emergency FC
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 text-xs text-gray-400">{idx + 1}</td>
-                      <td className="px-4 py-3.5">
-                        <span className="font-mono text-xs text-blue-700 font-semibold">
-                          {j.uhid ?? '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div>
-                          <p className="font-semibold text-gray-900 text-sm">{j.patientName ?? '—'}</p>
-                          <p className="text-xs text-gray-400">
-                            {age} · {j.patientGender ?? '—'} · {j.admissionType ?? '—'}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-900">{j.patientName ?? '—'}</p>
+                          <p className="text-xs font-mono text-gray-400">
+                            {j.uhid ?? '—'} · {censusAgeSex(j.patientDob, j.patientAge, j.patientGender)}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-1">
+                            {procedure.procedure}
+                            {' · '}
+                            {[j.wardName, j.bedNumber].filter(Boolean).join(' · ') || 'No bed'}
+                            {j.slotLabel ? ` · ${j.slotLabel}` : ''}
                           </p>
                         </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div>
-                          <p className="text-sm text-gray-700">{j.procedureName ?? '—'}</p>
-                          {j.eyeOperated && (
-                            <p className="text-xs text-gray-400">{j.eyeOperated}</p>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">
-                        {fmtDateTime(j.admittedAt)}
-                      </td>
-                      <td className="px-4 py-3.5 text-sm font-semibold text-gray-800">
-                        {fmtINR(j.packageAmount)}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        {j.balanceDue > 0
-                          ? <span className="text-sm font-bold text-red-600">{fmtINR(j.balanceDue)}</span>
-                          : <span className="text-sm font-medium text-teal-600">Nil</span>
+                        <StatusChip status={clinical.status} label={clinical.label} size="sm" />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {situation.nextAction}
+                        {situation.nextActionOwner !== '—' ? ` · ${situation.nextActionOwner}` : ''}
+                      </p>
+                    </Link>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            <div className="table-scroll" role="table" aria-label="Inpatient census">
+              <div className="census-grid census-head" role="row">
+                {visibleColumns.map(col => (
+                  <div key={col.key} role="columnheader" title={col.purpose}>{col.label}</div>
+                ))}
+              </div>
+              {showSkeleton
+                ? Array.from({ length: 5 }).map((_, i) => (
+                  <SkeletonRow key={i} columns={visibleColumns.length} />
+                ))
+                : loadFailed
+                ? null
+                : displayJourneys.length === 0
+                ? (
+                  <CensusEmpty
+                    noSourceRows={journeys.length === 0 && !hasActiveFilters && activeTab === 'All' && financialFilter === 'All' && sessionFilter === 'All'}
+                    onClear={hasActiveFilters ? handleClearFilters : undefined}
+                  />
+                )
+                : pagedJourneys.map(j => {
+                  const isSelected = selectedJourney?.id === j.id;
+                  return (
+                    <div
+                      key={j.id}
+                      id={IP_CENSUS_TEST_IDS.row(j.id)}
+                      data-testid={IP_CENSUS_TEST_IDS.row(j.id)}
+                      role="row"
+                      aria-selected={isSelected}
+                      aria-label={`${j.patientName ?? 'Patient'}. ${buildIpRowSituation(j).nextAction}. ${buildCensusAttention(j).label}`}
+                      onClick={() => onRowActivate(j)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onRowActivate(j);
                         }
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <FinancialBadge state={j.financialState} />
-                      </td>
-                    </tr>
+                      }}
+                      tabIndex={0}
+                      className={`census-grid census-row clickable ${isSelected ? 'row-selected' : ''}`}
+                    >
+                      <JourneyCells journey={j} />
+                    </div>
                   );
                 })
               }
-            </tbody>
-          </table>
+            </div>
+          )}
+
+          {!showSkeleton && displayJourneys.length > 0 && (
+            <div className="listfoot">
+              <p>
+                Showing <b>{showingFrom}–{showingTo}</b> of <b>{displayJourneys.length}</b>
+                {displayJourneys.length !== journeys.length ? ` (from ${journeys.length})` : ''} patients
+              </p>
+              <div className="pager">
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+                <span className="muted">Page {currentPage} of {pageCount}</span>
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={currentPage >= pageCount}
+                  onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+              <p>
+                {presentation === 'cards' ? 'Open a card for the full record' : 'Click a row to inspect without leaving the list. Press / to search, j/k to move.'}
+              </p>
+            </div>
+          )}
         </div>
 
-        {!isLoading && displayJourneys.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
-            <p className="text-xs text-gray-500">
-              Showing{' '}
-              <span className="font-semibold text-gray-700">{displayJourneys.length}</span>{' '}
-              of{' '}
-              <span className="font-semibold text-gray-700">{journeys.length}</span>{' '}
-              patients
-              {hasActiveFilters && <span className="text-blue-600"> (filtered)</span>}
-            </p>
-            <p className="text-xs text-gray-400">Click a row to view details</p>
-          </div>
+        {presentation === 'docked' && selectedJourney && (
+          <aside
+            className="rail sticky top-0 self-start overflow-hidden h-[calc(100vh-5.5rem)]"
+            style={{ width: CENSUS_RAIL_WIDTH_PX }}
+          >
+            {panel}
+          </aside>
         )}
       </div>
+      </div>
 
-      {/* Right-side Quick Panel */}
-      {selectedJourney && (
-        <PatientQuickPanel
+      {presentation === 'sheet' && (
+        <Sheet open={Boolean(selectedJourney)} onOpenChange={open => { if (!open) clearPatient(); }}>
+          <SheetContent
+            side="right"
+            overlayClassName="bg-black/40"
+            overlayTestId={IP_CENSUS_TEST_IDS.scrim}
+            className="p-0 w-[520px] sm:max-w-[520px] [&>button]:hidden"
+            aria-modal="true"
+          >
+            <SheetTitle className="sr-only">
+              {selectedJourney?.patientName ?? 'Patient context'}
+            </SheetTitle>
+            {panel}
+          </SheetContent>
+        </Sheet>
+      )}
+
+      {selectedJourney && preopStep && (
+        <WardPreOpWorkspaceModal
+          key={`${selectedJourney.id}-${preopStep}`}
           journey={selectedJourney}
-          onClose={() => setSelectedJourney(null)}
-          onJourneyUpdated={handleJourneyUpdated}
+          wards={wards}
+          branchId={branchId}
+          initialStep={preopStep}
+          onClose={() => setPreopStep(null)}
+          onJourneyUpdated={() => {
+            handleJourneyUpdated();
+          }}
         />
       )}
     </div>
+  );
+}
+
+export default function IpManagementPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 text-sm text-gray-500">Loading census…</div>
+      }
+    >
+      <IpManagementPageInner />
+    </Suspense>
   );
 }

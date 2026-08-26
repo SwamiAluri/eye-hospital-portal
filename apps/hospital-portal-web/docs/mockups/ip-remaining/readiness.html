@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Integration readiness — remaining-work mockups</title>
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="sid">Map</span>
+  <span class="title">API · backend · database · integrations — ready before any code</span>
+  <span class="spacer"></span>
+  <a href="workflow.html">Click paths</a>
+  <a href="index.html">Build order</a>
+</header>
+<main>
+  <p class="lede">
+    Traced against live code on 25 Aug 2026. <b>No application code until you approve one screen.</b>
+    After that screen is implemented, you test it in the UI. Only then we start the next.
+  </p>
+  <div class="callout warn">
+    <b>Gate.</b> Approve <a href="w-07-ot-gs1-iol.html">W-07</a> first (A2 IOL 0.00 D, no migration, never-event).
+    GS1 (A1) stays on the same screen as a second pass after you accept A2.
+  </div>
+  <div class="callout info">
+    <b>Frozen on every screen.</b> State machine, four Mark Ready hard blocks, OpdBill append-only payments,
+    BedLifecyclePolicy, CCMS WorkflowEngine, both outboxes, NotificationHub, IpFinancialFieldClassification.
+    No new pages. No Pre-Op Pending / Ready for OT stored states.
+  </div>
+
+  <h2 class="sec">Legend</h2>
+  <p class="small muted">Mapped = exists and is the path we will use. Gap = must be built on that screen. Keep = do not change.</p>
+
+  <h2 class="sec">W-07 OT implant — first to implement (A2, then A1)</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>Screen</td><td>OT board → Edit OT Details → <code>ImplantScanPanel</code> (S-07). Eye mismatch already blocks in FE+BE.</td><td>Power/model compare UI + S-17 <code>ReasonConfirmDialog</code> + hide override without JWT.</td></tr>
+      <tr><td>API</td><td><code>POST .../journeys/{id}/implants</code> · <code>POST .../verify-iol-barcode</code></td><td>Verify: replace ≥5 alphanumeric with GS1 parse (A1). Record: 409 on power/model mismatch unless override+reason (A2).</td></tr>
+      <tr><td>BE</td><td><code>ImplantUsageService.RecordAsync</code> · <code>RequireMatchingEye</code> · catalog resolve · serial unique. Charge via outbox.</td><td>Parse planned <code>patient_journey.iol_power</code> and scanned power to 2 decimals. Model vs catalog. Empty planned = warn. Audit override.</td></tr>
+      <tr><td>DB</td><td><code>journey_implant_usage</code> (160) · <code>patient_journey.iol_power</code> · <code>iol_catalog_master</code></td><td>A2 none. A1 none. Perm <code>ip.implant.mismatch.override</code> in 171 with E1.</td></tr>
+      <tr><td>Integration</td><td><code>ImplantUsed</code> outbox → <code>ImplantChargeHandler</code> → <code>POST /api/internal/ip-billing/charge-items</code> → OpdBill + inventory</td><td>Emit only after successful record (including override). Do not write <code>intra_op_note.ImplantUsed</code> as SoT (F6).</td></tr>
+      <tr><td>Keep</td><td colspan="2">Eye hard block, no override. Catalog 0.50 D is picker only. CollectPaymentDrawer unchanged.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-06 Pre-op — A3 dilation + A4 vitals (after W-07)</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>Screen</td><td>Ward → Open Pre-Op Workspace. Footer already has soft warnings + <code>acknowledgeWarnings</code>.</td><td>Dilation chip. Vitals high/missing as warn copy. Hard-stop list unchanged.</td></tr>
+      <tr><td>API</td><td><code>GET .../transition-gates?newState=ReadyForSurgery</code> · <code>POST .../clinical-transition</code></td><td>New warn codes: <code>dilation_not_ready</code> · <code>dilation_not_recorded</code> · <code>vitals_out_of_range</code> · <code>vitals_not_recorded</code>.</td></tr>
+      <tr><td>BE</td><td><code>ChecklistGateService</code> (four hard blocks). Med log warn exists but is “any drug”, not dilation countdown. <code>VitalSignService</code> capture only.</td><td>Dilation from <code>pre_op_medication_log.administered_at</code> + 25 min. Vitals vs <code>ip_vital_threshold</code>. Severity = warn only.</td></tr>
+      <tr><td>DB</td><td><code>pre_op_medication_log</code> · <code>vital_sign</code></td><td>A3 none. A4 migration 169 threshold table.</td></tr>
+      <tr><td>Integration</td><td>None</td><td>None</td></tr>
+      <tr><td>Keep</td><td colspan="2">Hard blocks: consent, laterality, PAC, critical labs. No new clinical state.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-05 Ward — A5 wristband then A6 map</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>Screen</td><td>Ward board + drawer. Admit / occupy already uses beds list.</td><td>Chair map on this page. Print / reprint wristband (print CSS, not a new menu).</td></tr>
+      <tr><td>API</td><td><code>GET /ip-management/wards/{id}/beds</code> (<code>WardService.GetBedsAsync</code>)</td><td><code>POST .../safety-token</code> (idempotent) · reprint.</td></tr>
+      <tr><td>BE</td><td><code>BedLifecyclePolicy</code> occupancy (Auth). IP lists beds.</td><td><code>JourneySafetyTokenService</code>. Do not invent a second bed machine.</td></tr>
+      <tr><td>DB</td><td><code>bed_inventory</code> (165/167) · assignments</td><td>168 <code>journey_safety_token</code></td></tr>
+      <tr><td>Integration</td><td>Auth beds internal</td><td>Audit token issued. No outbox required.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-09 Discharge — B2 follow-up lock</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>Screen</td><td>Discharge Patient → step Follow-up (date + doctor today).</td><td>Book / link clinic appointment. Block Discharge without it. S-17 override.</td></tr>
+      <tr><td>API</td><td>Auth <code>POST /api/Appointments</code> exists. IP <code>PUT .../post-op/instructions</code> stores <code>followup_date</code> only.</td><td>Store <code>followup_appointment_id</code>. Internal Auth GET appointment status (do not bind IP to Auth EF table names).</td></tr>
+      <tr><td>BE</td><td><code>AppointmentService</code> (diary SoT). <code>ExaminationService</code> already creates type Follow-up.</td><td>Discharge gate in <code>ChecklistGateService</code>: block if no active appointment. Override = existing <code>ip.discharge.override</code>.</td></tr>
+      <tr><td>DB</td><td>Auth <code>appointment</code>. IP <code>post_op_instructions.followup_date</code></td><td>173 <code>followup_appointment_id</code>. Do not use <code>follow_up_appointments</code>.</td></tr>
+      <tr><td>Integration</td><td>None new besides Appointments API</td><td>IP reads Auth appointment; does not write a second diary.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-08 Post-op — B1 taper</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>Screen</td><td>Open Post-Op Care → Post-op instructions (free text).</td><td>Add + history table on that step.</td></tr>
+      <tr><td>API</td><td>Instructions GET/PUT exist</td><td>GET/PUT <code>.../post-op/taper</code></td></tr>
+      <tr><td>BE</td><td><code>PostOpWorkflowService</code></td><td>New taper service, append-only history</td></tr>
+      <tr><td>DB</td><td><code>post_op_instructions</code> text</td><td>170 <code>post_op_taper_step</code></td></tr>
+      <tr><td>Integration</td><td>None</td><td>None</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-02 / W-03 CCMS — C1 then C2</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>W-02 API</td><td><code>GET /ccms/master/document-requirements</code> · upload documents · <code>POST /ccms/authorizations/{id}/submit</code></td><td>FE still uses hardcoded <code>INTAKE_DOC_SLOTS</code>. Submit has <b>no</b> required-doc server gate.</td></tr>
+      <tr><td>W-02 BE/DB</td><td><code>ccms_document_requirements</code> · <code>ccms_documents</code> · <code>PreAuthorizationService.MarkSentAsync</code></td><td>Gate submit on master requirements. CCMS FSM stays frozen.</td></tr>
+      <tr><td>W-03 API</td><td><code>GET /ccms/operations/preauth-queue</code> · page <code>/dashboard/ccms/operations/preauth</code></td><td>Filter is <code>authorization.Status IN (PREAUTH_SENT,…)</code> while service writes Status = <code>active</code> — queue can be empty.</td></tr>
+      <tr><td>W-03 BE</td><td><code>OperationsFunctions.GetPreAuthQueue</code></td><td>Join <code>coverage_case.CurrentState</code> (or process status). Do not match workflow codes to auth.Status.</td></tr>
+      <tr><td>Integration</td><td>CCMS only</td><td>No IP/Billing writes</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-04 Census KPI — FE only</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>API</td><td><code>GET /opdbills/ip-dashboard</code> → <code>OpdBillService.GetIpBillingDashboardAsync</code></td><td>None</td></tr>
+      <tr><td>FE</td><td>Census already calls the ledger</td><td>On ledger miss it still falls back to <code>journey.balanceDue</code>. Show “Dues unavailable” instead.</td></tr>
+      <tr><td>DB</td><td><code>opd_bills</code> / payments</td><td>None</td></tr>
+      <tr><td>Keep</td><td colspan="2">Never treat journey financial fields as the ledger.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-01 Counsellor — FR-1.1</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>API</td><td>Counsellor session + OT finalize. Journey has <code>procedureName</code> / <code>eyeOperated</code> / <code>iol_power</code>.</td><td>Guaranteed copy + Refresh from OPD.</td></tr>
+      <tr><td>BE</td><td><code>OtFinalizeService</code> copies session IOL if journey empty (~L921). Checklist hints only.</td><td>On finalize/onboard copy diagnosis, eye, biometry IOL. Idempotent unless refresh.</td></tr>
+      <tr><td>DB</td><td>Columns exist. No new table.</td><td>None</td></tr>
+      <tr><td>Integration</td><td>counselling-completed → CCMS (existing)</td><td>Do not create a second journey from FE state.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-10 Charge mapping — D1 operate, not new code</h2>
+  <table class="map">
+    <thead><tr><th>Layer</th><th>Mapped today</th><th>Gap to build</th></tr></thead>
+    <tbody>
+      <tr><td>All layers</td><td>Page <code>/dashboard/admin/charge-mapping</code> · map + replay · parks unmapped · posts to OpdBill</td><td><b>Ops:</b> map SN60WF / Phaco components. No new screen or API unless a defect appears in UAT.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">W-11 — no product screen</h2>
+  <table class="map">
+    <thead><tr><th>ID</th><th>Mapped</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>E1 seeder</td><td>SQL 156 exists. <code>PermissionSeeder.cs</code> missing IP/billing codes (only <code>ip.emergency_fc.apply</code> found).</td><td>Backend-only when you approve E1 (can ship with A2 perm 171).</td></tr>
+      <tr><td>P2/P3</td><td>Out of pack</td><td>Do not implement.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Approval sequence (stop after each UI test)</h2>
+  <ol>
+    <li><b>W-07 A2</b> — IOL exact power/model (no migration)</li>
+    <li><b>W-07 A1</b> — GS1 parser on same screen</li>
+    <li><b>W-06</b> — A3+A4 warns</li>
+    <li><b>W-05 A5</b> — wristband (168) · then <b>A6</b> map</li>
+    <li><b>E1</b> — seeder (no UI)</li>
+    <li><b>W-09</b> — B2 follow-up lock</li>
+    <li><b>W-08</b> B1 · <b>W-03</b> C2 · <b>W-02</b> C1 · <b>W-04</b> KPI · <b>W-01</b> OPD copy · <b>W-10</b> ops</li>
+  </ol>
+  <p class="small muted">Reply with the screen id to approve (example: “Approve W-07 A2”). Implementation starts only after that message.</p>
+</main>
+</body>
+</html>

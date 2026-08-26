@@ -18,7 +18,7 @@ import {
   CheckCircle,
   Download,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useTheaters, useSchedulesByDateRange } from '@/hooks/use-surgery-scheduling';
 import type { OTScheduleDto, OTTheaterDto, ScheduleStatus } from '@/types/surgery-scheduling';
 

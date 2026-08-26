@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text.Json;
 using CcmsApi.Data;
 using CcmsApi.Services;
 using Microsoft.Azure.Functions.Worker;
@@ -15,18 +13,24 @@ namespace CcmsApi.Functions;
 public class OperationsFunctions
 {
     private readonly CcmsDbContext _db;
+    private readonly PreAuthOpsQueueService _preAuthQueue;
     private readonly JwtService _jwt;
     private readonly ILogger<OperationsFunctions> _log;
 
-    public OperationsFunctions(CcmsDbContext db, JwtService jwt, ILogger<OperationsFunctions> log)
+    public OperationsFunctions(
+        CcmsDbContext db,
+        PreAuthOpsQueueService preAuthQueue,
+        JwtService jwt,
+        ILogger<OperationsFunctions> log)
     {
-        _db  = db;
-        _jwt = jwt;
-        _log = log;
+        _db           = db;
+        _preAuthQueue = preAuthQueue;
+        _jwt          = jwt;
+        _log          = log;
     }
 
     // ── GET /ccms/operations/preauth-queue ────────────────────────────────────
-    // Returns all authorizations pending ops action, enriched with case + payer.
+    // Filter case.CurrentState (workflow), not authorization.Status (lifecycle).
     [Function("GetPreAuthQueue")]
     public async Task<HttpResponseData> GetPreAuthQueue(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get",
@@ -35,80 +39,7 @@ public class OperationsFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
-        var tenantId = claims!.TenantId;
-
-        // States that require operations attention
-        var pendingStates = new[] { "PREAUTH_SENT", "WAITING_APPROVAL", "CLARIFICATION_REQUIRED", "PARTIAL_APPROVAL" };
-
-        var queue = await _db.CoverageAuthorizations
-            .AsNoTracking()
-            .Where(a =>
-                a.TenantId == tenantId &&
-                a.DeletedAt == null &&
-                pendingStates.Contains(a.Status))
-            .OrderBy(a => a.SubmittedAt ?? a.CreatedAt)
-            .Select(a => new PreAuthQueueItem
-            {
-                AuthId               = a.Id,
-                CaseCaseId           = a.CoverageCase_Id,
-                PreAuthNumber        = a.PreAuthNumber,
-                Status               = a.Status,
-                ProcessStatus        = a.ProcessStatus,
-                RequestedAmount      = a.RequestedAmount,
-                ApprovedAmount       = a.ApprovedAmount,
-                TpaReferenceNumber   = a.TpaReferenceNumber,
-                SubmittedAt          = a.SubmittedAt,
-                TpaResponseAt        = a.ReceivedAt,
-                DaysWaiting          = a.SubmittedAt.HasValue
-                    ? (int)(DateTime.UtcNow - a.SubmittedAt.Value).TotalDays
-                    : 0,
-                // Case fields joined via navigation or separate query below
-                CaseNumber           = null,
-                InsurerName          = null,
-                PatientName          = null,
-            })
-            .ToListAsync();
-
-        // Enrich with case data (minimal N+1, single batch join)
-        if (queue.Count > 0)
-        {
-            var caseIds = queue.Select(q => q.CaseCaseId).Distinct().ToList();
-            var cases = await _db.CoverageCases
-                .AsNoTracking()
-                .Where(c => caseIds.Contains(c.Id) && c.DeletedAt == null)
-                .Select(c => new { c.Id, c.CaseNumber, c.InsurerName, c.PatientName, c.CurrentState, c.SessionId })
-                .ToDictionaryAsync(c => c.Id);
-
-            foreach (var item in queue)
-            {
-                if (cases.TryGetValue(item.CaseCaseId, out var c))
-                {
-                    item.CaseNumber   = c.CaseNumber;
-                    item.InsurerName  = c.InsurerName;
-                    item.PatientName  = c.PatientName;
-                    item.CaseState    = c.CurrentState;
-                    item.SessionId    = c.SessionId;
-                }
-            }
-
-            var draftCaseIds = await _db.CommunicationLogs
-                .AsNoTracking()
-                .Where(l =>
-                    l.DeletedAt == null &&
-                    l.TenantId == tenantId &&
-                    l.Direction == "inbound" &&
-                    caseIds.Contains(l.CoverageCase_Id) &&
-                    l.MetadataJson != null &&
-                    l.MetadataJson.Contains("draft_ready"))
-                .Select(l => l.CoverageCase_Id)
-                .Distinct()
-                .ToListAsync();
-
-            var draftSet = draftCaseIds.ToHashSet();
-            foreach (var item in queue)
-                item.HasInboundDraft = draftSet.Contains(item.CaseCaseId);
-        }
-
+        var queue = await _preAuthQueue.GetQueueAsync(claims!.TenantId);
         return await req.OkJsonAsync(queue);
     }
 
@@ -121,46 +52,8 @@ public class OperationsFunctions
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
 
-        var tenantId = claims!.TenantId;
-        var pendingStates = new[] { "PREAUTH_SENT", "WAITING_APPROVAL", "CLARIFICATION_REQUIRED", "PARTIAL_APPROVAL" };
-
-        var counts = await _db.CoverageAuthorizations
-            .AsNoTracking()
-            .Where(a => a.TenantId == tenantId && a.DeletedAt == null && pendingStates.Contains(a.Status))
-            .GroupBy(a => a.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
-            .ToListAsync();
-
-        var pendingCaseIds = await _db.CoverageAuthorizations
-            .AsNoTracking()
-            .Where(a => a.TenantId == tenantId && a.DeletedAt == null && pendingStates.Contains(a.Status))
-            .Select(a => a.CoverageCase_Id)
-            .Distinct()
-            .ToListAsync();
-
-        var inboundToReview = pendingCaseIds.Count == 0
-            ? 0
-            : await _db.CommunicationLogs
-                .AsNoTracking()
-                .Where(l =>
-                    l.DeletedAt == null &&
-                    l.TenantId == tenantId &&
-                    l.Direction == "inbound" &&
-                    pendingCaseIds.Contains(l.CoverageCase_Id) &&
-                    l.MetadataJson != null &&
-                    l.MetadataJson.Contains("draft_ready"))
-                .Select(l => l.CoverageCase_Id)
-                .Distinct()
-                .CountAsync();
-
-        return await req.OkJsonAsync(new
-        {
-            total            = counts.Sum(c => c.Count),
-            byStatus         = counts,
-            waitingApproval  = counts.FirstOrDefault(c => c.Status == "WAITING_APPROVAL")?.Count  ?? 0,
-            clarificationDue = counts.FirstOrDefault(c => c.Status == "CLARIFICATION_REQUIRED")?.Count ?? 0,
-            inboundToReview,
-        });
+        var summary = await _preAuthQueue.GetSummaryAsync(claims!.TenantId);
+        return await req.OkJsonAsync(summary);
     }
 
     // ── GET /ccms/operations/claims-queue ─────────────────────────────────────
@@ -175,7 +68,7 @@ public class OperationsFunctions
 
         var tenantId = claims!.TenantId;
 
-        var pendingStates = new[] { "CLAIM_SUBMITTED", "CLAIM_IN_PROCESS", "CLAIM_READY" };
+        var pendingStates = new[] { "CLAIM_SUBMITTED", "CLAIM_IN_PROCESS", "CLAIM_READY", "CLAIM_QUERY_RAISED" };
 
         var claimItems = await _db.ClaimPackets
             .AsNoTracking()
@@ -369,28 +262,6 @@ public class OperationsFunctions
 }
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
-
-public class PreAuthQueueItem
-{
-    public Guid     AuthId             { get; set; }
-    public Guid     CaseCaseId         { get; set; }
-    public Guid?    SessionId          { get; set; }   // for session-summaries enrichment
-    public string?  CaseNumber         { get; set; }
-    public string?  CaseState          { get; set; }
-    public string?  PreAuthNumber      { get; set; }
-    public string   Status             { get; set; } = string.Empty;
-    public string?  ProcessStatus      { get; set; }
-    public decimal  RequestedAmount    { get; set; }
-    public decimal? ApprovedAmount     { get; set; }
-    public string?  TpaReferenceNumber { get; set; }
-    public DateTime? SubmittedAt       { get; set; }
-    public DateTime? TpaResponseAt     { get; set; }
-    public int      DaysWaiting        { get; set; }
-    public string?  InsurerName        { get; set; }
-    public string?  PatientName        { get; set; }
-    /// <summary>Inbound TPA email with parser draft awaiting Record Response.</summary>
-    public bool     HasInboundDraft    { get; set; }
-}
 
 public class SettlementQueueItem
 {

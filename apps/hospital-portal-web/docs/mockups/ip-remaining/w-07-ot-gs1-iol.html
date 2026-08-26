@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body data-screen="W-07">
+<main>
+  <p class="lede">
+    OT implant scan (existing S-07). Planned power on this journey is <b>+21.00 D</b>.
+    Compare is exact after two decimal places. A 0.50 D catalog step is <strong>not</strong> a match.
+    Eye mismatch remains a hard block with no override.
+  </p>
+
+  <h2 class="sec" id="gs1-match">GS1 scan resolved — power matches</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog wide">
+        <div class="dialog-head"><span class="t">Record implant</span><span class="spacer"></span><span class="muted">×</span></div>
+        <div class="dialog-body">
+          <div class="row between">
+            <div>
+              <div style="font-weight:650">Meena Iyer</div>
+              <div class="small muted">UAT-002 · Phaco + IOL · Theatre 1</div>
+            </div>
+            <span class="badge ot no-dot">Operating eye: RIGHT (OD)</span>
+          </div>
+        </div>
+        <div class="dialog-body">
+          <div class="field">
+            <label>Scan barcode / UDI</label>
+            <input class="input mono lg" value="01089012345678902188213101728063010B2291" readonly>
+          </div>
+          <div class="panel">
+            <p class="panel-h">Parsed from GS1</p>
+            <div class="gs1-grid">
+              <div class="rail-line"><span class="k">GTIN</span><span class="v mono">08901234567890</span></div>
+              <div class="rail-line"><span class="k">Serial</span><span class="v mono">88213</span></div>
+              <div class="rail-line"><span class="k">Lot</span><span class="v mono">B2291</span></div>
+              <div class="rail-line"><span class="k">Expiry</span><span class="v">30 Jun 2028</span></div>
+            </div>
+          </div>
+          <div class="panel" style="margin-top:8px">
+            <p class="panel-h">Catalog + planned</p>
+            <div class="rail-line"><span class="k">Item</span><span class="v">Alcon SN60WF</span></div>
+            <div class="rail-line"><span class="k">Scanned power</span><span class="v">+21.00 D</span></div>
+            <div class="rail-line"><span class="k">Planned power</span><span class="v">+21.00 D</span></div>
+            <div class="rail-line"><span class="k">Scanned model</span><span class="v">SN60WF</span></div>
+            <div class="rail-line"><span class="k">Planned model</span><span class="v">SN60WF</span></div>
+          </div>
+          <div class="callout ok" style="margin-top:8px"><b>Power and model match the plan.</b> Eye is RIGHT. Record as Implanted to charge and deduct stock.</div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Record implant</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec" id="gs1-unreadable">GS1 unreadable — manual serial</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout warn"><b>This barcode could not be read.</b> Enter the serial from the pack. Do not guess the power.</div>
+    <div class="field" style="max-width:320px;margin-top:8px"><label>Serial</label><input class="input mono" value="" placeholder="Type serial"></div>
+  </div>
+
+  <h2 class="sec" id="power-mismatch">Power mismatch — 21.00 planned vs 21.50 scanned</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Lens power does not match the plan</span></div>
+        <div class="dialog-body">
+          <div style="font-weight:650">Meena Iyer · UAT-002</div>
+          <div class="callout danger" style="margin-top:10px">
+            This lens is <b>+21.50 D</b>. The planned power is <b>+21.00 D</b>.
+            Recording is blocked unless a surgeon overrides with a reason.
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label>Reason <span class="faint">(required, minimum 10 characters)</span></label>
+            <input class="input" value="Surgeon selected +21.50 after posterior capsule; documented in note" readonly>
+          </div>
+          <p class="hint">Written to the journey audit. Eye mismatch cannot be overridden this way.</p>
+        </div>
+        <div class="dialog-foot">
+          <span class="btn">Scan a different lens</span>
+          <span class="btn danger">Record with override</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec" id="model-mismatch">Model mismatch — SN60WF planned vs SN6AD1 scanned</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout danger">
+      <b>This lens is SN6AD1.</b> The planned model is <b>SN60WF</b>.
+      Recording is blocked unless a surgeon overrides with a reason.
+      Eye mismatch still cannot be overridden.
+    </div>
+    <span class="btn danger" style="margin-top:8px">Record with override</span>
+    <span class="btn" style="margin-top:8px">Scan a different lens</span>
+  </div>
+
+  <h2 class="sec" id="f6-sot">F6 — implant record of truth</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout info">
+      <b>Record implant writes <code>journey_implant_usage</code>.</b>
+      Do not treat the OT Details tick “IOL Issued From IP Store”, <code>patient_journey</code> IOL flag fields, or
+      <code>intra_op_note.ImplantUsed</code> as the usage or charge record. Charge and stock follow this scan only.
+    </div>
+  </div>
+
+  <h2 class="sec" id="empty-planned">Planned power empty — warn, allow record</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout warn"><b>No planned IOL power is on this journey.</b> Confirm +21.00 D with the surgeon. Recording is allowed.</div>
+    <span class="btn primary" style="margin-top:8px">Record implant</span>
+  </div>
+
+  <h2 class="sec" id="eye-mismatch">Eye mismatch — hard block, no override</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout danger"><b>This implant is marked LEFT, the operating eye is RIGHT.</b> Recording is blocked. Confirm the eye with the surgeon, or correct the operating eye on the journey first.</div>
+    <span class="btn primary" style="margin-top:8px">Back to scan</span>
+  </div>
+
+  <h2 class="sec" id="no-override">No override permission</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout danger"><b>Lens power does not match the plan.</b> Ask a surgeon to record this lens. Scan a different lens, or wait.</div>
+    <span class="btn primary disabled" style="margin-top:8px">Record with override</span>
+  </div>
+
+  <table class="map" style="margin-top:16px">
+    <thead><tr><th>Element</th><th>API</th><th>BE</th><th>DB</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>Scan</td><td>POST .../verify-iol-barcode</td><td>Gs1BarcodeParser + ResolveBarcodeAsync</td><td>—</td><td class="owner o-ip">IP</td></tr>
+      <tr><td>Record</td><td>POST .../implants</td><td>ImplantUsageService.RecordAsync · 0.00 D</td><td>journey_implant_usage</td><td class="owner o-ip">IP</td></tr>
+      <tr><td>Charge / stock</td><td>outbox ImplantUsed</td><td>ImplantChargeHandler</td><td>opd_bill_items · inventory ledger</td><td class="owner o-billing">Billing + Inv</td></tr>
+    </tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

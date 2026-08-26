@@ -16,6 +16,8 @@ namespace IpManagementService.Services;
 public class PostOpWorkflowService
 {
     private readonly IpManagementDbContext _db;
+    private readonly ImplantUsageService _implants;
+    private readonly IAuthAppointmentStatusClient? _appointments;
 
     // Default checklist labels — seeded by backend on first use per tenant
     private static readonly string[] DefaultNurseItems =
@@ -38,9 +40,14 @@ public class PostOpWorkflowService
         "Discharge Orders Signed",
     ];
 
-    public PostOpWorkflowService(IpManagementDbContext db)
+    public PostOpWorkflowService(
+        IpManagementDbContext db,
+        ImplantUsageService implants,
+        IAuthAppointmentStatusClient? appointments = null)
     {
         _db = db;
+        _implants = implants;
+        _appointments = appointments;
     }
 
     // ── Nurse Checklist ────────────────────────────────────────────────────────
@@ -207,6 +214,12 @@ public class PostOpWorkflowService
         existing.FollowupDoctorId     = req.FollowupDoctorId;
         existing.EyeCareInstructions  = req.EyeCareInstructions;
         existing.WarningSigns         = req.WarningSigns;
+
+        if (req.FollowupAppointmentId.HasValue)
+        {
+            await BindFollowupAppointmentAsync(
+                existing, journeyId, tenantId, req.FollowupAppointmentId.Value);
+        }
         existing.IsSaved              = true;
         existing.SavedAt              = DateTime.UtcNow;
         existing.SavedByUserId        = userId;
@@ -290,6 +303,11 @@ public class PostOpWorkflowService
     public async Task<IolReturnDto> RecordIolReturnAsync(
         Guid journeyId, Guid tenantId, Guid branchId, Guid userId, RecordIolReturnRequest req)
     {
+        if (string.IsNullOrWhiteSpace(req.Reason) || req.Reason.Trim().Length < 3)
+            throw new ArgumentException("Reason is required when recording an IOL return.");
+
+        await _implants.RecordReturnAsync(journeyId, tenantId, userId, req);
+
         var ret = new IolReturn
         {
             TenantId         = tenantId,
@@ -297,7 +315,7 @@ public class PostOpWorkflowService
             IolPower         = req.IolPower,
             IolBatch         = req.IolBatch,
             IolBarcode       = req.IolBarcode,
-            Reason           = req.Reason,
+            Reason           = req.Reason.Trim(),
             ReturnedAt       = DateTime.UtcNow,
             ReturnedByUserId = userId,
             CreatedAt        = DateTime.UtcNow,
@@ -399,10 +417,54 @@ public class PostOpWorkflowService
 
     // ── Mappers ────────────────────────────────────────────────────────────────
 
+    private async Task BindFollowupAppointmentAsync(
+        PostOpInstruction existing, Guid journeyId, Guid tenantId, Guid appointmentId)
+    {
+        if (appointmentId == Guid.Empty)
+        {
+            existing.FollowupAppointmentId = null;
+            return;
+        }
+
+        var journey = await _db.PatientJourneys.FirstOrDefaultAsync(
+            j => j.Id == journeyId && j.TenantId == tenantId && j.DeletedAt == null)
+            ?? throw new KeyNotFoundException($"Journey {journeyId} not found.");
+
+        if (_appointments is null)
+        {
+            existing.FollowupAppointmentId = appointmentId;
+            return;
+        }
+
+        AuthAppointmentStatus status;
+        try
+        {
+            status = await _appointments.GetStatusAsync(appointmentId, tenantId);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "Could not verify the follow-up appointment. Try again.", ex);
+        }
+
+        if (!status.Exists)
+            throw new ArgumentException("That appointment was not found.");
+        if (status.Cancelled)
+            throw new ArgumentException("That appointment is cancelled. Book or link an active visit.");
+        if (status.PatientId is Guid pid && pid != Guid.Empty && pid != journey.PatientId)
+            throw new ArgumentException("That appointment belongs to a different patient.");
+
+        existing.FollowupAppointmentId = appointmentId;
+        if (status.AppointmentDate is DateTime when)
+            existing.FollowupDate = when;
+        if (status.DoctorId is Guid doctorId && doctorId != Guid.Empty)
+            existing.FollowupDoctorId = doctorId;
+    }
+
     private static PostOpInstructionDto MapInstruction(PostOpInstruction i) => new(
         i.Id, i.Medications, i.ActivityRestrictions, i.DietaryInstructions,
         i.FollowupDate, i.FollowupDoctorId, i.EyeCareInstructions,
-        i.WarningSigns, i.IsSaved, i.SavedAt);
+        i.WarningSigns, i.IsSaved, i.SavedAt, i.FollowupAppointmentId);
 
     private static DischargeSummaryDto MapSummary(DischargeSummary s) => new(
         s.Id, s.ConditionAtDischarge, s.DiagnosisCodes, s.ProceduresPerformed,

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-18">
+<main>
+
+  <p class="lede">
+    The coverage block embedded in the census rail, the pre-op workspace and the journey detail page.
+    <strong>Read-only by design</strong> &mdash; IP displays coverage, CCMS owns it, and nothing in IP may mutate a
+    coverage case. Its real job is to keep three different things from being confused with each other.
+  </p>
+
+  <div class="callout danger">
+    <b>The three-way confusion this block exists to prevent.</b> <em>Coverage status</em> (has the payer approved?),
+    <em>patient payment</em> (has the patient paid their share?) and <em>clinical discharge</em> (is the patient fit to
+    go home?) are independent. Conflating them is what produced the current panel&rsquo;s &ldquo;What is covered?&rdquo;
+    heading and what causes wards to hold beds waiting for a TPA.
+  </div>
+
+  <h2 class="sec">States</h2>
+  <div class="cols-3">
+
+    <div>
+      <div class="frame">
+        <div class="rail-sec" style="border:none">
+          <p class="rail-h">Coverage</p>
+          <div class="row between"><span class="badge ok">Approved</span><span class="small muted">Star Health</span></div>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Approved amount</span><span class="v num">&#8377;80,000</span></div>
+          <div class="rail-line"><span class="k">Patient share</span><span class="v num">&#8377;40,000</span></div>
+          <div class="rail-line"><span class="k">Valid until</span><span class="v">26 Aug 2026</span></div>
+          <div style="margin-top:8px"><span class="btn sm ghost">Open coverage case &rarr;</span></div>
+        </div>
+      </div>
+      <p class="frame-caption"><b>Approved.</b> Amount and validity shown, because an expiring approval is actionable.</p>
+    </div>
+
+    <div>
+      <div class="frame">
+        <div class="rail-sec" style="border:none">
+          <p class="rail-h">Coverage</p>
+          <div class="row between"><span class="badge ot">Awaiting pre-auth</span><span class="small muted">Star Health</span></div>
+          <div class="callout warn" style="margin-top:8px">
+            Submitted 23 Aug 16:40. <b>Blocks OT acceptance</b> for this payer.
+          </div>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Estimated payer share</span><span class="v num">&#8377;80,000</span></div>
+          <div style="margin-top:8px"><span class="btn sm ghost">Remind CCMS team</span></div>
+        </div>
+      </div>
+      <p class="frame-caption"><b>Pending.</b> States plainly what it blocks and offers the only useful action.</p>
+    </div>
+
+    <div>
+      <div class="frame">
+        <div class="rail-sec" style="border:none">
+          <p class="rail-h">Coverage</p>
+          <div class="row between"><span class="badge danger">Rejected</span><span class="small muted">Star Health</span></div>
+          <div class="callout danger" style="margin-top:8px">
+            Policy exclusion: refractive procedures. <b>Patient is now fully liable.</b>
+          </div>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Patient due</span><span class="v num">&#8377;1,20,000</span></div>
+          <div style="margin-top:8px"><span class="btn sm ghost">Open coverage case &rarr;</span></div>
+        </div>
+      </div>
+      <p class="frame-caption"><b>Rejected.</b> The consequence &mdash; full patient liability &mdash; is stated, not implied.</p>
+    </div>
+
+    <div>
+      <div class="frame">
+        <div class="rail-sec" style="border:none">
+          <p class="rail-h">Coverage</p>
+          <span class="badge no-dot">Self-pay</span>
+          <p class="small muted" style="margin:8px 0 0">No coverage case. The patient pays the full amount.</p>
+        </div>
+      </div>
+      <p class="frame-caption"><b>Self-pay.</b> Explicit, so an absent case is never mistaken for a missing record.</p>
+    </div>
+
+    <div>
+      <div class="frame">
+        <div class="rail-sec" style="border:none">
+          <p class="rail-h">Coverage</p>
+          <span class="badge ot">Approved &middot; settlement pending</span>
+          <div class="callout" style="margin-top:8px">
+            Claim submitted 24 Aug. <b>Does not block discharge.</b>
+          </div>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Payer share</span><span class="v num">&#8377;80,000</span></div>
+          <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;0</span></div>
+        </div>
+      </div>
+      <p class="frame-caption"><b>Settlement pending.</b> The non-blocking statement is the whole point of this state.</p>
+    </div>
+
+    <div>
+      <div class="frame">
+        <div class="rail-sec" style="border:none">
+          <p class="rail-h">Coverage</p>
+          <span class="badge danger">Unavailable</span>
+          <div class="callout danger" style="margin-top:8px">
+            <b>We can&rsquo;t check this patient&rsquo;s cover right now.</b> They may well be insured, so
+            <b>don&rsquo;t ask them to pay in full</b> until this loads.
+            <div class="small muted" style="margin-top:6px">Details for IT &middot; <span class="mono">c-2d80f4</span></div>
+          </div>
+          <div style="margin-top:8px"><span class="btn sm ghost">Retry</span></div>
+        </div>
+      </div>
+      <p class="frame-caption"><b>Service down.</b> Fails closed. An unknown status must never render as &ldquo;no coverage&rdquo;.</p>
+    </div>
+
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker fix">3</span><span><b>Fail-closed on service failure.</b> Rendering an unreachable CCMS as &ldquo;self-pay&rdquo; would cause staff to demand full payment from an insured patient &mdash; the most damaging possible failure mode for this block.</span></li>
+    <li><span class="marker fix">3</span><span>Terminology comes from <code>coverage-payment-terminology.ts</code> so coverage, payment and discharge language stays distinct across every screen that shows them together.</span></li>
+    <li><span class="marker">1</span><span>Payer share is <b>hidden entirely from clinical personas</b>. A surgeon does not need it and its presence next to clinical data invites the wrong inference.</span></li>
+    <li><span class="marker">1</span><span>Every state names <b>what it blocks</b>, explicitly including the states that block nothing. Ambiguity here is what causes unnecessary bed-holds.</span></li>
+  </ul>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr><td>Coverage status chip</td><td><code>ipManagementApi.getPreauthStatus</code></td><td><code>GET /ip-management/journeys/{id}/financial/preauth-status</code></td><td><code>PatientJourneyService.GetPreauthStatusAsync</code> &rarr; <code>CcmsAdmissionClient</code></td><td><code>ccms_coverage_cases</code></td><td class="owner o-ccms">CCMS</td><td><code>ip.view</code></td></tr>
+      <tr><td>Approved amount, validity</td><td>same DTO</td><td>same</td><td><code>CoverageStatusClassifier</code></td><td><code>ccms_coverage_authorizations</code></td><td class="owner o-ccms">CCMS</td><td><code>ip.view</code></td></tr>
+      <tr><td>Payer share / patient share</td><td><code>getFinancialSummary</code></td><td><code>GET /journeys/{id}/financial-summary</code></td><td><code>PatientObligationCalculator</code></td><td><code>ccms_billing_summaries</code> &rarr; <code>opd_bills.insurance_claim_amount</code></td><td class="owner o-ccms">CCMS &rarr; <span class="o-billing">Billing</span></td><td><code>ip.view</code>, hidden for clinical persona</td></tr>
+      <tr><td>Block reason</td><td>preauth DTO</td><td>same</td><td><code>CoverageStatusClassifier</code></td><td><code>ccms_coverage_authorizations</code></td><td class="owner o-ccms">CCMS</td><td><code>ip.view</code></td></tr>
+      <tr><td>Remind CCMS team</td><td><code>remindCcmsTeam</code></td><td><code>POST /api/CoverageCases/{id}/remind</code></td><td>coverage case service</td><td><code>ccms_coverage_cases</code></td><td class="owner o-ccms">CCMS</td><td><code>ccms.case.update</code></td></tr>
+      <tr><td>Open coverage case</td><td>deep link to the CCMS workspace</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td class="owner o-fe">FE</td><td><code>ccms.*</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">What coverage does and does not block</h2>
+  <table class="map">
+    <thead><tr><th>Coverage state</th><th>Blocks OT acceptance</th><th>Blocks discharge</th><th>Effect on patient due</th></tr></thead>
+    <tbody>
+      <tr><td>Approved</td><td>No</td><td>No</td><td>Reduced by the approved amount</td></tr>
+      <tr><td>Awaiting pre-auth</td><td><b>Yes</b>, for payers that require it</td><td>No</td><td>Estimated split, provisional</td></tr>
+      <tr><td>Rejected</td><td>No</td><td>No</td><td><b>Full amount becomes patient liability</b></td></tr>
+      <tr><td>Self-pay</td><td>No</td><td>No</td><td>Full amount, as expected</td></tr>
+      <tr><td>Approved, settlement pending</td><td>No</td><td><b>No</b> &mdash; stated explicitly on S-09</td><td>Unchanged; payer share already applied</td></tr>
+      <tr><td>Service unavailable</td><td><b>Yes</b> &mdash; fail closed</td><td>No</td><td>Unknown; last known value shown as stale</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

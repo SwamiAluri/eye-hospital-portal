@@ -1,0 +1,25 @@
+---
+description: Use the remote Figma MCP server for design-to-code and code-to-Figma work in this repo
+alwaysApply: true
+---
+
+# Figma MCP
+
+This project uses Figma's **remote** MCP server (`https://mcp.figma.com/mcp`). Prefer it over the desktop/local server. Config lives in `.cursor/mcp.json`.
+
+## When a Figma URL is provided
+
+- Extract `fileKey` and `nodeId` from the URL (`node-id=1-2` → `1:2`).
+- Design → code: load `figma-design-to-code`, then `get_design_context`. Adapt output to existing portal components, tokens, and APIs. Do not paste generated Tailwind as-is.
+- Code → Figma: load `figma-generate-design`, call `search_design_system` first, then `use_figma` (load `figma-use` before every `use_figma` call).
+- Diagrams: load `figma-generate-diagram` before `generate_diagram`.
+
+## Project mapping
+
+- UI lives in `apps/hospital-portal-web`.
+- Existing screen mockups: `apps/hospital-portal-web/docs/mockups/`.
+- Reuse current React components, design tokens, and IP/Billing/Ward ownership rules. Do not invent a second design system.
+
+## Auth
+
+If Figma tools show `needsAuth`, connect via Cursor Settings → Tools & MCP → Figma → Connect, or ask the user to complete OAuth.

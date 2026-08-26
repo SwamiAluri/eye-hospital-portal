@@ -20,7 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { BarChart, TrendingUp, Users, Clock, Download, Calendar } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { getApi } from '@/lib/api';
 
 interface DepartmentStat {

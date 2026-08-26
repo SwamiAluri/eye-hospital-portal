@@ -64,6 +64,8 @@ import {
   RotateCcw,
   Database,
   MapPin,
+  Link2,
+  Scale,
 } from 'lucide-react';
 
 interface MenuItem {
@@ -318,6 +320,26 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           exact: true,
         },
         {
+          label: 'Slot board',
+          href: '/dashboard/ip-management/slots',
+          icon: CalendarDays,
+          requiredPermission: 'ip_management.view',
+        },
+        {
+          label: 'Slot throughput',
+          href: '/dashboard/ip-management/throughput',
+          icon: BarChart,
+          requiredPermission: 'ip_management.view',
+        },
+        ...(process.env.NODE_ENV === 'development'
+          ? [{
+              label: 'UAT Data',
+              href: '/dashboard/dev/uat',
+              icon: Layers,
+              requiredPermission: 'ip_management.view' as string | null,
+            }]
+          : []),
+        {
           label: 'Operation Theatre',
           href: '/dashboard/ip-management/operation-theatre',
           icon: Activity,
@@ -539,6 +561,18 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           href: '/dashboard/billing/opd',
           icon: DollarSign,
           requiredPermission: null,
+        },
+        {
+          label: 'Charge mapping',
+          href: '/dashboard/admin/charge-mapping',
+          icon: Link2,
+          requiredPermission: 'bill.admin',
+        },
+        {
+          label: 'Charge reconciliation',
+          href: '/dashboard/admin/charge-reconciliation',
+          icon: Scale,
+          requiredPermission: 'bill.view',
         },
         {
           label: 'Insurance Management',
@@ -907,6 +941,12 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           href: '/dashboard/admin/security',
           icon: Key,
           requiredPermission: 'session.view',
+        },
+        {
+          label: 'Integration health',
+          href: '/dashboard/admin/integration-health',
+          icon: Activity,
+          requiredPermission: 'integration.admin',
         },
         {
           label: 'Audit Logs',

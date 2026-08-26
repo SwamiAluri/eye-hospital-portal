@@ -41,6 +41,7 @@ public class InventoryDbContext : DbContext
     public DbSet<PharmacyBill> PharmacyBills => Set<PharmacyBill>();
     public DbSet<PharmacyBillItem> PharmacyBillItems => Set<PharmacyBillItem>();
     public DbSet<SurgeryConsumable> SurgeryConsumables => Set<SurgeryConsumable>();
+    public DbSet<SharedIntegrationOutboxEvent> IntegrationOutboxEvents => Set<SharedIntegrationOutboxEvent>();
 
     // ── Requisitions ──────────────────────────────────────────────────────────
     public DbSet<PurchaseRequisition> PurchaseRequisitions => Set<PurchaseRequisition>();
@@ -188,6 +189,7 @@ public class InventoryDbContext : DbContext
             entity.Property(e => e.VendorCode).HasColumnName("vendor_code").HasMaxLength(50);
             entity.Property(e => e.VendorCategory).HasColumnName("vendor_category").HasMaxLength(50);
             entity.Property(e => e.IsPreferred).HasColumnName("is_preferred");
+            entity.Property(e => e.IsConsignmentVendor).HasColumnName("is_consignment_vendor");
             entity.Property(e => e.ContactPerson).HasColumnName("contact_person").HasMaxLength(200);
             entity.Property(e => e.Phone).HasColumnName("phone").HasMaxLength(30);
             entity.Property(e => e.Email).HasColumnName("email").HasMaxLength(200);
@@ -611,6 +613,8 @@ public class InventoryDbContext : DbContext
             entity.Property(e => e.QuantityIn).HasColumnName("quantity_in").HasColumnType("numeric(12,3)");
             entity.Property(e => e.QuantityOut).HasColumnName("quantity_out").HasColumnType("numeric(12,3)");
             entity.Property(e => e.QuantityAvailable).HasColumnName("quantity_available").HasColumnType("numeric(12,3)");
+            entity.Property(e => e.IsConsignment).HasColumnName("is_consignment");
+            entity.Property(e => e.VendorId).HasColumnName("vendor_id");
             entity.Property(e => e.IsActive).HasColumnName("is_active");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
@@ -852,6 +856,7 @@ public class InventoryDbContext : DbContext
             entity.Property(e => e.TenantId).HasColumnName("tenant_id");
             entity.Property(e => e.StoreId).HasColumnName("store_id");
             entity.Property(e => e.SurgeryId).HasColumnName("surgery_id");
+            entity.Property(e => e.JourneyId).HasColumnName("journey_id");
             entity.Property(e => e.ItemId).HasColumnName("item_id");
             entity.Property(e => e.StockBatchId).HasColumnName("stock_batch_id");
             entity.Property(e => e.IolBillingMode).HasColumnName("iol_billing_mode").HasMaxLength(20);
@@ -867,6 +872,8 @@ public class InventoryDbContext : DbContext
             entity.Property(e => e.ReturnedQuantity).HasColumnName("returned_quantity").HasColumnType("numeric(12,3)");
             entity.Property(e => e.ReturnedAt).HasColumnName("returned_at");
             entity.Property(e => e.ClosedAt).HasColumnName("closed_at");
+            entity.Property(e => e.ChargeStatus).HasColumnName("charge_status").HasMaxLength(24);
+            entity.Property(e => e.ChargeItemId).HasColumnName("charge_item_id");
             entity.Property(e => e.IssuedAt).HasColumnName("issued_at");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
@@ -879,6 +886,29 @@ public class InventoryDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.StoreId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Shared IP outbox — same table, no inventory-owned schema.
+        modelBuilder.Entity<SharedIntegrationOutboxEvent>(entity =>
+        {
+            entity.ToTable("integration_outbox_event", t => t.ExcludeFromMigrations());
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+            entity.Property(e => e.EventType).HasColumnName("event_type");
+            entity.Property(e => e.AggregateType).HasColumnName("aggregate_type");
+            entity.Property(e => e.AggregateId).HasColumnName("aggregate_id");
+            entity.Property(e => e.CorrelationId).HasColumnName("correlation_id");
+            entity.Property(e => e.PayloadJson).HasColumnName("payload_json");
+            entity.Property(e => e.IdempotencyKey).HasColumnName("idempotency_key");
+            entity.Property(e => e.OccurredAt).HasColumnName("occurred_at");
+            entity.Property(e => e.Status).HasColumnName("status");
+            entity.Property(e => e.RetryCount).HasColumnName("retry_count");
+            entity.Property(e => e.LastAttemptAt).HasColumnName("last_attempt_at");
+            entity.Property(e => e.ProcessedAt).HasColumnName("processed_at");
+            entity.Property(e => e.Error).HasColumnName("error");
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
         });
 
         // ─── PurchaseRequisition ──────────────────────────────────────────────

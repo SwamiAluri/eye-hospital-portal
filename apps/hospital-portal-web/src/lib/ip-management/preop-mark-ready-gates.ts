@@ -3,7 +3,7 @@ import type {
   PreOpClearanceDetailDto,
   WardInvestigationChecklistDto,
 } from '@/lib/api/ip-management.api';
-import type { PreOpStepKey } from './preop-steps';
+import type { CareTab, PreOpStepKey } from './preop-steps';
 import { isEvaluationSignedOff } from './clinical-evaluation';
 import { isLateralityAttested, lateralityBlockMessage, normalizeOperativeEye } from './preop-laterality';
 
@@ -12,6 +12,7 @@ export interface MarkReadyGate {
   message: string;
   severity: 'warn' | 'block';
   navigateStep: PreOpStepKey;
+  careTab?: CareTab;
 }
 
 export interface MarkReadyGateResult {

@@ -17,17 +17,20 @@ public class EnhancementService
     private readonly CcmsDbContext _db;
     private readonly IWorkflowEngine _workflow;
     private readonly AuthServiceClient _authClient;
+    private readonly CoverageAllocationEngine _allocation;
     private readonly ILogger<EnhancementService> _log;
 
     public EnhancementService(
         CcmsDbContext db,
         IWorkflowEngine workflow,
         AuthServiceClient authClient,
+        CoverageAllocationEngine allocation,
         ILogger<EnhancementService> log)
     {
         _db = db;
         _workflow = workflow;
         _authClient = authClient;
+        _allocation = allocation;
         _log = log;
     }
 
@@ -366,7 +369,43 @@ public class EnhancementService
             "Enhancement {EnhancementId} decided approved={Approved} override={Override}; case {CaseId} ApprovedAmount now {Amount}",
             enhancementId, req.Approved, req.HospitalOverride, coverageCase.Id, coverageCase.ApprovedAmount);
 
+        if (req.Approved)
+            await SyncAllocationAfterApprovalAsync(coverageCase, actorUserId, ct);
+
         return ToDto(enhancement);
+    }
+
+    /// <summary>
+    /// Re-run <see cref="CoverageAllocationEngine"/> with the raised TPA limit
+    /// and push that payer/patient split to Billing. Never send
+    /// (ApprovedAmount, 0) — that zeroes a real copay and lets finalize lock
+    /// while discharge still holds the bed.
+    /// </summary>
+    private async Task SyncAllocationAfterApprovalAsync(
+        CcmsCoverageCase coverageCase, Guid actorUserId, CancellationToken ct)
+    {
+        try
+        {
+            var summary = await _allocation.ReallocateToCurrentApprovedLimitAsync(
+                coverageCase.Id, actorUserId, ct);
+            if (summary is null)
+            {
+                _log.LogInformation(
+                    "Enhancement approved for case {CaseId}; no billing summary yet — skipping Billing allocation push. AllocateAsync will apply the engine split when the bill is allocated.",
+                    coverageCase.Id);
+                return;
+            }
+
+            _log.LogInformation(
+                "Enhancement reallocated case {CaseId}: Ins={Ins} Pat={Pat} (not payer=ApprovedAmount/patient=0)",
+                coverageCase.Id, summary.InsuranceShareAmount, summary.PatientShareAmount);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex,
+                "Enhancement allocation sync failed for case {CaseId} (non-fatal; CCMS remains coverage SoT)",
+                coverageCase.Id);
+        }
     }
 
     public async Task<List<EnhancementRequestDto>> GetByCaseIdAsync(

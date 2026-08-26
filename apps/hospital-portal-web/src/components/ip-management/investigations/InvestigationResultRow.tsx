@@ -8,7 +8,7 @@ import {
   WardInvestigationChecklistDto,
   WardInvestigationItemDto,
 } from '@/lib/api/ip-management.api';
-import { WARD_PREOP_TEST_IDS } from '@/lib/ip-management/ward-preop-test-ids';
+import { WARD_PREOP_TEST_IDS, WARD_PREOP_V2_TEST_IDS } from '@/lib/ip-management/ward-preop-test-ids';
 import { statusFromEntry } from '@/lib/ip-management/preop-status';
 import { computeResultFlag, investigationMeta } from '@/lib/ip-management/investigation-catalog';
 import { StatusChip } from '@/components/ip-management/preop/primitives/StatusChip';
@@ -191,6 +191,7 @@ export function InvestigationResultRow({
               onChange={e => setResultValue(e.target.value)}
               onBlur={commitValue}
               onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              data-testid={WARD_PREOP_V2_TEST_IDS.dataFieldInput(item.itemKey)}
               className={valueClass}
             />
             {resultUnit && hasValue && (
@@ -269,6 +270,7 @@ export function InvestigationResultRow({
             <button
               type="button"
               onClick={handleVerify}
+              data-testid={WARD_PREOP_TEST_IDS.investigationVerify(item.itemKey)}
               className="inline-flex items-center gap-1 rounded-md border border-emerald-600 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50"
             >
               <ShieldCheck className="h-3 w-3" />

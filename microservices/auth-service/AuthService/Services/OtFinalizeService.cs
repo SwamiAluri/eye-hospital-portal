@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AuthService.Context;
+using AuthService.Models;
 using AuthService.Models.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -58,6 +59,8 @@ namespace AuthService.Services
                 }
             }
 
+            await EnrichRequestFromOpdAsync(request, tenantId);
+
             // Find existing active record for this patient (unique partial index)
             var existing = await _db.OtFinalizeSchedules
                 .Where(s => s.TenantId == tenantId
@@ -76,8 +79,9 @@ namespace AuthService.Services
                     existing.Uhid = request.Uhid;
                 if (string.IsNullOrEmpty(existing.PatientName) && !string.IsNullOrEmpty(request.PatientName))
                     existing.PatientName = request.PatientName;
-                existing.SurgeryName   = request.SurgeryName;
-                existing.Eye           = request.Eye;
+                existing.SurgeryName   = OpdClinicalCopy.FirstNonEmpty(request.SurgeryName, existing.SurgeryName)
+                                         ?? existing.SurgeryName;
+                existing.Eye           = OpdClinicalCopy.FirstNonEmpty(request.Eye, existing.Eye);
                 existing.PatientType   = request.PatientType;
                 existing.PaymentMode   = request.PaymentMode;
                 existing.DoctorId      = request.DoctorId;
@@ -91,7 +95,7 @@ namespace AuthService.Services
                 existing.PackageRate     = request.PackageRate;
                 existing.AnesthesiaType  = request.AnesthesiaType;
                 existing.AnesthetistName = request.AnesthetistName;
-                existing.IolPower        = request.IolPower;
+                existing.IolPower        = OpdClinicalCopy.FirstNonEmpty(request.IolPower, existing.IolPower);
                 existing.Remarks         = request.Remarks;
 
                 // Any change resets to NotConfirmed for revalidation
@@ -112,6 +116,7 @@ namespace AuthService.Services
                 await _db.SaveChangesAsync();
                 if (existing.StartTime.HasValue)
                     _ = NotifyJourneyRebookAsync(existing.Id, tenantId, existing.StartTime, userId);
+                _ = NotifyJourneyOpdCopyAsync(existing, tenantId, userId, forceRefresh: false);
                 return ToResponse(existing);
             }
             else
@@ -155,6 +160,7 @@ namespace AuthService.Services
                 await _db.SaveChangesAsync();
                 if (entity.StartTime.HasValue)
                     _ = NotifyJourneyRebookAsync(entity.Id, tenantId, entity.StartTime, userId);
+                _ = NotifyJourneyOpdCopyAsync(entity, tenantId, userId, forceRefresh: false);
                 return ToResponse(entity);
             }
         }
@@ -533,6 +539,9 @@ namespace AuthService.Services
             }
 
             await _db.SaveChangesAsync();
+
+            foreach (var entity in entities)
+                _ = NotifyJourneyOpdCopyAsync(entity, tenantId, userId, forceRefresh: false);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -757,6 +766,7 @@ namespace AuthService.Services
             Diagnosis = diagnosis,
             // Checklist
             Checklist = checklist,
+            BiometryMissingForEye = false,
         };
 
         /// <summary>
@@ -921,6 +931,8 @@ namespace AuthService.Services
                     if (string.IsNullOrEmpty(resp.IolPower) && !string.IsNullOrEmpty(session.IolPower))
                         resp.IolPower = session.IolPower;
 
+                    await ApplyBiometryToDetailAsync(resp, tenantId, session.PatientId, session.SurgeryTentativeEye ?? resp.Eye);
+
                     return resp;
                 }
             }
@@ -986,6 +998,7 @@ namespace AuthService.Services
                 }
             }
 
+            await ApplyBiometryToDetailAsync(fallbackResp, tenantId, entity.PatientId, fallbackResp.Eye);
             return fallbackResp;
         }
 
@@ -1043,7 +1056,190 @@ namespace AuthService.Services
             await _db.SaveChangesAsync();
             if (request.StartTime.HasValue)
                 _ = NotifyJourneyRebookAsync(entity.Id, tenantId, entity.StartTime, userId);
+            _ = NotifyJourneyOpdCopyAsync(entity, tenantId, userId, forceRefresh: false);
             return ToResponse(entity);
+        }
+
+        // ── W-01 OPD copy ────────────────────────────────────────────────────
+
+        public async Task<OpdClinicalSnapshotDto> GetOpdClinicalSnapshotAsync(
+            Guid tenantId, Guid patientId, Guid? sessionId, string? eyeHint, bool preferBiometry)
+        {
+            CounselingSession? session = null;
+            if (sessionId.HasValue)
+            {
+                session = await _db.CounselingSession
+                    .FirstOrDefaultAsync(s => s.Id == sessionId.Value && s.TenantId == tenantId);
+            }
+
+            return await ResolveOpdSnapshotAsync(tenantId, patientId, session, eyeHint, preferBiometry);
+        }
+
+        public async Task<OpdClinicalSnapshotDto> RefreshSessionFromOpdAsync(
+            Guid sessionId, Guid tenantId, Guid userId)
+        {
+            var session = await _db.CounselingSession
+                .FirstOrDefaultAsync(s => s.Id == sessionId && s.TenantId == tenantId)
+                ?? throw new InvalidOperationException("Counselling session not found.");
+
+            var snap = await ResolveOpdSnapshotAsync(
+                tenantId, session.PatientId, session, session.SurgeryTentativeEye, preferBiometry: true);
+
+            if (OpdClinicalCopy.ShouldWrite(session.RecommendedSurgery, snap.ProcedureName, forceRefresh: true))
+                session.RecommendedSurgery = snap.ProcedureName;
+            if (OpdClinicalCopy.ShouldWrite(session.IolPower, snap.IolPower, forceRefresh: true))
+                session.IolPower = snap.IolPower;
+            session.UpdatedAt = DateTime.UtcNow;
+            session.UpdatedByUserId = userId;
+
+            var ot = await _db.OtFinalizeSchedules
+                .Where(s => s.CounsellingSessionId == sessionId
+                         && s.TenantId == tenantId
+                         && s.DeletedAt == null
+                         && s.Status != OtFinalizeStatus.Cancelled
+                         && s.Status != OtFinalizeStatus.SurgeryDone)
+                .OrderByDescending(s => s.UpdatedAt)
+                .FirstOrDefaultAsync();
+
+            if (ot != null)
+            {
+                if (OpdClinicalCopy.ShouldWrite(ot.SurgeryName, snap.ProcedureName, forceRefresh: true))
+                    ot.SurgeryName = snap.ProcedureName!;
+                if (OpdClinicalCopy.ShouldWrite(ot.IolPower, snap.IolPower, forceRefresh: true))
+                    ot.IolPower = snap.IolPower;
+                ot.UpdatedAt = DateTime.UtcNow;
+                ot.UpdatedByUserId = userId;
+            }
+
+            await _db.SaveChangesAsync();
+
+            if (ot != null)
+                _ = NotifyJourneyOpdCopyAsync(ot, tenantId, userId, forceRefresh: true);
+
+            return snap;
+        }
+
+        private async Task EnrichRequestFromOpdAsync(UpsertOtScheduleRequest request, Guid tenantId)
+        {
+            CounselingSession? session = null;
+            if (request.CounsellingSessionId.HasValue)
+            {
+                session = await _db.CounselingSession
+                    .FirstOrDefaultAsync(s => s.Id == request.CounsellingSessionId.Value && s.TenantId == tenantId);
+            }
+
+            var eyeHint = OpdClinicalCopy.FirstNonEmpty(request.Eye, session?.SurgeryTentativeEye);
+            var snap = await ResolveOpdSnapshotAsync(
+                tenantId, request.PatientId, session, eyeHint, preferBiometry: false);
+
+            if (string.IsNullOrWhiteSpace(request.SurgeryName) && !string.IsNullOrWhiteSpace(snap.ProcedureName))
+                request.SurgeryName = snap.ProcedureName;
+            if (string.IsNullOrWhiteSpace(request.Eye) && !string.IsNullOrWhiteSpace(session?.SurgeryTentativeEye))
+                request.Eye = session!.SurgeryTentativeEye;
+            if (string.IsNullOrWhiteSpace(request.IolPower) && !string.IsNullOrWhiteSpace(snap.IolPower))
+                request.IolPower = snap.IolPower;
+
+            if (session != null && OpdClinicalCopy.ShouldWrite(session.IolPower, snap.IolPower, forceRefresh: false))
+            {
+                session.IolPower = snap.IolPower;
+                session.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        private async Task ApplyBiometryToDetailAsync(
+            OtScheduleDetailResponse resp, Guid tenantId, Guid patientId, string? eyeHint)
+        {
+            var snap = await ResolveOpdSnapshotAsync(tenantId, patientId, session: null, eyeHint, preferBiometry: false);
+            if (string.IsNullOrWhiteSpace(resp.IolPower) && !string.IsNullOrWhiteSpace(snap.IolPower))
+                resp.IolPower = snap.IolPower;
+            resp.BiometryMissingForEye = snap.BiometryMissing;
+        }
+
+        private async Task<OpdClinicalSnapshotDto> ResolveOpdSnapshotAsync(
+            Guid tenantId,
+            Guid patientId,
+            CounselingSession? session,
+            string? eyeHint,
+            bool preferBiometry)
+        {
+            var eyeRaw = OpdClinicalCopy.FirstNonEmpty(eyeHint, session?.SurgeryTentativeEye);
+            var bioEye = OpdClinicalCopy.MapEyeToBiometry(eyeRaw);
+            string? biometryIol = null;
+            var biometryMissing = false;
+
+            if (bioEye != null)
+            {
+                var latest = await _db.BiometryRecords
+                    .AsNoTracking()
+                    .Where(b => b.PatientId == patientId
+                             && b.TenantId == tenantId
+                             && b.DeletedAt == null
+                             && b.Status == "active"
+                             && b.Eye == bioEye)
+                    .OrderByDescending(b => b.ExaminationDate)
+                    .ThenByDescending(b => b.UpdatedAt)
+                    .FirstOrDefaultAsync();
+
+                biometryIol = OpdClinicalCopy.IolFromBiometry(latest?.CalculatedIol, latest?.IolCalculations);
+                biometryMissing = latest == null || biometryIol == null;
+            }
+
+            var iol = OpdClinicalCopy.ResolveIol(
+                existing: null,
+                sessionIol: session?.IolPower,
+                biometryIol: biometryIol,
+                preferBiometry: preferBiometry);
+
+            return new OpdClinicalSnapshotDto
+            {
+                ProcedureName = OpdClinicalCopy.FirstNonEmpty(session?.RecommendedSurgery),
+                EyeOperated = OpdClinicalCopy.MapEyeToJourney(eyeRaw),
+                IolPower = iol,
+                BiometryMissing = biometryMissing,
+                EyePhrase = OpdClinicalCopy.EyePhrase(eyeRaw),
+                Diagnosis = session?.RecommendedSurgery,
+            };
+        }
+
+        private async Task NotifyJourneyOpdCopyAsync(
+            OtFinalizeSchedule entity, Guid tenantId, Guid userId, bool forceRefresh)
+        {
+            try
+            {
+                var baseUrl = _config["IpManagementService:BaseUrl"] ?? "http://localhost:5074/api";
+                var key     = _config["InternalApi:Key"] ?? string.Empty;
+                var client  = _httpFactory.CreateClient();
+                if (!string.IsNullOrEmpty(key))
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", key);
+
+                var payload = new
+                {
+                    otScheduleId   = entity.Id,
+                    tenantId,
+                    procedureName  = entity.SurgeryName,
+                    eyeOperated    = OpdClinicalCopy.MapEyeToJourney(entity.Eye),
+                    iolPower       = entity.IolPower,
+                    forceRefresh,
+                    actorUserId    = userId.ToString(),
+                };
+                var response = await client.PostAsJsonAsync(
+                    $"{baseUrl.TrimEnd('/')}/ip-management/internal/journey-sync/copy-opd",
+                    payload);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning(
+                        "Journey OPD copy for schedule {ScheduleId} returned {Status}: {Body}",
+                        entity.Id, (int)response.StatusCode, body);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to sync OPD clinical copy to ip-management for schedule {ScheduleId}.",
+                    entity.Id);
+            }
         }
 
         // ── G6: same-day single-eye scheduling guard ─────────────────────────

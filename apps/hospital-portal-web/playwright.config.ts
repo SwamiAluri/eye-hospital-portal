@@ -46,11 +46,18 @@ export default defineConfig({
 
   /* Browsers to test across */
   projects: [
-    // Setup project: logs in once, saves auth state
+    // Setup project: logs in once, saves auth state.
+    // Desktop viewport is required: Sidebar is `hidden lg:flex`.
+    // 120s timeout covers first Next.js compile of /dashboard (skeleton until hydrate).
     {
       name: 'setup',
       testMatch: '**/e2e/auth.setup.ts',
-      use: { storageState: { cookies: [], origins: [] } },
+      timeout: 120_000,
+      use: {
+        storageState: { cookies: [], origins: [] },
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+      },
     },
 
     {
@@ -81,6 +88,16 @@ export default defineConfig({
         '**/ip-ward-phase3.spec.ts',
         '**/ip-ward-program-closure.spec.ts',
         '**/ip-ward-scheduling-guard.spec.ts',
+        '**/ip-ccms-phase5-p1.spec.ts',
+        '**/ip-ccms-p0-jwt-ui.spec.ts',
+        '**/ip-phase9-acceptance.spec.ts',
+        '**/ip-census-split-pane.spec.ts',
+        '**/ip-census-mark-ready.spec.ts',
+        '**/ip-census-unmark-ready.spec.ts',
+        '**/ip-census-collect-payment.spec.ts',
+        '**/ip-ward-discharge-collect-payment.spec.ts',
+        '**/ip-census-slot-assign.spec.ts',
+        '**/ip-ccms-wave7-g3-ui.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['setup'],
@@ -138,6 +155,8 @@ export default defineConfig({
           NEXT_PUBLIC_API_URL: process.env.E2E_API_URL ?? 'http://localhost:5073/api',
           NEXT_PUBLIC_IP_MANAGEMENT_API_URL:
             process.env.E2E_IP_MANAGEMENT_API_URL ?? 'http://localhost:5074/api',
+          NEXT_PUBLIC_CCMS_API_URL:
+            process.env.E2E_CCMS_API_URL ?? 'http://localhost:7075/api',
           NEXT_PUBLIC_PATIENT_HUB_V2: process.env.NEXT_PUBLIC_PATIENT_HUB_V2 ?? 'true',
         },
       },

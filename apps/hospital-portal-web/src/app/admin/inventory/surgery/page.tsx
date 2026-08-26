@@ -81,6 +81,7 @@ function PlanConsumableModal({ onClose, onCreated }: { onClose: () => void; onCr
   const { data: items = [] } = useInventoryItems(querySearch);
   const [storeId, setStoreId] = useState('');
   const [surgeryId, setSurgeryId] = useState('');
+  const [journeyId, setJourneyId] = useState('');
   const [patientId, setPatientId] = useState('');
   const [surgeonId, setSurgeonId] = useState('');
   const [surgeryDate, setSurgeryDate] = useState(new Date().toISOString().slice(0, 10));
@@ -104,16 +105,21 @@ function PlanConsumableModal({ onClose, onCreated }: { onClose: () => void; onCr
     if (!surgeryId.trim()) { setError('Enter a surgery ID.'); return; }
     if (!patientId.trim()) { setError('Enter a patient ID.'); return; }
     if (lines.length === 0) { setError('Add at least one consumable.'); return; }
+    const journey = journeyId.trim();
+    if (journey && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(journey)) {
+      setError('IP Journey ID must be a UUID.');
+      return;
+    }
     setBusy(true); setError('');
     try {
+      const parsedJourney = journey || undefined;
       await inventoryPharmacyApi.planConsumables({
         storeId,
         surgeryId,
-        patientId,
-        surgeonId: surgeonId || undefined,
-        surgeryDate,
-        notes: notes || undefined,
-        items: lines.map(l => ({ itemMasterId: l.itemId, plannedQuantity: l.quantity, isPatientSpecific: l.isPatientSpecific })),
+        iolBillingMode: lines.some(l => l.isPatientSpecific) ? 'PatientSpecific' : 'Bulk',
+        patientName: patientId.trim(),
+        journeyId: parsedJourney,
+        items: lines.map(l => ({ itemId: l.itemId, plannedQuantity: l.quantity })),
       });
       onCreated();
     } catch (e: any) {
@@ -142,6 +148,11 @@ function PlanConsumableModal({ onClose, onCreated }: { onClose: () => void; onCr
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Surgery ID <span className="text-red-500">*</span></label>
             <input value={surgeryId} onChange={e => setSurgeryId(e.target.value)} placeholder="Surgery reference ID"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">IP Journey ID</label>
+            <input value={journeyId} onChange={e => setJourneyId(e.target.value)} placeholder="Patient journey UUID — required to charge"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
@@ -292,7 +303,7 @@ export default function SurgeryConsumablesPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              {['#', 'Surgery ID', 'Patient', 'Store', 'Status', 'Surgery Date', 'Actions'].map(h => (
+              {['#', 'Surgery ID', 'Patient', 'Charge', 'Status', 'Surgery Date', 'Actions'].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -310,8 +321,8 @@ export default function SurgeryConsumablesPage() {
                  <tr key={r.id} className={`border-l-4 ${STATUS_BORDER[status] ?? 'border-l-transparent'} hover:bg-gray-50 transition-colors`}>
                    <td className="px-4 py-3 font-mono text-xs">{r.consumableNumber ?? r.id?.slice(0, 8)}</td>
                    <td className="px-4 py-3 text-gray-600 text-xs font-mono">{r.surgeryId?.slice(0, 8) ?? '—'}…</td>
-                   <td className="px-4 py-3 text-gray-600 text-xs">{r.patientId?.slice(0, 8) ?? '—'}…</td>
-                   <td className="px-4 py-3 text-gray-500 text-xs">{r.storeName ?? '—'}</td>
+                   <td className="px-4 py-3 text-gray-600 text-xs">{r.patientName ?? r.patientIpNo ?? '—'}</td>
+                   <td className="px-4 py-3 text-gray-500 text-xs">{r.chargeStatus ?? '—'}</td>
                    <td className="px-4 py-3"><StatusBadge status={status} /></td>
                    <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(r.surgeryDate)}</td>
                    <td className="px-4 py-3">

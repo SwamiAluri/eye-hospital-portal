@@ -82,7 +82,7 @@ export default function TopographyForm({ patientId, initialData, onSave, readOnl
         <p className="text-sm text-gray-700">
           <strong>Placido</strong>: Corneal curvature surface analysis<br/>
           <strong>Scheimpflug</strong>: 3D corneal thickness, anterior chamber depth, lens analysis<br/>
-          <strong>Keratoconus Indices</strong>: Kmax (>47D suspect), I-S value (>1.4D suspect), KISA% (&gt;100% high risk)<br/>
+          <strong>Keratoconus Indices</strong>: Kmax (&gt;47D suspect), I-S value (&gt;1.4D suspect), KISA% (&gt;100% high risk)<br/>
           Full keratoconus screening implementation with corneal maps coming soon.
         </p>
       </div>

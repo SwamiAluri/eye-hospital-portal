@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-12">
+<main>
+
+  <p class="lede">
+    The authoritative money screen. Two changes carry disproportionate weight: it must
+    <strong>read its search params</strong>, and it must <strong>group line items by where the charge came from</strong>
+    so a patient can be shown why a bill is the size it is.
+  </p>
+
+  <div class="callout danger">
+    <b>The deep-link dead end.</b> Every IP surface already links here with
+    <code>?billId=&hellip;&amp;patientId=&hellip;&amp;journeyId=&hellip;</code>, but the page never calls
+    <code>useSearchParams()</code>. The cashier lands on an unfiltered billing screen and has to search for the patient
+    by hand &mdash; which is precisely why billing buttons keep multiplying inside IP. Fixing this one gap removes most
+    of the pressure to duplicate billing.
+  </div>
+
+  <div class="frame">
+    <div class="app-header">
+      <a class="small" href="s-01-ip-census.html">&larr; Back to IP Management</a>
+      <h1 style="margin-left:8px">IPD-2026-00841</h1>
+      <span class="scope">Meena Iyer &middot; UAT-002 &middot; Journey #J-2026-0841 &middot; Day Care B-04</span>
+      <span class="spacer"></span>
+      <span class="badge ot">Partially paid</span>
+    </div>
+
+    <div class="strip">
+      <span class="badge info no-dot">Context loaded from URL <span class="mark fix">3</span></span>
+      <span class="badge no-dot">In-patient</span>
+      <span class="badge no-dot">Payer: Star Health</span>
+      <span class="badge no-dot">Package: Cataract standard</span>
+    </div>
+
+    <div style="padding:0">
+      <div class="group-h">
+        <span>&#9662; Package</span>
+        <span class="src">source: counselling package, exploded on bill creation</span>
+        <span class="amt">&#8377;1,00,000</span>
+      </div>
+      <table class="grid">
+        <tbody>
+          <tr><td style="padding-left:28px">Phaco surgery</td><td class="cell-sub">Procedure</td><td class="num right">1 &times; 62,000</td><td class="num right">&#8377;62,000</td></tr>
+          <tr><td style="padding-left:28px">IOL &mdash; package allowance</td><td class="cell-sub">Implant allowance</td><td class="num right">1 &times; 18,000</td><td class="num right">&#8377;18,000</td></tr>
+          <tr><td style="padding-left:28px">OT charges</td><td class="cell-sub">Facility</td><td class="num right">1 &times; 12,000</td><td class="num right">&#8377;12,000</td></tr>
+          <tr><td style="padding-left:28px">Day-care bed</td><td class="cell-sub">Accommodation</td><td class="num right">1 &times; 8,000</td><td class="num right">&#8377;8,000</td></tr>
+          <tr><td style="padding-left:28px">Package discount</td><td class="cell-sub">Adjustment</td><td class="num right">&mdash;</td><td class="num right">&#8377;0</td></tr>
+        </tbody>
+      </table>
+
+      <div class="group-h">
+        <span>&#9662; Implants</span>
+        <span class="src">source: OT implant registry (<code>journey_implant_usage</code>)</span>
+        <span class="amt">&#8377;14,000</span>
+      </div>
+      <table class="grid">
+        <tbody>
+          <tr>
+            <td style="padding-left:28px">Alcon SN60WF +21.0&nbsp;D</td>
+            <td class="cell-sub">Serial 88213 &middot; batch B-2291 &middot; OD</td>
+            <td class="num right">1 &times; 14,000</td><td class="num right">&#8377;14,000</td>
+          </tr>
+          <tr>
+            <td style="padding-left:28px" class="muted">Alcon SN60WF +22.5&nbsp;D</td>
+            <td class="cell-sub">Serial 88214 &middot; opened, not used &middot; <b>hospital write-off</b></td>
+            <td class="num right muted">&mdash;</td><td class="num right muted">Not charged</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="group-h">
+        <span>&#9662; Consumables (6)</span>
+        <span class="src">source: OT consumption (<code>inv_surgery_consumables</code>)</span>
+        <span class="amt">&#8377;6,000</span>
+      </div>
+      <table class="grid">
+        <tbody>
+          <tr><td style="padding-left:28px">Viscoelastic</td><td class="cell-sub">B-7712</td><td class="num right">1 &times; 1,800</td><td class="num right">&#8377;1,800</td></tr>
+          <tr><td style="padding-left:28px">Phaco cassette</td><td class="cell-sub">B-5510</td><td class="num right">1 &times; 2,200</td><td class="num right">&#8377;2,200</td></tr>
+          <tr><td style="padding-left:28px">Keratome blade</td><td class="cell-sub">B-3390</td><td class="num right">1 &times; 900</td><td class="num right">&#8377;900</td></tr>
+          <tr><td style="padding-left:28px">Other (3 items)</td><td class="cell-sub">&mdash;</td><td class="num right">&mdash;</td><td class="num right">&#8377;1,100</td></tr>
+        </tbody>
+      </table>
+
+      <div class="group-h">
+        <span>&#9656; Procedure / other</span>
+        <span class="src">source: manual entry</span>
+        <span class="amt">&#8377;0</span>
+      </div>
+    </div>
+
+    <div style="padding:14px 16px;border-top:1px solid var(--line);background:var(--surface-alt)">
+      <div class="cols-2">
+        <div>
+          <div class="rail-line"><span class="k">Gross</span><span class="v num">&#8377;1,20,000</span></div>
+          <div class="rail-line"><span class="k">Discount</span><span class="v num">&#8377;0</span></div>
+          <div class="rail-line"><span class="k">Tax</span><span class="v num">&#8377;0</span></div>
+          <div class="rail-line"><span class="k">Net</span><span class="v num">&#8377;1,20,000</span></div>
+        </div>
+        <div>
+          <div class="rail-line"><span class="k">Payer share &middot; Star Health</span><span class="v num">&#8377;80,000</span></div>
+          <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+          <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;10,000</span></div>
+        </div>
+      </div>
+      <div class="callout warn" style="margin-top:10px">
+        <b>1 consumable is unmapped and not charged</b> (Trypan Blue 0.06%, &#8377;600 est.).
+        <a href="s-14-charge-mapping.html">Resolve in Charge mapping &rarr;</a>
+      </div>
+    </div>
+
+    <div class="dialog-foot" style="justify-content:flex-start">
+      <span class="btn">Add item</span>
+      <span class="btn">Discount</span>
+      <span class="btn primary">Collect payment</span>
+      <span class="btn danger">Refund</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="btn">Finalize bill</span>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker fix">3</span><span><b>Reads <code>billId</code>, <code>patientId</code> and <code>journeyId</code> from the URL</b> and auto-selects the context, with a Back link that returns to the census. This is TASK FE-003 and it is the cheapest high-impact fix in the whole plan.</span></li>
+    <li><span class="marker new">2</span><span><b>Line items grouped by <code>source_type</code></b> &mdash; package, implants, consumables, manual. Following decisions D1 and D4, package components and consumables are itemised rather than hidden in a lump sum, so the bill is explainable at the counter.</span></li>
+    <li><span class="marker new">2</span><span><b>Write-offs are shown but not charged.</b> An opened-and-unused IOL appears on the bill as explicitly not charged, which pre-empts the &ldquo;why is there a second lens?&rdquo; conversation.</span></li>
+    <li><span class="marker new">2</span><span>Every charge line carries its <b>origin and traceability reference</b> &mdash; serial, batch, source record. That is what makes a charge defensible in a payer audit.</span></li>
+  </ul>
+
+  <h2 class="sec">Every mutation, as its own dialog</h2>
+  <p class="lede" style="margin-bottom:14px">Seven ways a bill can change after creation. All are
+  <strong>append-only</strong> &mdash; nothing is edited in place and nothing is deleted &mdash; and all carry an
+  actor, a timestamp and a reason where the amount changes.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Add charge line</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Add item &mdash; IPD-2026-00841</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="field"><label>Service / item</label><input class="input" value="Capsular tension ring" readonly></div>
+            <div class="cols-3">
+              <div class="field"><label>Qty</label><input class="input" value="1" readonly></div>
+              <div class="field"><label>Rate</label><input class="input" value="3,200" readonly></div>
+              <div class="field"><label>Amount</label><input class="input" value="3,200" readonly></div>
+            </div>
+            <div class="callout info">Out of package &mdash; this posts as a chargeable line. Package-included items
+            are recorded for costing but not charged again.</div>
+            <div class="rail-line" style="margin-top:8px"><span class="k">New net</span><span class="v num">&#8377;1,23,200</span></div>
+            <div class="rail-line"><span class="k">Patient due after</span><span class="v num">&#8377;13,200</span></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Add item</span></div>
+        </div>
+      </div>
+      <p class="vc">The resulting patient due is shown <b>before</b> confirming, so the cashier can tell the patient
+      the number without doing arithmetic at the counter.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Apply discount</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Apply discount</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="cols-2">
+              <div class="field"><label>Type</label><input class="input" value="Percentage" readonly></div>
+              <div class="field"><label>Value</label><input class="input" value="10%" readonly></div>
+            </div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Staff family concession, approved by CFO" readonly></div>
+            <div class="callout warn"><b>&#8377;12,000 exceeds your approval limit of &#8377;5,000.</b> This will be
+            submitted for approval rather than applied immediately.</div>
+            <div class="rail-line" style="margin-top:8px"><span class="k">Net after discount</span><span class="v num">&#8377;1,08,000</span></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Submit for approval</span></div>
+        </div>
+      </div>
+      <p class="vc">Approval limits are enforced server-side; the dialog explains why the button says
+      &ldquo;submit&rdquo; instead of &ldquo;apply&rdquo;.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Credit note / reversal</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Reverse line &mdash; IOL +21.0 D</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>This does not delete the line.</b> A credit line of
+            &minus;&#8377;14,000 is appended and both remain visible.</div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Wrong serial charged; corrected to 88121" readonly></div>
+            <div class="rail-line" style="margin-top:8px"><span class="k">Original</span><span class="v num">&#8377;14,000</span></div>
+            <div class="rail-line"><span class="k">Credit</span><span class="v num">&minus;&#8377;14,000</span></div>
+            <div class="rail-line total"><span class="k">Net effect</span><span class="v num">&#8377;0</span></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn danger">Post credit line</span></div>
+        </div>
+      </div>
+      <p class="vc">Append-only is the whole point. A deleted line makes an audited bill unauditable.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">4</span><span class="t">Refund &mdash; request</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Request refund</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+            <div class="rail-line"><span class="k">Net billed</span><span class="v num">&#8377;0 (admission cancelled)</span></div>
+            <div class="rail-line total"><span class="k">Refundable</span><span class="v num">&#8377;30,000</span></div>
+            <div class="cols-2" style="margin-top:8px">
+              <div class="field"><label>Amount</label><input class="input" value="30,000" readonly></div>
+              <div class="field"><label>Mode</label><input class="input" value="Original mode &mdash; cash" readonly></div>
+            </div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Admission cancelled; patient withdrew consent" readonly></div>
+            <div class="callout warn">Refund cannot exceed collected minus net billed. The cap is enforced
+            server-side, not just in this form.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Submit request</span></div>
+        </div>
+      </div>
+      <p class="vc">Requesting and approving are separate permissions. One person must not be able to move money out
+      alone.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n ok">5</span><span class="t">Refund &mdash; approve</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Approve refund &mdash; &#8377;30,000</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <dl class="kv">
+              <dt>Patient</dt><dd>Latha S. &middot; UAT-041</dd>
+              <dt>Requested by</dt><dd>P. Rao &middot; 23 Aug 04:40 pm</dd>
+              <dt>Reason</dt><dd>Admission cancelled; patient withdrew consent</dd>
+              <dt>Original receipt</dt><dd class="mono">RCP-20260823-00001150 &middot; cash</dd>
+            </dl>
+            <div class="callout info" style="margin-top:8px">Approving issues refund voucher
+            <b class="mono">RFD-2026-00042</b> and posts a negative payment to the ledger. The original receipt is
+            untouched.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn danger">Reject</span><span class="btn primary">Approve refund</span></div>
+        </div>
+      </div>
+      <p class="vc">The approver sees who asked and why, not just an amount. Approving blind is the same as not
+      approving at all.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">6</span><span class="t">Finalize bill</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Finalize IPD-2026-00841</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout warn"><b>Finalizing locks the bill.</b> No further charges, discounts or collections.
+            Adjustments after this point require a credit note with authorisation.</div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> All implants used are charged</li>
+              <li><span class="bx on">&#10003;</span> Pharmacy discharge items posted</li>
+              <li><span class="bx on">&#10003;</span> Patient due &#8377;0</li>
+              <li><span class="bx no">&#10005;</span> 1 OT consumable pending reconciliation</li>
+            </ul>
+            <div class="callout danger" style="margin-top:8px">Finalizing now excludes &#8377;3,200 of recorded
+            consumables from the claim. <a href="s-15-reconciliation.html">Resolve first &rarr;</a></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn danger">Finalize anyway</span></div>
+        </div>
+      </div>
+      <p class="vc">Finalization is the point of no return and the trigger for the claim. The pre-flight names exactly
+      what will be lost.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Bill states</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n ok">1</span><span class="t">Finalized &mdash; locked</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="row between" style="margin-bottom:8px"><b class="mono">IPD-2026-00778</b><span class="badge ok">Finalized</span></div>
+        <div class="callout ok" style="margin:0"><b>Locked 24 Aug 05:12 pm by R. Kumar.</b> Claim CLM-2026-0311 sent to
+        Star Health.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm ghost">Print bill</span><span class="btn sm ghost">View claim</span><span class="btn sm">Raise credit note</span></div>
+      </div></div>
+      <p class="vc">Mutating actions are replaced, not disabled. The only remaining path is an authorised credit note.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Claim rejected</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="row between" style="margin-bottom:8px"><b class="mono">IPD-2026-00801</b><span class="badge danger">Claim rejected</span></div>
+        <div class="callout danger" style="margin:0"><b>Star Health rejected &#8377;18,000.</b> Reason: implant not
+        pre-authorised. Patient obligation recalculated to <b>&#8377;18,000</b>.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm">Appeal</span><span class="btn sm primary">Bill to patient</span></div>
+      </div></div>
+      <p class="vc">A rejection moves money from payer to patient. That recalculation must be automatic and visible,
+      never a manual journal entry.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Concurrent edit</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout danger" style="margin:0"><b>This bill changed while you were editing.</b> R. Kumar added a
+        payment of &#8377;10,000 at 02:14 pm. Your change was not applied.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm">Discard mine</span><span class="btn sm primary">Reload and reapply</span></div>
+      </div></div>
+      <p class="vc">The conflict is surfaced in plain language, naming who changed what. <b>Nothing detects this
+      today</b> &mdash; there is no concurrency token on <code>OpdBill</code>, <code>OpdBillPayment</code>,
+      <code>Refund</code> or <code>OpdBillItem</code>, so the second write currently just lands. Gap 6 in
+      <a href="conventions.html">conventions</a>.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">The ledger, and what each action appends to it</h2>
+  <p class="lede" style="margin-bottom:14px">
+    Every mutation on this screen appends a line. Nothing is edited and nothing is deleted, which is what makes the
+    bill reconstructable from its own history. The header figures are recomputed from the ledger by
+    <code>OpdBillLedgerCalculator</code> after every change rather than being incremented in place.
+  </p>
+
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:10px">
+        <h3 style="margin:0;font-size:15px">Ledger &mdash; <span class="mono">IPD-2026-00778</span></h3>
+        <div class="row"><span class="btn sm primary">Add charge</span><span class="btn sm">Collect</span><span class="btn sm">Discount</span><span class="btn sm ghost">Refund</span></div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>When</th><th>Kind</th><th>Detail</th><th>Reference</th><th class="num">Amount</th><th>By</th></tr></thead>
+        <tbody>
+          <tr><td>24 Aug 12:58 pm</td><td><span class="badge ok no-dot">Advance</span></td><td>Cash at counter</td><td class="mono">RCP-20260824-00001188</td><td class="num">&#8377;30,000</td><td>R. Kumar</td></tr>
+          <tr><td>24 Aug 02:14 pm</td><td><span class="badge ok no-dot">Payment</span></td><td>UPI</td><td class="mono">RCP-20260824-00001204</td><td class="num">&#8377;10,000</td><td>R. Kumar</td></tr>
+          <tr><td>24 Aug 02:20 pm</td><td><span class="badge no-dot">Discount</span></td><td>Camp concession, approved by finance</td><td class="mono">PAY-20260824-00002091</td><td class="num">&#8377;2,000</td><td>M. Rao</td></tr>
+          <tr><td>24 Aug 04:02 pm</td><td><span class="badge cancel no-dot">Refund</span></td><td>Overcollection returned</td><td class="mono">REF-9f2c41</td><td class="num">&minus;&#8377;1,500</td><td>R. Kumar</td></tr>
+        </tbody>
+      </table>
+      <p class="hint">
+        All four rows live in <code>opd_bill_payments</code>, distinguished by <code>payment_kind</code> &mdash;
+        <code>Payment</code>, <code>Advance</code>, <code>Discount</code>, <code>Refund</code> and
+        <code>Reversal</code>. A discount is deliberately <b>a ledger line rather than a header field</b>, which is
+        why there is no credit-note table: a concession is money, and money belongs in the ledger.
+      </p>
+      <div class="callout info">
+        <b>A correction is a new line, never an edit.</b> Reversal is the only way to undo a payment, and it is
+        exposed today at <code>POST /api/internal/ip-billing/reverse</code> behind an internal key &mdash; so a
+        cashier cannot currently reverse anything from the browser. A JWT route for it is part of the same work item
+        as the bill-creation route.
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Refund workflow &mdash; three people, three steps</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Request &middot; cashier</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="rail-line"><span class="k">Amount</span><span class="v num">&#8377;1,500</span></div>
+        <div class="rail-line"><span class="k">Reason</span><span class="v">Overcollected against the final bill</span></div>
+        <div class="callout info" style="margin-top:8px"><b>This creates a request, not a payout.</b> No money moves
+        until it is approved.</div>
+      </div></div>
+      <p class="vc"><code>POST /api/Refunds/request</code> with <code>opd_bill.refund</code> &rarr; a row in
+      <code>refunds</code>, status pending.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Approve &middot; finance</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout warn" style="margin:0"><b>3 refunds waiting for approval</b> totalling &#8377;7,300.</div>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:10px">
+          <thead><tr><th>Patient</th><th class="num">Amount</th><th></th></tr></thead>
+          <tbody><tr><td>Rekha Menon</td><td class="num">&#8377;1,500</td><td><span class="btn sm primary">Approve</span></td></tr></tbody>
+        </table>
+      </div></div>
+      <p class="vc"><code>GET /api/Refunds/pending</code> and <code>POST /api/Refunds/{id}/authorize</code>, both
+      requiring <code>opd_bill.refund.authorize</code> &mdash; a genuinely separate permission from requesting.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n ok">3</span><span class="t">Pay out &middot; cashier</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout ok" style="margin:0"><b>&#8377;1,500 refunded in cash.</b> Reference
+        <b class="mono">REF-9f2c41</b>. The patient owes nothing further.</div>
+      </div></div>
+      <p class="vc"><code>POST /api/Refunds/{id}/complete</code> appends the <code>Refund</code> line to
+      <code>opd_bill_payments</code>, guarded by the idempotency key <code>refund:{refundId}</code> so a double-click
+      cannot pay twice.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th><th>Event</th></tr></thead>
+    <tbody>
+      <tr><td><b>Deep-link context</b> <span class="mark fix">3</span></td><td><code>useSearchParams()</code></td><td><code>GET /api/OpdBills/{id}</code></td><td><code>OpdBillsController</code></td><td><code>opd_bills</code></td><td class="owner o-billing">Billing</td><td><code>bill.view</code></td><td>&mdash;</td></tr>
+      <tr><td><b>Grouped line items</b> <span class="mark new">2</span></td><td>grouped renderer</td><td><code>GET /api/BillItems/bill/{billId}</code></td><td><code>BillItemService</code></td><td><code>opd_bill_items</code> + <code>source_type</code>, <code>source_ref</code></td><td class="owner o-billing">Billing</td><td><code>bill.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Add item</td><td><code>addBillItem</code></td><td><code>POST /api/BillItems</code></td><td><code>BillItemService.AddBillItemAsync</code></td><td><code>opd_bill_items</code></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td>&mdash;</td></tr>
+      <tr><td>Collect payment</td><td><code>addPayment</code></td><td><code>POST /api/OpdBills/payment</code></td><td><code>OpdBillService.AddPaymentAsync</code></td><td><code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td><code>PaymentReceived</code></td></tr>
+      <tr><td>Discount</td><td><code>applyDiscount</code></td><td><code>POST /api/OpdBills/discount</code></td><td><code>ApplyDiscountAsync</code></td><td><code>opd_bill_payments</code> (<code>Discount</code> line)</td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td><code>PatientObligationChanged</code></td></tr>
+      <tr><td>Refund &mdash; request</td><td><code>requestRefund</code></td><td><code>POST /api/Refunds/request</code></td><td><code>RefundService.RequestRefundAsync</code></td><td><code>refunds</code> <span class="cell-sub">append, status pending</span></td><td class="owner o-billing">Billing</td><td><code>opd_bill.refund</code></td><td><code>RefundCreated</code></td></tr>
+      <tr><td>Refund &mdash; approve</td><td>approval queue</td><td><code>GET /api/Refunds/pending</code>, <code>POST /api/Refunds/{id}/authorize</code></td><td><code>AuthorizeRefundAsync</code></td><td><code>refunds</code>, <code>opd_bills.refund_status</code></td><td class="owner o-billing">Billing</td><td><code>opd_bill.refund.authorize</code></td><td>&mdash;</td></tr>
+      <tr><td>Refund &mdash; pay out</td><td><code>completeRefund</code></td><td><code>POST /api/Refunds/{id}/complete</code></td><td><code>CompleteRefundAsync</code></td><td><code>opd_bill_payments</code> <span class="cell-sub">kind = Refund; idempotency key <code>refund:{id}</code></span></td><td class="owner o-billing">Billing</td><td><code>opd_bill.refund</code></td><td><code>PatientObligationChanged</code></td></tr>
+      <tr><td>Refund history for this bill</td><td><code>useRefundsQuery</code></td><td><code>GET /api/Refunds/bill/{billId}</code></td><td><code>GetRefundsByBillIdAsync</code></td><td><code>refunds</code></td><td class="owner o-billing">Billing</td><td><code>opd_bill.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Reverse a payment</td><td>&mdash;</td><td><code>POST /api/internal/ip-billing/reverse</code> &mdash; <b>internal key only, no browser route</b> <span class="mark new">2</span></td><td><code>ReversePaymentAsync</code></td><td><code>opd_bill_payments</code> <span class="cell-sub">kind = Reversal</span></td><td class="owner o-billing">Billing</td><td><code>bill.update</code> + <code>opd_bill.refund</code></td><td><code>PaymentReversed</code></td></tr>
+      <tr><td>Recalculate from items</td><td><code>recalculateBill</code></td><td><code>POST /api/BillItems/bill/{billId}/recalculate</code></td><td><code>RecalculateBillAsync</code></td><td><code>opd_bills</code> totals</td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td>&mdash;</td></tr>
+      <tr><td>Finalize</td><td><code>finalizeBill</code></td><td><code>POST /api/OpdBills/{id}/finalize</code></td><td><code>FinalizeBillAsync</code></td><td><code>opd_bills</code>, <code>billing_ccms_outbox</code></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td><code>BillFinalized</code> &rarr; CCMS</td></tr>
+      <tr><td>Lock <span class="badge danger no-dot">defect</span></td><td><code>lockBill</code></td><td><code>POST /api/OpdBills/{id}/lock</code></td><td><code>LockBillAsync</code> &mdash; sets <code>is_finalized</code> but <b>does not enqueue <code>BillFinalized</code></b>, so CCMS never hears about it</td><td><code>opd_bills</code></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td><b>none &mdash; bug</b></td></tr>
+      <tr><td>Charge-completeness warning <span class="mark new">2</span></td><td><a href="s-15-reconciliation.html">S-15</a> feed</td><td><code>GET /api/ChargeReconciliation</code></td><td>reconciliation job</td><td><code>opd_bill_items</code>, <code>journey_implant_usage</code>, <code>inv_surgery_consumables</code></td><td class="owner o-billing">Billing</td><td><code>bill.view</code></td><td>&mdash;</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Concurrency</h2>
+  <div class="cols-3">
+    <div class="panel">
+      <p class="panel-h">Optimistic locking <span class="badge danger no-dot">to build</span></p>
+      <p class="small muted">The design needs mutations to carry a version so a stale write is rejected and the UI
+      refreshes rather than overwriting another cashier&rsquo;s work. <b>No such token exists on any billing entity
+      today</b>, so the last write currently wins silently. Gap 6.</p>
+    </div>
+    <div class="panel">
+      <p class="panel-h">Idempotency <span class="badge ok no-dot">exists</span></p>
+      <p class="small muted">Payments carry a client key, unique per <code>(tenant_id, idempotency_key)</code>. A
+      replay returns the original bill rather than a duplicate line or a second receipt. Refund payouts reuse
+      <code>refund:{refundId}</code> for the same reason.</p>
+    </div>
+    <div class="panel">
+      <p class="panel-h">Async charges</p>
+      <p class="small muted">Charges arrive from theatre while the bill is open. The UI listens on
+      <code>NotificationHub</code> for <code>PaymentReceived</code> and <code>PatientObligationChanged</code> and
+      shows &ldquo;new charges added&rdquo; rather than silently changing the total under the user.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Bill finalized</td><td><b>This bill is closed.</b> To change it now, raise a credit note or a refund.</td></tr>
+      <tr><td>Refund submitted</td><td><b>Refund request sent for approval.</b> No money has moved yet &mdash; finance will review it.</td></tr>
+      <tr><td>Refund paid</td><td><b>&#8377;1,500 refunded in cash.</b> Reference REF-9f2c41. The patient owes nothing further.</td></tr>
+      <tr><td>Charge line unpriced</td><td><b>This item has no price set up yet</b>, so it can&rsquo;t be charged. <a href="s-14-charge-mapping.html">Set up pricing</a></td></tr>
+      <tr><td>New charge arrived while open</td><td><b>Two charges came through from theatre.</b> The total is now &#8377;58,000. <a href="#">Review them</a></td></tr>
+      <tr><td>Concurrent edit</td><td><b>This bill changed while you were editing.</b> R. Kumar added &#8377;10,000 at 2:14 pm. Your change wasn&rsquo;t applied.</td></tr>
+      <tr><td>No permission to discount</td><td><b>You don&rsquo;t have access to apply discounts.</b> Ask finance to approve this concession.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

@@ -1,11 +1,9 @@
 import type { DecisionType, ScheduleData } from '@/types/counsellors-desk';
-
 import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
-
 import type { CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
-
 import { findCounsellorVariant } from '@/lib/master-data/clinical-catalog-master';
+import { COVERAGE_PAYMENT_TYPES, isCoveragePaymentTypeValue } from '@/lib/counsellors-desk/session-utils';
 
 
 
@@ -296,34 +294,10 @@ export function prevPhase(phase: CounsellingPhase): CounsellingPhase | null {
 
 }
 
-
-
-export const COVERAGE_TAB_PAYMENT_TYPES = [
-
-  'Insurance',
-
-  'TPA',
-
-  'CoPay',
-
-  'CGHS',
-
-  'SGHS',
-
-  'GovernmentScheme',
-
-] as const;
-
-
+export const COVERAGE_TAB_PAYMENT_TYPES = COVERAGE_PAYMENT_TYPES;
 
 export function isCoveragePaymentType(paymentType: string): boolean {
-
-  return COVERAGE_TAB_PAYMENT_TYPES.includes(
-
-    paymentType as (typeof COVERAGE_TAB_PAYMENT_TYPES)[number],
-
-  );
-
+  return isCoveragePaymentTypeValue(paymentType);
 }
 
 

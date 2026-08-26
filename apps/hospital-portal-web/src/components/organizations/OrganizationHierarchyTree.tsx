@@ -457,7 +457,7 @@ export const OrganizationHierarchyTree: React.FC<OrganizationHierarchyTreeProps>
   return (
     <div className="space-y-6">
       <ConfirmationComponent />
-      {/* Header Controls */}}
+      {/* Header Controls */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">

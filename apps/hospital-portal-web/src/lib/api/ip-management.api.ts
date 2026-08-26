@@ -12,6 +12,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { attachAuthRequestInterceptor, attachAuthResponseInterceptor } from '../auth-interceptors';
+import { requireOtJourneyMutationResult } from '@/lib/ip-management/ot-mutation-result';
 
 const IP_MANAGEMENT_API_URL =
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_IP_MANAGEMENT_API_URL) ||
@@ -30,12 +31,26 @@ function getClient(): AxiosInstance {
 
 export type ApiMutationResult<T> = { data: T | null; error?: string };
 
-function formatApiError(e: unknown, fallback: string): string {
+export function isConcurrencyConflict(e: unknown): boolean {
+  if (axios.isAxiosError(e) && e.response?.status === 409) return true;
+  return e instanceof Error && /updated by another user/i.test(e.message);
+}
+
+export function formatApiError(e: unknown, fallback: string): string {
   if (axios.isAxiosError(e)) {
     const status = e.response?.status;
     const body = e.response?.data;
     if (status === 401 || status === 403) {
       return 'You do not have permission for this action.';
+    }
+    if (status === 409) {
+      if (typeof body === 'string' && body.trim()) return body;
+      if (body && typeof body === 'object') {
+        const record = body as Record<string, unknown>;
+        const msg = record.message ?? record.error;
+        if (typeof msg === 'string' && msg.trim()) return msg;
+      }
+      return 'This journey was updated by another user. Reload and try again.';
     }
     if (typeof body === 'string' && body.trim()) return body;
     if (body && typeof body === 'object') {
@@ -43,7 +58,8 @@ function formatApiError(e: unknown, fallback: string): string {
       const msg = record.message ?? record.error;
       if (typeof msg === 'string' && msg.trim()) return msg;
     }
-    return e.message || fallback;
+    // Empty 404/5xx bodies otherwise become axios's "Request failed with status code 404".
+    return fallback;
   }
   return e instanceof Error ? e.message : fallback;
 }
@@ -76,6 +92,8 @@ export interface UpdateWardRequest {
 
 export interface PatientJourneyRowDto {
   id: string;
+  patientId?: string;
+  dischargeOverrideApplied?: boolean;
   uhid: string | null;
   patientName: string | null;
   eyeOperated: string | null;
@@ -103,6 +121,7 @@ export interface PatientJourneyRowDto {
   otReturnReason: string | null;
   counselingSessionId: string | null;
   otDetailsSaved: boolean;
+  updatedAt?: string;
   pendingRebook?: boolean;
   surgeryCancelledAt?: string | null;
   surgeryCancelReason?: string | null;
@@ -123,6 +142,110 @@ export interface PatientJourneyRowDto {
   readinessCompleted?: number;
   readinessTotal?: number;
   surgeonName?: string | null;
+  // IP-013 current slot
+  slotId?: string | null;
+  slotLabel?: string | null;
+  slotSession?: string | null;
+  slotSequenceNo?: number | null;
+  plannedArrivalAt?: string | null;
+  slotTheatreId?: string | null;
+}
+
+export interface JourneySlotRowDto {
+  id: string;
+  journeyId: string;
+  theatreId: string;
+  theatreName: string | null;
+  slotDate: string;
+  session: string;
+  sequenceNo: number;
+  plannedArrivalAt: string;
+  slotLabel: string;
+  releasedAt: string | null;
+  releasedReason?: string | null;
+  patientName: string | null;
+  uhid: string | null;
+  procedureName: string | null;
+  eyeOperated: string | null;
+  clinicalState: string | null;
+  pacCompleted: boolean;
+  otState?: string | null;
+  isEmergencyFc?: boolean;
+}
+
+export interface UnassignedSlotCandidateDto {
+  journeyId: string;
+  patientName: string | null;
+  uhid: string | null;
+  procedureName: string | null;
+  eyeOperated: string | null;
+  clinicalState: string;
+}
+
+export interface SlotBoardDto {
+  date: string;
+  theatreId: string | null;
+  morning: JourneySlotRowDto[];
+  afternoon: JourneySlotRowDto[];
+  evening: JourneySlotRowDto[];
+  unassigned: UnassignedSlotCandidateDto[];
+}
+
+export interface SlotMetricsDto {
+  assignedCount: number;
+  readyCount: number;
+  avgArrivalToDischargeMinutes: number | null;
+  avgTurnoverMinutes: number | null;
+}
+
+export interface SlotThroughputBreakdownDto {
+  key: string;
+  label: string;
+  assignedCount: number;
+  completedCount: number;
+  dischargedCount: number;
+  avgArrivalToDischargeMinutes: number | null;
+}
+
+export interface SlotThroughputDto {
+  from: string;
+  to: string;
+  assignedCount: number;
+  activeCount: number;
+  cancelledCount: number;
+  readyCount: number;
+  completedCount: number;
+  dischargedCount: number;
+  avgArrivalToDischargeMinutes: number | null;
+  medianArrivalToDischargeMinutes: number | null;
+  avgTurnoverMinutes: number | null;
+  bySession: SlotThroughputBreakdownDto[];
+  byTheatre: SlotThroughputBreakdownDto[];
+  byDay: SlotThroughputBreakdownDto[];
+  /** Mark Ready despite vitals_out_of_range (not missing vitals). */
+  vitalsOverrideCount?: number;
+  /** Record-implant power/model mismatch overrides on slotted journeys. */
+  iolMismatchOverrideCount?: number;
+}
+
+export interface AssignSlotRequest {
+  journeyId: string;
+  branchId: string;
+  theatreId: string;
+  slotDate: string;
+  session: string;
+  sequenceNo?: number | null;
+  plannedArrivalAt?: string | null;
+  theatreName?: string | null;
+}
+
+export interface ReorderSlotsRequest {
+  branchId: string;
+  theatreId: string;
+  slotDate: string;
+  session: string;
+  journeyIds: string[];
+  theatreName?: string | null;
 }
 
 export interface WardDashboardFacetsDto {
@@ -143,6 +266,18 @@ export interface WardDashboardSummaryDto {
   rebookRequired: number;
   emergencyCount: number;
   facets: WardDashboardFacetsDto;
+}
+
+export interface CensusTabCountsDto {
+  all: number;
+  inHouse: number;
+  readyForOt: number;
+  sentToOt: number;
+  inOt: number;
+  postOp: number;
+  readyForDischarge: number;
+  discharged: number;
+  cancelled: number;
 }
 
 export interface PatientJourneyDetailDto extends PatientJourneyRowDto {
@@ -195,12 +330,16 @@ export interface PatientJourneyDetailDto extends PatientJourneyRowDto {
   transitionWarnings?: ChecklistGateWarningDto[] | null;
   createdAt: string;
   updatedAt: string;
+  dischargeType?: string | null;
+  dischargeTypeReason?: string | null;
+  priorJourneyId?: string | null;
 }
 
 export interface AdmitPatientRequest {
   wardId?: string;
   admissionType?: string;        // DayCare | IPD | Emergency
   bedNumber?: string;
+  assignedBedId?: string;
   admittedAt?: string;
   attendantName?: string;
   attendantPhone?: string;
@@ -211,11 +350,13 @@ export interface AdmitPatientRequest {
   bypassFinancialClearance?: boolean;
   overrideReason?: string;
   acknowledgeWarnings?: boolean;
+  expectedUpdatedAt?: string;
 }
 
 export interface UpdateWardAssignmentRequest {
   wardId?: string;
   bedNumber?: string;
+  assignedBedId?: string;
   admissionType?: string;
   attendantName?: string;
   attendantPhone?: string;
@@ -230,7 +371,9 @@ export interface UpdateOtDetailsRequest {
   anaesthesiaType?: string;
   iolPower?: string;
   iolIssuedFromIp?: boolean;
+  /** E4 compatibility. Server ignores writes. */
   iolBarcodeVerified?: boolean;
+  /** E4 compatibility. Server ignores writes. */
   iolBarcode?: string;
   primarySurgeonId?: string;
 }
@@ -255,6 +398,7 @@ export interface ChecklistGateWarningDto {
   message: string;
   severity: 'warn' | 'block';
   canOverride: boolean;
+  category?: 'Clinical' | 'Financial' | 'Coverage' | 'Operational';
 }
 
 export interface ChecklistGateResultDto {
@@ -268,6 +412,7 @@ export interface TransitionRequest {
   newState: string;
   reason?: string;
   acknowledgeWarnings?: boolean;
+  expectedUpdatedAt?: string;
 }
 
 export interface EmergencyFcRequest {
@@ -311,6 +456,7 @@ export interface IntraOpNoteDto {
   eyeOperated: string | null;
   findings: string | null;
   complications: string | null;
+  /** Registry overlay on GET; save ignores client writes (E4). */
   implantUsed: string | null;
   implantPower: string | null;
   bloodLossMl: number | null;
@@ -377,6 +523,7 @@ export interface PostOpInstructionDto {
   dietaryInstructions: string | null;
   followupDate: string | null;
   followupDoctorId: string | null;
+  followupAppointmentId?: string | null;
   eyeCareInstructions: string | null;
   warningSigns: string | null;
   isSaved: boolean;
@@ -389,8 +536,41 @@ export interface SavePostOpInstructionRequest {
   dietaryInstructions?: string;
   followupDate?: string;
   followupDoctorId?: string;
+  followupAppointmentId?: string;
   eyeCareInstructions?: string;
   warningSigns?: string;
+}
+
+export interface PostOpTaperStepDto {
+  id: string;
+  drugName: string;
+  eye: string;
+  stepNo: number;
+  frequencyLabel: string;
+  days: number;
+  instructions: string | null;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string | null;
+  deletedAt: string | null;
+}
+
+export interface PostOpTaperDto {
+  steps: PostOpTaperStepDto[];
+  history: PostOpTaperStepDto[];
+}
+
+export interface SavePostOpTaperStepRequest {
+  drugName: string;
+  eye: string;
+  frequencyLabel: string;
+  days: number;
+  stepNo?: number;
+  instructions?: string;
+}
+
+export interface SavePostOpTaperRequest {
+  steps: SavePostOpTaperStepRequest[];
 }
 
 export interface DischargeSummaryDto {
@@ -478,6 +658,74 @@ export interface VerifyIolBarcodeResponse {
   isValid: boolean;
   catalogEntry?: string | null;
   message?: string | null;
+  catalogId?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  productCode?: string | null;
+  existingUsageId?: string | null;
+  gtin?: string | null;
+  serial?: string | null;
+  lot?: string | null;
+  expiry?: string | null;
+  symbology?: string | null;
+}
+
+/** W-05 A5 inpatient wristband. One active token per journey. */
+export interface JourneySafetyTokenDto {
+  id: string;
+  journeyId: string;
+  tokenCode: string;
+  barcodeValue: string;
+  laterality?: string | null;
+  printedAt?: string | null;
+  printedBy?: string | null;
+  createdAt: string;
+  alreadyIssued?: boolean;
+}
+
+export type ImplantUsageStatus = 'Implanted' | 'Opened_Unused' | 'Wasted' | 'Returned' | 'Reversed';
+
+export interface ImplantUsageDto {
+  id: string;
+  journeyId: string;
+  patientId: string;
+  eye: string;
+  itemId?: string | null;
+  catalogRef?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  power?: number | null;
+  serialNumber?: string | null;
+  batchNumber?: string | null;
+  udiBarcode?: string | null;
+  usageStatus: ImplantUsageStatus;
+  surgeonUserId?: string | null;
+  scannedAt: string;
+  scannedByUserId?: string | null;
+  chargeItemId?: string | null;
+  chargeStatus: string;
+  wastageReason?: string | null;
+  warning?: string | null;
+}
+
+export interface RecordImplantRequest {
+  itemId?: string;
+  catalogRef?: string;
+  serialNumber?: string;
+  batchNumber?: string;
+  udiBarcode?: string;
+  power?: number;
+  eye: string;
+  usageStatus: Exclude<ImplantUsageStatus, 'Reversed'>;
+  surgeonUserId?: string;
+  wastageReason?: string;
+  acknowledgeMismatch?: boolean;
+  mismatchReason?: string;
+}
+
+export interface UpdateImplantRequest {
+  usageStatus: 'Wasted' | 'Returned' | 'Reversed';
+  reason: string;
 }
 
 // ─── Ward Stats / Bed Types ───────────────────────────────────────────────────
@@ -499,6 +747,12 @@ export interface WardBedDto {
   capacity: number;
   currentOccupancy: number;
   isAvailable: boolean;
+  bedType?: string | null;
+  bedStatus?: string | null;
+  bedNumber?: string | null;
+  occupantJourneyId?: string | null;
+  occupantUhid?: string | null;
+  occupantName?: string | null;
 }
 
 // ─── Vital Sign Types ─────────────────────────────────────────────────────────
@@ -1352,12 +1606,51 @@ function normalizeAnaesthesiaMonitoring(
 
 export interface JourneyAuditLogDto {
   id: string;
-  journeyId: string;
-  fieldChanged: string;
+  action: string;
+  stateType?: string | null;
   oldValue: string | null;
   newValue: string | null;
+  performedByUserId?: string | null;
+  performedAt: string;
+  reason?: string | null;
+  correlationId?: string | null;
+  previousState?: string | null;
+  newState?: string | null;
+  /** Alias of action for older UI. */
+  fieldChanged: string;
+  /** Alias of performedAt for older UI. */
   changedAt: string;
-  changedByUserId: string;
+  changedByUserId?: string;
+  journeyId?: string;
+}
+
+export function normalizeJourneyAuditLog(
+  raw: Partial<JourneyAuditLogDto> & Record<string, unknown>,
+  journeyId?: string,
+): JourneyAuditLogDto {
+  const action = String(raw.action ?? raw.fieldChanged ?? '');
+  const performedAt = String(raw.performedAt ?? raw.changedAt ?? '');
+  return {
+    id: String(raw.id ?? ''),
+    action,
+    stateType: (raw.stateType as string | null | undefined) ?? null,
+    oldValue: (raw.oldValue as string | null | undefined) ?? null,
+    newValue: (raw.newValue as string | null | undefined) ?? null,
+    performedByUserId:
+      (raw.performedByUserId as string | null | undefined)
+      ?? (raw.changedByUserId as string | null | undefined)
+      ?? null,
+    performedAt,
+    reason: (raw.reason as string | null | undefined) ?? null,
+    correlationId: (raw.correlationId as string | null | undefined) ?? null,
+    previousState: (raw.previousState as string | null | undefined) ?? null,
+    newState: (raw.newState as string | null | undefined) ?? null,
+    fieldChanged: action,
+    changedAt: performedAt,
+    changedByUserId: (raw.changedByUserId as string | undefined)
+      ?? (raw.performedByUserId as string | undefined),
+    journeyId: journeyId ?? (raw.journeyId as string | undefined),
+  };
 }
 
 // ─── Pre-Op Clearance Types ───────────────────────────────────────────────────
@@ -1546,6 +1839,13 @@ export interface PreOpReadinessApiDto {
   readySteps: number;
   countableSteps: number;
   blockers: number;
+  dilation?: {
+    startedAt?: string | null;
+    readyAt?: string | null;
+    remainingSeconds?: number | null;
+    status: string;
+    medicineName?: string | null;
+  } | null;
 }
 
 // Pre-Op request types
@@ -1606,6 +1906,11 @@ export interface PreauthStatusDto {
   requiresOverride?: boolean;
   lastUpdatedAt?: string | null;
   ccmsUnavailable?: boolean;
+  payerShareAmount?: number | null;
+  patientShareAmount?: number | null;
+  coverageStatus?: string | null;
+  collectedAmount?: number | null;
+  patientObligationAmount?: number | null;
 }
 
 export interface AddPreOpVitalRequest {
@@ -1716,6 +2021,106 @@ export const ipManagementApi = {
     }
   },
 
+  async getCensusTabCounts(branchId: string): Promise<CensusTabCountsDto | null> {
+    try {
+      const r = await getClient().get<CensusTabCountsDto>('/ip-management/journeys/tab-counts', {
+        params: { branchId },
+      });
+      return r.data ?? null;
+    } catch (e) {
+      console.warn('[ip-management] getCensusTabCounts failed', e);
+      return null;
+    }
+  },
+
+  async listSlots(params: {
+    branchId: string;
+    date: string;
+    theatreId?: string;
+  }): Promise<SlotBoardDto | null> {
+    try {
+      const r = await getClient().get<SlotBoardDto>('/ip-management/slots', { params });
+      return r.data ?? null;
+    } catch (e) {
+      console.warn('[ip-management] listSlots failed', e);
+      return null;
+    }
+  },
+
+  async getSlotMetrics(params: {
+    branchId: string;
+    date: string;
+    theatreId?: string;
+  }): Promise<SlotMetricsDto | null> {
+    try {
+      const r = await getClient().get<SlotMetricsDto>('/ip-management/slots/metrics', { params });
+      return r.data ?? null;
+    } catch (e) {
+      console.warn('[ip-management] getSlotMetrics failed', e);
+      return null;
+    }
+  },
+
+  async getSlotThroughput(params: {
+    branchId: string;
+    from: string;
+    to: string;
+    theatreId?: string;
+  }): Promise<SlotThroughputDto | null> {
+    try {
+      const r = await getClient().get<SlotThroughputDto>('/ip-management/slots/throughput', { params });
+      return r.data ?? null;
+    } catch (e) {
+      console.warn('[ip-management] getSlotThroughput failed', e);
+      return null;
+    }
+  },
+
+  async assignSlot(req: AssignSlotRequest): Promise<JourneySlotRowDto> {
+    try {
+      const r = await getClient().post<JourneySlotRowDto>('/ip-management/slots', req);
+      return r.data;
+    } catch (e: unknown) {
+      console.warn('[ip-management] assignSlot failed', e);
+      const err = new Error(formatApiError(e, 'Could not assign slot.')) as Error & { concurrencyConflict?: boolean };
+      err.concurrencyConflict = isConcurrencyConflict(e);
+      throw err;
+    }
+  },
+
+  async reorderSlots(req: ReorderSlotsRequest): Promise<JourneySlotRowDto[]> {
+    try {
+      const r = await getClient().patch<JourneySlotRowDto[]>('/ip-management/slots/reorder', req);
+      return Array.isArray(r.data) ? r.data : [];
+    } catch (e: unknown) {
+      console.warn('[ip-management] reorderSlots failed', e);
+      const err = new Error(formatApiError(e, 'Could not reorder slots.')) as Error & { concurrencyConflict?: boolean };
+      err.concurrencyConflict = isConcurrencyConflict(e);
+      throw err;
+    }
+  },
+
+  async releaseSlot(slotId: string, reason?: string): Promise<void> {
+    try {
+      await getClient().post(`/ip-management/slots/${slotId}/release`, { reason });
+    } catch (e: unknown) {
+      console.warn('[ip-management] releaseSlot failed', e);
+      const err = new Error(formatApiError(e, 'Could not release slot.')) as Error & { concurrencyConflict?: boolean };
+      err.concurrencyConflict = isConcurrencyConflict(e);
+      throw err;
+    }
+  },
+
+  async listJourneySlots(journeyId: string): Promise<JourneySlotRowDto[]> {
+    try {
+      const r = await getClient().get<JourneySlotRowDto[]>(`/ip-management/journeys/${journeyId}/slots`);
+      return Array.isArray(r.data) ? r.data : [];
+    } catch (e) {
+      console.warn('[ip-management] listJourneySlots failed', e);
+      return [];
+    }
+  },
+
   async getJourneyDetail(id: string): Promise<PatientJourneyDetailDto | null> {
     try {
       const r = await getClient().get<PatientJourneyDetailDto>(`/ip-management/journeys/${id}`);
@@ -1731,24 +2136,38 @@ export const ipManagementApi = {
       const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/admit`, req);
       return r.data;
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: string | { message?: string } } })?.response?.data;
-      const text = typeof msg === 'string' ? msg : msg?.message;
       console.warn('[ip-management] admitPatient failed', e);
-      throw new Error(text || 'Admission failed. Coverage authorization may be required.');
+      throw new Error(formatApiError(e, 'Admission failed. Coverage authorization may be required.'));
     }
   },
 
-  async cancelTodaySurgery(id: string, reason: string): Promise<PatientJourneyDetailDto | null> {
+  async cancelTodaySurgery(id: string, reason: string, expectedUpdatedAt?: string): Promise<PatientJourneyDetailDto | null> {
     try {
       const r = await getClient().post<PatientJourneyDetailDto>(
         `/ip-management/journeys/${id}/cancel-today-surgery`,
-        { reason },
+        { reason, expectedUpdatedAt },
       );
       return r.data;
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: string } })?.response?.data;
       console.warn('[ip-management] cancelTodaySurgery failed', e);
-      throw new Error(typeof msg === 'string' ? msg : 'Could not cancel today\'s surgery.');
+      const err = new Error(formatApiError(e, 'Could not cancel today\'s surgery.')) as Error & { concurrencyConflict?: boolean };
+      err.concurrencyConflict = isConcurrencyConflict(e);
+      throw err;
+    }
+  },
+
+  async cancelAdmission(id: string, reason: string, expectedUpdatedAt?: string): Promise<PatientJourneyDetailDto | null> {
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(
+        `/ip-management/journeys/${id}/cancel-admission`,
+        { reason, expectedUpdatedAt },
+      );
+      return r.data;
+    } catch (e: unknown) {
+      console.warn('[ip-management] cancelAdmission failed', e);
+      const err = new Error(formatApiError(e, 'Could not cancel this admission.')) as Error & { concurrencyConflict?: boolean };
+      err.concurrencyConflict = isConcurrencyConflict(e);
+      throw err;
     }
   },
 
@@ -1763,6 +2182,49 @@ export const ipManagementApi = {
       const msg = (e as { response?: { data?: string } })?.response?.data;
       console.warn('[ip-management] rebookCancelledSurgery failed', e);
       throw new Error(typeof msg === 'string' ? msg : 'Could not rebook this patient.');
+    }
+  },
+
+  async transferBed(id: string, req: { assignedBedId: string; wardId?: string; reason?: string; expectedUpdatedAt?: string }): Promise<PatientJourneyDetailDto> {
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/transfer-bed`, req);
+      return r.data;
+    } catch (e: unknown) {
+      throw new Error(formatApiError(e, 'Bed transfer failed.'));
+    }
+  },
+
+  async listBedAssignments(id: string): Promise<Array<{ assignmentType: string; bedNumber?: string | null; startedAt: string; endedAt?: string | null; reason?: string | null }>> {
+    try {
+      const r = await getClient().get(`/ip-management/journeys/${id}/bed-assignments`);
+      return Array.isArray(r.data) ? r.data : [];
+    } catch (e) {
+      console.warn('[ip-management] listBedAssignments failed', e);
+      return [];
+    }
+  },
+
+  async dischargeWithType(id: string, req: {
+    dischargeType: 'Routine' | 'Lama' | 'Transfer' | 'Death' | 'Other';
+    reason: string;
+    confirmed: boolean;
+    acknowledgeWarnings?: boolean;
+    expectedUpdatedAt?: string;
+  }): Promise<PatientJourneyDetailDto> {
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/discharge`, req);
+      return r.data;
+    } catch (e: unknown) {
+      throw new Error(formatApiError(e, 'Discharge failed.'));
+    }
+  },
+
+  async cancelDischarge(id: string, req: { reason: string; assignedBedId?: string; expectedUpdatedAt?: string }): Promise<PatientJourneyDetailDto> {
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/cancel-discharge`, req);
+      return r.data;
+    } catch (e: unknown) {
+      throw new Error(formatApiError(e, 'Could not cancel discharge.'));
     }
   },
 
@@ -1786,27 +2248,59 @@ export const ipManagementApi = {
     }
   },
 
-  async transitionClinical(id: string, req: TransitionRequest): Promise<PatientJourneyDetailDto> {
-    const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/clinical-transition`, req);
+  async refreshFromOpd(id: string): Promise<{
+    journey: PatientJourneyDetailDto;
+    biometryMissing: boolean;
+    eyePhrase: string | null;
+    iolPower: string | null;
+  }> {
+    const r = await getClient().post<{
+      journey: PatientJourneyDetailDto;
+      biometryMissing: boolean;
+      eyePhrase: string | null;
+      iolPower: string | null;
+    }>(`/ip-management/journeys/${id}/refresh-from-opd`);
     return r.data;
+  },
+
+  async transitionClinical(id: string, req: TransitionRequest): Promise<PatientJourneyDetailDto> {
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/clinical-transition`, req);
+      return requireOtJourneyMutationResult<PatientJourneyDetailDto>(r.data, 'Clinical transition failed.');
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message && !axios.isAxiosError(e)) throw e;
+      const err = new Error(formatApiError(e, 'Clinical transition failed.')) as Error & { concurrencyConflict?: boolean };
+      err.concurrencyConflict = isConcurrencyConflict(e);
+      throw err;
+    }
   },
 
   async acceptInOT(id: string, acknowledgeWarnings = false): Promise<PatientJourneyDetailDto> {
-    const r = await getClient().post<PatientJourneyDetailDto>(
-      `/ip-management/journeys/${id}/accept`,
-      {},
-      { params: acknowledgeWarnings ? { acknowledgeWarnings: true } : undefined },
-    );
-    return r.data;
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(
+        `/ip-management/journeys/${id}/accept`,
+        {},
+        { params: acknowledgeWarnings ? { acknowledgeWarnings: true } : undefined },
+      );
+      return requireOtJourneyMutationResult<PatientJourneyDetailDto>(r.data, 'Could not accept the patient in OT.');
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message && !axios.isAxiosError(e)) throw e;
+      throw new Error(formatApiError(e, 'Could not accept the patient in OT.'));
+    }
   },
 
   async startSurgery(id: string, acknowledgeWhoWarning = false): Promise<PatientJourneyDetailDto> {
-    const r = await getClient().post<PatientJourneyDetailDto>(
-      `/ip-management/journeys/${id}/start-surgery`,
-      {},
-      { params: acknowledgeWhoWarning ? { acknowledgeWhoWarning: true } : undefined },
-    );
-    return r.data;
+    try {
+      const r = await getClient().post<PatientJourneyDetailDto>(
+        `/ip-management/journeys/${id}/start-surgery`,
+        {},
+        { params: acknowledgeWhoWarning ? { acknowledgeWhoWarning: true } : undefined },
+      );
+      return requireOtJourneyMutationResult<PatientJourneyDetailDto>(r.data, 'Could not start surgery.');
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message && !axios.isAxiosError(e)) throw e;
+      throw new Error(formatApiError(e, 'Could not start surgery.'));
+    }
   },
 
   async getTransitionGates(id: string, newState: string): Promise<ChecklistGateResultDto | null> {
@@ -1835,19 +2329,14 @@ export const ipManagementApi = {
     }
   },
 
-  async transitionFinancial(id: string, req: TransitionRequest): Promise<PatientJourneyDetailDto | null> {
-    try {
-      const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/financial-transition`, req);
-      return r.data;
-    } catch (e) {
-      console.warn('[ip-management] transitionFinancial failed', e);
-      return null;
-    }
+  /** @deprecated Billing OpdBill owns Paid/Settled. Do not call this. */
+  async transitionFinancial(_id: string, _req: TransitionRequest): Promise<PatientJourneyDetailDto | null> {
+    throw new Error('Financial lifecycle is owned by Billing. Use getFinancialSummary / OpdBill APIs.');
   },
 
   async applyEmergencyFc(id: string, req: EmergencyFcRequest): Promise<PatientJourneyDetailDto | null> {
     try {
-      const r = await getClient().put<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/emergency-fc`, req);
+      const r = await getClient().post<PatientJourneyDetailDto>(`/ip-management/journeys/${id}/emergency-fc`, req);
       return r.data;
     } catch (e) {
       console.warn('[ip-management] applyEmergencyFc failed', e);
@@ -1876,12 +2365,53 @@ export const ipManagementApi = {
     }
   },
 
+  /**
+   * @deprecated Money is owned by Billing. Do not call this from UI.
+   * Use `POST /api/OpdBills/payment` (via the OPD billing page / collect drawer)
+   * so receipt numbering, idempotency, refunds and the CCMS outbox all fire.
+   * Kept for UAT seeders and backward-compatible clients.
+   */
   async addBilling(journeyId: string, req: AddBillingTransactionRequest): Promise<BillingTransactionDto | null> {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        '[ip-management] addBilling is deprecated. Collect through Billing (POST /api/OpdBills/payment), not the journey projection.',
+      );
+    }
     try {
       const r = await getClient().post<BillingTransactionDto>(`/ip-management/journeys/${journeyId}/billing`, req);
       return r.data;
     } catch (e) {
       console.warn('[ip-management] addBilling failed', e);
+      return null;
+    }
+  },
+
+  async getFinancialSummary(journeyId: string): Promise<{
+    opdBillId?: string | null;
+    billNumber?: string | null;
+    packageEstimate?: number;
+    billedAmount: number;
+    discountTotal?: number;
+    patientResponsibility?: number;
+    insuranceResponsibility?: number;
+    patientPaid?: number;
+    patientBalance?: number;
+    ccmsPatientShare?: number | null;
+    ccmsPatientShareAvailable?: boolean;
+    totalCollected: number;
+    advances?: number;
+    refundsAndReversals?: number;
+    balanceDue: number;
+    financialStatus: string;
+    isFinalized?: boolean;
+    hasPendingClaim?: boolean;
+    financialBlockers?: string[];
+  } | null> {
+    try {
+      const r = await getClient().get(`/ip-management/journeys/${journeyId}/financial-summary`);
+      return r.data;
+    } catch (e) {
+      console.warn('[ip-management] getFinancialSummary failed', e);
       return null;
     }
   },
@@ -2007,9 +2537,29 @@ export const ipManagementApi = {
     try {
       const r = await getClient().post<PostOpInstructionDto>(`/ip-management/journeys/${journeyId}/post-op-instructions`, req);
       return r.data;
-    } catch (e) {
-      console.warn('[ip-management] savePostOpInstructions failed', e);
+    } catch (e: unknown) {
+      throw new Error(formatApiError(e, 'Failed to save post-op instructions.'));
+    }
+  },
+
+  async getPostOpTaper(journeyId: string): Promise<PostOpTaperDto | null> {
+    try {
+      const r = await getClient().get<PostOpTaperDto>(`/ip-management/journeys/${journeyId}/post-op/taper`);
+      return r.data ?? { steps: [], history: [] };
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      if (status === 404) return { steps: [], history: [] };
+      console.warn('[ip-management] getPostOpTaper failed', e);
       return null;
+    }
+  },
+
+  async savePostOpTaper(journeyId: string, req: SavePostOpTaperRequest): Promise<PostOpTaperDto> {
+    try {
+      const r = await getClient().put<PostOpTaperDto>(`/ip-management/journeys/${journeyId}/post-op/taper`, req);
+      return r.data;
+    } catch (e: unknown) {
+      throw new Error(formatApiError(e, 'Could not save the taper plan.'));
     }
   },
 
@@ -2073,6 +2623,74 @@ export const ipManagementApi = {
     } catch (e) {
       console.warn('[ip-management] verifyIolBarcode failed', e);
       return null;
+    }
+  },
+
+  // ── Safety token / wristband (W-05 A5) ──────────────────────────────────────
+  async getSafetyToken(journeyId: string): Promise<JourneySafetyTokenDto | null> {
+    try {
+      const r = await getClient().get<JourneySafetyTokenDto | null>(
+        `/ip-management/journeys/${journeyId}/safety-token`,
+        { validateStatus: s => s === 200 || s === 204 || s === 404 },
+      );
+      if (r.status === 204 || r.status === 404 || !r.data) return null;
+      if (typeof r.data === 'object' && 'error' in r.data && !('tokenCode' in r.data)) return null;
+      return r.data;
+    } catch (e: unknown) {
+      console.warn('[ip-management] getSafetyToken failed', e);
+      throw new Error(formatApiError(e, 'Could not load wristband token.'));
+    }
+  },
+
+  async issueSafetyToken(journeyId: string): Promise<JourneySafetyTokenDto> {
+    try {
+      const r = await getClient().post<JourneySafetyTokenDto>(`/ip-management/journeys/${journeyId}/safety-token`);
+      if (!r.data?.tokenCode) {
+        const body = r.data as unknown as { error?: string; message?: string } | null;
+        throw new Error(body?.error || body?.message || 'Could not issue wristband token.');
+      }
+      return r.data;
+    } catch (e) {
+      throw new Error(formatApiError(e, 'Could not issue wristband token.'));
+    }
+  },
+
+  async reprintSafetyToken(journeyId: string): Promise<JourneySafetyTokenDto> {
+    try {
+      const r = await getClient().post<JourneySafetyTokenDto>(`/ip-management/journeys/${journeyId}/safety-token/reprint`);
+      return r.data;
+    } catch (e) {
+      throw new Error(formatApiError(e, 'Could not reprint wristband token.'));
+    }
+  },
+
+  async listImplants(journeyId: string): Promise<ImplantUsageDto[]> {
+    try {
+      const r = await getClient().get<ImplantUsageDto[]>(`/ip-management/journeys/${journeyId}/implants`);
+      return Array.isArray(r.data) ? r.data : [];
+    } catch (e) {
+      console.warn('[ip-management] listImplants failed', e);
+      return [];
+    }
+  },
+
+  async recordImplant(journeyId: string, req: RecordImplantRequest): Promise<ImplantUsageDto> {
+    try {
+      const r = await getClient().post<ImplantUsageDto>(`/ip-management/journeys/${journeyId}/implants`, req);
+      return r.data;
+    } catch (e) {
+      const err = new Error(formatApiError(e, 'Could not record implant.')) as Error & { status?: number };
+      if (axios.isAxiosError(e)) err.status = e.response?.status;
+      throw err;
+    }
+  },
+
+  async updateImplant(journeyId: string, usageId: string, req: UpdateImplantRequest): Promise<ImplantUsageDto> {
+    try {
+      const r = await getClient().patch<ImplantUsageDto>(`/ip-management/journeys/${journeyId}/implants/${usageId}`, req);
+      return r.data;
+    } catch (e) {
+      throw new Error(formatApiError(e, 'Could not update implant.'));
     }
   },
 
@@ -2338,6 +2956,21 @@ export const ipManagementApi = {
       console.warn('[ip-management] getPreauthStatus failed', e);
       return null;
     }
+  },
+
+  async listProgressNotes(journeyId: string) {
+    const r = await getClient().get(`/ip-management/journeys/${journeyId}/progress-notes`);
+    return Array.isArray(r.data) ? r.data : [];
+  },
+
+  async addProgressNote(journeyId: string, note: string) {
+    const r = await getClient().post(`/ip-management/journeys/${journeyId}/progress-notes`, { note });
+    return r.data;
+  },
+
+  async setDischargePlanning(journeyId: string, ready: boolean) {
+    const r = await getClient().post(`/ip-management/journeys/${journeyId}/discharge-planning`, { ready });
+    return r.data;
   },
 
   async batchSavePreOpCompletions(
@@ -3048,44 +3681,107 @@ export const ipManagementApi = {
   async getJourneyAudit(journeyId: string): Promise<JourneyAuditLogDto[]> {
     try {
       const r = await getClient().get<JourneyAuditLogDto[]>(`/ip-management/journeys/${journeyId}/audit`);
-      return Array.isArray(r.data) ? r.data : [];
+      return Array.isArray(r.data)
+        ? r.data.map(row => normalizeJourneyAuditLog(row as JourneyAuditLogDto & Record<string, unknown>, journeyId))
+        : [];
     } catch (e) {
       console.warn('[ip-management] getJourneyAudit failed', e);
       return [];
     }
   },
+
+  /**
+   * Ward board load: journeys + wards in one shot. Throws so the page can show retry UI.
+   */
+  async fetchWardData(branchId: string): Promise<{
+    journeys: PatientJourneyRowDto[];
+    wards: WardDto[];
+  }> {
+    const params = { branchId };
+    const [journeyRes, wardRes] = await Promise.all([
+      getClient().get<PatientJourneyRowDto[]>('/ip-management/journeys', { params }),
+      getClient().get<WardDto[]>('/ip-management/wards', { params }),
+    ]);
+    return {
+      journeys: Array.isArray(journeyRes.data) ? journeyRes.data : [],
+      wards: Array.isArray(wardRes.data) ? wardRes.data : [],
+    };
+  },
+
+  async fetchWardDashboardSummary(
+    branchId: string,
+    date?: string,
+  ): Promise<WardDashboardSummaryDto | null> {
+    const params: Record<string, string> = { branchId };
+    if (date) params.date = date;
+    const res = await getClient().get<WardDashboardSummaryDto>(
+      '/ip-management/journeys/dashboard-summary',
+      { params },
+    );
+    return res.data ?? null;
+  },
+
+  async getOutboxHealth(): Promise<Record<string, unknown>> {
+    try {
+      const r = await getClient().get('/ip-management/integration/outbox/health');
+      return (r.data ?? {}) as Record<string, unknown>;
+    } catch (e) {
+      throw new Error(formatApiError(e, 'Could not load IP outbox stats.'));
+    }
+  },
+
+  async listOutboxDead(): Promise<import('../billing/integration-health').OutboxDeadLetter[]> {
+    try {
+      const r = await getClient().get('/ip-management/integration/outbox/dead');
+      return Array.isArray(r.data) ? r.data : [];
+    } catch (e) {
+      throw new Error(formatApiError(e, 'Could not load IP dead letters.'));
+    }
+  },
+
+  async getOutboxEvent(eventId: string): Promise<import('../billing/integration-health').OutboxEventDetail> {
+    try {
+      const r = await getClient().get(`/ip-management/integration/outbox/events/${eventId}`);
+      return r.data;
+    } catch (e) {
+      throw new Error(formatApiError(e, 'Could not load outbox event.'));
+    }
+  },
+
+  async requeueOutbox(eventIds: string[], eventType?: string): Promise<number> {
+    try {
+      const r = await getClient().post('/ip-management/integration/outbox/requeue', { eventIds, eventType });
+      return Number(r.data?.requeued ?? 0);
+    } catch (e) {
+      throw new Error(formatApiError(e, 'Could not requeue outbox events.'));
+    }
+  },
+
+  async abandonOutbox(eventId: string, reason: string, compensatingAction?: string): Promise<void> {
+    try {
+      await getClient().post('/ip-management/integration/outbox/abandon', {
+        eventId,
+        reason,
+        compensatingAction,
+      });
+    } catch (e) {
+      throw new Error(formatApiError(e, 'Could not abandon outbox event.'));
+    }
+  },
 };
 
-/**
- * Fetches both journeys and wards for the Ward page in a single call.
- * Unlike the methods on ipManagementApi, this function does NOT swallow errors —
- * it lets them propagate so the caller can display an error state and retry.
- */
+/** @deprecated Use ipManagementApi.fetchWardData — kept for existing imports. */
 export async function fetchWardData(branchId: string): Promise<{
   journeys: PatientJourneyRowDto[];
   wards: WardDto[];
 }> {
-  const params = { branchId };
-  const [journeyRes, wardRes] = await Promise.all([
-    getClient().get<PatientJourneyRowDto[]>('/ip-management/journeys', { params }),
-    getClient().get<WardDto[]>('/ip-management/wards', { params }),
-  ]);
-  return {
-    journeys: Array.isArray(journeyRes.data) ? journeyRes.data : [],
-    wards: Array.isArray(wardRes.data) ? wardRes.data : [],
-  };
+  return ipManagementApi.fetchWardData(branchId);
 }
 
-/** Phase 2: server-computed ward KPI counts + filter facets. */
+/** @deprecated Use ipManagementApi.fetchWardDashboardSummary — kept for existing imports. */
 export async function fetchWardDashboardSummary(
   branchId: string,
   date?: string,
 ): Promise<WardDashboardSummaryDto | null> {
-  const params: Record<string, string> = { branchId };
-  if (date) params.date = date;
-  const res = await getClient().get<WardDashboardSummaryDto>(
-    '/ip-management/journeys/dashboard-summary',
-    { params },
-  );
-  return res.data ?? null;
+  return ipManagementApi.fetchWardDashboardSummary(branchId, date);
 }

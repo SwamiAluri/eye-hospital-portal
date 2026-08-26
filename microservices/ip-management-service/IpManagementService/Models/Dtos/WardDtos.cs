@@ -44,5 +44,11 @@ public record WardBedDto(
     string RoomNo,
     int    Capacity,
     int    CurrentOccupancy,
-    bool   IsAvailable
+    bool   IsAvailable,
+    string? BedType = null,
+    string? BedStatus = null,
+    string? BedNumber = null,
+    Guid?   OccupantJourneyId = null,
+    string? OccupantUhid = null,
+    string? OccupantName = null
 );

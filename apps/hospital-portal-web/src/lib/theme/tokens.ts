@@ -1,5 +1,9 @@
 // Design Tokens for Hospital Portal
-// Consistent design system across the application
+// JS/TS palette used by generateCSSVariables() and by some TS consumers.
+// Runtime UI color is primarily Tailwind (tailwind.config.js) + domain CSS.
+// generateCSSVariables() is exported but not injected at runtime (ThemeProvider
+// no longer writes #theme-variables). Loaded CSS does not consume --color-* /
+// --spacing-* / --radius-* / --shadow-* / --transition-* from this generator.
 
 export const tokens = {
   // Color Palette
@@ -223,6 +227,9 @@ export const tokens = {
 } as const;
 
 // CSS Custom Properties Generator
+// Not injected by ThemeProvider. dark-mode.css is the only consumer of these
+// --color-* names, and that file is not imported. Kept for a future dark-mode
+// project. Do not treat this output as the live design-token source of truth.
 export function generateCSSVariables(theme: 'light' | 'dark' = 'light'): string {
   const isDark = theme === 'dark';
   

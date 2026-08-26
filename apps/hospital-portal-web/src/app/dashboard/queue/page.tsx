@@ -39,7 +39,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useAuthStore } from '@/lib/auth-store';
 import { queueDisplayApi } from '@/lib/api/queue-display.api';
 import { visitsApi } from '@/lib/api/visits.api';

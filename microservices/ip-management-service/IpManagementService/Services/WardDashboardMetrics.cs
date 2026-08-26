@@ -52,7 +52,8 @@ public static class WardDashboardMetrics
 
             var isPreOp = WardReadiness.PreOpStates.Contains(r.ClinicalState);
             var isActive = r.ClinicalState != ClinicalState.Discharged
-                        && r.ClinicalState != ClinicalState.CancelledSurgery;
+                        && r.ClinicalState != ClinicalState.CancelledSurgery
+                        && r.ClinicalState != ClinicalState.AdmissionCancelled;
 
             if (isActive && r.SurgeryScheduledAt?.Date == date) otLoad++;
 

@@ -48,8 +48,10 @@ export async function clickOtStartSurgery(page: Page, journeyId: string): Promis
 }
 
 export async function clickOtEndSurgery(page: Page, journeyId: string): Promise<void> {
+  const btn = page.getByTestId(OT_TEST_IDS.endSurgeryBtn(journeyId));
+  await expect(btn).toBeVisible({ timeout: 30_000 });
   await withNativeDialogsAccepted(page, async () => {
-    await page.getByTestId(OT_TEST_IDS.endSurgeryBtn(journeyId)).click();
+    await btn.click();
     await confirmOtDialog(page);
   });
 }

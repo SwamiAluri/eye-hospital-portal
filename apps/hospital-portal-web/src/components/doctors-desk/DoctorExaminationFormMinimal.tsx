@@ -166,7 +166,15 @@ export default function DoctorExaminationFormMinimal({
                 value={historyPresentIllness}
                 onChange={(e) => setHistoryPresentIllness(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg"
-               className="space-y-6">
+                rows={3}
+                placeholder="Onset, duration, associated symptoms..."
+              />
+            </div>
+          </div>
+        )}
+
+        {activeSection === 'slit-lamp' && (
+          <div className="space-y-6">
             <h3 className="text-lg font-semibold mb-4">Slit Lamp Examination</h3>
             
             {/* Side-by-side OD/OS Layout */}

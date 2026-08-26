@@ -49,7 +49,7 @@ import {
   CalendarDays,
   Stethoscope
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // Types
 interface FollowUp {

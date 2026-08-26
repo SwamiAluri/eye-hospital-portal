@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-13">
+<main>
+
+  <p class="lede">
+    Staggered arrivals and session batching &mdash; the throughput model that high-flow cataract guidance depends on
+    and that the system currently <strong>cannot express at all</strong>. Without a slot concept, every day-care
+    patient is asked to arrive at the same time and the ward absorbs the queue.
+  </p>
+
+  <div class="frame">
+    <div class="app-header">
+      <h1>Slot board</h1>
+      <span class="scope">24 Aug 2026 &middot; Theatre 1</span>
+      <span class="spacer"></span>
+      <span class="btn sm">Theatre 1 &#9662;</span>
+      <span class="btn sm">&#8635; Refresh</span>
+      <a class="btn sm" href="s-06-ot-board.html">OT board</a>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="label">Scheduled</div><div class="value num">12</div></div>
+      <div class="kpi is-inhouse"><div class="label">Ready</div><div class="value num">8</div></div>
+      <div class="kpi is-alert"><div class="label">Blocked</div><div class="value num">4</div></div>
+      <div class="kpi"><div class="label">Arrival &rarr; discharge</div><div class="value num">58m</div><div class="src">median today</div></div>
+      <div class="kpi"><div class="label">Turnover</div><div class="value num">6m</div><div class="src">median today</div></div>
+    </div>
+
+    <div class="board">
+      <div class="board-col">
+        <div class="h">Morning session &middot; 07:30&ndash;12:30 &middot; Dr. Rao</div>
+        <div class="body">
+          <div class="slot-card">
+            <div class="top"><span class="seq">AM-1</span><span class="who">Amit Verma</span><span class="when">arrive 07:15</span></div>
+            <div class="sub">Retinal &middot; OD &middot; UAT-021</div>
+            <div class="row" style="margin-top:6px"><span class="badge ok">Ready</span><span class="badge ot">In OT</span></div>
+          </div>
+          <div class="slot-card">
+            <div class="top"><span class="seq">AM-2</span><span class="who">Meena Iyer</span><span class="when">arrive 07:45</span></div>
+            <div class="sub">LASIK &middot; OD &middot; UAT-002</div>
+            <div class="row" style="margin-top:6px"><span class="badge danger">Consent unsigned</span><span class="badge danger">PAC pending</span></div>
+          </div>
+          <div class="slot-card">
+            <div class="top"><span class="seq">AM-3</span><span class="who">Ananya Sharma</span><span class="when">arrive 08:15</span></div>
+            <div class="sub">Corneal graft &middot; OS &middot; UAT-014</div>
+            <div class="row" style="margin-top:6px"><span class="badge ok">Ready</span></div>
+          </div>
+          <div class="slot-card">
+            <div class="top"><span class="seq">AM-4</span><span class="who">Suresh Babu</span><span class="when">arrive 08:45</span></div>
+            <div class="sub">Cataract &middot; OD &middot; UAT-040</div>
+            <div class="row" style="margin-top:6px"><span class="badge ok">Ready</span></div>
+          </div>
+          <div class="dropzone">Drop a patient here to add to the morning session</div>
+        </div>
+      </div>
+
+      <div class="board-col">
+        <div class="h">Afternoon session &middot; 13:30&ndash;17:00 &middot; Dr. Iyer</div>
+        <div class="body">
+          <div class="slot-card">
+            <div class="top"><span class="seq">PM-1</span><span class="who">Kavya Reddy</span><span class="when">arrive 13:15</span></div>
+            <div class="sub">Cataract &middot; OS &middot; UAT-052</div>
+            <div class="row" style="margin-top:6px"><span class="badge danger">PAC pending</span></div>
+          </div>
+          <div class="slot-card">
+            <div class="top"><span class="seq">PM-2</span><span class="who">Harsh Patel</span><span class="when">arrive 13:45</span></div>
+            <div class="sub">Cataract &middot; OS &middot; UAT-030</div>
+            <div class="row" style="margin-top:6px"><span class="badge efc">Emergency FC</span><span class="badge ok">Clinically ready</span></div>
+          </div>
+          <div class="slot-card">
+            <div class="top"><span class="seq">PM-3</span><span class="who">Tara Nair</span><span class="when">arrive 14:15</span></div>
+            <div class="sub">Cataract &middot; OD &middot; UAT-033</div>
+            <div class="row" style="margin-top:6px"><span class="badge danger">Not admitted</span><span class="badge danger">Coverage pending</span></div>
+          </div>
+          <div class="dropzone">Drop a patient here to add to the afternoon session</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:0 16px 14px">
+      <div class="panel">
+        <p class="panel-h">Unassigned today (4)</p>
+        <div class="row">
+          <span class="btn sm">Priya Das &middot; Cataract OD</span>
+          <span class="btn sm">Vikram Shah &middot; YAG OS</span>
+          <span class="btn sm">Nisha Rao &middot; Cataract OD</span>
+          <span class="btn sm">Farid Khan &middot; Cataract OS</span>
+        </div>
+        <p class="hint">Drag onto a session, or use the keyboard: focus a patient, press <kbd>A</kbd>, choose a session and sequence.</p>
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker new">2</span><span><b>Staggered arrival times</b> are the point. Batching by session and sequencing within it is what converts theatre capacity into throughput without a waiting-room queue.</span></li>
+    <li><span class="marker new">2</span><span><b>Readiness is shown at planning time</b>, not discovered on the morning. A blocked slot at 16:00 the day before is a problem that can still be solved.</span></li>
+    <li><span class="marker new">2</span><span>Reordering is a <b>transactional resequence</b> under a unique <code>(tenant_id, theatre_id, slot_date, session, sequence_no)</code> constraint, and is audited. A patient past <code>SentToOT</code> cannot be reassigned.</span></li>
+    <li><span class="marker">1</span><span>Drag is not the only affordance &mdash; a full keyboard path exists, because this board is used on shared theatre PCs where dragging is awkward.</span></li>
+  </ul>
+
+  <h2 class="sec">Scheduling actions</h2>
+  <p class="lede" style="margin-bottom:14px">Four ways the list changes during a day, plus the conflicts each one can
+  hit. Slot uniqueness is enforced by a <strong>filtered unique index</strong> in the database, so two coordinators
+  cannot both win a race.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Assign a slot</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Assign slot &mdash; Meena Iyer</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="cols-2">
+              <div class="field"><label>Date</label><input class="input" value="24 Aug 2026" readonly></div>
+              <div class="field"><label>Theatre</label><input class="input" value="Theatre 1" readonly></div>
+              <div class="field"><label>Slot</label><input class="input" value="AM-3 &middot; 07:45" readonly></div>
+              <div class="field"><label>Surgeon</label><input class="input" value="Dr. S. Iyer" readonly></div>
+            </div>
+            <div class="callout info">Estimated 30 min &middot; Theatre 1 has 12 min of slack before AM-4.</div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Surgeon available at this time</li>
+              <li><span class="bx on">&#10003;</span> Theatre free</li>
+              <li><span class="bx on">&#10003;</span> Patient has no conflicting appointment</li>
+            </ul>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Assign slot</span></div>
+        </div>
+      </div>
+      <p class="vc">Three availability checks run before the button is enabled, and again server-side on submit.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">2</span><span class="t">Slot conflict</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Slot no longer available</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>AM-3 was taken 8 seconds ago</b> by P. Rao for Suresh Babu. Your assignment
+            was rejected by the database, not merely by the screen.</div>
+            <div class="field" style="margin-top:8px"><label>Nearest alternatives</label></div>
+            <div class="row"><span class="btn sm">AM-5 &middot; 08:45</span><span class="btn sm">PM-1 &middot; 13:30</span><span class="btn sm">Theatre 2 AM-3</span></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Choose alternative</span></div>
+        </div>
+      </div>
+      <p class="vc">Losing a race is normal at 7 am with three coordinators booking. Offering alternatives converts a
+      dead end into one extra click.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">3</span><span class="t">Re-sequence the list</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="row between" style="margin-bottom:8px"><b style="font-size:14px">Theatre 1 &mdash; drag to reorder</b><span class="badge ot">Running 22 min late</span></div>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th></th><th>Slot</th><th>Patient</th><th>Est.</th><th>Projected start</th></tr></thead>
+            <tbody>
+              <tr><td class="muted">&#8942;&#8942;</td><td>AM-1</td><td>Amit Verma</td><td>30m</td><td><span class="badge ot no-dot">In progress</span></td></tr>
+              <tr><td class="muted">&#8942;&#8942;</td><td>AM-2</td><td>Priya Das</td><td>25m</td><td>09:04 <span class="cell-sub">+22m</span></td></tr>
+              <tr class="row-selected"><td class="muted">&#8942;&#8942;</td><td>AM-3</td><td>Meena Iyer</td><td>30m</td><td>09:29 <span class="cell-sub">+22m</span></td></tr>
+              <tr><td class="muted">&#8942;&#8942;</td><td>AM-4</td><td>Suresh Babu</td><td>45m</td><td>09:59 <span class="cell-sub">+22m</span></td></tr>
+            </tbody>
+          </table>
+          <div class="callout warn" style="margin-top:10px">Reordering recalculates every projected start and notifies
+          the ward, so fasting patients are not called up too early.</div>
+        </div>
+      </div>
+      <p class="vc">A list that has slipped needs re-sequencing, not just observation. Downstream effects are computed
+      and communicated.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">4</span><span class="t">Release a slot</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Release AM-3</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout warn"><b>Meena Iyer will have no scheduled slot.</b> The patient remains admitted and
+            keeps bed B-04.</div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="PAC incomplete; deferring to PM list" readonly></div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Slot returns to the available pool</li>
+              <li><span class="bx on">&#10003;</span> Ward notified so fasting can be reviewed</li>
+            </ul>
+          </div>
+          <div class="dialog-foot"><span class="btn">Keep slot</span><span class="btn danger">Release</span></div>
+        </div>
+      </div>
+      <p class="vc">Fasting is the detail that gets missed. A released slot without a fasting review means a patient
+      nil-by-mouth for no reason.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Board states</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">No list scheduled</span></div>
+      <div class="frame"><div class="empty">
+        <div class="big">No operating list for 25 Aug</div>
+        Theatre 1 and 2 have no cases scheduled. 6 patients are awaiting a date.
+        <div style="margin-top:10px"><span class="btn sm primary">View waiting list</span></div>
+      </div></div>
+      <p class="vc">Empty theatre days are a planning signal, so the empty state points at the waiting list.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Overbooked</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout danger" style="margin:0"><b>Theatre 1 is overbooked by 65 minutes.</b> 14 cases against
+        a 6-hour session at current estimates.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm">Move cases to Theatre 2</span><span class="btn sm ghost">Extend session</span></div>
+      </div></div>
+      <p class="vc">Computed from estimates rather than case count, since a 45-minute complex case is not equal to
+      three routine phacos.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n">3</span><span class="t">Loading</span></div>
+      <div class="frame">
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w30"></span><span class="sk w20"></span></div>
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w40"></span><span class="sk w20"></span></div>
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w30"></span><span class="sk w30"></span></div>
+      </div>
+      <p class="vc">Slot rows keep their height so the board does not reflow when the list arrives.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <div class="callout danger">
+    <b>This screen is built on nothing that exists yet.</b> There is no slot function class, no
+    <code>journey_slot</code> table and no slot route anywhere in <code>ip-management-service</code>. Today the
+    closest thing is <code>PUT /api/ip-management/journeys/{id}/ot</code>, which stamps theatre and timing fields
+    directly onto <code>patient_journey</code> &mdash; enough to say &ldquo;this patient is in theatre 1 at
+    09:00&rdquo;, but with no sequence, no session and therefore no way to re-order a list. Every row below marked
+    <span class="mark new">2</span> is new work.
+  </div>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr><td>Board <span class="mark new">2</span></td><td><code>useSlotsQuery</code></td><td><code>GET /api/ip-management/slots?date=&amp;theatreId=</code> &mdash; to build</td><td><code>SlotFunctions</code> (live)</td><td><code>journey_slot</code> (live)</td><td class="owner o-ip">IP</td><td><code>ip.view</code></td></tr>
+      <tr><td>Journeys feeding the board <span class="badge ok no-dot">exists</span></td><td><code>useIpJourneysQuery</code></td><td><code>GET /api/ip-management/journeys</code></td><td><code>PatientJourneyService.ListAsync</code></td><td><code>patient_journey</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td></tr>
+      <tr><td>Theatre &amp; timing today <span class="badge ok no-dot">exists</span></td><td><code>updateOtDetails</code></td><td><code>PUT /api/ip-management/journeys/{id}/ot</code></td><td><code>UpdateOtDetailsAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code> <span class="cell-sub">OtDetailsUpdated</span></td><td class="owner o-ip">IP</td><td><code>ip.ot.send</code> | <code>ward.checklist.edit</code></td></tr>
+      <tr><td>Assign to session <span class="mark new">2</span></td><td><code>assignSlot</code></td><td><code>POST /api/ip-management/slots</code> &mdash; to build</td><td><code>SlotFunctions</code></td><td><code>journey_slot</code> <span class="cell-sub">append; unique on (session, sequence)</span></td><td class="owner o-ip">IP</td><td><code>ip.ot.send</code></td></tr>
+      <tr><td>Reorder sequence <span class="mark new">2</span></td><td><code>reorderSlot</code></td><td><code>PATCH /api/ip-management/slots</code> &mdash; to build</td><td>transactional resequence</td><td><code>journey_slot</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td>as above</td></tr>
+      <tr><td>Release slot <span class="mark new">2</span></td><td><code>releaseSlot</code></td><td><code>DELETE /api/ip-management/slots/{slotId}</code> &mdash; to build</td><td><code>SlotFunctions</code></td><td><code>journey_slot</code> <span class="cell-sub">soft release, keeps the history of who held it</span></td><td class="owner o-ip">IP</td><td>as above</td></tr>
+      <tr><td>Scheduling history <span class="mark new">2</span></td><td><code>useSlotHistoryQuery</code></td><td><code>GET /api/ip-management/journeys/{id}/slots</code> &mdash; to build</td><td><code>SlotFunctions</code></td><td><code>journey_slot</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td></tr>
+      <tr><td>Readiness chip <span class="badge ok no-dot">exists</span></td><td>gates per journey</td><td><code>GET /api/ip-management/journeys/{id}/transition-gates</code></td><td><code>ChecklistGateService</code></td><td>pre-op chain</td><td class="owner o-ip">IP</td><td><code>ip.view</code></td></tr>
+      <tr><td>Coverage chip <span class="badge ok no-dot">exists</span></td><td><code>getPreauthStatus</code></td><td><code>GET /api/ip-management/journeys/{id}/financial/preauth-status</code></td><td><code>CcmsAdmissionClient</code></td><td><code>ccms_coverage_cases</code></td><td class="owner o-ccms">CCMS</td><td><code>ip.view</code></td></tr>
+      <tr><td>Throughput metrics <span class="mark new">2</span></td><td>slot + journey timestamps</td><td><code>GET /api/ip-management/slots/metrics</code> &mdash; to build</td><td><code>SlotFunctions</code></td><td><code>journey_slot</code>, <code>patient_journey</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <b>Every scheduling change needs to be a history, not a field.</b> &ldquo;Who moved this patient from third to
+    seventh on the list, and when?&rdquo; is the question a coordinator asks after a list overruns. That is why
+    <code>journey_slot</code> is specified as an append log with a release rather than a mutable position column on
+    the journey.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Slot already taken</td><td><b>That slot has just been taken</b> by Suresh Babu. The next free slot is 11:20 am.</td></tr>
+      <tr><td>Assigned but not ready</td><td><b>Scheduled for 10:40 am.</b> Consent and PAC still need completing before this patient can go in.</td></tr>
+      <tr><td>Overbooked session</td><td><b>The morning list is over capacity</b> &mdash; 16 cases in 12 slots. The last four are unlikely to be reached before 2 pm.</td></tr>
+      <tr><td>No list scheduled</td><td><b>Nothing is scheduled for today.</b> <a href="#">Build a list from patients ready for theatre</a></td></tr>
+      <tr><td>Re-sequenced</td><td><b>List re-ordered.</b> Rekha Menon moves from 3rd to 1st; the ward has been notified.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

@@ -24,6 +24,15 @@ export function canCancelTodaySurgery(journey: Pick<
   return true;
 }
 
+/** Admission cancel is allowed only from Expected, before irreversible clinical activity. */
+export function canCancelAdmission(journey: Pick<
+  PatientJourneyRowDto,
+  'clinicalState' | 'isLocked' | 'isPatientMerged'
+>): boolean {
+  if (journey.isPatientMerged || journey.isLocked) return false;
+  return journey.clinicalState === 'Expected';
+}
+
 export function journeyRowFromDetail(
   prev: PatientJourneyRowDto,
   detail: Partial<PatientJourneyRowDto> & { clinicalState: string },

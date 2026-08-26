@@ -8,6 +8,11 @@ namespace CcmsApi.Functions;
 
 public class ClaimFunctions
 {
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private readonly ClaimPacketGeneratorService _svc;
     private readonly JwtService _jwt;
 
@@ -76,6 +81,37 @@ public class ClaimFunctions
         return await req.OkJsonAsync(result);
     }
 
+    [Function("RaiseClaimQuery")]
+    public async Task<HttpResponseData> RaiseQuery(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/claims/{id:guid}/query")] HttpRequestData req, Guid id)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!,
+                "ccms.claim.submit", "ccms.claim.write", "ccms.clarification.write", "ccms.workflow.admin") is { } forbidden)
+            return forbidden;
+
+        var body = await JsonSerializer.DeserializeAsync<RaiseClaimQueryRequest>(req.Body, JsonOpts);
+        var result = await _svc.RaiseClaimQueryAsync(
+            id, claims!.UserId, body?.Query ?? "", body?.AdditionalInfoRequired ?? false);
+        return await req.OkJsonAsync(result);
+    }
+
+    [Function("RespondClaimQuery")]
+    public async Task<HttpResponseData> RespondQuery(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/claims/{id:guid}/query-response")] HttpRequestData req, Guid id)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!,
+                "ccms.claim.submit", "ccms.claim.write", "ccms.clarification.write", "ccms.workflow.admin") is { } forbidden)
+            return forbidden;
+
+        var body = await JsonSerializer.DeserializeAsync<RespondClaimQueryRequest>(req.Body, JsonOpts);
+        var result = await _svc.RespondClaimQueryAsync(id, claims!.UserId, body?.Response ?? "");
+        return await req.OkJsonAsync(result);
+    }
+
     // GET /api/ccms/claims/queue
     [Function("GetClaimQueue")]
     public async Task<HttpResponseData> GetQueue(
@@ -91,3 +127,5 @@ public class ClaimFunctions
 
 public record SubmitClaimRequest(string? TpaClaimNumber);
 public record AcknowledgeClaimRequest(string? TpaAckReference);
+public record RaiseClaimQueryRequest(string? Query, bool AdditionalInfoRequired = false);
+public record RespondClaimQueryRequest(string? Response);

@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 
 // Dynamically import OpdBillForm to avoid SSR issues
@@ -63,6 +64,13 @@ function OpdBillCreateContent() {
 
   return (
     <div className="h-screen flex flex-col">
+      <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-950">
+        Collection on this create form is disabled. After the bill is saved, open{' '}
+        <Link href="/dashboard/billing/opd" className="underline font-medium">
+          /dashboard/billing/opd
+        </Link>
+        {' '}and use Collect payment (CollectPaymentDrawer).
+      </div>
       <OpdBillForm
         patientId={patientId}
         patientName={patientName}

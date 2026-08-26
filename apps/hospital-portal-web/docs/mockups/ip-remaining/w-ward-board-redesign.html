@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ward board redesign — locked spec</title>
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+<style>
+  main { max-width: 1480px; }
+  .jumps a { text-decoration: none; }
+
+  .lock {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+    margin: 0 0 20px;
+  }
+  .lock .ask { margin: 0; }
+  .lock .ask b { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+  .lock .ask p { margin: 0; font-size: 13px; color: var(--text); }
+  @media (max-width: 900px) { .lock { grid-template-columns: 1fr; } }
+
+  .preview-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 12px; margin: 0 0 12px;
+    border: 1px dashed var(--line-strong); border-radius: 8px; background: #fff;
+    font-size: 13px;
+  }
+  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    font-family: inherit; font-size: 12px; font-weight: 650; padding: 6px 10px;
+    border: 0; background: #fff; color: var(--muted); cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--line-strong); }
+  .seg button.on { background: var(--accent-weak); color: var(--accent); }
+
+  .qtab {
+    font-size: 13px; padding: 10px 12px; color: var(--muted);
+    border: 0; border-bottom: 2px solid transparent; background: none;
+    cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  .qtab .count { color: var(--faint); margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .qtab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+  .qtab.active .count { color: var(--accent); }
+  .qtab .dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--danger); margin-right: 6px; vertical-align: middle;
+  }
+
+  .attn {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line);
+  }
+  .attn .k { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 13px; font-weight: 600; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--text);
+    cursor: pointer; font-family: inherit;
+  }
+  .chip.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent); }
+  .chip.warn { border-color: #fde68a; background: var(--ot-weak); }
+  .chip.bad { border-color: #fecaca; background: var(--danger-weak); }
+  .chip.quiet { background: var(--surface-alt); }
+  .chip .n { font-variant-numeric: tabular-nums; font-weight: 750; }
+
+  .occ {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 16px; background: var(--surface-alt); border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .occ .stat { font-weight: 650; }
+  .occ .sep { color: var(--line-strong); }
+
+  .floor {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+    padding: 16px; background: #f1f5f9; min-height: 420px;
+  }
+  .floor-cell {
+    border-radius: 12px; padding: 12px; min-height: 108px; text-align: left;
+    border: 1px solid var(--line-strong); background: #fff; font-family: inherit; cursor: pointer;
+  }
+  .floor-cell .bn { font-size: 13px; letter-spacing: .04em; color: var(--muted); }
+  .floor-cell .st { font-size: 13px; font-weight: 750; margin-top: 4px; }
+  .floor-cell .who { font-size: 12px; margin-top: 4px; color: var(--muted); }
+  .floor-cell.occupied { border-color: #93c5fd; background: #eff6ff; }
+  .floor-cell.occupied.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .floor-cell.available { border-color: #6ee7b7; background: #ecfdf5; }
+  .floor-cell.cleaning { border-color: #fcd34d; background: #fffbeb; }
+  .floor-cell.reserved { background: #fff; }
+  .floor-legend {
+    display: flex; flex-wrap: wrap; gap: 10px 16px; padding: 0 16px 14px;
+    background: #f1f5f9; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line);
+  }
+
+  .hidden { display: none !important; }
+
+  .eye-inline { display: inline-flex; align-items: baseline; gap: 6px; font-weight: 700; }
+  .eye-inline .abbr { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--muted); }
+  .eye-inline.right .side { color: var(--danger); }
+  .eye-inline.left .side { color: var(--accent); }
+
+  .next-btn {
+    display: inline-flex; align-items: center; font-size: 12px; font-weight: 700;
+    padding: 7px 10px; border-radius: 6px; border: 1px solid var(--line-strong);
+    background: #fff; color: var(--text); white-space: nowrap;
+  }
+  .next-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  table.grid thead th { position: sticky; top: 0; z-index: 1; }
+  .list-scroll { max-height: 520px; overflow: auto; }
+  .flag { font-size: 12px; font-weight: 650; color: var(--danger); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a href="index.html">&larr; Remaining mockups</a>
+  <span class="sid">UX</span>
+  <span class="title">Ward board redesign</span>
+  <span class="meta">Locked decisions &middot; no application code yet</span>
+  <span class="pill new">Confirm to implement</span>
+  <span class="spacer"></span>
+  <a href="../ip-target/s-04-ward-board.html">S-04</a>
+  <a href="w-05-ward-bed-wristband.html">W-05</a>
+</header>
+
+<main>
+
+  <p class="lede">
+    One page for <strong>ward nurse and IP coordinator</strong>. Persona changes the default queue,
+    which chips are emphasised, and which next action is filled &mdash; never authorisation
+    (<code>resolveIpPersona</code> is emphasis-only; the server still decides).
+    Use the preview bar to switch template, view, and persona. Then say implement if this is the board you want.
+  </p>
+
+  <div class="lock">
+    <div class="ask"><b>Who</b><p>Ward nurse and coordinator, same page.</p></div>
+    <div class="ask"><b>Chairs / beds</b><p>Collapsed occupancy on the list. Separate Floor view.</p></div>
+    <div class="ask"><b>Default queue</b><p>Nurse: Needs me. Coordinator: On ward. Empty Needs me falls through to On ward.</p></div>
+    <div class="ask"><b>KPIs</b><p>This-ward exceptions always. Financial + Rebook quieter for coordinator. No hospital-wide 176 dump.</p></div>
+    <div class="ask"><b>Templates</b><p>Day Care (chairs + AM/PM slot). Overnight IPD (beds + admitted / stay).</p></div>
+    <div class="ask"><b>Columns kept</b><p>Admitted time, OT state, admission type, surgeon &mdash; on the row, not dropped.</p></div>
+  </div>
+
+  <nav class="jumps">
+    <a href="#board">Interactive board</a>
+    <a href="#columns">How columns are kept</a>
+    <a href="#kpis">KPI rule</a>
+    <a href="#persona">Nurse vs coordinator</a>
+  </nav>
+
+  <div class="preview-bar">
+    <span class="small muted">Preview</span>
+    <div class="seg" data-seg="template">
+      <button type="button" class="on" data-v="daycare">Day Care</button>
+      <button type="button" data-v="ipd">Overnight IPD</button>
+    </div>
+    <div class="seg" data-seg="view">
+      <button type="button" class="on" data-v="list">List</button>
+      <button type="button" data-v="floor">Floor</button>
+    </div>
+    <div class="seg" data-seg="persona">
+      <button type="button" class="on" data-v="nurse">Nurse</button>
+      <button type="button" data-v="coordinator">Coordinator</button>
+    </div>
+    <span class="small muted" id="preview-note">Logged in as ward nurse &middot; Day Care &middot; Needs me</span>
+  </div>
+
+  <div class="frame" id="board">
+    <div class="app-header">
+      <h1>Ward</h1>
+      <span class="scope" id="scope">Day Care Ward &middot; Tue 25 Aug 2026 &middot; AM list &middot; 8 on today&rsquo;s OT</span>
+      <span class="spacer"></span>
+      <span class="badge ok no-dot">Live</span>
+      <span class="btn sm">Refresh</span>
+      <span class="btn sm" id="slot-btn">Slot board</span>
+    </div>
+
+    <div class="attn">
+      <span class="k">This ward</span>
+      <button type="button" class="chip warn" data-attn="pac"><span class="n">3</span> PAC incomplete</button>
+      <button type="button" class="chip bad" data-attn="lab"><span class="n">1</span> Critical lab</button>
+      <button type="button" class="chip warn" data-attn="delay"><span class="n">2</span> Delayed for OT</button>
+      <button type="button" class="chip bad" data-attn="return"><span class="n">1</span> Returned from OT</button>
+      <span class="k coord-only hidden" style="margin-left:8px">Ops</span>
+      <button type="button" class="chip quiet coord-only hidden" data-attn="fin"><span class="n">4</span> Financial hold</button>
+      <button type="button" class="chip quiet coord-only hidden" data-attn="rebook"><span class="n">1</span> Rebook</button>
+    </div>
+
+    <div class="occ">
+      <span class="stat" id="occ-stat">Chairs 12 / 16 occupied</span>
+      <span class="sep">|</span>
+      <span id="occ-detail">2 cleaning &middot; 2 free &middot; 1 reserved for AM-5</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="small muted">List keeps this line collapsed. Open Floor for the map.</span>
+    </div>
+
+    <div class="filters">
+      <label style="min-width:180px">
+        <span class="small muted" style="display:block;margin-bottom:3px">Ward</span>
+        <input class="input" id="ward-input" value="Day Care Ward" readonly>
+      </label>
+      <label style="flex:1;min-width:220px">
+        <span class="small muted" style="display:block;margin-bottom:3px">Find a patient</span>
+        <input class="input placeholder" value="Name, UHID or bed&hellip;" readonly>
+      </label>
+      <label style="width:130px" id="session-field">
+        <span class="small muted" style="display:block;margin-bottom:3px">List</span>
+        <input class="input" value="AM" readonly>
+      </label>
+      <span class="btn sm ghost">More filters</span>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="qtab active" data-queue="need"><span class="dot"></span>Needs me<span class="count" id="c-need">8</span></button>
+      <button type="button" class="qtab" data-queue="ward">On ward<span class="count" id="c-ward">12</span></button>
+      <button type="button" class="qtab" data-queue="arrive">Arriving<span class="count" id="c-arrive">4</span></button>
+      <button type="button" class="qtab" data-queue="ot">In OT<span class="count">2</span></button>
+      <button type="button" class="qtab" data-queue="rec">Recovery / D/C<span class="count">3</span></button>
+      <span class="spacer" style="flex:1"></span>
+      <button type="button" class="qtab" data-queue="more">Discharged today<span class="count">6</span></button>
+    </div>
+
+    <div class="split docked">
+      <div class="list">
+        <div class="list-scroll" id="list-view">
+          <table class="grid">
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>Procedure</th>
+                <th id="th-place">Chair</th>
+                <th id="th-when">Slot / admitted</th>
+                <th>OT state</th>
+                <th>Blocking</th>
+                <th>Next</th>
+              </tr>
+            </thead>
+            <tbody id="rows-dc">
+              <tr class="row-selected" data-id="meena" data-queue="need ward" data-attn="pac delay" data-next-nurse="Open pre-op" data-next-coord="Chase PAC">
+                <td>
+                  <div class="cell-primary">Meena Iyer</div>
+                  <div class="cell-sub">UAT-002 &middot; 54 y &middot; Female</div>
+                  <div class="cell-sub">DayCare</div>
+                  <div class="flag">Allergy: Xylocaine</div>
+                </td>
+                <td>
+                  <span class="eye-inline right"><span class="side">RIGHT</span><span class="abbr">OD</span></span>
+                  <div>LASIK</div>
+                  <div class="cell-sub">Dr S. Iyer</div>
+                </td>
+                <td>C-04</td>
+                <td>AM-3 &middot; 07:45<div class="cell-sub">Admitted 07:05</div></td>
+                <td><span class="badge inhouse">Admitted</span></td>
+                <td>
+                  <div class="meter"><span class="track"><span class="fill" style="width:78%"></span></span><span>7 of 9</span></div>
+                  <div class="cell-sub" style="color:var(--danger)">Consent &middot; PAC</div>
+                </td>
+                <td><span class="next-btn" data-next>Open pre-op</span></td>
+              </tr>
+              <tr data-id="ananya" data-queue="need ward" data-attn="" data-next-nurse="Mark ready for OT" data-next-coord="Mark ready for OT">
+                <td>
+                  <div class="cell-primary">Ananya Sharma</div>
+                  <div class="cell-sub">UAT-014 &middot; 61 y &middot; Female</div>
+                  <div class="cell-sub">DayCare</div>
+                </td>
+                <td>
+                  <span class="eye-inline left"><span class="side">LEFT</span><span class="abbr">OS</span></span>
+                  <div>Corneal</div>
+                  <div class="cell-sub">Dr S. Iyer</div>
+                </td>
+                <td>C-05</td>
+                <td>AM-4 &middot; 08:10<div class="cell-sub">Admitted 07:22</div></td>
+                <td><span class="badge inhouse">Admitted</span></td>
+                <td>
+                  <div class="meter"><span class="track"><span class="fill ok" style="width:100%"></span></span><span>9 of 9</span></div>
+                  <div class="cell-sub">Clear for OT</div>
+                </td>
+                <td><span class="next-btn primary" data-next>Mark ready for OT</span></td>
+              </tr>
+              <tr data-id="harsh" data-queue="need ward" data-attn="pac lab fin" data-next-nurse="Open pre-op" data-next-coord="Chase lab + dues">
+                <td>
+                  <div class="cell-primary">Harsh Patel</div>
+                  <div class="cell-sub">UAT-030 &middot; 58 y &middot; Male</div>
+                  <div class="cell-sub">DayCare</div>
+                  <div class="flag">Critical K+ 6.1 &mdash; unverified</div>
+                </td>
+                <td>
+                  <span class="eye-inline left"><span class="side">LEFT</span><span class="abbr">OS</span></span>
+                  <div>Phaco + IOL</div>
+                  <div class="cell-sub">Dr R. Menon</div>
+                </td>
+                <td>C-09</td>
+                <td>AM-6 &middot; 09:00<div class="cell-sub">Admitted 07:40</div></td>
+                <td><span class="badge inhouse">Admitted</span></td>
+                <td>
+                  <span class="badge danger">PAC + lab</span>
+                  <div class="cell-sub">Due &#8377;18,000</div>
+                </td>
+                <td><span class="next-btn" data-next>Open pre-op</span></td>
+              </tr>
+              <tr data-id="farid" data-queue="need ward" data-attn="return delay rebook" data-next-nurse="Record vitals" data-next-coord="Rebook">
+                <td>
+                  <div class="cell-primary">Farid Khan</div>
+                  <div class="cell-sub">UAT-041 &middot; 69 y &middot; Male</div>
+                  <div class="cell-sub">DayCare</div>
+                  <div class="flag">Returned from OT &mdash; BP 190/110</div>
+                </td>
+                <td>
+                  <span class="eye-inline right"><span class="side">RIGHT</span><span class="abbr">OD</span></span>
+                  <div>Phaco + IOL</div>
+                  <div class="cell-sub">Dr R. Menon</div>
+                </td>
+                <td>C-11</td>
+                <td>AM-1 &middot; was 07:10<div class="cell-sub">Admitted 06:50</div></td>
+                <td><span class="badge ot">Returned</span></td>
+                <td><span class="badge ot">Unfit today</span></td>
+                <td><span class="next-btn" data-next>Record vitals</span></td>
+              </tr>
+              <tr data-id="tara" data-queue="need arrive" data-attn="fin" data-next-nurse="Admit to C-08" data-next-coord="Admit to C-08">
+                <td>
+                  <div class="cell-primary">Tara Nair</div>
+                  <div class="cell-sub">UAT-033 &middot; 66 y &middot; Female</div>
+                  <div class="cell-sub">DayCare</div>
+                </td>
+                <td>
+                  <span class="eye-inline right"><span class="side">RIGHT</span><span class="abbr">OD</span></span>
+                  <div>Phaco + IOL</div>
+                  <div class="cell-sub">Dr S. Iyer</div>
+                </td>
+                <td class="muted">No chair</td>
+                <td>AM-5 &middot; 08:40<div class="cell-sub">Not admitted</div></td>
+                <td><span class="badge">Expected</span></td>
+                <td><span class="badge">Coverage pending</span></td>
+                <td><span class="next-btn primary" data-next>Admit to C-08</span></td>
+              </tr>
+              <tr data-id="sara" data-queue="need ward rec" data-attn="" data-next-nurse="Open discharge" data-next-coord="Open discharge">
+                <td>
+                  <div class="cell-primary">Saraswathi Naidu</div>
+                  <div class="cell-sub">FRESH-002 &middot; 61 y &middot; Female</div>
+                  <div class="cell-sub">IPD</div>
+                </td>
+                <td>
+                  <span class="eye-inline right"><span class="side">RIGHT</span><span class="abbr">OD</span></span>
+                  <div>25G PPV + membrane peel</div>
+                  <div class="cell-sub">Dr K. Rao</div>
+                </td>
+                <td>C-01</td>
+                <td>AM-0 &middot; done 10:20<div class="cell-sub">Admitted 24 Aug 18:10</div></td>
+                <td><span class="badge ok">Surgery completed</span></td>
+                <td><span class="badge ok">Ready for discharge</span></td>
+                <td><span class="next-btn" data-next>Open discharge</span></td>
+              </tr>
+              <tr data-id="mike" data-queue="need ward rec" data-attn="" data-next-nurse="Open post-op" data-next-coord="Open post-op">
+                <td>
+                  <div class="cell-primary">Michael Johnson</div>
+                  <div class="cell-sub">UAT-018 &middot; 44 y &middot; Male</div>
+                  <div class="cell-sub">DayCare</div>
+                </td>
+                <td>
+                  <span class="eye-inline left"><span class="side">LEFT</span><span class="abbr">OS</span></span>
+                  <div>LASIK Basic</div>
+                  <div class="cell-sub">Dr S. Iyer</div>
+                </td>
+                <td>C-02</td>
+                <td>AM-2 &middot; done 09:55<div class="cell-sub">Admitted 08:15</div></td>
+                <td><span class="badge ok">OT accepted</span></td>
+                <td><span class="badge inhouse">Post-op recovery</span></td>
+                <td><span class="next-btn" data-next>Open post-op</span></td>
+              </tr>
+              <tr data-id="amit" data-queue="ward ot" data-attn="" data-next-nurse="Track in OT" data-next-coord="Track in OT">
+                <td>
+                  <div class="cell-primary">Amit Verma</div>
+                  <div class="cell-sub">UAT-021 &middot; 47 y &middot; Male</div>
+                  <div class="cell-sub">DayCare</div>
+                </td>
+                <td>
+                  <span class="eye-inline right"><span class="side">RIGHT</span><span class="abbr">OD</span></span>
+                  <div>Retinal</div>
+                  <div class="cell-sub">Dr K. Rao</div>
+                </td>
+                <td>C-10 held</td>
+                <td>AM-1<div class="cell-sub">Admitted 06:55 &middot; Theatre 1</div></td>
+                <td><span class="badge ot">In OT</span></td>
+                <td><span class="cell-sub">Chair held</span></td>
+                <td><span class="next-btn" data-next>Track in OT</span></td>
+              </tr>
+            </tbody>
+            <tbody id="rows-ipd" class="hidden">
+              <tr class="row-selected" data-id="leela" data-queue="need ward" data-attn="pac" data-next-nurse="Open pre-op" data-next-coord="Chase PAC">
+                <td>
+                  <div class="cell-primary">Leela Krishnan</div>
+                  <div class="cell-sub">IPD-104 &middot; 72 y &middot; Female</div>
+                  <div class="cell-sub">IPD</div>
+                  <div class="flag">On anticoagulant</div>
+                </td>
+                <td>
+                  <span class="eye-inline right"><span class="side">RIGHT</span><span class="abbr">OD</span></span>
+                  <div>Phaco + IOL &middot; complex</div>
+                  <div class="cell-sub">Dr R. Menon</div>
+                </td>
+                <td>B-12</td>
+                <td>Admitted 23 Aug 21:40<div class="cell-sub">Stay 2 nights &middot; OT 26 Aug 08:00</div></td>
+                <td><span class="badge inhouse">Admitted</span></td>
+                <td>
+                  <div class="meter"><span class="track"><span class="fill" style="width:55%"></span></span><span>5 of 9</span></div>
+                  <div class="cell-sub" style="color:var(--danger)">PAC incomplete</div>
+                </td>
+                <td><span class="next-btn" data-next>Open pre-op</span></td>
+              </tr>
+              <tr data-id="ramesh" data-queue="need ward rec" data-attn="" data-next-nurse="Open post-op" data-next-coord="Open post-op">
+                <td>
+                  <div class="cell-primary">Ramesh Pillai</div>
+                  <div class="cell-sub">IPD-088 &middot; 68 y &middot; Male</div>
+                  <div class="cell-sub">IPD</div>
+                </td>
+                <td>
+                  <span class="eye-inline left"><span class="side">LEFT</span><span class="abbr">OS</span></span>
+                  <div>Trabeculectomy</div>
+                  <div class="cell-sub">Dr K. Rao</div>
+                </td>
+                <td>B-07</td>
+                <td>Admitted 24 Aug 16:05<div class="cell-sub">Stay 1 night &middot; OT done 10:40</div></td>
+                <td><span class="badge ok">Surgery completed</span></td>
+                <td><span class="badge inhouse">Post-op day 0</span></td>
+                <td><span class="next-btn" data-next>Open post-op</span></td>
+              </tr>
+              <tr data-id="nazia" data-queue="need ward rec" data-attn="fin" data-next-nurse="Open discharge" data-next-coord="Clear dues then discharge">
+                <td>
+                  <div class="cell-primary">Nazia Begum</div>
+                  <div class="cell-sub">IPD-091 &middot; 59 y &middot; Female</div>
+                  <div class="cell-sub">IPD</div>
+                </td>
+                <td>
+                  <span class="eye-inline right"><span class="side">RIGHT</span><span class="abbr">OD</span></span>
+                  <div>PKP</div>
+                  <div class="cell-sub">Dr S. Iyer</div>
+                </td>
+                <td>B-03</td>
+                <td>Admitted 22 Aug 11:20<div class="cell-sub">Stay 3 nights</div></td>
+                <td><span class="badge ok">Surgery completed</span></td>
+                <td><span class="badge danger">Due &#8377;42,000</span></td>
+                <td><span class="next-btn" data-next>Open discharge</span></td>
+              </tr>
+              <tr data-id="arjun" data-queue="need arrive" data-attn="" data-next-nurse="Admit to B-09" data-next-coord="Admit to B-09">
+                <td>
+                  <div class="cell-primary">Arjun Desai</div>
+                  <div class="cell-sub">IPD-112 &middot; 51 y &middot; Male</div>
+                  <div class="cell-sub">IPD</div>
+                </td>
+                <td>
+                  <span class="eye-inline left"><span class="side">LEFT</span><span class="abbr">OS</span></span>
+                  <div>Vitrectomy</div>
+                  <div class="cell-sub">Dr K. Rao</div>
+                </td>
+                <td class="muted">No bed</td>
+                <td>Expected 18:00<div class="cell-sub">OT 26 Aug AM</div></td>
+                <td><span class="badge">Expected</span></td>
+                <td><span class="cell-sub">Bed B-09 reserved</span></td>
+                <td><span class="next-btn primary" data-next>Admit to B-09</span></td>
+              </tr>
+              <tr data-id="sita" data-queue="ward ot" data-attn="" data-next-nurse="Track in OT" data-next-coord="Track in OT">
+                <td>
+                  <div class="cell-primary">Sita Narayan</div>
+                  <div class="cell-sub">IPD-099 &middot; 64 y &middot; Female</div>
+                  <div class="cell-sub">IPD</div>
+                </td>
+                <td>
+                  <span class="eye-inline right"><span class="side">RIGHT</span><span class="abbr">OD</span></span>
+                  <div>Phaco + IOL</div>
+                  <div class="cell-sub">Dr R. Menon</div>
+                </td>
+                <td>B-04 held</td>
+                <td>Admitted 24 Aug 20:15<div class="cell-sub">Theatre 2 since 08:05</div></td>
+                <td><span class="badge ot">In OT</span></td>
+                <td><span class="cell-sub">Bed held</span></td>
+                <td><span class="next-btn" data-next>Track in OT</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="hidden" id="floor-view">
+          <div class="floor" id="floor-grid"></div>
+          <div class="floor-legend">
+            <span>Occupied &middot; labelled with patient</span>
+            <span>Available</span>
+            <span>Cleaning / turnaround</span>
+            <span>Reserved</span>
+            <span>Status is labelled on every place &mdash; colour is not the only cue.</span>
+          </div>
+        </div>
+
+        <div class="listfoot" id="listfoot">Showing 8 who need the ward</div>
+      </div>
+
+      <aside class="rail">
+        <div class="pib">
+          <div class="pib-main">
+            <div class="pib-id">
+              <div class="pib-name" id="rail-name">Meena Iyer</div>
+              <div class="pib-nums">
+                <span>UHID <b id="rail-uhid">UAT-002</b></span>
+                <span id="rail-demo">54 years &middot; Female</span>
+              </div>
+            </div>
+            <div class="eye" id="rail-eye">
+              <span class="eye-k">Operating</span>
+              <span class="eye-v">RIGHT</span>
+              <span class="eye-abbr">OD</span>
+            </div>
+          </div>
+          <div class="pib-alerts" id="rail-alerts">
+            <span class="badge danger">Allergy: Xylocaine</span>
+            <span class="badge ot">Diabetic</span>
+          </div>
+          <div class="pib-where">
+            <span><span class="k" id="rail-place-k">Chair</span> <span class="v" id="rail-place">C-04</span></span>
+            <span><span class="k">Surgeon</span> <span class="v" id="rail-surgeon">Dr S. Iyer</span></span>
+            <span><span class="k">Admitted</span> <span class="v" id="rail-adm">07:05 today</span></span>
+          </div>
+        </div>
+        <div class="rail-sec">
+          <p class="rail-h">Pre-op readiness</p>
+          <ul class="blockers">
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">Surgical consent unsigned</span></li>
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">PAC assessment</span></li>
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Investigations in range</span></li>
+          </ul>
+        </div>
+        <div class="rail-sec coord-only hidden">
+          <p class="rail-h">Coverage &amp; dues</p>
+          <div class="rail-line"><span class="k">Payer</span><span class="v">TPA approved</span></div>
+          <div class="rail-line"><span class="k">Patient due</span><span class="v">&#8377;0</span></div>
+        </div>
+        <div class="rail-foot">
+          <span class="btn sm">Print wristband</span>
+          <span class="btn sm primary" id="rail-primary">Open pre-op</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <h2 class="sec" id="columns">How the live columns are kept (without 13 cramped fields)</h2>
+  <table class="map">
+    <thead><tr><th>You asked to keep</th><th>Where it lives</th><th>Why not its own column</th></tr></thead>
+    <tbody>
+      <tr><td>Admission type (IPD / DayCare)</td><td>Under the name, with UHID</td><td>Repeating it as a wide column next to every name wastes the scan line.</td></tr>
+      <tr><td>Surgeon</td><td>Under the procedure, and again on the rail</td><td>The safety scan is eye + procedure; surgeon is the next line, always visible.</td></tr>
+      <tr><td>Admitted time</td><td>Under slot (Day Care) or as the primary time (IPD)</td><td>Day Care acts on slot time; IPD acts on stay. Both remain on the row.</td></tr>
+      <tr><td>OT state</td><td>Own labelled column</td><td>You said it cannot be lost. It stays a word (Admitted / In OT / Returned), never colour alone.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec" id="kpis">KPI rule (this ward, not the hospital)</h2>
+  <div class="cols-2">
+    <div class="panel">
+      <p class="panel-h">Always on the board</p>
+      <p class="small muted">PAC incomplete, critical lab, delayed for OT, returned from OT &mdash; counted for the <b>selected ward</b>. These are the misses that harm a patient this morning. &ldquo;8 on today&rsquo;s OT&rdquo; sits in the header as context, not a sixth equal card.</p>
+    </div>
+    <div class="panel">
+      <p class="panel-h">Coordinator only, quieter</p>
+      <p class="small muted">Financial hold and Rebook for <b>this ward</b>. They do not use the red treatment unless they block surgery. Hospital-wide OT today 27 / Financial 136 / Delayed 111 stay on IP census. This page will not show them.</p>
+    </div>
+  </div>
+
+  <h2 class="sec" id="persona">Same patients, different emphasis</h2>
+  <table class="map">
+    <thead><tr><th></th><th>Nurse</th><th>Coordinator</th></tr></thead>
+    <tbody>
+      <tr><td>Default queue</td><td>Needs me</td><td>On ward</td></tr>
+      <tr><td>Filled next action</td><td>Clinical step they can complete (pre-op, vitals, mark ready, post-op, discharge)</td><td>Throughput step (admit, chase PAC, rebook, clear dues) when that is the blocker</td></tr>
+      <tr><td>Financial chip</td><td>Hidden</td><td>Shown, this ward only</td></tr>
+      <tr><td>Rail money / coverage</td><td>Collapsed</td><td>Visible</td></tr>
+      <tr><td>Identity banner</td><td colspan="2">Identical. Name, UHID, laterality, allergy are not a matter of role.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn" style="margin-top:16px">
+    <b>Ready to implement when you say so.</b> Reply <b>implement</b> (or note any last tweak). Work stays on
+    <code>/dashboard/ip-management/ward</code>: ward-scoped list + summary, Floor view, Day Care vs IPD template
+    from the selected ward&rsquo;s type, persona defaults via existing <code>resolveIpPersona</code>.
+    No second service, no new clinical FSM.
+  </div>
+
+</main>
+<script>
+(function () {
+  var state = { template: 'daycare', view: 'list', persona: 'nurse', queue: 'need', attn: '', selected: 'meena' };
+
+  var DC_FLOOR = [
+    { id: 'C-04', kind: 'occupied', who: 'Meena Iyer', row: 'meena' },
+    { id: 'C-05', kind: 'occupied', who: 'Ananya Sharma', row: 'ananya' },
+    { id: 'C-06', kind: 'available', who: 'Chair' },
+    { id: 'C-07', kind: 'cleaning', who: 'Turnaround' },
+    { id: 'C-08', kind: 'reserved', who: 'Tara Nair AM-5', row: 'tara' },
+    { id: 'C-09', kind: 'occupied', who: 'Harsh Patel', row: 'harsh' },
+    { id: 'C-01', kind: 'occupied', who: 'Saraswathi Naidu', row: 'sara' },
+    { id: 'C-02', kind: 'occupied', who: 'Michael Johnson', row: 'mike' },
+    { id: 'C-03', kind: 'occupied', who: 'Rekha Menon' },
+    { id: 'C-10', kind: 'occupied', who: 'Amit Verma · held', row: 'amit' },
+    { id: 'C-11', kind: 'occupied', who: 'Farid Khan', row: 'farid' },
+    { id: 'C-12', kind: 'occupied', who: 'Occupied' },
+    { id: 'C-13', kind: 'occupied', who: 'Occupied' },
+    { id: 'C-14', kind: 'occupied', who: 'Occupied' },
+    { id: 'C-15', kind: 'available', who: 'Chair' },
+    { id: 'C-16', kind: 'cleaning', who: 'Turnaround' }
+  ];
+  var IPD_FLOOR = [
+    { id: 'B-03', kind: 'occupied', who: 'Nazia Begum', row: 'nazia' },
+    { id: 'B-04', kind: 'occupied', who: 'Sita Narayan · held', row: 'sita' },
+    { id: 'B-07', kind: 'occupied', who: 'Ramesh Pillai', row: 'ramesh' },
+    { id: 'B-09', kind: 'reserved', who: 'Arjun Desai 18:00', row: 'arjun' },
+    { id: 'B-12', kind: 'occupied', who: 'Leela Krishnan', row: 'leela' },
+    { id: 'B-01', kind: 'available', who: 'Bed' },
+    { id: 'B-02', kind: 'cleaning', who: 'Turnaround' },
+    { id: 'B-05', kind: 'occupied', who: 'Occupied' },
+    { id: 'B-06', kind: 'occupied', who: 'Occupied' },
+    { id: 'B-08', kind: 'available', who: 'Bed' },
+    { id: 'B-10', kind: 'occupied', who: 'Occupied' },
+    { id: 'B-11', kind: 'cleaning', who: 'Turnaround' }
+  ];
+
+  var RAIL = {
+    meena: { name: 'Meena Iyer', uhid: 'UAT-002', demo: '54 years · Female', eye: 'RIGHT', abbr: 'OD', left: false, place: 'C-04', surgeon: 'Dr S. Iyer', adm: '07:05 today', alerts: true },
+    ananya: { name: 'Ananya Sharma', uhid: 'UAT-014', demo: '61 years · Female', eye: 'LEFT', abbr: 'OS', left: true, place: 'C-05', surgeon: 'Dr S. Iyer', adm: '07:22 today', alerts: false },
+    harsh: { name: 'Harsh Patel', uhid: 'UAT-030', demo: '58 years · Male', eye: 'LEFT', abbr: 'OS', left: true, place: 'C-09', surgeon: 'Dr R. Menon', adm: '07:40 today', alerts: true },
+    farid: { name: 'Farid Khan', uhid: 'UAT-041', demo: '69 years · Male', eye: 'RIGHT', abbr: 'OD', left: false, place: 'C-11', surgeon: 'Dr R. Menon', adm: '06:50 today', alerts: true },
+    tara: { name: 'Tara Nair', uhid: 'UAT-033', demo: '66 years · Female', eye: 'RIGHT', abbr: 'OD', left: false, place: 'C-08 reserved', surgeon: 'Dr S. Iyer', adm: 'Not admitted', alerts: false },
+    sara: { name: 'Saraswathi Naidu', uhid: 'FRESH-002', demo: '61 years · Female', eye: 'RIGHT', abbr: 'OD', left: false, place: 'C-01', surgeon: 'Dr K. Rao', adm: '24 Aug 18:10', alerts: false },
+    mike: { name: 'Michael Johnson', uhid: 'UAT-018', demo: '44 years · Male', eye: 'LEFT', abbr: 'OS', left: true, place: 'C-02', surgeon: 'Dr S. Iyer', adm: '08:15 today', alerts: false },
+    amit: { name: 'Amit Verma', uhid: 'UAT-021', demo: '47 years · Male', eye: 'RIGHT', abbr: 'OD', left: false, place: 'C-10 held', surgeon: 'Dr K. Rao', adm: '06:55 today', alerts: false },
+    leela: { name: 'Leela Krishnan', uhid: 'IPD-104', demo: '72 years · Female', eye: 'RIGHT', abbr: 'OD', left: false, place: 'B-12', surgeon: 'Dr R. Menon', adm: '23 Aug 21:40', alerts: true },
+    ramesh: { name: 'Ramesh Pillai', uhid: 'IPD-088', demo: '68 years · Male', eye: 'LEFT', abbr: 'OS', left: true, place: 'B-07', surgeon: 'Dr K. Rao', adm: '24 Aug 16:05', alerts: false },
+    nazia: { name: 'Nazia Begum', uhid: 'IPD-091', demo: '59 years · Female', eye: 'RIGHT', abbr: 'OD', left: false, place: 'B-03', surgeon: 'Dr S. Iyer', adm: '22 Aug 11:20', alerts: false },
+    arjun: { name: 'Arjun Desai', uhid: 'IPD-112', demo: '51 years · Male', eye: 'LEFT', abbr: 'OS', left: true, place: 'B-09 reserved', surgeon: 'Dr K. Rao', adm: 'Expected 18:00', alerts: false },
+    sita: { name: 'Sita Narayan', uhid: 'IPD-099', demo: '64 years · Female', eye: 'RIGHT', abbr: 'OD', left: false, place: 'B-04 held', surgeon: 'Dr R. Menon', adm: '24 Aug 20:15', alerts: false }
+  };
+
+  function tbody() {
+    return document.getElementById(state.template === 'ipd' ? 'rows-ipd' : 'rows-dc');
+  }
+  function rows() {
+    return Array.prototype.slice.call(tbody().querySelectorAll('tr'));
+  }
+
+  function defaultQueue() {
+    return state.persona === 'coordinator' ? 'ward' : 'need';
+  }
+
+  function renderFloor() {
+    var grid = document.getElementById('floor-grid');
+    var data = state.template === 'ipd' ? IPD_FLOOR : DC_FLOOR;
+    var noun = state.template === 'ipd' ? 'Bed' : 'Chair';
+    grid.innerHTML = data.map(function (c) {
+      var sel = c.row && c.row === state.selected ? ' sel' : '';
+      var st = c.kind === 'occupied' ? 'Occupied' : c.kind === 'available' ? 'Available' : c.kind === 'cleaning' ? 'Cleaning' : 'Reserved';
+      return '<button type="button" class="floor-cell ' + c.kind + sel + '" data-row="' + (c.row || '') + '">' +
+        '<div class="bn">' + noun + ' ' + c.id + '</div>' +
+        '<div class="st">' + st + '</div>' +
+        '<div class="who">' + c.who + '</div></button>';
+    }).join('');
+    Array.prototype.forEach.call(grid.querySelectorAll('.floor-cell[data-row]'), function (btn) {
+      if (!btn.getAttribute('data-row')) return;
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-row');
+        if (!id) return;
+        state.selected = id;
+        state.queue = 'ward';
+        syncTabs();
+        apply();
+      });
+    });
+  }
+
+  function setRail(id) {
+    var r = RAIL[id];
+    if (!r) return;
+    document.getElementById('rail-name').textContent = r.name;
+    document.getElementById('rail-uhid').textContent = r.uhid;
+    document.getElementById('rail-demo').textContent = r.demo;
+    document.getElementById('rail-place').textContent = r.place;
+    document.getElementById('rail-surgeon').textContent = r.surgeon;
+    document.getElementById('rail-adm').textContent = r.adm;
+    document.getElementById('rail-place-k').textContent = state.template === 'ipd' ? 'Bed' : 'Chair';
+    var eye = document.getElementById('rail-eye');
+    eye.classList.toggle('left', r.left);
+    eye.querySelector('.eye-v').textContent = r.eye;
+    eye.querySelector('.eye-abbr').textContent = r.abbr;
+    document.getElementById('rail-alerts').style.display = r.alerts ? 'flex' : 'none';
+  }
+
+  function syncTabs() {
+    Array.prototype.forEach.call(document.querySelectorAll('.qtab'), function (t) {
+      var on = t.getAttribute('data-queue') === state.queue;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+
+  function apply() {
+    var dc = state.template !== 'ipd';
+    document.getElementById('rows-dc').classList.toggle('hidden', !dc);
+    document.getElementById('rows-ipd').classList.toggle('hidden', dc);
+    document.getElementById('session-field').classList.toggle('hidden', !dc);
+    document.getElementById('slot-btn').classList.toggle('hidden', !dc);
+    document.getElementById('th-place').textContent = dc ? 'Chair' : 'Bed';
+    document.getElementById('th-when').textContent = dc ? 'Slot / admitted' : 'Admitted / stay';
+    document.getElementById('scope').textContent = dc
+      ? 'Day Care Ward · Tue 25 Aug 2026 · AM list · 8 on today’s OT'
+      : 'General Ward · Tue 25 Aug 2026 · overnight · 3 with OT tomorrow';
+    document.getElementById('ward-input').value = dc ? 'Day Care Ward' : 'General Ward';
+    document.getElementById('occ-stat').textContent = dc ? 'Chairs 12 / 16 occupied' : 'Beds 8 / 12 occupied';
+    document.getElementById('occ-detail').textContent = dc
+      ? '2 cleaning · 2 free · 1 reserved for AM-5'
+      : '2 cleaning · 2 free · 1 reserved for 18:00';
+    document.getElementById('c-need').textContent = dc ? '8' : '4';
+    document.getElementById('c-ward').textContent = dc ? '12' : '8';
+    document.getElementById('c-arrive').textContent = dc ? '4' : '1';
+
+    var coord = state.persona === 'coordinator';
+    Array.prototype.forEach.call(document.querySelectorAll('.coord-only'), function (el) {
+      el.classList.toggle('hidden', !coord);
+    });
+
+    document.getElementById('list-view').classList.toggle('hidden', state.view === 'floor');
+    document.getElementById('floor-view').classList.toggle('hidden', state.view !== 'floor');
+
+    var n = 0;
+    var firstVisible = null;
+    rows().forEach(function (tr) {
+      var q = (tr.getAttribute('data-queue') || '').split(/\s+/);
+      var a = tr.getAttribute('data-attn') || '';
+      var show = q.indexOf(state.queue) !== -1 && (!state.attn || a.split(/\s+/).indexOf(state.attn) !== -1);
+      tr.classList.toggle('hidden', !show);
+      if (show) {
+        n += 1;
+        if (!firstVisible) firstVisible = tr.getAttribute('data-id');
+      }
+      var label = state.persona === 'coordinator' ? tr.getAttribute('data-next-coord') : tr.getAttribute('data-next-nurse');
+      var btn = tr.querySelector('[data-next]');
+      if (btn && label) {
+        btn.textContent = label;
+        btn.classList.toggle('primary', /Mark ready|Admit/.test(label));
+      }
+    });
+
+    var ids = rows().map(function (tr) { return tr.getAttribute('data-id'); });
+    if (ids.indexOf(state.selected) === -1 || document.querySelector('tr[data-id="' + state.selected + '"].hidden')) {
+      state.selected = firstVisible || ids[0];
+    }
+    rows().forEach(function (tr) {
+      tr.classList.toggle('row-selected', tr.getAttribute('data-id') === state.selected);
+    });
+    setRail(state.selected);
+    var primary = document.querySelector('tr[data-id="' + state.selected + '"] [data-next]');
+    if (primary) document.getElementById('rail-primary').textContent = primary.textContent;
+
+    var noun = dc ? 'ward' : 'ward';
+    document.getElementById('listfoot').textContent = state.view === 'floor'
+      ? (dc ? '16 chairs · click a place to open the rail' : '12 beds · click a place to open the rail')
+      : ('Showing ' + n + ' on this ' + noun + (state.attn ? ' · filtered by attention' : ''));
+
+    document.getElementById('preview-note').textContent =
+      'Logged in as ' + (coord ? 'IP coordinator' : 'ward nurse') +
+      ' · ' + (dc ? 'Day Care' : 'Overnight IPD') +
+      ' · ' + (state.view === 'floor' ? 'Floor' : 'List') +
+      ' · default ' + (coord ? 'On ward' : 'Needs me');
+
+    if (state.view === 'floor') renderFloor();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.seg'), function (seg) {
+    var key = seg.getAttribute('data-seg');
+    Array.prototype.forEach.call(seg.querySelectorAll('button'), function (btn) {
+      btn.addEventListener('click', function () {
+        Array.prototype.forEach.call(seg.querySelectorAll('button'), function (b) { b.classList.remove('on'); });
+        btn.classList.add('on');
+        state[key] = btn.getAttribute('data-v');
+        if (key === 'persona' || key === 'template') {
+          state.queue = defaultQueue();
+          state.attn = '';
+          state.selected = key === 'template' ? (state.template === 'ipd' ? 'leela' : 'meena') : state.selected;
+          Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (c) {
+            c.classList.remove('on');
+          });
+          syncTabs();
+        }
+        apply();
+      });
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.qtab'), function (tab) {
+    tab.addEventListener('click', function () {
+      state.queue = tab.getAttribute('data-queue');
+      syncTabs();
+      apply();
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.chip[data-attn]'), function (chip) {
+    chip.addEventListener('click', function () {
+      var key = chip.getAttribute('data-attn');
+      state.attn = state.attn === key ? '' : key;
+      Array.prototype.forEach.call(document.querySelectorAll('.chip[data-attn]'), function (c) {
+        c.classList.toggle('on', c.getAttribute('data-attn') === state.attn);
+      });
+      apply();
+    });
+  });
+
+  document.getElementById('rows-dc').addEventListener('click', onRow);
+  document.getElementById('rows-ipd').addEventListener('click', onRow);
+  function onRow(e) {
+    var tr = e.target.closest('tr');
+    if (!tr || !tr.getAttribute('data-id')) return;
+    state.selected = tr.getAttribute('data-id');
+    apply();
+  }
+
+  apply();
+})();
+</script>
+</body>
+</html>

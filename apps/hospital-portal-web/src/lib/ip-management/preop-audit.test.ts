@@ -53,16 +53,18 @@ describe('preop-audit', () => {
         {
           id: 'a1',
           journeyId: 'j1',
+          action: 'ClinicalStateChanged',
           fieldChanged: 'ClinicalState',
           oldValue: 'Admitted',
           newValue: 'ReadyForSurgery',
+          performedAt: '2026-06-30T12:00:00Z',
           changedAt: '2026-06-30T12:00:00Z',
           changedByUserId: 'u1',
         },
       ],
     });
 
-    expect(events[0].title).toBe('ClinicalState');
+    expect(events[0].title).toBe('ClinicalStateChanged');
     expect(events.some(e => e.title.includes('Pharmacy Preparation'))).toBe(true);
     expect(events.some(e => e.title.includes('Fasting confirmed'))).toBe(true);
   });

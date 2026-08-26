@@ -181,3 +181,46 @@ export async function listCoveragePackages(payerId?: string): Promise<CoveragePa
   });
   return Array.isArray(data) ? data : (data?.items ?? []);
 }
+
+export interface DocumentRequirement {
+  id: string;
+  documentType: string;
+  documentName: string;
+  isRequired: boolean;
+  appliesAt?: string;
+  insuranceProviderId?: string | null;
+  tpaProviderId?: string | null;
+  governmentSchemeId?: string | null;
+}
+
+export async function listDocumentRequirements(opts?: {
+  stage?: string;
+  payerType?: string;
+  insuranceProviderId?: string;
+  tpaProviderId?: string;
+  governmentSchemeId?: string;
+  /** When true, only generic + matching-payer rows (empty ids → generic only). */
+  caseScoped?: boolean;
+}): Promise<DocumentRequirement[]> {
+  const { data } = await getCcmsApi().get('/ccms/master/document-requirements', {
+    params: {
+      stage: opts?.stage,
+      payerType: opts?.payerType,
+      insuranceProviderId: opts?.insuranceProviderId,
+      tpaProviderId: opts?.tpaProviderId,
+      governmentSchemeId: opts?.governmentSchemeId,
+      caseScoped: opts?.caseScoped ? 'true' : undefined,
+    },
+  });
+  const items: Record<string, unknown>[] = Array.isArray(data) ? data : [];
+  return items.map(r => ({
+    id: String(r.id ?? ''),
+    documentType: String(r.documentType ?? ''),
+    documentName: String(r.documentName ?? r.documentType ?? ''),
+    isRequired: Boolean(r.isRequired),
+    appliesAt: r.appliesAt as string | undefined,
+    insuranceProviderId: (r.insuranceProviderId as string | null | undefined) ?? null,
+    tpaProviderId: (r.tpaProviderId as string | null | undefined) ?? null,
+    governmentSchemeId: (r.governmentSchemeId as string | null | undefined) ?? null,
+  }));
+}

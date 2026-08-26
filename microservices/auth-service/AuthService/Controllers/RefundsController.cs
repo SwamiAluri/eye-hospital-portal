@@ -38,11 +38,18 @@ namespace AuthService.Controllers
                     return Unauthorized(new { message = "Invalid user claims" });
                 }
 
+                if (!request.TryResolve(out var billId, out var amount, out var reason, out var error))
+                {
+                    return BadRequest(new { message = error });
+                }
+
                 var refund = await _refundService.RequestRefundAsync(
-                    request.BillId,
-                    request.Amount,
-                    request.Reason,
-                    userId
+                    billId,
+                    amount,
+                    reason,
+                    userId,
+                    request.RefundMode,
+                    request.Notes
                 );
 
                 return Ok(refund);
@@ -163,7 +170,7 @@ namespace AuthService.Controllers
                     id,
                     request.Approved,
                     userId,
-                    request.Notes
+                    request.ResolvedNotes()
                 );
 
                 return Ok(refund);
@@ -188,10 +195,15 @@ namespace AuthService.Controllers
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(request.RefundMode))
+                {
+                    return BadRequest(new { message = "refundMode is required" });
+                }
+
                 var refund = await _refundService.CompleteRefundAsync(
                     id,
-                    request.RefundMode,
-                    request.Notes
+                    request.RefundMode.Trim(),
+                    request.ResolvedNotes()
                 );
 
                 return Ok(refund);
@@ -233,23 +245,92 @@ namespace AuthService.Controllers
         }
     }
 
-    // Request DTOs
+    // Request DTOs — accept portal aliases (opdBillId / refundAmount / refundReason)
+    // and the original BillId / Amount / Reason names. Domain FK stays Refund.BillId.
     public class RefundRequest
     {
         public Guid BillId { get; set; }
+        public Guid OpdBillId { get; set; }
         public decimal Amount { get; set; }
-        public string Reason { get; set; } = string.Empty;
+        public decimal RefundAmount { get; set; }
+        public string? Reason { get; set; }
+        public string? RefundReason { get; set; }
+        public string? RefundMode { get; set; }
+        public string? Notes { get; set; }
+
+        public bool TryResolve(out Guid billId, out decimal amount, out string reason, out string error)
+        {
+            billId = Guid.Empty;
+            amount = 0;
+            reason = string.Empty;
+            error = string.Empty;
+
+            if (BillId != Guid.Empty && OpdBillId != Guid.Empty && BillId != OpdBillId)
+            {
+                error = "billId and opdBillId must refer to the same OpdBill";
+                return false;
+            }
+
+            billId = BillId != Guid.Empty ? BillId : OpdBillId;
+            if (billId == Guid.Empty)
+            {
+                error = "opdBillId is required";
+                return false;
+            }
+
+            var amountSet = Amount != 0m;
+            var refundAmountSet = RefundAmount != 0m;
+            if (amountSet && refundAmountSet && Amount != RefundAmount)
+            {
+                error = "amount and refundAmount must match";
+                return false;
+            }
+
+            amount = amountSet ? Amount : RefundAmount;
+            if (amount <= 0m)
+            {
+                error = "refundAmount must be greater than zero";
+                return false;
+            }
+
+            var resolvedReason = !string.IsNullOrWhiteSpace(Reason) ? Reason : RefundReason;
+            if (string.IsNullOrWhiteSpace(resolvedReason))
+            {
+                error = "refundReason is required";
+                return false;
+            }
+
+            reason = resolvedReason.Trim();
+            return true;
+        }
     }
 
     public class RefundAuthorizationRequest
     {
         public bool Approved { get; set; }
         public string? Notes { get; set; }
+        public string? DenialReason { get; set; }
+
+        public string? ResolvedNotes()
+        {
+            if (!string.IsNullOrWhiteSpace(Notes)) return Notes.Trim();
+            if (!string.IsNullOrWhiteSpace(DenialReason)) return DenialReason.Trim();
+            return null;
+        }
     }
 
     public class RefundCompletionRequest
     {
         public string RefundMode { get; set; } = string.Empty; // cash, card, upi, bank_transfer
         public string? Notes { get; set; }
+        public string? PaymentReference { get; set; }
+
+        public string? ResolvedNotes()
+        {
+            var notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim();
+            var paymentRef = string.IsNullOrWhiteSpace(PaymentReference) ? null : PaymentReference.Trim();
+            if (paymentRef is null) return notes;
+            return string.IsNullOrWhiteSpace(notes) ? paymentRef : notes + "\n" + paymentRef;
+        }
     }
 }

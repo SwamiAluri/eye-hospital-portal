@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body data-screen="W-02">
+<main>
+  <p class="lede">
+    Pre-auth packet for Meena. Required slots come from <code>ccms_document_requirements</code>, not a hardcoded frontend list.
+    Submit is blocked on the server if a required document is missing.
+  </p>
+
+  <h2 class="sec">Checklist — two still required</h2>
+  <div class="frame">
+    <div class="app-header">
+      <h1>Documents</h1>
+      <span class="scope">Case CC-24081 · Meena Iyer · UAT-002</span>
+      <span class="spacer"></span>
+      <span class="badge ot">2 of 5 required remaining</span>
+    </div>
+    <div style="padding:16px">
+      <table class="grid">
+        <thead><tr><th>Document</th><th>Required</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Aadhaar / ID</td><td>Required</td><td><span class="badge ok">On file</span></td><td></td></tr>
+          <tr><td>TPA card / policy</td><td>Required</td><td><span class="badge ok">On file</span></td><td></td></tr>
+          <tr><td>Surgeon advice</td><td>Required</td><td><span class="badge danger">Missing</span></td><td><span class="btn sm">Add</span></td></tr>
+          <tr><td>Biometry print</td><td>Required</td><td><span class="badge danger">Missing</span></td><td><span class="btn sm">Add</span></td></tr>
+          <tr><td>OCT / fundus</td><td>If available</td><td><span class="badge">Not required</span></td><td><span class="btn sm ghost">Add</span></td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn" style="margin-top:12px"><b>Pre-authorization cannot be sent</b> until surgeon advice and biometry are attached.</div>
+    </div>
+    <div class="ws-foot"><span class="spacer"></span><span class="btn primary disabled">Submit to TPA</span></div>
+  </div>
+
+  <h2 class="sec">Ready to submit</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout ok"><b>All required documents are on file.</b> Submit sends the packet. The TPA may still raise a query later.</div>
+    <span class="btn primary" style="margin-top:8px">Submit to TPA</span>
+  </div>
+
+  <h2 class="sec">Master data has no requirements</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout info">No required documents are configured for this payer. Submit is allowed. Optional uploads still appear.</div>
+  </div>
+
+  <table class="map" style="margin-top:16px">
+    <thead><tr><th>Element</th><th>API</th><th>BE</th><th>DB</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>Slots</td><td>GET /ccms/master/document-requirements</td><td>MasterDataFunctions</td><td>ccms_document_requirements</td><td class="owner o-ccms">CCMS</td></tr>
+      <tr><td>Upload</td><td>POST /ccms/coverage-cases/{id}/documents</td><td>DocumentEngineService</td><td>ccms_documents</td><td class="owner o-ccms">CCMS</td></tr>
+      <tr><td>Submit</td><td>POST /ccms/authorizations/{id}/submit</td><td>PreAuthorizationService — new server gate</td><td>—</td><td class="owner o-ccms">CCMS</td></tr>
+    </tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

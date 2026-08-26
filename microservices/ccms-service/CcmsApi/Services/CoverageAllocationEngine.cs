@@ -14,16 +14,65 @@ public class CoverageAllocationEngine
 {
     private readonly CcmsDbContext _db;
     private readonly IWorkflowEngine _workflow;
+    private readonly AuthServiceClient? _auth;
     private readonly ILogger<CoverageAllocationEngine> _log;
 
     public CoverageAllocationEngine(
         CcmsDbContext db,
         IWorkflowEngine workflow,
-        ILogger<CoverageAllocationEngine> log)
+        ILogger<CoverageAllocationEngine> log,
+        AuthServiceClient? auth = null)
     {
         _db       = db;
         _workflow = workflow;
         _log      = log;
+        _auth     = auth;
+    }
+
+    /// <summary>
+    /// Authoritative payer vs patient split. Copay and deductible reduce the
+    /// insurer slice; excluded lines stay on the patient. Used by
+    /// <see cref="AllocateAsync"/> and enhancement reallocation — do not fork.
+    /// </summary>
+    public static AllocationSplit ComputeSplit(
+        decimal totalBillAmount,
+        decimal approvedLimit,
+        decimal copayPercent,
+        decimal deductibleAmount,
+        decimal excludedTotal = 0)
+    {
+        var totalBill = Math.Max(0, totalBillAmount);
+        var excluded = Math.Clamp(excludedTotal, 0, totalBill);
+        var payableTotal = totalBill - excluded;
+        var limit = Math.Max(0, approvedLimit);
+        var coveredByInsurance = Math.Min(payableTotal, limit);
+        var copayPct = Math.Max(0, copayPercent);
+        var copay = Math.Round(coveredByInsurance * copayPct / 100m, 2);
+        var deductible = Math.Max(0, deductibleAmount);
+        var insuranceShare = Math.Max(coveredByInsurance - copay - deductible, 0);
+        var patientShare = Math.Max(payableTotal - insuranceShare, 0) + excluded;
+        return new AllocationSplit(
+            limit, payableTotal, coveredByInsurance, copay, insuranceShare, patientShare, excluded);
+    }
+
+    /// <summary>
+    /// TPA limit is the higher of latest authorization and case projection so
+    /// an approved enhancement (which raises <c>coverageCase.ApprovedAmount</c>
+    /// without rewriting the original preauth row) is visible to allocation.
+    /// </summary>
+    public static decimal ResolveApprovedLimit(decimal? authorizationApprovedAmount, decimal caseApprovedAmount)
+        => Math.Max(Math.Max(0, authorizationApprovedAmount ?? 0), Math.Max(0, caseApprovedAmount));
+
+    /// <summary>
+    /// Recover copay % from a stored summary so enhancement can re-run
+    /// <see cref="ComputeSplit"/> without a new request body.
+    /// </summary>
+    public static decimal InferCopayPercent(decimal insuranceShare, decimal copayAmount, decimal deductibleAmount)
+    {
+        if (copayAmount <= 0) return 0;
+        var coveredByInsurance = insuranceShare + copayAmount + Math.Max(0, deductibleAmount);
+        if (coveredByInsurance <= 0) return 0;
+        return Math.Round(copayAmount * 100m / coveredByInsurance, 4);
     }
 
     public async Task<CcmsBillingSummary> AllocateAsync(
@@ -41,25 +90,18 @@ public class CoverageAllocationEngine
             .OrderByDescending(a => a.CreatedAt)
             .FirstOrDefaultAsync(ct);
 
-        var approvedLimit = auth?.ApprovedAmount ?? coverageCase.ApprovedAmount;
+        var approvedLimit = ResolveApprovedLimit(auth?.ApprovedAmount, coverageCase.ApprovedAmount);
         if (approvedLimit <= 0)
             throw new InvalidOperationException(
                 "Cannot allocate bill: record TPA approval with an approved amount first.");
 
-        var totalBill       = req.TotalBillAmount;
-        var copayPct        = req.CopayPercent ?? 0;
-        var deductible      = req.DeductibleAmount ?? 0;
-
-        // Identify disallowed line items first (excluded items never covered)
         var excludedTotal = req.LineItems?.Where(li => li.IsExcluded).Sum(li => li.BilledAmount) ?? 0;
-        var payableTotal  = totalBill - excludedTotal;  // eligible for insurance coverage
-
-        // Compute allocation on the payable (non-excluded) portion
-        var coveredByInsurance = Math.Min(payableTotal, approvedLimit);
-        var copay              = Math.Round(coveredByInsurance * copayPct / 100m, 2);
-        var effectiveCovered   = Math.Max(coveredByInsurance - copay - deductible, 0);
-        var patientShare       = Math.Max(payableTotal - effectiveCovered, 0) + excludedTotal;
-        var disallowed         = excludedTotal;  // excluded = disallowed
+        var split = ComputeSplit(
+            req.TotalBillAmount,
+            approvedLimit,
+            req.CopayPercent ?? 0,
+            req.DeductibleAmount ?? 0,
+            excludedTotal);
 
         var summary = new CcmsBillingSummary
         {
@@ -68,12 +110,12 @@ public class CoverageAllocationEngine
             CoverageCase_Id       = coverageCaseId,
             BillId                = req.BillId,
             BillDate              = req.BillDate ?? DateTime.UtcNow,
-            TotalBillAmount       = totalBill,
-            InsuranceShareAmount  = effectiveCovered,
-            PatientShareAmount    = patientShare,
-            CopayAmount           = copay,
-            DeductibleAmount      = deductible,
-            DisallowedAmount      = Math.Max(disallowed, 0),
+            TotalBillAmount       = req.TotalBillAmount,
+            InsuranceShareAmount  = split.InsuranceShare,
+            PatientShareAmount    = split.PatientShare,
+            CopayAmount           = split.CopayAmount,
+            DeductibleAmount      = Math.Max(0, req.DeductibleAmount ?? 0),
+            DisallowedAmount      = split.DisallowedAmount,
             CreatedAt             = DateTime.UtcNow,
             UpdatedAt             = DateTime.UtcNow,
             CreatedByUserId       = actorUserId,
@@ -87,7 +129,7 @@ public class CoverageAllocationEngine
         if (req.LineItems is not null)
         {
             // Proportional coverage ratio (avoid division by zero)
-            var coverageRatio = payableTotal > 0 ? effectiveCovered / payableTotal : 0;
+            var coverageRatio = split.PayableTotal > 0 ? split.InsuranceShare / split.PayableTotal : 0;
 
             foreach (var li in req.LineItems)
             {
@@ -140,7 +182,7 @@ public class CoverageAllocationEngine
 
         await _db.SaveChangesAsync(ct);
         _log.LogInformation("Bill allocated for case {CaseId}: Ins={Ins}, Pat={Pat}",
-            coverageCaseId, effectiveCovered, patientShare);
+            coverageCaseId, split.InsuranceShare, split.PatientShare);
 
         // Advance workflow: FINALIZE_BILL → PREPARE_CLAIM (non-blocking; may already be past these states)
         if (coverageCase.WorkflowInstanceId.HasValue)
@@ -158,6 +200,12 @@ public class CoverageAllocationEngine
                     _log.LogWarning(ex, "{Trigger} fire failed for case {CaseId} (may be benign)", trigger, coverageCaseId);
                 }
             }
+        }
+
+        if (_auth is not null && coverageCase.JourneyId is { } jid)
+        {
+            await _auth.ApplyCoverageAllocationAsync(
+                jid, split.InsuranceShare, split.PatientShare, actorUserId, ct);
         }
 
         return summary;
@@ -186,7 +234,58 @@ public class CoverageAllocationEngine
         var allocations = await GetAllocationsBySummaryAsync(summary.Id, ct);
         return new BillingSummaryWithAllocations(summary, allocations);
     }
+
+    /// <summary>
+    /// After enhancement raises the case approved limit, re-run allocation from
+    /// the latest billing summary and push the engine split to Billing.
+    /// Returns null when no bill has been allocated yet — callers must not
+    /// invent payer = approved limit / patient = 0.
+    /// </summary>
+    public async Task<CcmsBillingSummary?> ReallocateToCurrentApprovedLimitAsync(
+        Guid coverageCaseId, Guid actorUserId, CancellationToken ct = default)
+    {
+        var existing = await GetWithAllocationsAsync(coverageCaseId, ct);
+        if (existing is null)
+            return null;
+
+        var copayPct = InferCopayPercent(
+            existing.Summary.InsuranceShareAmount,
+            existing.Summary.CopayAmount,
+            existing.Summary.DeductibleAmount);
+
+        List<BillLineItemRequest>? lines = existing.Allocations.Count == 0
+            ? null
+            : existing.Allocations.Select(a => new BillLineItemRequest(
+                a.LineItemType,
+                a.LineItemCode,
+                a.LineItemDescription,
+                a.BilledAmount,
+                IsExcluded: a.DisallowedAmount > 0 && a.CoveredAmount <= 0,
+                a.DisallowedReason)).ToList();
+
+        return await AllocateAsync(
+            coverageCaseId,
+            actorUserId,
+            new AllocateBillRequest(
+                existing.Summary.BillId,
+                existing.Summary.BillDate,
+                existing.Summary.TotalBillAmount,
+                copayPct,
+                existing.Summary.DeductibleAmount,
+                lines),
+            ct);
+    }
 }
+
+public record AllocationSplit(
+    decimal ApprovedLimit,
+    decimal PayableTotal,
+    decimal CoveredByInsurance,
+    decimal CopayAmount,
+    decimal InsuranceShare,
+    decimal PatientShare,
+    decimal DisallowedAmount
+);
 
 public record BillingSummaryWithAllocations(
     CcmsBillingSummary Summary,

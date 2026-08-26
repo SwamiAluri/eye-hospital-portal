@@ -108,6 +108,26 @@ public class ApprovalEventService
             .OrderByDescending(e => e.RecordedAt)
             .ToListAsync(ct);
 
+    public async Task<ApprovalSnapshotDto> GetSnapshotAsync(Guid coverageCaseId, CancellationToken ct = default)
+    {
+        var coverageCase = await _db.CoverageCases.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == coverageCaseId && c.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Coverage case {coverageCaseId} not found.");
+
+        var events = await GetEventsByCaseIdAsync(coverageCaseId, ct);
+        var latest = events.FirstOrDefault();
+        decimal? approvedAmount = coverageCase.ApprovedAmount != 0
+            ? coverageCase.ApprovedAmount
+            : latest?.ApprovedAmount;
+        return new ApprovalSnapshotDto(
+            coverageCase.Id,
+            coverageCase.CurrentState ?? string.Empty,
+            events.Count,
+            latest?.RecordedAt ?? coverageCase.UpdatedAt,
+            approvedAmount,
+            latest?.RecordedByUserId);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private async Task<CcmsCoverageCase> RequireCaseAsync(Guid id, CancellationToken ct)
@@ -127,6 +147,8 @@ public class ApprovalEventService
             ApprovalStatus   = approvalStatus,
             RecordedByUserId = userId,
             RecordedAt       = DateTime.UtcNow,
+            PreviousState    = cc.CurrentState,
+            CorrelationId    = cc.Id,
             CreatedAt        = DateTime.UtcNow,
             CreatedByUserId  = userId,
             Status           = "active"
@@ -153,4 +175,13 @@ public record RecordRejectionRequest(
 public record RecordClarificationRequest(
     string  Query,
     string? QueryJson
+);
+
+public record ApprovalSnapshotDto(
+    Guid CaseId,
+    string CurrentState,
+    int TotalEvents,
+    DateTime? LastEventAt,
+    decimal? ApprovedAmount,
+    Guid? ApprovedBy
 );

@@ -81,6 +81,7 @@ namespace AuthService.SeedData
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.claim.write",           Name = "Write Claims (alias)",             Module = "ccms", Action = "write",           ResourceType = "claim",                 Scope = "branch", Description = "Phase 2 alias covering claim create/submit",                    IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.claim.acknowledge",     Name = "Acknowledge Claim",                Module = "ccms", Action = "acknowledge",     ResourceType = "claim",                 Scope = "branch", Description = "Record TPA acknowledgement of a claim",                         IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ip.emergency_fc.apply",      Name = "Apply Emergency FC",               Module = "ip_management", Action = "apply", ResourceType = "emergency_fc",          Scope = "branch", Description = "Apply Emergency Financial Clearance on an IP journey",          IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ip.implant.mismatch.override", Name = "Override IOL mismatch",          Module = "ip_management", Action = "override", ResourceType = "patient_journey",     Scope = "branch", Description = "Record an implant when power or model differs from the planned lens", IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 // Settlements
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.settlement.create",    Name = "Record Settlement",                Module = "ccms", Action = "create",          ResourceType = "settlement",            Scope = "branch", Description = "Record a payment receipt against a claim",                      IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
                 new Permission { Id = Guid.NewGuid(), TenantId = tenantId, Code = "ccms.settlement.read",      Name = "View Settlements",                 Module = "ccms", Action = "read",            ResourceType = "settlement",            Scope = "branch", Description = "View settlement history and amounts",                           IsSystemPermission = true, DepartmentSpecific = false, IsCustom = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
@@ -100,6 +101,11 @@ namespace AuthService.SeedData
             };
             permissions.AddRange(ccmsPerms);
 
+            // IP + billing codes from SQL 156 plus A5 (ip.safety_token.print).
+            // A2 (ip.implant.mismatch.override) is already in the CCMS block above.
+            // NOT EXISTS is Code+TenantId in the loop below — keep SQL 156/171/172.
+            permissions.AddRange(IpBillingPermissionCatalog.Create(tenantId, DateTime.UtcNow));
+
             // Add permissions that don't exist
             foreach (var permission in permissions)
             {
@@ -114,7 +120,7 @@ namespace AuthService.SeedData
             
             await context.SaveChangesAsync();
             
-            Console.WriteLine($"✓ Seeded {permissions.Count} permissions (incl. CCMS Phase 2 aliases) for system tenant");
+            Console.WriteLine($"✓ Seeded {permissions.Count} permissions (incl. CCMS Phase 2 aliases and IP/billing) for system tenant");
         }
 
         /// <summary>
@@ -135,7 +141,6 @@ namespace AuthService.SeedData
                 "ccms.enhancement.create",
                 "ccms.enhancement.decide",
                 "ccms.claim.write",
-                "ip.emergency_fc.apply",
             };
 
             // Ensure system-tenant aliases exist first.

@@ -1,10 +1,10 @@
+@import 'react-day-picker/style.css';
+@import '../components/counsellors-desk/session/counselling-session-theme.css';
+@import '../styles/ip-target.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import 'react-day-picker/style.css';
-
-@import '../components/counsellors-desk/session/counselling-session-theme.css';
 
 /* Dark Mode Utilities */
 /* @import '../styles/dark-mode.css'; */
@@ -109,13 +109,11 @@
   margin: 0;
 }
 
-html {
-  max-width: 100vw;
-}
-
+html,
 body {
+  height: 100%;
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 /* Healthcare Portal - Modern Animations */
@@ -409,5 +407,33 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* BILL-030: print the grouped bill, not the rest of the OPD workspace. */
+.bill-print-only {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .bill-print-root,
+  .bill-print-root * {
+    visibility: visible;
+  }
+  .bill-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .bill-print-hide {
+    display: none !important;
+  }
+  .bill-print-only {
+    display: inline !important;
+    visibility: visible;
   }
 }

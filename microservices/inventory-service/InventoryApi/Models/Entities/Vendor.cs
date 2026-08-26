@@ -11,6 +11,8 @@ public class Vendor
     public string VendorCategory { get; set; } = "general";
     /// <summary>Marks this vendor as preferred supplier for its category.</summary>
     public bool IsPreferred { get; set; } = false;
+    /// <summary>True when stock received from this vendor is consignment (issue/return against vendor-owned lots).</summary>
+    public bool IsConsignmentVendor { get; set; } = false;
     public string? ContactPerson { get; set; }
     public string? Phone { get; set; }
     public string? Email { get; set; }

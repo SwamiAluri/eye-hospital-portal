@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-04">
+<main>
+
+  <p class="lede">
+    The ward nurse&rsquo;s working list: who is on today, how ready each patient is, and one action per row.
+    <strong>The interaction model is already right.</strong> Only the data layer and the dialog semantics change &mdash;
+    no workflow is altered.
+  </p>
+
+  <div class="callout info">
+    <b>Scope of change.</b> Move from manual <code>useState</code>/<code>useEffect</code> fetching to
+    <code>useIpJourneysQuery</code> so the ward board and the census share one cache and cannot disagree &middot;
+    give the five hand-rolled inline modals Radix dialog semantics &middot; route every reason-required action through
+    <a href="s-17-reason-confirm.html">S-17</a> &middot; align realtime on <code>useNotificationHubInvalidation</code>.
+  </div>
+
+  <div class="frame">
+    <div class="app-header">
+      <h1>Ward Management</h1>
+      <span class="scope">Day Care Ward &middot; 24 Aug 2026</span>
+      <span class="spacer"></span>
+      <span class="btn sm">&#8635; Refresh</span>
+      <a class="btn sm" href="s-13-slot-board.html">Slot board <span class="mark new">2</span></a>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="label">Expected today</div><div class="value num">12</div></div>
+      <div class="kpi is-inhouse"><div class="label">Admitted</div><div class="value num">108</div></div>
+      <div class="kpi"><div class="label">Ready for OT</div><div class="value num">12</div></div>
+      <div class="kpi is-ot"><div class="label">Post-op in ward</div><div class="value num">3</div></div>
+    </div>
+
+    <div class="filters">
+      <input class="input placeholder" style="flex:1;min-width:200px" value="Search patient, UHID, bed…" readonly>
+      <span class="btn sm">Ward: Day Care &#9662;</span>
+      <span class="btn sm">Session: AM &#9662;</span>
+      <span class="btn sm ghost">Clear</span>
+    </div>
+
+    <div class="split">
+      <div class="list">
+        <table class="grid">
+          <thead>
+            <tr><th>Patient</th><th>Procedure</th><th>Readiness</th><th>Bed</th><th>Slot</th><th>Next action</th></tr>
+          </thead>
+          <tbody>
+            <tr class="row-selected">
+              <td><div class="cell-primary">Meena Iyer</div><div class="cell-sub">UAT-002 &middot; 54F</div></td>
+              <td>LASIK <span class="cell-sub">OD</span></td>
+              <td>
+                <div class="meter"><span class="track"><span class="fill" style="width:78%"></span></span><span>7 of 9</span></div>
+                <div class="cell-sub" style="color:var(--danger)">Consent, PAC</div>
+              </td>
+              <td>B-04</td><td class="num">AM-3</td>
+              <td><span class="btn sm">Open pre-op</span></td>
+            </tr>
+            <tr>
+              <td><div class="cell-primary">Ananya Sharma</div><div class="cell-sub">UAT-014 &middot; 61F</div></td>
+              <td>Corneal <span class="cell-sub">OS</span></td>
+              <td><div class="meter"><span class="track"><span class="fill ok" style="width:100%"></span></span><span>9 of 9</span></div></td>
+              <td>B-05</td><td class="num">AM-4</td>
+              <td><span class="btn sm primary">Mark ready for OT</span></td>
+            </tr>
+            <tr>
+              <td><div class="cell-primary">Amit Verma</div><div class="cell-sub">UAT-021 &middot; 47M</div></td>
+              <td>Retinal <span class="cell-sub">OD</span></td>
+              <td><span class="badge ot">Sent to OT</span></td>
+              <td>B-07</td><td class="num">AM-1</td>
+              <td><span class="btn sm">Track in OT</span></td>
+            </tr>
+            <tr>
+              <td><div class="cell-primary">Rekha Menon</div><div class="cell-sub">UAT-009 &middot; 70F</div></td>
+              <td>Cataract <span class="cell-sub">OS</span></td>
+              <td><span class="badge inhouse">Post-op recovery</span></td>
+              <td>B-02</td><td class="num">AM-0</td>
+              <td><span class="btn sm">Open post-op</span></td>
+            </tr>
+            <tr>
+              <td><div class="cell-primary">Tara Nair</div><div class="cell-sub">UAT-033 &middot; 66F</div></td>
+              <td>Cataract <span class="cell-sub">OD</span></td>
+              <td><span class="badge">Expected &middot; not admitted</span></td>
+              <td class="muted">&mdash;</td><td class="num">PM-3</td>
+              <td><span class="btn sm">Admit</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="listfoot">Showing 5 of 120 &middot; <kbd>Enter</kbd> opens the drawer &middot; <kbd>Esc</kbd> closes</div>
+      </div>
+
+      <aside class="rail">
+        <div class="rail-head">
+          <div class="name">Meena Iyer</div>
+          <div class="ident">UAT-002 &middot; 54F &middot; Day Care &middot; B-04</div>
+        </div>
+        <div class="rail-sec">
+          <p class="rail-h">Pre-op readiness</p>
+          <ul class="blockers">
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Admission &amp; bed</span></li>
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Clinical evaluation</span></li>
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">Surgical consent</span></li>
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Investigations</span></li>
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">PAC assessment</span></li>
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Department clearance</span></li>
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Fasting &amp; medication</span></li>
+          </ul>
+        </div>
+        <div class="rail-sec">
+          <div class="actionstack">
+            <a class="btn primary block" href="s-05-preop-workspace.html">Open pre-op workspace</a>
+            <span class="btn ghost">Transfer bed</span>
+            <span class="btn ghost">Cancel today&rsquo;s surgery</span>
+            <span class="btn ghost">Cancel admission</span>
+          </div>
+        </div>
+        <div class="rail-sec">
+          <p class="rail-h">Vitals last recorded</p>
+          <div class="rail-line"><span class="k">BP</span><span class="v">128/82</span></div>
+          <div class="rail-line"><span class="k">Pulse</span><span class="v">76</span></div>
+          <div class="rail-line"><span class="k">At</span><span class="v">01:10 pm</span></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker fix">3</span><span><b>Shared cache with S-01.</b> Today the ward board fetches independently, so a transition made on the census can leave the ward board showing a stale state until a manual refresh.</span></li>
+    <li><span class="marker">1</span><span><b>Readiness meter stays server-derived</b> from <code>PreOpReadinessEngine</code>. The frontend must never compute readiness &mdash; that is clinical truth.</span></li>
+    <li><span class="marker">1</span><span><b>Cancel today, cancel admission and rebook</b> move behind <a href="s-17-reason-confirm.html">S-17</a>. All three release beds and notify OT, so they need a recorded reason.</span></li>
+    <li><span class="marker">1</span><span><code>WardPatientDrawer</code> already has <code>role="dialog"</code>, <code>aria-modal</code>, a focus trap and Escape. It is the accessibility reference the census rail is being brought up to.</span></li>
+  </ul>
+
+  <h2 class="sec">Records the ward creates, and their history</h2>
+  <p class="lede" style="margin-bottom:14px">
+    Three append-only series belong to the ward: observations, nursing notes and daily progress notes. Each gets an
+    <b>Add</b> control in its panel header and a <b>log below it</b> showing who recorded what and when. Verified
+    routes are in <a href="conventions.html">conventions &sect;3</a>.
+  </p>
+
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:10px">
+        <h3 style="margin:0;font-size:15px">Rekha Menon &middot; B-02 &mdash; ward record</h3>
+        <div class="row">
+          <span class="btn sm primary">Add observation</span>
+          <span class="btn sm">Add nursing note</span>
+          <span class="btn sm">Add progress note</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="row between" style="margin-bottom:8px">
+          <p class="panel-h" style="margin:0">Observations <span class="faint">4 today</span></p>
+          <span class="btn sm primary">Add observation</span>
+        </div>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>When</th><th>BP</th><th>Pulse</th><th>SpO&#8322;</th><th>Temp</th><th>Pain</th><th>By</th><th>State</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>10:25 am</td><td>132/78</td><td>72</td><td>99%</td><td>98.1</td><td>1</td><td>S. Nair</td><td><span class="badge ok no-dot">Current</span></td><td><span class="btn sm ghost">Correct</span></td></tr>
+            <tr><td>09:55 am</td><td>134/80</td><td>74</td><td>99%</td><td>98.2</td><td>1</td><td>S. Nair</td><td><span class="badge ok no-dot">Current</span></td><td><span class="btn sm ghost">Correct</span></td></tr>
+            <tr><td>09:25 am</td><td>138/84</td><td>78</td><td>98%</td><td>98.3</td><td>2</td><td>S. Nair</td><td><span class="badge no-dot">Corrected 09:31</span></td><td><span class="btn sm ghost">History</span></td></tr>
+            <tr><td>07:40 am</td><td>140/88</td><td>82</td><td>98%</td><td>98.4</td><td>0</td><td>K. Menon</td><td><span class="badge ok no-dot">Current</span></td><td><span class="btn sm ghost">Correct</span></td></tr>
+          </tbody>
+        </table>
+        <p class="hint"><code>POST /api/ip-management/journeys/{id}/vitals</code> appends to <code>vital_sign</code>;
+        <code>PATCH &hellip;/vitals/{vitalId}</code> corrects a row and marks it. Ward and pre-op observations share
+        one table, so <a href="s-05-preop-workspace.html">S-05</a> step 2 and this panel show one continuous series
+        rather than two partial ones.</p>
+      </div>
+
+      <div class="cols-2">
+        <div class="panel">
+          <div class="row between" style="margin-bottom:8px">
+            <p class="panel-h" style="margin:0">Nursing notes</p>
+            <span class="btn sm">Add note</span>
+          </div>
+          <ul class="timeline">
+            <li><b>10:30 am &middot; S. Nair</b><br><span class="faint">Ambulating independently, tolerated oral fluids, eye shield in place.</span></li>
+            <li><b>09:30 am &middot; S. Nair</b><br><span class="faint">Returned from theatre. Pad and shield intact, no discomfort reported.</span></li>
+          </ul>
+          <p class="hint"><code>POST &hellip;/nurse-records</code> &rarr; <code>nurse_record</code>. Editable via
+          <code>PATCH &hellip;/nurse-records/{recordId}</code> for a typo, marked as edited.</p>
+        </div>
+        <div class="panel">
+          <div class="row between" style="margin-bottom:8px">
+            <p class="panel-h" style="margin:0">Daily progress notes</p>
+            <span class="btn sm">Add note</span>
+          </div>
+          <ul class="timeline">
+            <li><b>24 Aug 11:00 am &middot; Dr. S. Iyer</b><br><span class="faint">Day 0 post-op. Cornea clear, IOL in the bag, IOP normal. For discharge today.</span></li>
+          </ul>
+          <p class="hint"><code>POST &hellip;/progress-notes</code> &rarr; <code>ip_daily_progress_note</code>.</p>
+          <div class="callout warn" style="margin-top:8px">
+            <b>Gap:</b> there is no update endpoint, so a typo in a signed progress note cannot currently be corrected
+            or annotated. An addendum path is gap 4 in <a href="conventions.html">conventions</a>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n ok">1</span><span class="t">After recording</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout ok" style="margin:0"><b>Observation recorded at 10:25 am.</b> Three stable readings 30
+        minutes apart &mdash; recovery criteria met.</div>
+      </div></div>
+      <p class="vc">The confirmation states the clinical consequence, which is what the nurse was actually checking
+      for.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Out of range</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout warn" style="margin:0"><b>Recorded, and flagged.</b> BP 190/110 is well above the range
+        for surgery. The board now shows this patient as needing review.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm primary">Tell the doctor</span><span class="btn sm ghost">Add a note</span></div>
+      </div></div>
+      <p class="vc">The value is <b>always saved</b> and then flagged. Refusing to record an abnormal reading would be
+      the worst possible behaviour.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n">3</span><span class="t">Correcting a reading</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout info" style="margin:0"><b>Correcting the 09:25 am reading.</b> The original value stays on
+        the record and is shown as corrected.</div>
+        <div class="rail-line" style="margin-top:8px"><span class="k">Was</span><span class="v">138/84</span></div>
+        <div class="rail-line"><span class="k">Now</span><span class="v">128/84</span></div>
+        <div class="field" style="margin-top:6px"><label>Reason</label><input class="input" value="Transcription error" readonly></div>
+      </div></div>
+      <p class="vc">Correction is transparent, not silent. Values a clinician acted on must remain visible.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Every ward action</h2>
+  <p class="lede" style="margin-bottom:14px">Six actions reachable from a ward row. Each is a focused dialog
+  (<code>role="dialog"</code>, <code>aria-modal</code>, focus trap, Escape, focus restored). The three that are
+  irreversible or move money route through <a href="s-17-reason-confirm.html">S-17</a>.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Transfer bed</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Transfer bed &mdash; Meena Iyer</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="rail-line"><span class="k">Current</span><span class="v">Day Care &middot; B-04</span></div>
+            <div class="cols-2" style="margin-top:8px">
+              <div class="field"><label>Target ward</label><input class="input" value="Day Care Ward" readonly></div>
+              <div class="field"><label>Target bed</label><input class="input" value="B-09 (available)" readonly></div>
+            </div>
+            <div class="field"><label>Reason</label><input class="input placeholder" value="Optional note" readonly></div>
+            <div class="callout info">Only beds that Auth reports as <b>Available</b> are listed. IP requests the
+            transition; <code>BedLifecyclePolicy</code> decides.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Transfer</span></div>
+        </div>
+      </div>
+      <p class="vc">Vacate and occupy are one atomic request. A partial transfer leaves two beds wrong at once.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Record vitals</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Record observation &mdash; Meena Iyer</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="cols-3">
+              <div class="field"><label>BP</label><input class="input" value="128/82" readonly></div>
+              <div class="field"><label>Pulse</label><input class="input" value="76" readonly></div>
+              <div class="field"><label>SpO&#8322;</label><input class="input" value="98" readonly></div>
+              <div class="field"><label>Temp &deg;F</label><input class="input" value="98.2" readonly></div>
+              <div class="field"><label>RBS</label><input class="input placeholder" value="mg/dL" readonly></div>
+              <div class="field"><label>Pain 0&ndash;10</label><input class="input" value="0" readonly></div>
+            </div>
+            <div class="field"><label>Note</label><input class="input placeholder" value="Optional" readonly></div>
+            <div class="callout warn">Out-of-range values are flagged on save and surface on the ward board as a
+            deteriorating-patient chip. They are never silently accepted.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Save observation</span></div>
+        </div>
+      </div>
+      <p class="vc">The highest-frequency ward action, so it is two clicks from the board and never leaves the page.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">3</span><span class="t">Cancel today&rsquo;s surgery</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Cancel today&rsquo;s surgery</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout warn"><b>The patient stays admitted.</b> Only the scheduled surgery is cancelled;
+            slot AM-3 is released back to the OT board.</div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="BP 190/110 on arrival &mdash; unfit today" readonly></div>
+            <div class="field"><label>Category</label><input class="input" value="Clinical &mdash; patient unfit" readonly></div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Bed B-04 retained</li>
+              <li><span class="bx on">&#10003;</span> Slot AM-3 released</li>
+              <li><span class="bx on">&#10003;</span> Advance retained, no refund triggered</li>
+            </ul>
+          </div>
+          <div class="dialog-foot"><span class="btn">Keep scheduled</span><span class="btn danger">Cancel surgery</span></div>
+        </div>
+      </div>
+      <p class="vc">Listing the consequences prevents the most common confusion: cancelling the surgery is not
+      cancelling the admission.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">4</span><span class="t">Cancel admission</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Cancel admission</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>This releases bed B-04 and ends the journey.</b> It cannot be undone.</div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input placeholder" value="Minimum 10 characters" readonly></div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Bed B-04 released to inventory</li>
+              <li><span class="bx on">&#10003;</span> Slot AM-3 released</li>
+              <li><span class="bx no">&#10005;</span> Advance &#8377;30,000 <b>not</b> refunded automatically</li>
+            </ul>
+            <div class="callout warn">A refund is a separate authorised action in
+            <a href="s-12-bill-detail.html">S-12</a>. The patient appears on the Cancelled tab with
+            &ldquo;Refund advance&rdquo; as the next action so the money is not forgotten.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Keep admission</span><span class="btn danger disabled">Cancel admission</span></div>
+        </div>
+      </div>
+      <p class="vc">Destructive and money-adjacent, so it uses the <a href="s-17-reason-confirm.html">S-17</a> pattern:
+      consequences named, reason mandatory, confirm disabled until valid.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">5</span><span class="t">Rebook cancelled surgery</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Rebook surgery &mdash; Farid Khan</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout info">Cancelled 24 Aug &mdash; BP 190/110 on arrival. Pre-op steps already completed
+            are retained; consent and PAC are re-validated for the new date.</div>
+            <div class="cols-2">
+              <div class="field"><label>New date</label><input class="input" value="27 Aug 2026" readonly></div>
+              <div class="field"><label>Slot</label><input class="input" value="AM-2 &middot; Theatre 1" readonly></div>
+            </div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Investigations still valid (within 7 days)</li>
+              <li><span class="bx no">&#10005;</span> PAC must be repeated</li>
+              <li><span class="bx no">&#10005;</span> Consent date must be updated</li>
+            </ul>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Rebook</span></div>
+        </div>
+      </div>
+      <p class="vc">Rebooking states which clearances survive and which expire. Silently carrying forward a stale PAC
+      is a patient-safety issue, not a convenience.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">6</span><span class="t">Send to OT</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Send to OT &mdash; Amit Verma</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="cols-2">
+              <div class="field"><label>Theatre</label><input class="input" value="Theatre 1" readonly></div>
+              <div class="field"><label>Escorted by</label><input class="input" value="S. Nair" readonly></div>
+            </div>
+            <ul class="checklist">
+              <li><span class="bx on">&#10003;</span> Identity band checked</li>
+              <li><span class="bx on">&#10003;</span> Site marked &mdash; <b>OS (left)</b></li>
+              <li><span class="bx on">&#10003;</span> Consent in file</li>
+              <li><span class="bx on">&#10003;</span> Fasting confirmed</li>
+            </ul>
+            <div class="callout info">The bed stays <b>occupied</b> while the patient is in theatre. Releasing it here
+            is how a day-care patient returns to a bed that has been given away.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Send to OT</span></div>
+        </div>
+      </div>
+      <p class="vc">The ward-side half of the handover. The OT-side acceptance is on
+      <a href="s-06-ot-board.html">S-06</a>; both halves are recorded.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Board states</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Empty ward</span></div>
+      <div class="frame"><div class="empty">
+        <div class="big">No patients in Day Care Ward</div>
+        4 admissions are expected today. The first is scheduled for 07:10 am.
+        <div style="margin-top:10px"><span class="btn sm">View expected admissions</span></div>
+      </div></div>
+      <p class="vc">An empty ward at 6 am is normal. The empty state says what is coming rather than looking broken.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Loading</span></div>
+      <div class="frame">
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w40"></span><span class="sk w20"></span></div>
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w30"></span><span class="sk w30"></span></div>
+        <div class="sk-row"><span class="sk w20"></span><span class="sk w40"></span><span class="sk w20"></span></div>
+      </div>
+      <p class="vc">Skeleton rows preserve the row rhythm so the board does not jump when data lands.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">3</span><span class="t">Bed conflict</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout danger" style="margin:0"><b>Bed B-09 was taken.</b> Another coordinator assigned it at
+        02:11&nbsp;pm. Choose a different bed.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm primary">Choose another bed</span><span class="btn sm ghost">Refresh board</span></div>
+      </div></div>
+      <p class="vc">Auth is authoritative on occupancy. The UI shows availability optimistically and handles the race
+      when it loses.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr><td>Board rows <span class="mark fix">3</span></td><td>migrate to <code>useIpJourneysQuery</code></td><td><code>GET /ip-management/journeys</code></td><td><code>PatientJourneyService.ListAsync</code></td><td><code>patient_journey</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td></tr>
+      <tr><td>KPI strip</td><td><code>fetchWardDashboardSummary</code></td><td><code>GET /ip-management/journeys/dashboard-summary</code></td><td><code>GetDashboardSummaryAsync</code></td><td><code>patient_journey</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td></tr>
+      <tr><td>Readiness meter</td><td><code>WardReadinessMeter</code> from the row DTO</td><td>rollup on the list response</td><td><code>PreOpReadinessEngine</code></td><td>pre-op chain</td><td class="owner o-ip">IP</td><td><code>ip.view</code></td></tr>
+      <tr><td>Realtime</td><td><code>useWardRealtime</code> &rarr; align with <code>useNotificationHubInvalidation</code></td><td>SignalR <code>/notificationHub</code></td><td><code>NotificationHub</code></td><td>&mdash;</td><td class="owner o-auth">Auth</td><td>authenticated</td></tr>
+      <tr><td>Admit</td><td><code>admitPatient</code></td><td><code>POST /journeys/{id}/admit</code></td><td><code>AdmitAsync</code> &rarr; <code>AuthBedLifecycleClient</code></td><td><code>patient_journey</code>, <code>journey_bed_assignment</code>, <code>bed_inventory</code></td><td class="owner o-ip">IP + <span class="o-auth">Auth</span></td><td><code>ip.admit</code></td></tr>
+      <tr><td>Cancel today&rsquo;s surgery</td><td>S-17 wrapper</td><td><code>POST /journeys/{id}/cancel-today-surgery</code></td><td><code>CancelTodaySurgeryAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ward.checklist.edit</code> | <code>ot.safety.sign</code></td></tr>
+      <tr><td>Cancel admission</td><td>S-17 wrapper</td><td><code>POST /journeys/{id}/cancel-admission</code></td><td><code>CancelAdmissionAsync</code></td><td><code>patient_journey</code>, bed release</td><td class="owner o-ip">IP + <span class="o-auth">Auth</span></td><td>as above</td></tr>
+      <tr><td>Rebook</td><td><code>rebookCancelledSurgery</code></td><td><code>POST /journeys/{id}/rebook</code></td><td><code>RebookCancelledSurgeryAsync</code></td><td><code>patient_journey</code></td><td class="owner o-ip">IP</td><td>as above</td></tr>
+      <tr><td>Open pre-op</td><td><a href="s-05-preop-workspace.html">S-05</a></td><td>pre-op family</td><td><code>PreOpFunctions</code></td><td>pre-op chain</td><td class="owner o-ip">IP</td><td><code>ward.checklist.edit</code></td></tr>
+      <tr><td>Open post-op</td><td><a href="s-08-postop-workspace.html">S-08</a></td><td>post-op family</td><td><code>PostOpFunctions</code></td><td>post-op tables</td><td class="owner o-ip">IP</td><td><code>ward.checklist.edit</code></td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

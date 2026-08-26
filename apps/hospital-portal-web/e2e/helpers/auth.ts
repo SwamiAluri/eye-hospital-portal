@@ -42,8 +42,15 @@ export async function seedBrowserAuth(page: Page, login: LoginPayload): Promise<
     },
     { login, tenantId: E2E_TENANT_ID },
   );
-  await page.goto('/dashboard');
-  await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  await page.waitForURL(/\/dashboard/, { timeout: 90_000 });
+  await page.waitForFunction(() => Boolean(localStorage.getItem('auth_token')), null, {
+    timeout: 15_000,
+  });
+  // DashboardLoadingSkeleton has no nav/aside. Wait for the real Sidebar after zustand hydrate.
+  await expect(page.locator('nav[aria-label="Main navigation"]')).toBeVisible({
+    timeout: 90_000,
+  });
 }
 
 export function apiHeaders(token: string): Record<string, string> {

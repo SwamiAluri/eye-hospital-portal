@@ -92,6 +92,18 @@ public class OpdBillPayment
     [StringLength(50)]
     public string? ReceiptNumber { get; set; }
 
+    /// <summary>Payment | Advance | Discount | Refund | Reversal. Append-only; never mutate historical rows.</summary>
+    [Column("payment_kind")]
+    [StringLength(20)]
+    public string PaymentKind { get; set; } = "Payment";
+
+    [Column("reversed_payment_id")]
+    public Guid? ReversedPaymentId { get; set; }
+
+    [Column("idempotency_key")]
+    [StringLength(80)]
+    public string? IdempotencyKey { get; set; }
+
     // Standard audit columns
     [Column("status")]
     [StringLength(20)]

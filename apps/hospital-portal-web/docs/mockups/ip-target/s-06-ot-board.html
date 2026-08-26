@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-06">
+<main>
+
+  <p class="lede">
+    Slot-ordered theatre list with an expandable intra-op row. The material change is that
+    <strong>implants and consumables are recorded here, at the point of use</strong>, which is what turns charge
+    capture from a retrospective clerical exercise into a by-product of doing the surgery.
+  </p>
+
+  <div class="frame">
+    <div class="app-header">
+      <h1>Operation Theatre</h1>
+      <span class="scope">Theatre 1 &middot; AM session &middot; 24 Aug 2026</span>
+      <span class="spacer"></span>
+      <span class="btn sm">&#8635; Refresh</span>
+      <a class="btn sm" href="s-13-slot-board.html">Slot board</a>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="label">Sent to OT</div><div class="value num">6</div></div>
+      <div class="kpi is-ot"><div class="label">In OT</div><div class="value num">1</div></div>
+      <div class="kpi is-inhouse"><div class="label">Completed</div><div class="value num">14</div></div>
+      <div class="kpi"><div class="label">Avg turnover</div><div class="value num">6m</div><div class="src">journey_slot timestamps</div></div>
+    </div>
+
+    <table class="grid">
+      <thead>
+        <tr><th>Seq</th><th>Patient</th><th>Eye</th><th>Procedure</th><th>Surgeon</th><th>OT state</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        <tr class="row-selected expanded-parent">
+          <td class="num">AM-1</td>
+          <td><div class="cell-primary">Amit Verma</div><div class="cell-sub">UAT-021 &middot; 47M</div></td>
+          <td><b>OD</b></td>
+          <td>Retinal detachment repair</td>
+          <td>Dr. Rao</td>
+          <td><span class="badge ot">In progress</span></td>
+          <td><span class="btn sm primary">Complete surgery</span></td>
+        </tr>
+        <tr class="row-selected">
+          <td></td>
+          <td colspan="6" style="padding-top:0">
+            <div class="row" style="gap:8px;margin-bottom:10px">
+              <span class="badge ok">WHO checklist signed</span>
+              <span class="badge ok">Anaesthesia recorded</span>
+              <span class="badge info">Started 08:14 &middot; 22 min elapsed</span>
+            </div>
+
+            <div class="panel">
+              <div class="row between" style="margin-bottom:8px">
+                <p class="panel-h" style="margin:0">Implants &amp; consumables <span class="mark new">2</span></p>
+                <a class="btn sm primary" href="s-07-implant-scan.html">+ Scan implant</a>
+              </div>
+              <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+                <thead><tr><th>Item</th><th>Detail</th><th>Batch / serial</th><th>Status</th><th>Charge</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td>Alcon SN60WF <span class="cell-sub">IOL</span></td>
+                    <td>+21.0 D &middot; OD</td>
+                    <td class="mono">B-2291 / 88213</td>
+                    <td><span class="badge ok">Implanted</span></td>
+                    <td class="num">&#8377;14,000</td>
+                  </tr>
+                  <tr>
+                    <td>Alcon SN60WF <span class="cell-sub">IOL</span></td>
+                    <td>+22.5 D &middot; OD</td>
+                    <td class="mono">B-2291 / 88214</td>
+                    <td><span class="badge cancel">Opened, not used</span></td>
+                    <td class="muted">Write-off</td>
+                  </tr>
+                  <tr>
+                    <td>Consumables <span class="cell-sub">6 items</span></td>
+                    <td>Viscoelastic, cassette, blade, trypan&hellip;</td>
+                    <td class="muted">from inventory issue</td>
+                    <td><span class="badge ok">Recorded</span></td>
+                    <td class="num">&#8377;6,000</td>
+                  </tr>
+                  <tr>
+                    <td>Trypan Blue 0.06%</td>
+                    <td>1 unit</td>
+                    <td class="mono">B-8841</td>
+                    <td><span class="badge ok">Recorded</span></td>
+                    <td><span class="badge danger no-dot">Unmapped</span></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="callout warn" style="margin-top:8px">
+                <b>1 item is not mapped to a billable variant</b> and will not be charged. It is queued to
+                <a href="s-14-charge-mapping.html">Charge mapping</a> and will replay once mapped.
+              </div>
+            </div>
+
+            <div class="row" style="margin-top:10px">
+              <span class="btn sm">Intra-op note</span>
+              <span class="btn sm">Return to ward</span>
+              <span class="spacer" style="flex:1"></span>
+              <span class="btn sm primary">Complete surgery</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td class="num">AM-2</td>
+          <td><div class="cell-primary">Meena Iyer</div><div class="cell-sub">UAT-002 &middot; 54F</div></td>
+          <td><b>OD</b></td><td>LASIK</td><td>Dr. Iyer</td>
+          <td><span class="badge">Sent to OT</span></td>
+          <td><span class="btn sm">Accept in OT</span></td>
+        </tr>
+        <tr>
+          <td class="num">AM-3</td>
+          <td><div class="cell-primary">Ananya Sharma</div><div class="cell-sub">UAT-014 &middot; 61F</div></td>
+          <td><b>OS</b></td><td>Corneal graft</td><td>Dr. Rao</td>
+          <td><span class="badge">Sent to OT</span></td>
+          <td><span class="btn sm">Accept in OT</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="sec">Pre-completion reconciliation &mdash; soft, never blocking</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Complete surgery &mdash; Amit Verma</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div class="callout ok"><b>1 implant and 6 consumables recorded.</b> Charges post automatically to bill IPD-2026-00902.</div>
+          <div class="callout warn"><b>1 consumable is unmapped</b> and will not be charged until mapping is resolved. This does not block completion.</div>
+          <div class="callout"><b>1 IOL opened and not used</b> is recorded as a write-off with reason &ldquo;wrong power&rdquo;. It will appear in the wastage report.</div>
+        </div>
+        <div class="dialog-foot">
+          <span class="btn">Back</span>
+          <span class="btn primary">Complete surgery</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker new">2</span><span><b>The implant panel is the charge trigger.</b> Recording usage writes the clinical row and the outbox row in one transaction; stock and charge follow asynchronously, so a Billing or Inventory outage never stops theatre.</span></li>
+    <li><span class="marker">1</span><span><b>The reconciliation summary warns, it does not block.</b> Blocking a surgeon on a charge-capture concern is not acceptable; <a href="s-15-reconciliation.html">S-15</a> is the safety net that catches what the warning misses.</span></li>
+    <li><span class="marker">1</span><span><b>Wastage is visible at the point it happens</b>, with a reason. Following decision D2, an opened-but-unused IOL is a hospital write-off and is never charged to the patient.</span></li>
+    <li><span class="marker">1</span><span>Rows are ordered by <b>slot sequence</b>, not by admission time, matching how a high-flow list is actually run.</span></li>
+  </ul>
+
+  <h2 class="sec">The theatre sequence, step by step</h2>
+  <p class="lede" style="margin-bottom:14px">Six panels between a patient arriving at the theatre door and the case
+  closing. Every one writes a timestamp and an actor, because theatre timings are the input to utilisation reporting
+  and to any later incident review.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Accept into theatre</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Accept &mdash; Amit Verma</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="rail-line"><span class="k">Sent from ward</span><span class="v">08:02 &middot; escorted by S. Nair</span></div>
+            <div class="rail-line"><span class="k">Procedure</span><span class="v">Phaco + IOL &middot; <b>OS</b></span></div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Identity confirmed against band</li>
+              <li><span class="bx on">&#10003;</span> Site marking present and matches consent</li>
+              <li><span class="bx on">&#10003;</span> Case file and consent received</li>
+            </ul>
+            <div class="callout info">Accepting starts the theatre clock. The ward-side send and the OT-side accept are
+            recorded separately so a gap between them is measurable.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Reject back to ward</span><span class="btn primary">Accept</span></div>
+        </div>
+      </div>
+      <p class="vc">Rejection is a first-class outcome, not an error path &mdash; a patient sent up without a signed
+      consent must be sendable back with the reason recorded.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Sign in &mdash; before anaesthesia</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="row between" style="margin-bottom:10px"><b style="font-size:14px">Surgical safety &mdash; sign in</b><span class="badge ok">Complete 08:06</span></div>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> Patient confirmed identity, site, procedure, consent</li>
+            <li><span class="bx on">&#10003;</span> Site marked &mdash; <b>OS (left)</b></li>
+            <li><span class="bx on">&#10003;</span> Anaesthesia safety check completed</li>
+            <li><span class="bx on">&#10003;</span> Pulse oximeter on patient and functioning</li>
+            <li><span class="bx on">&#10003;</span> Known allergy &mdash; none</li>
+            <li><span class="bx on">&#10003;</span> Difficult airway risk &mdash; no</li>
+          </ul>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Signed by</span><span class="v">Dr. A. Nair (anaesthetist)</span></div>
+        </div>
+      </div>
+      <p class="vc">The WHO checklist is three separate signings at three moments, not one form filled at the end.
+      Storing them with distinct timestamps is what makes the record credible.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">3</span><span class="t">Time out &mdash; before incision</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="row between" style="margin-bottom:10px"><b style="font-size:14px">Surgical safety &mdash; time out</b><span class="badge ot">In progress</span></div>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> All team members introduced by name and role</li>
+            <li><span class="bx on">&#10003;</span> Patient, site and procedure confirmed aloud</li>
+            <li><span class="bx on">&#10003;</span> Anticipated critical events reviewed</li>
+            <li><span class="bx off"></span> Antibiotic prophylaxis given within 60 min</li>
+            <li><span class="bx off"></span> <b>Implant power and eye verified against biometry</b></li>
+            <li><span class="bx off"></span> Essential imaging displayed</li>
+          </ul>
+          <div class="callout warn" style="margin-top:8px">The implant verification line is ophthalmology-specific and
+          is the last checkpoint before a wrong-power lens goes in.</div>
+        </div>
+      </div>
+      <p class="vc">Time out must be completed before <b>Start surgery</b> is enabled. This is a hard gate.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">4</span><span class="t">Intra-op note</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="row between" style="margin-bottom:10px"><b style="font-size:14px">Intra-op note</b><span class="badge">Draft</span></div>
+          <div class="cols-2">
+            <div class="field"><label>Procedure performed</label><input class="input" value="Phacoemulsification with IOL, OS" readonly></div>
+            <div class="field"><label>Anaesthesia</label><input class="input" value="Topical" readonly></div>
+            <div class="field"><label>Incision</label><input class="input" value="2.8 mm temporal clear corneal" readonly></div>
+            <div class="field"><label>Complications</label><input class="input" value="None" readonly></div>
+          </div>
+          <div class="field"><label>Findings and steps</label><input class="input" value="Grade 3 nuclear sclerosis; uneventful phaco; in-the-bag IOL" readonly></div>
+          <div class="rail-line" style="margin-top:6px"><span class="k">Implant used</span><span class="v">Alcon SN60WF +19.5 D &middot; <span class="mono">88117</span></span></div>
+          <p class="hint">The implant line is populated from the scan in <a href="s-07-implant-scan.html">S-07</a>, not
+          typed. Typed serials are transcription errors waiting to happen.</p>
+        </div>
+      </div>
+      <p class="vc">Drafted during the case, signed at sign out. It becomes the source of the discharge summary.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">5</span><span class="t">Sign out &mdash; before leaving</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="row between" style="margin-bottom:10px"><b style="font-size:14px">Surgical safety &mdash; sign out</b><span class="badge">Not started</span></div>
+          <ul class="checklist">
+            <li><span class="bx off"></span> Procedure name recorded</li>
+            <li><span class="bx off"></span> Instrument, sponge and needle counts correct</li>
+            <li><span class="bx off"></span> Specimens labelled including patient name</li>
+            <li><span class="bx off"></span> Equipment problems identified</li>
+            <li><span class="bx off"></span> Key concerns for recovery reviewed</li>
+            <li><span class="bx off"></span> <b>Implant serial and lot recorded in the registry</b></li>
+          </ul>
+          <div class="callout info" style="margin-top:8px">The implant line is a checklist item here <em>and</em> a
+          soft reconciliation warning on complete &mdash; two chances to catch an unrecorded lens.</div>
+        </div>
+      </div>
+      <p class="vc">Sign out is required before <b>Complete surgery</b>. Unlike reconciliation, this one blocks.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">6</span><span class="t">Cancel in theatre</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Cancel case in theatre</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>The patient is already in theatre.</b> Cancelling returns them to the ward
+            and releases the theatre for the next case.</div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Posterior capsule rupture risk &mdash; deferred for vitreoretinal support" readonly></div>
+            <div class="field"><label>Stage reached</label><input class="input" value="After anaesthesia, before incision" readonly></div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Consumables already opened are recorded as wastage</li>
+              <li><span class="bx on">&#10003;</span> Unopened implants return to stores</li>
+              <li><span class="bx on">&#10003;</span> Patient returns to bed B-07, still admitted</li>
+            </ul>
+          </div>
+          <div class="dialog-foot"><span class="btn">Continue case</span><span class="btn danger">Cancel case</span></div>
+        </div>
+      </div>
+      <p class="vc">A case abandoned after opening a &#8377;14,000 lens has a real financial consequence. The dialog
+      states where the cost lands rather than leaving stock silently short.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Anaesthesia monitoring &mdash; the one true append inside theatre</h2>
+  <p class="lede" style="margin-bottom:14px">
+    This panel was missing from the earlier version of this screen. <code>AnaesthesiaMonitoringFunctions</code> exists
+    in the service and supports adding, updating and removing timed readings, which makes it the only genuinely
+    repeating record captured during a case.
+  </p>
+
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:10px">
+        <h3 style="margin:0;font-size:15px">Anaesthesia chart &mdash; Rekha Menon &middot; Theatre 1</h3>
+        <div class="row">
+          <span class="badge ot">Topical &middot; 6 readings</span>
+          <span class="btn sm primary">Add reading</span>
+        </div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>Time</th><th>BP</th><th>Pulse</th><th>SpO&#8322;</th><th>Agent / dose</th><th>Note</th><th>By</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>09:02</td><td>142/88</td><td>84</td><td>98%</td><td class="cell-sub">Topical proparacaine</td><td class="cell-sub">Baseline before block</td><td>Dr. A. Nair</td><td><span class="btn sm ghost">Edit</span></td></tr>
+          <tr><td>09:07</td><td>138/84</td><td>80</td><td>99%</td><td class="cell-sub">&mdash;</td><td class="cell-sub">Comfortable</td><td>Dr. A. Nair</td><td><span class="btn sm ghost">Edit</span></td></tr>
+          <tr><td>09:12</td><td>134/82</td><td>76</td><td>99%</td><td class="cell-sub">&mdash;</td><td class="cell-sub">Incision</td><td>Dr. A. Nair</td><td><span class="btn sm ghost">Edit</span></td></tr>
+          <tr><td>09:17</td><td>132/80</td><td>74</td><td>99%</td><td class="cell-sub">&mdash;</td><td class="cell-sub">Phaco complete</td><td>Dr. A. Nair</td><td><span class="btn sm ghost">Edit</span></td></tr>
+          <tr><td>09:22</td><td>130/78</td><td>72</td><td>99%</td><td class="cell-sub">&mdash;</td><td class="cell-sub">IOL in the bag</td><td>Dr. A. Nair</td><td><span class="btn sm ghost">Edit</span></td></tr>
+          <tr><td>09:28</td><td>130/78</td><td>72</td><td>99%</td><td class="cell-sub">&mdash;</td><td class="cell-sub">Closure</td><td>Dr. A. Nair</td><td><span class="btn sm ghost">Edit</span></td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 0 0">
+        <div class="row"><span class="btn sm primary">Add reading</span><span class="btn sm">Record discharge clearance</span></div>
+        <p class="hint">
+          <code>POST /api/ip-management/journeys/{id}/anaesthesia-monitoring/readings</code> appends,
+          <code>PUT &hellip;/readings/{readingId}</code> corrects and <code>DELETE &hellip;/readings/{readingId}</code>
+          removes a mistyped entry. The readings live as a JSONB array on the single
+          <code>anaesthesia_monitoring</code> row for the journey, alongside the pre-op review recorded in
+          <a href="s-05-preop-workspace.html">S-05</a> step 5 and the recovery clearance signed at the end.
+        </p>
+        <div class="callout info">
+          <b>The anaesthetist&rsquo;s record spans three screens but is one document</b> &mdash; pre-op review in S-05,
+          these intra-op readings, and the discharge clearance that feeds S-08. Splitting it into three tables would
+          have made the chart impossible to read as a whole.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Board states</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">List complete</span></div>
+      <div class="frame"><div class="empty">
+        <div class="big">All cases completed</div>
+        14 of 14 done &middot; last case closed 13:42 &middot; theatre utilisation 78%
+        <div style="margin-top:10px"><span class="btn sm">View today&rsquo;s summary</span></div>
+      </div></div>
+      <p class="vc">End of list is a result, not an absence. The summary is the natural next click.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Nobody ready</span></div>
+      <div class="frame"><div class="empty">
+        <div class="big">No patient is ready for OT</div>
+        3 patients are in pre-op. The nearest is Meena Iyer, blocked on consent and PAC.
+        <div style="margin-top:10px"><a class="btn sm" href="s-01-ip-census.html">Open ward census</a></div>
+      </div></div>
+      <p class="vc">Theatre idle time is expensive. The empty state names who is closest and what is holding them.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Overrunning case</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout danger" style="margin:0"><b>Theatre 2 &middot; case running 84 minutes</b> against a
+        30-minute expectation. Two subsequent slots are at risk.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm">Notify ward</span><span class="btn sm ghost">Re-sequence list</span></div>
+      </div></div>
+      <p class="vc">A high-flow cataract list collapses quietly when one case overruns. The board says so and offers
+      the re-sequencing tool on <a href="s-13-slot-board.html">S-13</a>.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th><th>Event</th></tr></thead>
+    <tbody>
+      <tr><td>Slot-ordered list</td><td><code>useIpJourneysQuery</code></td><td><code>GET /api/ip-management/journeys</code></td><td><code>PatientJourneyService.ListAsync</code></td><td><code>patient_journey</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Accept in OT</td><td><code>acceptInOT</code></td><td><code>POST /api/ip-management/journeys/{id}/accept</code></td><td><code>AcceptInOtAsync</code> + billing gate</td><td><code>patient_journey</code>, <code>journey_audit_log</code> <span class="cell-sub">OtPatientAccepted</span></td><td class="owner o-ip">IP</td><td><code>ip.ot.accept</code> | <code>ot.safety.sign</code></td><td>realtime push</td></tr>
+      <tr><td>Start surgery</td><td><code>startSurgery</code></td><td><code>POST /api/ip-management/journeys/{id}/start-surgery</code></td><td><code>StartSurgeryAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code> <span class="cell-sub">SurgeryStarted</span></td><td class="owner o-ip">IP</td><td><code>ip.surgery.start</code></td><td>realtime push</td></tr>
+      <tr><td>WHO safety checklist</td><td><code>OtSurgicalSafetyChecklist</code></td><td><code>GET &hellip;/surgical-safety</code>; <code>PUT &hellip;/surgical-safety/before-anaesthesia</code> &middot; <code>/who-timeout</code> &middot; <code>/after-surgery</code></td><td><code>SurgicalSafetyService</code></td><td><code>surgical_safety_checklist</code> <span class="cell-sub">one row, three signings</span></td><td class="owner o-ip">IP</td><td><code>ot.safety.sign</code></td><td>&mdash;</td></tr>
+      <tr><td>WHO supervisor override</td><td><a href="s-17-reason-confirm.html">S-17</a></td><td><code>POST /api/ip-management/journeys/{id}/who-supervisor-override</code></td><td><code>ApplyWhoSupervisorOverrideAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ot.safety.sign</code></td><td>&mdash;</td></tr>
+      <tr><td>Intra-op note</td><td><code>saveIntraOpNote</code></td><td><code>POST /api/ip-management/journeys/{id}/intra-op</code>; sign at <code>&hellip;/intra-op/sign</code></td><td><code>IntraOpNoteService.SaveAsync</code> / <code>SignAsync</code></td><td><code>intra_op_notes</code> <span class="cell-sub">upsert, one per journey</span></td><td class="owner o-ip">IP</td><td><code>ot.safety.sign</code></td><td>&mdash;</td></tr>
+      <tr><td>Intra-op field presets</td><td>dropdown source</td><td><code>GET /api/ip-management/intra-op-presets</code></td><td><code>IntraOpPresetService</code></td><td><code>intra_op_note_presets</code> <span class="cell-sub">read-only, no admin CRUD</span></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td><b>Anaesthesia readings</b></td><td><code>useAnaesthesiaMonitoringQuery</code></td><td><code>POST /api/ip-management/journeys/{id}/anaesthesia-monitoring/readings</code>; <code>PUT</code> / <code>DELETE &hellip;/readings/{readingId}</code></td><td><code>AnaesthesiaMonitoringService.AddReadingAsync</code></td><td><code>anaesthesia_monitoring</code> <span class="cell-sub">JSONB array &mdash; append</span></td><td class="owner o-ip">IP</td><td><code>ot.safety.sign</code></td><td>&mdash;</td></tr>
+      <tr><td>Recovery clearance</td><td><code>saveDischargeClearance</code></td><td><code>PUT &hellip;/anaesthesia-monitoring/discharge-clearance</code></td><td>same service</td><td><code>anaesthesia_monitoring</code></td><td class="owner o-ip">IP</td><td><code>ot.safety.sign</code></td><td>&mdash;</td></tr>
+      <tr><td>IOL barcode verification</td><td><code>verifyIolBarcode</code></td><td><code>POST /api/ip-management/journeys/{id}/verify-iol-barcode</code></td><td><code>PatientJourneyService.VerifyIolBarcodeAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code> <span class="cell-sub">IolBarcodeVerified</span>; catalog from <code>iol_catalog_master</code></td><td class="owner o-ip">IP</td><td><code>ot.safety.sign</code></td><td>&mdash;</td></tr>
+      <tr><td><b>Implant panel</b> <span class="mark new">2</span></td><td><a href="s-07-implant-scan.html">S-07</a></td><td><code>POST /journeys/{id}/implants</code> · <b>live</b></td><td>implant usage service (live)</td><td><code>journey_implant_usage</code> <span class="cell-sub">live</span></td><td class="owner o-ip">IP</td><td><code>ot.safety.sign</code></td><td><code>ImplantUsed</code></td></tr>
+      <tr><td>Consumables recorded</td><td>inventory read</td><td><code>GET surgery/consumables?surgeryId=</code></td><td><code>SurgeryConsumableService</code></td><td><code>inv_surgery_consumables</code></td><td class="owner o-inv">Inventory</td><td>tenant/user header</td><td>&mdash;</td></tr>
+      <tr><td>Charge posting</td><td>&mdash; (async)</td><td><code>POST /api/internal/ip-billing/charge-items</code></td><td><code>OpdBillService</code> + <code>BillItemService</code></td><td><code>opd_bill_items</code></td><td class="owner o-billing">Billing</td><td>internal key</td><td><code>PatientObligationChanged</code></td></tr>
+      <tr><td><b>Complete surgery</b></td><td><code>transitionClinical</code></td><td><code>POST /journeys/{id}/clinical-transition</code></td><td><code>TransitionClinicalAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ip.surgery.complete</code></td><td><code>SurgeryCompleted</code></td></tr>
+      <tr><td>Return to ward</td><td><code>transitionClinical</code></td><td>same, <code>newState=ReadyForSurgery</code></td><td>same</td><td><code>patient_journey</code></td><td class="owner o-ip">IP</td><td><code>ip.ot.accept</code></td><td>realtime push</td></tr>
+      <tr><td>Cancel in theatre</td><td><a href="s-17-reason-confirm.html">S-17</a></td><td><code>POST /api/ip-management/journeys/{id}/cancel-today-surgery</code></td><td><code>CancelTodaySurgeryAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code> <span class="cell-sub">CancelTodaySurgery</span></td><td class="owner o-ip">IP</td><td><code>ip.surgery.cancel</code></td><td>realtime push</td></tr>
+      <tr><td>Gate evaluation before each step</td><td><code>useTransitionGatesQuery</code></td><td><code>GET /api/ip-management/journeys/{id}/transition-gates</code></td><td><code>ChecklistGateService.EvaluateTransitionAsync</code></td><td>pre-op chain, <code>surgical_safety_checklist</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout ok">
+    <b>Theatre is the best-audited part of the journey.</b> Accept, start, complete, cancel, barcode verification and
+    the WHO override all write <code>journey_audit_log</code>, and completion publishes <code>SurgeryCompleted</code>
+    to <code>integration_outbox_event</code>. The gap is the safety checklist and anaesthesia readings themselves,
+    which are not audited &mdash; the timestamps on the record are the only evidence of when a sign-off happened.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Sign-out not done</td><td><b>Sign out hasn&rsquo;t been completed.</b> Counts and specimen labelling need confirming before the case can be closed.</td></tr>
+      <tr><td>Implant not recorded on complete</td><td><b>No lens has been recorded for this case.</b> If one was implanted, scan it now &mdash; otherwise the patient won&rsquo;t be charged and stock won&rsquo;t balance.</td></tr>
+      <tr><td>Wrong-side risk at time out</td><td><b>The marked eye is the right, but this case is booked as left.</b> Stop and resolve this before proceeding.</td></tr>
+      <tr><td>Case overrunning</td><td><b>Theatre 2 has been running 84 minutes</b> against a 30-minute expectation. The next two slots are at risk.</td></tr>
+      <tr><td>Reading not saved</td><td><b>That reading didn&rsquo;t save.</b> It&rsquo;s still on screen &mdash; try again, and note the time manually if it fails twice.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

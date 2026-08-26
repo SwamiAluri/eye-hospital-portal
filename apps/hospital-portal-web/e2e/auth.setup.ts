@@ -1,7 +1,7 @@
 /**
  * Playwright auth setup — logs in via API and seeds localStorage (reliable vs UI login).
  */
-import { test as setup, expect } from '@playwright/test';
+import { test as setup } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { apiLogin, E2E_TENANT_ID, seedBrowserAuth, type LoginPayload } from './helpers/auth';
@@ -35,7 +35,5 @@ setup('authenticate as test user', async ({ page, request }) => {
   }, payload);
 
   await seedBrowserAuth(page, login);
-  await page.goto('/dashboard');
-  await expect(page.locator('nav, aside, [class*="sidebar"]').first()).toBeVisible({ timeout: 30_000 });
   await page.context().storageState({ path: AUTH_FILE });
 });

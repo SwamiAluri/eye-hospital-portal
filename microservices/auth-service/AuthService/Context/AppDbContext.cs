@@ -7,6 +7,7 @@ using AuthService.Models.Search;
 using AuthService.Models.PerformanceReview;
 using AuthService.Models.Training;
 using AuthService.Models.Counselor;
+using AuthService.Services;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -135,6 +136,7 @@ namespace AuthService.Context
         
         // Phase 2: Branch Capacity Tracking (Migration 08)
         public DbSet<AuthService.Models.Branch.BedInventory> BedInventories { get; set; }
+        public DbSet<AuthService.Models.Branch.WardRef> WardRefs { get; set; }
         public DbSet<AuthService.Models.Branch.BranchCapacityHistory> BranchCapacityHistories { get; set; }
         public DbSet<AuthService.Models.Branch.PatientTransferRequest> PatientTransferRequests { get; set; }
         
@@ -172,6 +174,7 @@ namespace AuthService.Context
         public DbSet<OptometrySegmentExam> OptometrySegmentExams { get; set; }
         public DbSet<OptometryVisitExam> OptometryVisitExams { get; set; }
         public DbSet<OpdBill> OpdBills { get; set; }
+        public DbSet<BillingCcmsOutboxEvent> BillingCcmsOutboxEvents { get; set; }
         public DbSet<OpdBillPayment> OpdBillPayments { get; set; }
         public DbSet<BillingRule> BillingRules { get; set; }
         public DbSet<TokenSequence> TokenSequences { get; set; }
@@ -179,6 +182,14 @@ namespace AuthService.Context
         
         // Day 4: Itemized Billing (Feb 6, 2026)
         public DbSet<OpdBillItem> OpdBillItems { get; set; }
+        public DbSet<ServiceVariantItemMap> ServiceVariantItemMaps { get; set; }
+        public DbSet<ChargeException> ChargeExceptions { get; set; }
+        public DbSet<PackageComponentMap> PackageComponentMaps { get; set; }
+        public DbSet<InvItemMasterRead> InvItemMasterReads { get; set; }
+        public DbSet<InvSurgeryConsumableRead> InvSurgeryConsumableReads { get; set; }
+        public DbSet<JourneyImplantUsageRead> JourneyImplantUsageReads { get; set; }
+        public DbSet<InvStockLedgerRead> InvStockLedgerReads { get; set; }
+        public DbSet<InvStockBatchRead> InvStockBatchReads { get; set; }
         
         // Module 4: Front Office/OPD Management (Feb 3, 2026)
         public DbSet<QueueItem> QueueItems { get; set; }
@@ -253,6 +264,7 @@ namespace AuthService.Context
         // Follow-up Center: Read-only projections of ip-management-service tables (no migration — tables exist via mig81/85)
         public DbSet<PatientJourneyReadOnly> PatientJourneys { get; set; }
         public DbSet<DischargeSummaryReadOnly> DischargeSummaries { get; set; }
+        public DbSet<CcmsCoverageCaseReadOnly> CcmsCoverageCases { get; set; }
 
         // Module 3.6: Insurance Pre-Auth Workflow (Feb 23, 2026)
         public DbSet<InsurancePreAuthorization> InsurancePreAuthorizations { get; set; }
@@ -301,6 +313,33 @@ namespace AuthService.Context
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
+
+            builder.Entity<BillingCcmsOutboxEvent>(e =>
+            {
+                e.ToTable("billing_ccms_outbox");
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Id).HasColumnName("id");
+                e.Property(x => x.TenantId).HasColumnName("tenant_id");
+                e.Property(x => x.EventType).HasColumnName("event_type").HasMaxLength(80).IsRequired();
+                e.Property(x => x.AggregateType).HasColumnName("aggregate_type").HasMaxLength(80);
+                e.Property(x => x.AggregateId).HasColumnName("aggregate_id");
+                e.Property(x => x.CorrelationId).HasColumnName("correlation_id");
+                e.Property(x => x.PayloadJson).HasColumnName("payload_json");
+                e.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(200).IsRequired();
+                e.Property(x => x.OccurredAt).HasColumnName("occurred_at");
+                e.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
+                e.Property(x => x.RetryCount).HasColumnName("retry_count");
+                e.Property(x => x.LastAttemptAt).HasColumnName("last_attempt_at");
+                e.Property(x => x.ProcessedAt).HasColumnName("processed_at");
+                e.Property(x => x.Error).HasColumnName("error");
+                e.Property(x => x.AbandonReason).HasColumnName("abandon_reason");
+                e.Property(x => x.CompensatingAction).HasColumnName("compensating_action");
+                e.Property(x => x.AbandonedAt).HasColumnName("abandoned_at");
+                e.Property(x => x.AbandonedByUserId).HasColumnName("abandoned_by_user_id");
+                e.Property(x => x.CreatedAt).HasColumnName("created_at");
+                e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+                e.HasIndex(x => x.IdempotencyKey).IsUnique().HasDatabaseName("ux_billing_ccms_outbox_idempotency");
+            });
 
             // ✅ FIX: PostgreSQL DateTime UTC Compatibility
             // Configure all DateTime properties to use UTC kind
@@ -2124,7 +2163,7 @@ namespace AuthService.Context
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
                 entity.Property(e => e.PatientId).HasColumnName("patient_id").IsRequired();
-                entity.Property(e => e.AppointmentId).HasColumnName("appointment_id").IsRequired();
+                entity.Property(e => e.AppointmentId).HasColumnName("appointment_id");
                 entity.Property(e => e.BranchId).HasColumnName("branch_id").IsRequired();
                 entity.Property(e => e.BillingRuleId).HasColumnName("billing_rule_id");
                 entity.Property(e => e.BillNumber).HasColumnName("bill_number").HasMaxLength(50).IsRequired();
@@ -2171,11 +2210,20 @@ namespace AuthService.Context
                 entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id").IsRequired();
                 entity.Property(e => e.UpdatedByUserId).HasColumnName("updated_by_user_id");
                 entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+                entity.Property(e => e.RowVersion)
+                    .HasColumnName("row_version")
+                    .IsConcurrencyToken()
+                    .HasDefaultValue(1);
                 
                 entity.HasIndex(e => e.TenantId);
+                entity.Property(e => e.PatientJourneyId).HasColumnName("patient_journey_id");
                 entity.HasIndex(e => e.BillNumber).IsUnique();
                 entity.HasIndex(e => e.PatientId);
                 entity.HasIndex(e => e.AppointmentId);
+                entity.HasIndex(e => e.PatientJourneyId)
+                    .IsUnique()
+                    .HasFilter("patient_journey_id IS NOT NULL AND deleted_at IS NULL")
+                    .HasDatabaseName("ux_opd_bills_patient_journey");
                 entity.HasIndex(e => e.Status);
                 // Day 5: Bill Locking indexes
                 entity.HasIndex(e => e.IsLocked);
@@ -2203,9 +2251,16 @@ namespace AuthService.Context
                 entity.Property(e => e.InsuranceResponse).HasColumnName("insurance_response");
                 entity.Property(e => e.ReceivedBy).HasColumnName("received_by");
                 entity.Property(e => e.ReceiptNumber).HasColumnName("receipt_number").HasMaxLength(50);
+                entity.Property(e => e.PaymentKind).HasColumnName("payment_kind").HasMaxLength(20);
+                entity.Property(e => e.ReversedPaymentId).HasColumnName("reversed_payment_id");
+                entity.Property(e => e.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(80);
                 
                 entity.HasIndex(e => e.OpdBillId);
                 entity.HasIndex(e => e.PaymentReference).IsUnique();
+                entity.HasIndex(e => new { e.TenantId, e.IdempotencyKey })
+                    .IsUnique()
+                    .HasFilter("idempotency_key IS NOT NULL AND length(trim(idempotency_key)) > 0")
+                    .HasDatabaseName("ux_opd_bill_payments_idempotency");
             });
 
             builder.Entity<Refund>(entity =>
@@ -2288,11 +2343,14 @@ namespace AuthService.Context
                 entity.Property(e => e.ServiceVariantId).HasColumnName("service_variant_id");
                 entity.Property(e => e.ServiceCode).HasColumnName("service_code").HasMaxLength(50).IsRequired();
                 entity.Property(e => e.ServiceName).HasColumnName("service_name").HasMaxLength(200).IsRequired();
+                entity.Property(e => e.ServiceCategory).HasColumnName("service_category");
+                entity.Property(e => e.Description).HasColumnName("description");
                 entity.Property(e => e.Quantity).HasColumnName("quantity").HasDefaultValue(1);
                 entity.Property(e => e.UnitPrice).HasColumnName("unit_price").HasPrecision(10, 2).IsRequired();
                 entity.Property(e => e.Subtotal).HasColumnName("subtotal").HasPrecision(10, 2).IsRequired();
                 entity.Property(e => e.DiscountPercentage).HasColumnName("discount_percentage").HasPrecision(5, 2).HasDefaultValue(0);
                 entity.Property(e => e.DiscountAmount).HasColumnName("discount_amount").HasPrecision(10, 2).HasDefaultValue(0);
+                entity.Property(e => e.DiscountReason).HasColumnName("discount_reason");
                 entity.Property(e => e.TaxPercentage).HasColumnName("tax_percentage").HasPrecision(5, 2).HasDefaultValue(0);
                 entity.Property(e => e.TaxAmount).HasColumnName("tax_amount").HasPrecision(10, 2).HasDefaultValue(0);
                 entity.Property(e => e.TotalAmount).HasColumnName("total_amount").HasPrecision(10, 2).IsRequired();
@@ -2301,6 +2359,9 @@ namespace AuthService.Context
                 entity.Property(e => e.DepartmentId).HasColumnName("department_id");
                 entity.Property(e => e.Notes).HasColumnName("notes");
                 entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).HasDefaultValue("active");
+                entity.Property(e => e.SourceType).HasColumnName("source_type").HasMaxLength(30).HasDefaultValue("Manual");
+                entity.Property(e => e.SourceRefId).HasColumnName("source_ref_id");
+                entity.Property(e => e.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(200);
                 entity.Property(e => e.CreatedAt).HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
                 entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id").IsRequired();
@@ -2326,6 +2387,168 @@ namespace AuthService.Context
                 entity.HasIndex(e => e.OpdBillId);
                 entity.HasIndex(e => e.ServiceVariantId);
                 entity.HasIndex(e => e.Status);
+                entity.HasIndex(e => new { e.TenantId, e.IdempotencyKey })
+                    .IsUnique()
+                    .HasFilter("idempotency_key IS NOT NULL AND deleted_at IS NULL")
+                    .HasDatabaseName("ux_opd_bill_items_idempotency");
+            });
+
+            builder.Entity<ServiceVariantItemMap>(entity =>
+            {
+                entity.ToTable("service_variant_item_map");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.ItemId).HasColumnName("item_id").IsRequired();
+                entity.Property(e => e.ServiceVariantId).HasColumnName("service_variant_id").IsRequired();
+                entity.Property(e => e.IsChargeable).HasColumnName("is_chargeable").HasDefaultValue(true);
+                entity.Property(e => e.NonChargeableReason).HasColumnName("non_chargeable_reason");
+                entity.Property(e => e.EffectiveFrom).HasColumnName("effective_from");
+                entity.Property(e => e.EffectiveTo).HasColumnName("effective_to");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
+                entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+                entity.Property(e => e.UpdatedByUserId).HasColumnName("updated_by_user_id");
+                entity.HasIndex(e => new { e.TenantId, e.ItemId })
+                    .IsUnique()
+                    .HasFilter("effective_to IS NULL")
+                    .HasDatabaseName("ux_sv_item_map_active");
+            });
+
+            builder.Entity<ChargeException>(entity =>
+            {
+                entity.ToTable("charge_exception");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.ItemId).HasColumnName("item_id");
+                entity.Property(e => e.PackageTemplateId).HasColumnName("package_template_id");
+                entity.Property(e => e.PackageComponentId).HasColumnName("package_component_id");
+                entity.Property(e => e.SourceType).HasColumnName("source_type").HasMaxLength(30).IsRequired();
+                entity.Property(e => e.SourceRefId).HasColumnName("source_ref_id");
+                entity.Property(e => e.OpdBillId).HasColumnName("opd_bill_id");
+                entity.Property(e => e.PatientJourneyId).HasColumnName("patient_journey_id");
+                entity.Property(e => e.Quantity).HasColumnName("quantity").HasPrecision(12, 3);
+                entity.Property(e => e.EstimatedValue).HasColumnName("estimated_value").HasPrecision(12, 2);
+                entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20);
+                entity.Property(e => e.Reason).HasColumnName("reason").HasMaxLength(200);
+                entity.Property(e => e.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(200);
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.ResolvedAt).HasColumnName("resolved_at");
+                entity.Property(e => e.ResolvedByUserId).HasColumnName("resolved_by_user_id");
+                entity.HasIndex(e => new { e.TenantId, e.IdempotencyKey })
+                    .IsUnique()
+                    .HasFilter("idempotency_key IS NOT NULL")
+                    .HasDatabaseName("ux_charge_exception_idempotency");
+            });
+
+            builder.Entity<PackageComponentMap>(entity =>
+            {
+                entity.ToTable("package_component_map");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.PackageTemplateId).HasColumnName("package_template_id").IsRequired();
+                entity.Property(e => e.ComponentKey).HasColumnName("component_key").HasMaxLength(80).IsRequired();
+                entity.Property(e => e.ComponentName).HasColumnName("component_name").HasMaxLength(200).IsRequired();
+                entity.Property(e => e.ServiceVariantId).HasColumnName("service_variant_id");
+                entity.Property(e => e.Allocation).HasColumnName("allocation").HasMaxLength(20);
+                entity.Property(e => e.CoversConsumable).HasColumnName("covers_consumable");
+                entity.Property(e => e.SortOrder).HasColumnName("sort_order");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+                entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
+                entity.Property(e => e.UpdatedByUserId).HasColumnName("updated_by_user_id");
+                entity.HasIndex(e => new { e.TenantId, e.PackageTemplateId, e.ComponentKey })
+                    .IsUnique()
+                    .HasDatabaseName("ux_package_component_key");
+            });
+
+            builder.Entity<InvItemMasterRead>(entity =>
+            {
+                entity.ToTable("inv_item_master");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+                entity.Property(e => e.ItemName).HasColumnName("item_name");
+                entity.Property(e => e.ItemType).HasColumnName("item_type");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+                entity.Property(e => e.Status).HasColumnName("status");
+            });
+
+            builder.Entity<InvSurgeryConsumableRead>(entity =>
+            {
+                entity.ToTable("inv_surgery_consumables");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+                entity.Property(e => e.JourneyId).HasColumnName("journey_id");
+                entity.Property(e => e.ItemId).HasColumnName("item_id");
+                entity.Property(e => e.Quantity).HasColumnName("quantity");
+                entity.Property(e => e.Amount).HasColumnName("amount");
+                entity.Property(e => e.ChargeStatus).HasColumnName("charge_status");
+                entity.Property(e => e.ChargeItemId).HasColumnName("charge_item_id");
+                entity.Property(e => e.ConsumableStatus).HasColumnName("consumable_status");
+                entity.Property(e => e.IssuedAt).HasColumnName("issued_at");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+            });
+
+            builder.Entity<JourneyImplantUsageRead>(entity =>
+            {
+                entity.ToTable("journey_implant_usage");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+                entity.Property(e => e.JourneyId).HasColumnName("journey_id");
+                entity.Property(e => e.PatientId).HasColumnName("patient_id");
+                entity.Property(e => e.Eye).HasColumnName("eye");
+                entity.Property(e => e.ItemId).HasColumnName("item_id");
+                entity.Property(e => e.CatalogRef).HasColumnName("catalog_ref");
+                entity.Property(e => e.Brand).HasColumnName("brand");
+                entity.Property(e => e.Model).HasColumnName("model");
+                entity.Property(e => e.Power).HasColumnName("power");
+                entity.Property(e => e.SerialNumber).HasColumnName("serial_number");
+                entity.Property(e => e.UsageStatus).HasColumnName("usage_status");
+                entity.Property(e => e.SurgeonUserId).HasColumnName("surgeon_user_id");
+                entity.Property(e => e.ScannedAt).HasColumnName("scanned_at");
+                entity.Property(e => e.InventoryTxnId).HasColumnName("inventory_txn_id");
+                entity.Property(e => e.ChargeItemId).HasColumnName("charge_item_id");
+                entity.Property(e => e.ChargeStatus).HasColumnName("charge_status");
+                entity.Property(e => e.WastageReason).HasColumnName("wastage_reason");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+            });
+
+            builder.Entity<InvStockLedgerRead>(entity =>
+            {
+                entity.ToTable("inv_stock_ledger");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+                entity.Property(e => e.StoreId).HasColumnName("store_id");
+                entity.Property(e => e.ItemId).HasColumnName("item_id");
+                entity.Property(e => e.StockBatchId).HasColumnName("stock_batch_id");
+                entity.Property(e => e.TransactionType).HasColumnName("transaction_type");
+                entity.Property(e => e.ReferenceId).HasColumnName("reference_id");
+                entity.Property(e => e.ReferenceNumber).HasColumnName("reference_number");
+                entity.Property(e => e.QuantityOut).HasColumnName("quantity_out");
+                entity.Property(e => e.UnitRate).HasColumnName("unit_rate");
+                entity.Property(e => e.TotalValue).HasColumnName("total_value");
+                entity.Property(e => e.TransactionDate).HasColumnName("transaction_date");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+            });
+
+            builder.Entity<InvStockBatchRead>(entity =>
+            {
+                entity.ToTable("inv_stock_batches");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+                entity.Property(e => e.ItemId).HasColumnName("item_id");
+                entity.Property(e => e.PurchaseRate).HasColumnName("purchase_rate");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
             });
 
             // Module 30: Patient Directory Hub (Feb 9, 2026)
@@ -2542,6 +2765,7 @@ namespace AuthService.Context
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.VariantId).HasColumnName("variant_id").IsRequired();
                 entity.Property(e => e.BranchId).HasColumnName("branch_id");
+                entity.Property(e => e.PayerId).HasColumnName("payer_id");
                 entity.Property(e => e.Amount).HasColumnName("amount").HasColumnType("numeric(12,2)");
                 entity.Property(e => e.EffectiveFrom).HasColumnName("effective_from");
                 entity.Property(e => e.EffectiveTo).HasColumnName("effective_to");
@@ -2797,10 +3021,13 @@ namespace AuthService.Context
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.TenantId).HasColumnName("tenant_id");
                 entity.Property(e => e.PatientId).HasColumnName("patient_id");
+                entity.Property(e => e.CounselingSessionId).HasColumnName("counseling_session_id");
+                entity.Property(e => e.PackageAmount).HasColumnName("package_amount");
                 entity.Property(e => e.BranchId).HasColumnName("branch_id");
                 entity.Property(e => e.Uhid).HasColumnName("uhid").HasMaxLength(50);
                 entity.Property(e => e.ClinicalState).HasColumnName("clinical_state").HasMaxLength(30);
                 entity.Property(e => e.IsDischarged).HasColumnName("is_discharged");
+                entity.Property(e => e.AdmittedAt).HasColumnName("admitted_at");
                 entity.Property(e => e.DischargedAt).HasColumnName("discharged_at");
                 entity.Property(e => e.ProcedureName).HasColumnName("procedure_name").HasMaxLength(300);
                 entity.Property(e => e.PrimarySurgeonId).HasColumnName("primary_surgeon_id");
@@ -2827,6 +3054,34 @@ namespace AuthService.Context
                 entity.Property(e => e.FinalizedAt).HasColumnName("finalized_at");
                 entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
                 entity.HasIndex(e => e.PatientJourneyId);
+            });
+
+            builder.Entity<AuthService.Models.Branch.WardRef>(entity =>
+            {
+                entity.ToTable("ward", t => t.ExcludeFromMigrations());
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+                entity.Property(e => e.BranchId).HasColumnName("branch_id");
+                entity.Property(e => e.WardName).HasColumnName("ward_name");
+                entity.Property(e => e.WardType).HasColumnName("ward_type");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+            });
+
+            builder.Entity<CcmsCoverageCaseReadOnly>(entity =>
+            {
+                entity.ToTable("ccms_coverage_cases", t => t.ExcludeFromMigrations());
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.JourneyId).HasColumnName("journey_id");
+                entity.Property(e => e.PatientId).HasColumnName("patient_id");
+                entity.Property(e => e.BranchId).HasColumnName("branch_id");
+                entity.Property(e => e.PayerType).HasColumnName("payer_type");
+                entity.Property(e => e.InsuranceProviderId).HasColumnName("insurance_provider_id");
+                entity.Property(e => e.CurrentState).HasColumnName("current_state");
+                entity.Property(e => e.ApprovedAmount).HasColumnName("approved_amount");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
             });
 
             // ─── Explicit table-name overrides: DB uses singular names ───────────────
@@ -2941,7 +3196,23 @@ namespace AuthService.Context
                 entry.Property(p => p.UpdatedAt).CurrentValue = DateTime.UtcNow;
             }
 
-            return await base.SaveChangesAsync(cancellationToken);
+            foreach (var entry in ChangeTracker.Entries<OpdBill>()
+                .Where(e => e.State == EntityState.Modified))
+            {
+                var rowVersion = entry.Property(b => b.RowVersion);
+                rowVersion.CurrentValue = rowVersion.OriginalValue + 1;
+            }
+
+            try
+            {
+                return await base.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                if (ex.Entries.Any(e => e.Entity is OpdBill))
+                    throw new InvalidOperationException(BillConcurrency.StaleMessage);
+                throw;
+            }
         }
     }
 }

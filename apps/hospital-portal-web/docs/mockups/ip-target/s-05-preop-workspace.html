@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-05">
+<main>
+
+  <p class="lede">
+    <strong>This screen is the reference implementation and should not be redesigned.</strong> It is documented in full
+    &mdash; the shell plus all eight steps &mdash; because the rest of the system is being brought up to its standard:
+    server-computed readiness, a hard-block footer that names each blocker and links to the step that clears it, and
+    complete dialog accessibility.
+  </p>
+
+  <div class="callout ok">
+    <b>Already correct:</b> <code>role="dialog"</code> &middot; <code>aria-modal="true"</code> &middot; focus trap
+    &middot; Escape to close &middot; focus restored on close &middot; readiness computed by
+    <code>PreOpReadinessEngine</code> server-side &middot; hard blocks rendered from
+    <code>ChecklistGateService</code> with per-step deep links &middot; existing Playwright a11y coverage.
+  </div>
+
+  <h2 class="sec">The shell &mdash; persistent header, step nav and footer</h2>
+  <div class="frame">
+    <div class="workspace">
+      <div class="ws-head">
+        <div>
+          <div class="name">Meena Iyer</div>
+          <div class="ident">UAT-002 &middot; 54F &middot; LASIK &middot; <b>OD</b> &middot; Day Care &middot; B-04</div>
+        </div>
+        <span class="badge inhouse">Admitted</span>
+        <span class="badge info">Slot AM-3</span>
+        <span class="spacer"></span>
+        <span class="muted">&#10005; Close</span>
+      </div>
+      <div class="ws-body" style="min-height:180px">
+        <nav class="ws-steps">
+          <div class="ws-step done"><span class="n">&#10003;</span> Admission &amp; bed</div>
+          <div class="ws-step done"><span class="n">&#10003;</span> Clinical evaluation</div>
+          <div class="ws-step active blocked"><span class="n">3</span> Consent</div>
+          <div class="ws-step done"><span class="n">&#10003;</span> Investigations</div>
+          <div class="ws-step blocked"><span class="n">5</span> PAC assessment</div>
+          <div class="ws-step done"><span class="n">&#10003;</span> Department clearance</div>
+          <div class="ws-step done"><span class="n">&#10003;</span> Fasting &amp; medication</div>
+          <div class="ws-step done"><span class="n">&#10003;</span> Coverage &amp; finance</div>
+        </nav>
+        <div class="ws-content">
+          <p class="muted small" style="margin-top:0">Step content renders here. All eight are shown below.</p>
+          <div class="callout info">
+            The step nav is a live readiness summary in its own right: <b>green tick</b> complete,
+            <b>red number</b> a hard stop, <b>grey number</b> incomplete but not blocking. A nurse can see what is left
+            without opening anything.
+          </div>
+        </div>
+      </div>
+      <div class="ws-foot">
+        <div class="meter"><span class="track"><span class="fill" style="width:78%"></span></span><span>Readiness 7 of 9</span></div>
+        <div class="small" style="color:var(--danger)"><b>2 hard stops</b> &middot; Surgical consent unsigned &middot; PAC incomplete</div>
+        <span class="spacer"></span>
+        <span class="btn">Save draft</span>
+        <span class="btn primary disabled">Save &amp; Mark Ready for Surgery</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 1 &mdash; Admission &amp; bed</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Admission &amp; bed</h3>
+        <span class="badge ok">Complete</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Admission</p>
+          <div class="cols-2">
+            <div class="field"><label>Admission type</label><input class="input" value="Day care" readonly></div>
+            <div class="field"><label>Admitted at</label><input class="input" value="24 Aug 2026, 01:21 pm" readonly></div>
+            <div class="field"><label>Admitting doctor</label><input class="input" value="Dr. S. Iyer" readonly></div>
+            <div class="field"><label>Referred by</label><input class="input placeholder" value="Optional" readonly></div>
+          </div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Bed assignment</p>
+          <div class="cols-2">
+            <div class="field"><label>Ward</label><input class="input" value="Day Care Ward" readonly></div>
+            <div class="field"><label>Bed</label><input class="input" value="B-04 (recliner)" readonly></div>
+          </div>
+          <div class="row"><span class="btn sm">Transfer bed</span><span class="btn sm ghost">View ward map</span></div>
+          <p class="hint">Bed state is owned by Auth <code>BedLifecyclePolicy</code>. IP requests a transition; it does
+          not write bed status directly.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Attendant &amp; contact</p>
+        <div class="cols-3">
+          <div class="field"><label>Attendant name</label><input class="input" value="R. Iyer (son)" readonly></div>
+          <div class="field"><label>Contact</label><input class="input" value="+91 98&bull;&bull;&bull; &bull;&bull;210" readonly></div>
+          <div class="field"><label>Relationship</label><input class="input" value="Son" readonly></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="row between" style="margin-bottom:8px">
+          <p class="panel-h" style="margin:0">Bed history</p>
+          <span class="btn sm">Transfer bed</span>
+        </div>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>When</th><th>Bed</th><th>Reason</th><th>By</th><th>State</th></tr></thead>
+          <tbody>
+            <tr><td>24 Aug 01:19 pm</td><td>Day Care &middot; B-04</td><td class="cell-sub">Moved closer to nursing station</td><td>S. Nair</td><td><span class="badge ok no-dot">Current</span></td></tr>
+            <tr><td>24 Aug 01:05 pm</td><td>Day Care &middot; B-11</td><td class="cell-sub">Initial admission</td><td>S. Nair</td><td><span class="badge no-dot">Closed</span></td></tr>
+          </tbody>
+        </table>
+        <p class="hint">Read from <code>GET /api/ip-management/journeys/{id}/bed-assignments</code>. Each transfer
+        closes the open row and opens a new one, so the stay is reconstructable bed by bed.</p>
+      </div>
+    </div>
+  </div>
+  <ul class="annots">
+    <li><span class="marker">1</span><span>Bed assignment is a <b>request to Auth</b>, not a local write. <code>TransferBedAsync</code> calls <code>AuthBedLifecycleClient</code>, and <code>BedLifecyclePolicy</code> decides whether the transition is legal. That boundary is why two services can never disagree about occupancy.</span></li>
+    <li><span class="marker">1</span><span>Transfer <b>is</b> audited &mdash; <code>BedTransferred</code> lands in <code>journey_audit_log</code>. Most other writes on this screen are not; see the note on each step.</span></li>
+  </ul>
+
+  <h2 class="sec">Step 2 &mdash; Clinical evaluation</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Clinical evaluation</h3>
+        <span class="badge ok">Complete</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <div class="row between" style="margin-bottom:8px">
+            <p class="panel-h" style="margin:0">Latest vitals</p>
+            <span class="btn sm primary">Add observation</span>
+          </div>
+          <div class="cols-3">
+            <div class="field"><label>BP</label><input class="input" value="128/82" readonly></div>
+            <div class="field"><label>Pulse</label><input class="input" value="76" readonly></div>
+            <div class="field"><label>SpO&#8322;</label><input class="input" value="98%" readonly></div>
+            <div class="field"><label>Temp</label><input class="input" value="98.2 &deg;F" readonly></div>
+            <div class="field"><label>RBS</label><input class="input" value="112 mg/dL" readonly></div>
+            <div class="field"><label>Weight</label><input class="input" value="64 kg" readonly></div>
+          </div>
+          <p class="hint">Shows the most recent reading. Every reading is kept &mdash; see the log below.</p>
+        </div>
+        <div class="panel">
+          <p class="panel-h">History</p>
+          <div class="field"><label>Comorbidities</label><input class="input" value="Hypertension &middot; controlled" readonly></div>
+          <div class="field"><label>Allergies</label><input class="input" value="None known" readonly></div>
+          <div class="field"><label>Current medication</label><input class="input" value="Amlodipine 5 mg OD" readonly></div>
+          <div class="field"><label>Previous ocular surgery</label><input class="input" value="None" readonly></div>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Ophthalmic assessment</p>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th></th><th>OD (right)</th><th>OS (left)</th></tr></thead>
+          <tbody>
+            <tr><td class="cell-sub">Visual acuity</td><td>6/24</td><td>6/9</td></tr>
+            <tr><td class="cell-sub">IOP</td><td>16 mmHg</td><td>15 mmHg</td></tr>
+            <tr><td class="cell-sub">Biometry / IOL power</td><td><b>+21.0 D</b></td><td>&mdash;</td></tr>
+            <tr><td class="cell-sub">Planned procedure</td><td><b>LASIK</b></td><td>&mdash;</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">The operating eye recorded here is the value every later laterality check compares against.</p>
+      </div>
+
+      <div class="panel">
+        <div class="row between" style="margin-bottom:8px">
+          <p class="panel-h" style="margin:0">Observation log <span class="faint">3 readings</span></p>
+          <span class="btn sm primary">Add observation</span>
+        </div>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>When</th><th>BP</th><th>Pulse</th><th>SpO&#8322;</th><th>Temp</th><th>RBS</th><th>By</th><th>Source</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>24 Aug 01:30 pm</td><td>128/82</td><td>76</td><td>98%</td><td>98.2</td><td>112</td><td>S. Nair</td><td class="cell-sub">Manual</td><td><span class="btn sm ghost">Correct</span></td></tr>
+            <tr><td>24 Aug 11:05 am</td><td>132/86</td><td>80</td><td>98%</td><td>98.4</td><td class="muted">&mdash;</td><td>K. Menon</td><td class="cell-sub">Manual</td><td><span class="btn sm ghost">Correct</span></td></tr>
+            <tr>
+              <td>24 Aug 09:40 am</td><td>136/88 <span class="badge no-dot">corrected</span></td><td>82</td><td>97%</td><td>98.6</td><td class="muted">&mdash;</td>
+              <td>K. Menon</td><td class="cell-sub">Manual</td><td><span class="btn sm ghost">History</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="hint">
+          Appended by <code>POST /api/ip-management/journeys/{id}/pre-op/vitals</code> into <code>vital_sign</code>
+          with <code>context = PreOp</code>; the same table holds ward observations, so the ward board and this step
+          read one series. A correction uses
+          <code>PATCH /api/ip-management/journeys/{jid}/vitals/{vitalId}</code> and marks the row rather than
+          replacing it silently.
+        </p>
+        <div class="callout warn">
+          <b>Gap:</b> vitals writes do not currently produce a <code>journey_audit_log</code> row, so a correction has
+          no audit trail beyond the row itself. Tracked as gap 1 in <a href="conventions.html">conventions</a>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="variants c2" style="margin-top:16px">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Add observation</span></div>
+      <div class="frame"><div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+        <div class="dialog-head"><span class="t">Add observation &mdash; Meena Iyer</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div class="cols-3">
+            <div class="field"><label>BP</label><input class="input placeholder" value="120/80" readonly></div>
+            <div class="field"><label>Pulse</label><input class="input placeholder" value="bpm" readonly></div>
+            <div class="field"><label>SpO&#8322; %</label><input class="input placeholder" value="98" readonly></div>
+            <div class="field"><label>Temp &deg;F</label><input class="input placeholder" value="98.4" readonly></div>
+            <div class="field"><label>RBS mg/dL</label><input class="input placeholder" value="Optional" readonly></div>
+            <div class="field"><label>Weight kg</label><input class="input placeholder" value="Optional" readonly></div>
+          </div>
+          <div class="field"><label>Note</label><input class="input placeholder" value="Optional" readonly></div>
+          <p class="hint">Recorded time and recorded-by come from the server and the signed-in user. They are not
+          editable fields, because a back-dated observation signed by someone else is a clinical record nobody can
+          rely on.</p>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Add observation</span></div>
+      </div></div>
+      <p class="vc">Six fields, all optional except one &mdash; a nurse recording only a BP should not be forced to
+      invent a temperature.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n ok">2</span><span class="t">After adding</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout ok" style="margin:0"><b>Observation recorded at 1:30 pm.</b> Blood pressure is within the
+        range PAC needs.</div>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:10px">
+          <thead><tr><th>When</th><th>BP</th><th>Pulse</th><th>By</th></tr></thead>
+          <tbody>
+            <tr style="background:var(--ok-weak)"><td>01:30 pm</td><td>128/82</td><td>76</td><td>S. Nair</td></tr>
+            <tr><td>11:05 am</td><td>132/86</td><td>80</td><td>K. Menon</td></tr>
+          </tbody>
+        </table>
+      </div></div>
+      <p class="vc">The confirmation names the <b>clinical consequence</b>, and the new row is highlighted in the log
+      rather than the nurse having to hunt for it.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 3 &mdash; Consent <span class="badge danger no-dot">hard stop</span></h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Surgical consent</h3>
+        <span class="badge danger">Not signed</span>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Consent details</p>
+        <div class="cols-2">
+          <div class="field"><label>Procedure</label><input class="input" value="LASIK" readonly></div>
+          <div class="field"><label>Eye / laterality</label><input class="input" value="OD (right)" readonly></div>
+          <div class="field"><label>Consent taken by</label><input class="input placeholder" value="Select clinician" readonly></div>
+          <div class="field"><label>Witness</label><input class="input placeholder" value="Select staff" readonly></div>
+          <div class="field"><label>Language</label><input class="input" value="English" readonly></div>
+          <div class="field"><label>Consent type</label><input class="input" value="Surgical + anaesthesia" readonly></div>
+        </div>
+        <div class="field">
+          <label>Risks explained</label>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> Anaesthesia risks</li>
+            <li><span class="bx on">&#10003;</span> Procedure-specific risks</li>
+            <li><span class="bx off"></span> Post-operative care obligations</li>
+            <li><span class="bx off"></span> Alternatives discussed</li>
+          </ul>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <span class="btn sm">Capture signature</span>
+          <span class="btn sm">Upload signed form</span>
+          <span class="btn sm ghost">Print consent form</span>
+        </div>
+      </div>
+      <div class="callout warn">
+        <b>Laterality is cross-checked.</b> The consent eye must match <code>journey.EyeOperated</code> and the
+        biometry record from step 2. A mismatch is a hard stop, not a warning.
+      </div>
+
+      <div class="panel">
+        <div class="row between" style="margin-bottom:8px">
+          <p class="panel-h" style="margin:0">Documents <span class="faint">2 files</span></p>
+          <span class="btn sm primary">Upload document</span>
+        </div>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>File</th><th>Type</th><th>Uploaded</th><th>By</th><th>Verified</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>anaesthesia-consent.pdf</td><td>Anaesthesia consent</td><td>24 Aug 12:10 pm</td><td>S. Nair</td><td><span class="badge ok">K. Menon &middot; 12:14</span></td><td><span class="btn sm ghost">View</span></td></tr>
+            <tr><td>id-proof.jpg</td><td>Identity</td><td>24 Aug 11:52 am</td><td>Front desk</td><td><span class="badge">Not verified</span></td><td><span class="btn sm">Verify</span></td></tr>
+          </tbody>
+        </table>
+        <p class="hint">
+          <code>POST /api/ip-management/journeys/{id}/pre-op/documents</code> appends to
+          <code>pre_op_documents</code> and stores the file in blob storage;
+          <code>POST &hellip;/pre-op/documents/{docId}/verify</code> records the second pair of eyes. Uploading a
+          replacement keeps both files &mdash; scanned consent is evidence, so nothing is erased.
+        </p>
+      </div>
+
+      <div class="panel">
+        <p class="panel-h">Consent history</p>
+        <ul class="timeline">
+          <li><b>Consent revoked</b> &middot; 23 Aug 05:40 pm &middot; Dr. S. Iyer<br>
+            <span class="faint">Procedure changed from phaco to LASIK; original consent no longer valid</span></li>
+          <li><b>Consent captured</b> &middot; 23 Aug 11:20 am &middot; Dr. A. Menon &middot; witness S. Nair</li>
+        </ul>
+        <p class="hint">
+          Capture and revoke both write <code>pre_op_consent_details</code> via
+          <code>POST &hellip;/pre-op/consent/{itemId}/capture</code> and <code>&hellip;/revoke</code>. A revoked
+          consent is a clinically meaningful event, so it stays visible instead of the record simply reverting to
+          unsigned.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 4 &mdash; Investigations</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Investigation checklist</h3>
+        <div class="row">
+          <span class="badge ok">All critical results in</span>
+          <span class="btn sm primary">Enter result</span>
+          <span class="btn sm">Upload report</span>
+        </div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>Investigation</th><th>Required</th><th>Status</th><th>Result</th><th>Reported</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Random blood sugar</td><td><span class="badge danger no-dot">Critical</span></td><td><span class="badge ok">Resulted</span></td><td>112 mg/dL</td><td>24 Aug 11:20</td><td><span class="btn sm ghost">View</span></td></tr>
+          <tr><td>Blood pressure profile</td><td><span class="badge danger no-dot">Critical</span></td><td><span class="badge ok">Resulted</span></td><td>128/82</td><td>24 Aug 11:05</td><td><span class="btn sm ghost">View</span></td></tr>
+          <tr><td>Biometry (IOL Master)</td><td><span class="badge danger no-dot">Critical</span></td><td><span class="badge ok">Resulted</span></td><td>+21.0 D &middot; OD</td><td>22 Aug 16:40</td><td><span class="btn sm ghost">View</span></td></tr>
+          <tr><td>ECG</td><td><span class="badge no-dot">Routine</span></td><td><span class="badge ok">Resulted</span></td><td>Normal sinus</td><td>23 Aug 09:12</td><td><span class="btn sm ghost">View</span></td></tr>
+          <tr><td>Serology</td><td><span class="badge no-dot">Routine</span></td><td><span class="badge ot">Pending</span></td><td class="muted">&mdash;</td><td class="muted">&mdash;</td><td><span class="btn sm">Chase</span></td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 16px 16px">
+        <div class="callout info">
+          <b>Only <em>critical</em> investigations gate readiness.</b> A pending routine serology is visible and
+          chaseable but does not stop a day-care cataract list.
+        </div>
+
+        <div class="panel">
+          <div class="row between" style="margin-bottom:8px">
+            <p class="panel-h" style="margin:0">Result activity</p>
+            <span class="btn sm primary">Enter result</span>
+          </div>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th>When</th><th>Investigation</th><th>Value</th><th>By</th><th>Source</th><th>Verified</th></tr></thead>
+            <tbody>
+              <tr><td>24 Aug 11:20 am</td><td>Random blood sugar</td><td>112 mg/dL</td><td>Lab</td><td class="cell-sub">LIS webhook</td><td><span class="badge ok">K. Menon</span></td></tr>
+              <tr><td>24 Aug 11:05 am</td><td>Blood pressure profile</td><td>128/82</td><td>S. Nair</td><td class="cell-sub">Manual</td><td><span class="badge ok">K. Menon</span></td></tr>
+              <tr><td>22 Aug 04:40 pm</td><td>Biometry</td><td>+21.0 D &middot; OD</td><td>Optometry</td><td class="cell-sub">Imaging webhook</td><td><span class="badge ok">K. Menon</span></td></tr>
+            </tbody>
+          </table>
+          <p class="hint">
+            Manual entry is <code>PUT &hellip;/ward-investigation-checklist/completions/{itemId}/result</code>;
+            verification is <code>POST &hellip;/completions/{itemId}/verify</code>; the report file goes to
+            <code>POST &hellip;/completions/{itemId}/document</code>. Externally resulted tests arrive through the
+            <code>integrations/lis-result</code> and <code>integrations/imaging-result</code> webhooks, which is why
+            the source column exists &mdash; a value a machine sent and a value a person typed carry different weight.
+          </p>
+          <div class="callout warn">
+            <b>Gap:</b> results are stored on <code>pre_op_completions</code>, one row per item, so a repeat test
+            <b>overwrites</b> the first value and this activity list cannot show the superseded result. A result
+            history table is gap 2 in <a href="conventions.html">conventions</a>.
+          </div>
+        </div>
+
+        <div class="callout danger">
+          <b>Adding a new investigation to the list is not possible today.</b> The rows come from the
+          <code>pre_op_section_items</code> master, which has no administrative endpoints in this service. If a
+          surgeon wants an extra test recorded, there is nowhere to put it.
+          <span class="badge danger no-dot">Gap</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 5 &mdash; PAC assessment <span class="badge danger no-dot">hard stop</span></h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Pre-anaesthetic check</h3>
+        <span class="badge danger">Incomplete</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Assessment</p>
+          <div class="field"><label>Anaesthetist</label><input class="input placeholder" value="Not assigned" readonly></div>
+          <div class="cols-2">
+            <div class="field"><label>ASA grade</label><input class="input placeholder" value="Select" readonly></div>
+            <div class="field"><label>Anaesthesia plan</label><input class="input" value="Topical" readonly></div>
+          </div>
+          <div class="field"><label>Airway assessment</label><input class="input placeholder" value="Not recorded" readonly></div>
+          <div class="field"><label>Fitness</label>
+            <div class="radio-row"><label><input type="radio" name="fit"> Fit</label><label><input type="radio" name="fit"> Fit with caution</label><label><input type="radio" name="fit"> Unfit</label></div>
+          </div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Required before sign-off</p>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> Vitals within acceptable range</li>
+            <li><span class="bx on">&#10003;</span> Critical investigations resulted</li>
+            <li><span class="bx no">&#10005;</span> Anaesthetist assigned</li>
+            <li><span class="bx no">&#10005;</span> ASA grade recorded</li>
+            <li><span class="bx no">&#10005;</span> Fitness decision signed</li>
+          </ul>
+          <div class="callout danger" style="margin-top:10px">
+            <b>3 items outstanding.</b> PAC sign-off is a hard stop for <code>ReadyForSurgery</code>.
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Anaesthetist notes</p>
+        <input class="input placeholder" value="Free text, visible to the OT team" readonly>
+        <div class="row" style="margin-top:8px"><span class="btn sm">Save</span><span class="btn sm primary disabled">Sign PAC</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="row between" style="margin-bottom:8px">
+          <p class="panel-h" style="margin:0">Anaesthesia pre-op review <span class="faint">Form 5</span></p>
+          <span class="btn sm">Record review</span>
+        </div>
+        <dl class="kv">
+          <dt>Reviewed by</dt><dd>Not recorded</dd>
+          <dt>Airway</dt><dd>Not recorded</dd>
+          <dt>Planned technique</dt><dd>Topical</dd>
+        </dl>
+        <p class="hint">
+          <code>PUT /api/ip-management/journeys/{id}/anaesthesia-monitoring/pre-op-review</code> upserts the single
+          <code>anaesthesia_monitoring</code> row for this journey. The intra-operative readings on that same record
+          are appended later from theatre, so the anaesthetist&rsquo;s pre-op view and the monitoring chart are one
+          document rather than two.
+        </p>
+      </div>
+
+      <div class="panel">
+        <p class="panel-h">Assessment history</p>
+        <ul class="timeline">
+          <li><b>Draft saved</b> &middot; 24 Aug 01:12 pm &middot; Dr. A. Nair &middot; <span class="faint">anaesthesia plan set to topical</span></li>
+          <li><b>PAC started</b> &middot; 24 Aug 01:05 pm &middot; Dr. A. Nair</li>
+        </ul>
+        <p class="hint">
+          PAC is <b>one record per journey</b> &mdash; <code>PUT &hellip;/pac-assessment</code> upserts and
+          <code>POST &hellip;/pac-assessment/complete</code> signs it. The event worth keeping is the signing, not
+          each keystroke, so this list shows state changes rather than field edits.
+        </p>
+        <div class="callout warn">
+          <b>Gap:</b> PAC saves and the completion signing produce no <code>journey_audit_log</code> row, so the
+          history above is reconstructed from the record&rsquo;s own timestamps rather than from an audit trail.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 6 &mdash; Department clearance</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Department clearance</h3>
+        <div class="row">
+          <span class="badge ok">4 of 4 cleared</span>
+          <span class="btn sm primary">Request clearance</span>
+        </div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>Department</th><th>Required</th><th>Status</th><th>Cleared by</th><th>At</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td>Optometry</td><td>Yes</td><td><span class="badge ok">Cleared</span></td><td>K. Menon</td><td>24 Aug 11:40</td><td class="cell-sub">Biometry verified</td></tr>
+          <tr><td>Pharmacy</td><td>Yes</td><td><span class="badge ok">Cleared</span></td><td>D. Shah</td><td>24 Aug 12:05</td><td class="cell-sub">Pre-op drops dispensed</td></tr>
+          <tr><td>Counselling</td><td>Yes</td><td><span class="badge ok">Cleared</span></td><td>P. Rao</td><td>23 Aug 17:20</td><td class="cell-sub">Package explained</td></tr>
+          <tr><td>Physician</td><td>Conditional</td><td><span class="badge ok">Cleared</span></td><td>Dr. A. Nair</td><td>23 Aug 18:02</td><td class="cell-sub">HTN controlled, fit</td></tr>
+          <tr><td>Cardiology</td><td>Not required</td><td><span class="badge no-dot">N/A</span></td><td class="muted">&mdash;</td><td class="muted">&mdash;</td><td class="cell-sub">No cardiac history</td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 16px 16px">
+        <p class="hint">Which departments are required is driven by procedure and comorbidity, not by a fixed list.
+        &ldquo;Not required&rdquo; is shown explicitly so an absent row is never mistaken for an overlooked one.</p>
+
+        <div class="panel">
+          <p class="panel-h">Physician clearance &mdash; request trail</p>
+          <ul class="timeline">
+            <li><b>Confirmed</b> &middot; 23 Aug 06:02 pm &middot; S. Nair <span class="faint">ward accepted the response</span></li>
+            <li><b>Responded &mdash; fit</b> &middot; 23 Aug 05:48 pm &middot; Dr. A. Nair <span class="faint">&ldquo;HTN controlled on amlodipine, fit for topical LASIK&rdquo;</span></li>
+            <li><b>More information requested</b> &middot; 23 Aug 03:10 pm &middot; Dr. A. Nair <span class="faint">asked for a BP profile over 24 h</span></li>
+            <li><b>Requested</b> &middot; 23 Aug 11:40 am &middot; S. Nair</li>
+          </ul>
+          <div class="row" style="margin-top:8px">
+            <span class="btn sm">Request</span><span class="btn sm">Respond</span><span class="btn sm">Confirm</span>
+            <span class="btn sm ghost">Hold</span><span class="btn sm ghost">Needs info</span>
+            <span class="btn sm ghost">Escalate</span><span class="btn sm danger">Reject</span>
+          </div>
+          <p class="hint">
+            Seven verbs on <code>POST &hellip;/pre-op/sections/{category}/</code> &mdash; request, respond, confirm,
+            hold, reject, needs-info and escalate &mdash; all writing <code>preop_section_clearance</code>. This is a
+            genuine two-party workflow, not a checkbox, which is why the trail matters more than the current state.
+          </p>
+          <div class="callout warn">
+            <b>Gap:</b> <code>preop_section_clearance</code> holds <b>one row per section</b>, so only the latest
+            state survives. The trail above needs an append-only event table to be real &mdash; gap 3 in
+            <a href="conventions.html">conventions</a>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="variants c2" style="margin-top:16px">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Request clearance</span></div>
+      <div class="frame"><div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+        <div class="dialog-head"><span class="t">Request department clearance</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div class="cols-2">
+            <div class="field"><label>Department</label><input class="input" value="Cardiology" readonly></div>
+            <div class="field"><label>Urgency</label><input class="input" value="Before AM list" readonly></div>
+          </div>
+          <div class="field"><label>Question for the department</label>
+            <input class="input" value="Pre-op cardiac fitness; patient reports exertional breathlessness" readonly></div>
+          <div class="callout info">Requesting a clearance that was previously marked <b>Not required</b> makes it a
+          gate. The readiness count goes from 7 of 9 to 7 of 10.</div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Send request</span></div>
+      </div></div>
+      <p class="vc">Stating the effect on readiness prevents an accidental new hard stop minutes before a list.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Department puts it on hold</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout warn" style="margin:0"><b>Cardiology has put this on hold.</b> They need an ECG from the
+        last 48 hours before they can respond.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm primary">Order ECG</span><span class="btn sm ghost">Escalate</span></div>
+        <p class="hint" style="margin-top:8px">The ward sees what is being waited on and who is waiting, not a status
+        word with no owner.</p>
+      </div></div>
+      <p class="vc">Hold, needs-info and escalate all resolve to a sentence naming the department and the thing they
+      want.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 7 &mdash; Fasting &amp; medication</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Fasting &amp; medication</h3>
+        <span class="badge ok">Complete</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Fasting</p>
+          <div class="cols-2">
+            <div class="field"><label>NPO from</label><input class="input" value="24 Aug 02:00 am" readonly></div>
+            <div class="field"><label>Hours fasted</label><input class="input" value="5h 45m" readonly></div>
+          </div>
+          <div class="field"><label>Confirmed by</label><input class="input" value="S. Nair (staff nurse)" readonly></div>
+          <div class="callout ok" style="margin-top:8px">Fasting requirement met for the AM-3 slot.</div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Log settings</p>
+          <div class="cols-2">
+            <div class="field"><label>Anaesthesia type</label><input class="input" value="Topical" readonly></div>
+            <div class="field"><label>Xylocaine sensitivity</label><input class="input" value="Negative" readonly></div>
+          </div>
+          <p class="hint">Saved by <code>PUT &hellip;/medication-log/meta</code> onto <code>patient_journey</code>.
+          These three fields sit on the journey rather than the log because the OT team reads them without opening
+          the log.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="row between" style="margin-bottom:8px">
+          <p class="panel-h" style="margin:0">Pre-op medication log <span class="faint">3 drugs &middot; 7 doses</span></p>
+          <span class="btn sm primary">Add drug</span>
+        </div>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead>
+            <tr><th>Drug</th><th>Dose</th><th>Route</th><th>Scheduled</th><th>Given at</th><th>Given by</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr><td rowspan="3">Tropicamide 1%</td><td>1 drop</td><td>OD topical</td><td>06:30</td><td>06:31</td><td>S. Nair</td><td rowspan="3"><span class="btn sm ghost">Remove</span></td></tr>
+            <tr><td>1 drop</td><td>OD topical</td><td>06:45</td><td>06:47</td><td>S. Nair</td></tr>
+            <tr><td>1 drop</td><td>OD topical</td><td>07:00</td><td>07:02</td><td>S. Nair</td></tr>
+            <tr><td rowspan="3">Phenylephrine 5%</td><td>1 drop</td><td>OD topical</td><td>06:30</td><td>06:31</td><td>S. Nair</td><td rowspan="3"><span class="btn sm ghost">Remove</span></td></tr>
+            <tr><td>1 drop</td><td>OD topical</td><td>06:45</td><td>06:47</td><td>S. Nair</td></tr>
+            <tr><td>1 drop</td><td>OD topical</td><td>07:00</td><td class="muted">Not given</td><td class="muted">&mdash;</td></tr>
+            <tr><td>Amlodipine 5 mg</td><td>1 tab</td><td>Oral</td><td>06:00</td><td>06:04 <span class="cell-sub">sip of water</span></td><td>S. Nair</td><td><span class="btn sm ghost">Remove</span></td></tr>
+          </tbody>
+        </table>
+        <div style="padding:10px 0 0">
+          <div class="row"><span class="btn sm primary">Add drug</span><span class="btn sm">Record dose given</span></div>
+          <p class="hint">
+            <code>POST &hellip;/medication-log/drugs</code> inserts <b>one row per scheduled dose</b> into
+            <code>pre_op_medication_log</code>, so adding a three-times drug creates three rows waiting to be signed
+            off. Each is then signed by <code>POST &hellip;/medication-log/doses/{doseId}</code>. Removing a drug is a
+            soft delete, so a drug that was charted and then stopped remains recoverable.
+          </p>
+          <div class="callout warn">
+            <b>One dose is outstanding.</b> Phenylephrine at 07:00 has not been signed. Incomplete dilation is the
+            most common reason a cataract case is sent back from the theatre door.
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-h">Site marking</p>
+        <div class="row"><span class="badge ok">Right eye (OD) marked</span><span class="small muted">by Dr. S. Iyer &middot; 07:10</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="variants c2" style="margin-top:16px">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Add drug</span></div>
+      <div class="frame"><div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+        <div class="dialog-head"><span class="t">Add drug to the log</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div class="field"><label>Drug</label><input class="input" value="Ketorolac 0.5% eye drops" readonly></div>
+          <div class="cols-3">
+            <div class="field"><label>Dose</label><input class="input" value="1 drop" readonly></div>
+            <div class="field"><label>Route</label><input class="input" value="OD topical" readonly></div>
+            <div class="field"><label>Times</label><input class="input" value="3" readonly></div>
+          </div>
+          <div class="field"><label>Schedule</label><input class="input" value="06:30, 06:45, 07:00" readonly></div>
+          <div class="callout info">This will create <b>3 dose rows</b> for a nurse to sign off individually.</div>
+          <p class="hint">The drug list comes from the <code>ophth_medication</code> master via
+          <code>GET /api/ip-management/master/medications</code>, so spelling and strength are consistent across the
+          hospital.</p>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Add 3 doses</span></div>
+      </div></div>
+      <p class="vc">The button says exactly how many rows it will create, because a nurse charting three doses and
+      seeing one row would assume it failed.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n ok">2</span><span class="t">Record dose given</span></div>
+      <div class="frame"><div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+        <div class="dialog-head"><span class="t">Phenylephrine 5% &mdash; 07:00 dose</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div class="cols-2">
+            <div class="field"><label>Given at</label><input class="input" value="07:02" readonly></div>
+            <div class="field"><label>Given by</label><input class="input" value="S. Nair" readonly></div>
+          </div>
+          <div class="field"><label>Outcome</label>
+            <div class="radio-row"><label><input type="radio" name="d" checked> Given</label><label><input type="radio" name="d"> Withheld</label><label><input type="radio" name="d"> Refused</label></div>
+          </div>
+          <div class="field"><label>Note</label><input class="input placeholder" value="Required if withheld or refused" readonly></div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Record dose</span></div>
+      </div></div>
+      <p class="vc"><b>Withheld and refused are outcomes, not omissions.</b> A blank row means nobody has looked; a
+      withheld row with a reason means somebody decided.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 8 &mdash; Coverage &amp; finance <span class="badge no-dot">read-only</span></h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Coverage &amp; finance</h3>
+        <span class="badge no-dot">Owned by CCMS and Billing</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Coverage <span class="faint">(CCMS)</span></p>
+          <div class="row between"><span class="badge ok">Approved</span><span class="small muted">Star Health</span></div>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Approved amount</span><span class="v num">&#8377;80,000</span></div>
+          <div class="rail-line"><span class="k">Valid until</span><span class="v">26 Aug 2026</span></div>
+          <div style="margin-top:8px"><span class="btn sm ghost">Open coverage case &rarr;</span></div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Finance <span class="faint">(Billing)</span></p>
+          <div class="rail-line"><span class="k">Billed</span><span class="v num">&#8377;1,20,000</span></div>
+          <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+          <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;90,000</span></div>
+          <div style="margin-top:8px"><a class="btn sm" href="s-12-bill-detail.html">Open billing &rarr;</a></div>
+        </div>
+      </div>
+      <div class="callout info">
+        <b>Nothing on this step is editable from the pre-op workspace.</b> A ward nurse can see the financial position
+        because it affects the conversation with the patient, but coverage is written by CCMS and money is written by
+        Billing. This step displays; it never mutates.
+      </div>
+      <div class="callout warn">
+        <b>Patient due &#8377;90,000 does not block Mark Ready.</b> It blocks OT acceptance for payers that require
+        pre-authorisation, and it blocks discharge. Stating which gate each amount affects prevents the ward from
+        holding a patient unnecessarily.
+      </div>
+
+      <div class="panel">
+        <p class="panel-h">Receipts so far <span class="faint">read-only</span></p>
+        <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+          <thead><tr><th>Receipt</th><th>Type</th><th>Mode</th><th>Amount</th><th>By</th><th>When</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">RCP-20260824-00001188</td><td>Advance</td><td>Cash</td><td class="num">&#8377;30,000</td><td>R. Kumar</td><td>24 Aug 12:58 pm</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">
+          Read through <code>GET /api/ip-management/journeys/{id}/billing</code>, which proxies Auth. There is
+          deliberately <b>no Add control on this step</b> &mdash; the ward can see the money but cannot move it.
+          Collection happens at the cashier through <a href="s-03-collect-payment.html">S-03</a>, which writes the
+          <code>opd_bill_payments</code> ledger and issues a numbered receipt.
+        </p>
+      </div>
+
+      <div class="callout danger">
+        <b>This is the one step in the workspace with no Add action, and that is deliberate.</b> Every other step
+        gains one; here the absence is the design. A ward-side money entry form is exactly the dual write path being
+        removed from <a href="s-10-journey-detail.html">S-10</a>.
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Footer states</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n bad">1</span><span class="t">Hard stops present</span></div>
+      <div class="frame">
+        <div class="ws-foot" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div class="meter"><span class="track"><span class="fill" style="width:78%"></span></span><span>7 of 9</span></div>
+          <div class="small" style="color:var(--danger)"><b>2 hard stops</b><br>Surgical consent unsigned &middot; <a href="#">Open step</a><br>PAC incomplete &middot; <a href="#">Open step</a></div>
+          <span class="btn primary block disabled">Save &amp; Mark Ready for Surgery</span>
+        </div>
+      </div>
+      <p class="vc">Disabled with named reasons and a deep link per reason. Never enabled-then-rejected.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Soft warnings only</span></div>
+      <div class="frame">
+        <div class="ws-foot" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div class="meter"><span class="track"><span class="fill" style="width:89%"></span></span><span>8 of 9</span></div>
+          <div class="small" style="color:var(--ot)"><b>1 warning</b> &middot; Routine serology pending &mdash; does not block</div>
+          <span class="btn primary block">Save &amp; Mark Ready for Surgery</span>
+        </div>
+      </div>
+      <p class="vc">Enabled. The warning is stated but the nurse is not forced to justify proceeding.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n ok">3</span><span class="t">Clear</span></div>
+      <div class="frame">
+        <div class="ws-foot" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div class="meter"><span class="track"><span class="fill ok" style="width:100%"></span></span><span>9 of 9</span></div>
+          <div class="small" style="color:var(--ok)"><b>No blockers.</b> Ready to send to OT after marking.</div>
+          <span class="btn primary block">Save &amp; Mark Ready for Surgery</span>
+        </div>
+      </div>
+      <p class="vc">The target state. One click from here to <code>ReadyForSurgery</code>.</p>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker">1</span><span><b>The only change to this screen:</b> the footer&rsquo;s hard-block presentation is extracted into a shared component so the census rail (S-02) states identical blockers in identical words from the same evaluation.</span></li>
+    <li><span class="marker">1</span><span>Readiness is <b>always server-computed</b>. The frontend renders <code>PreOpReadinessEngine</code> output and never derives its own count, because readiness is clinical truth.</span></li>
+  </ul>
+
+  <h2 class="sec">Step map</h2>
+  <p class="lede" style="margin-bottom:14px">
+    Verified against <code>microservices/ip-management-service</code>. All routes carry the <code>/api/</code> prefix
+    from <code>host.json</code>. <b>Append</b> means every call inserts a row and a real history exists;
+    <b>upsert</b> means one logical row per journey.
+  </p>
+  <table class="map">
+    <thead><tr><th>Step</th><th>Gate</th><th>Add action &rarr; route</th><th>Write</th><th>Backend</th><th>Table</th><th>History read</th><th>Audited</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1 &middot; Admission &amp; bed</td><td>Prerequisite</td>
+        <td>Transfer bed &rarr; <code>POST /api/ip-management/journeys/{id}/transfer-bed</code></td>
+        <td><span class="badge ok no-dot">Append</span></td>
+        <td><code>PatientJourneyService.TransferBedAsync</code> &rarr; <code>AuthBedLifecycleClient</code></td>
+        <td><code>journey_bed_assignment</code>, <code>bed_inventory</code> <span class="cell-sub">(Auth)</span></td>
+        <td><code>GET &hellip;/bed-assignments</code></td>
+        <td><span class="badge ok no-dot">Yes</span> <code>BedTransferred</code></td>
+      </tr>
+      <tr>
+        <td>2 &middot; Clinical evaluation</td><td>Hard</td>
+        <td>Add observation &rarr; <code>POST &hellip;/journeys/{id}/pre-op/vitals</code><br>Correct &rarr; <code>PATCH &hellip;/journeys/{jid}/vitals/{vitalId}</code></td>
+        <td><span class="badge ok no-dot">Append</span></td>
+        <td><code>PreOpFunctions.AddPreOpVital</code>, <code>VitalSignService</code></td>
+        <td><code>vital_sign</code></td>
+        <td><code>GET &hellip;/vitals</code></td>
+        <td><span class="badge danger no-dot">No</span> gap 1</td>
+      </tr>
+      <tr>
+        <td>3 &middot; Consent</td><td><b>Hard</b></td>
+        <td>Capture &rarr; <code>POST &hellip;/pre-op/consent/{itemId}/capture</code><br>Revoke &rarr; <code>&hellip;/revoke</code><br>Upload &rarr; <code>POST &hellip;/pre-op/documents</code></td>
+        <td>Upsert + <span class="badge ok no-dot">Append</span> for documents</td>
+        <td><code>PreOpClearanceService.CaptureConsentAsync</code>, <code>UploadDocumentAsync</code></td>
+        <td><code>pre_op_consent_details</code>, <code>pre_op_completions</code>, <code>pre_op_documents</code></td>
+        <td>on the clearance read</td>
+        <td><span class="badge danger no-dot">No</span></td>
+      </tr>
+      <tr>
+        <td>4 &middot; Investigations</td><td>Hard, critical only</td>
+        <td>Enter result &rarr; <code>PUT &hellip;/ward-investigation-checklist/completions/{itemId}/result</code><br>Verify &rarr; <code>POST &hellip;/completions/{itemId}/verify</code><br>Upload &rarr; <code>POST &hellip;/completions/{itemId}/document</code></td>
+        <td>Upsert &mdash; <b>overwrites</b></td>
+        <td><code>WardInvestigationChecklistService</code></td>
+        <td><code>pre_op_completions</code>, <code>pre_op_documents</code></td>
+        <td>documents only</td>
+        <td><span class="badge danger no-dot">No</span> gap 2</td>
+      </tr>
+      <tr>
+        <td>5 &middot; PAC assessment</td><td><b>Hard</b></td>
+        <td>Save &rarr; <code>PUT &hellip;/pac-assessment</code><br>Sign &rarr; <code>POST &hellip;/pac-assessment/complete</code><br>Review &rarr; <code>PUT &hellip;/anaesthesia-monitoring/pre-op-review</code></td>
+        <td>Upsert</td>
+        <td><code>PacAssessmentService</code>, <code>AnaesthesiaMonitoringService</code></td>
+        <td><code>pac_assessment</code>, <code>anaesthesia_monitoring</code></td>
+        <td>record timestamps</td>
+        <td><span class="badge danger no-dot">No</span></td>
+      </tr>
+      <tr>
+        <td>6 &middot; Department clearance</td><td>Hard where required</td>
+        <td>Request &rarr; <code>POST &hellip;/pre-op/sections/{category}/request</code><br>plus respond &middot; confirm &middot; hold &middot; reject &middot; needs-info &middot; escalate</td>
+        <td>Upsert &mdash; one row per section</td>
+        <td><code>PreOpClearanceService</code></td>
+        <td><code>preop_section_clearance</code></td>
+        <td><span class="badge danger no-dot">None</span> gap 3</td>
+        <td><span class="badge danger no-dot">No</span></td>
+      </tr>
+      <tr>
+        <td>7 &middot; Fasting &amp; medication</td><td>Hard</td>
+        <td>Add drug &rarr; <code>POST &hellip;/medication-log/drugs</code><br>Record dose &rarr; <code>POST &hellip;/medication-log/doses/{doseId}</code><br>Remove &rarr; <code>DELETE &hellip;/medication-log/drugs/{name}</code></td>
+        <td><span class="badge ok no-dot">Append</span> one row per dose</td>
+        <td><code>MedicationLogService</code></td>
+        <td><code>pre_op_medication_log</code></td>
+        <td><code>GET &hellip;/medication-log</code></td>
+        <td><span class="badge danger no-dot">No</span> gap 1</td>
+      </tr>
+      <tr>
+        <td>8 &middot; Coverage &amp; finance</td><td>Not a Mark Ready gate</td>
+        <td><b>None by design</b> &mdash; read only</td>
+        <td>&mdash;</td>
+        <td><code>GetPreauthStatusAsync</code> &rarr; <code>CcmsAdmissionClient</code>; <code>BillingService</code> &rarr; Auth</td>
+        <td><code>ccms_coverage_cases</code>; <code>opd_bills</code>, <code>opd_bill_payments</code></td>
+        <td><code>GET &hellip;/journeys/{id}/billing</code></td>
+        <td>Auth side</td>
+      </tr>
+      <tr>
+        <td>Checklist items generally</td><td>&mdash;</td>
+        <td><code>POST &hellip;/pre-op/completions/{itemId}</code> &middot; batch <code>&hellip;/completions/batch</code></td>
+        <td>Upsert per item</td>
+        <td><code>PreOpClearanceService.SaveCompletionAsync</code></td>
+        <td><code>pre_op_completions</code></td>
+        <td>&mdash;</td>
+        <td><span class="badge danger no-dot">No</span></td>
+      </tr>
+      <tr>
+        <td>Readiness rollup</td><td>&mdash;</td>
+        <td><code>GET &hellip;/journeys/{id}/pre-op/readiness</code></td>
+        <td>Read</td><td><code>PreOpReadinessService</code></td>
+        <td>derived from the pre-op chain</td><td>&mdash;</td><td>&mdash;</td>
+      </tr>
+      <tr>
+        <td>Gate evaluation</td><td>&mdash;</td>
+        <td><code>GET &hellip;/journeys/{id}/transition-gates</code></td>
+        <td>Read</td>
+        <td><code>ChecklistGateFunctions</code> &rarr; <code>ChecklistGateService.EvaluateTransitionAsync</code></td>
+        <td>pre-op chain + <code>pac_assessment</code></td><td>&mdash;</td><td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><b>Mark Ready</b></td><td>&mdash;</td>
+        <td><code>POST &hellip;/journeys/{id}/clinical-transition</code></td>
+        <td>Journey state</td>
+        <td><code>PatientJourneyService.TransitionClinicalAsync</code> + <code>StateTransitionValidator</code></td>
+        <td><code>patient_journey</code>, <code>journey_audit_log</code></td>
+        <td><code>GET &hellip;/journeys/{id}/audit</code></td>
+        <td><span class="badge ok no-dot">Yes</span> <code>ClinicalStateChanged</code></td>
+      </tr>
+      <tr>
+        <td>Clearance approve / defer</td><td>&mdash;</td>
+        <td><code>POST &hellip;/pre-op/clearance/approve</code> &middot; <code>/defer</code></td>
+        <td>Update</td><td><code>PreOpClearanceService.ApprovePreOpAsync</code></td>
+        <td><code>pre_op_clearance</code></td><td>audit</td>
+        <td><span class="badge ok no-dot">Yes</span> <code>PreOpClearanceApproved</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout danger">
+    <b>Only three actions on this entire screen produce an audit row</b> &mdash; bed transfer, pre-op clearance
+    approval and clinical-evaluation amendment. Everything else, including corrected vitals and removed drugs, is
+    invisible to <code>journey_audit_log</code>. For a screen whose whole purpose is to prove a patient was safe to
+    operate on, that is the most consequential gap in this design.
+    See <a href="conventions.html">conventions &sect;5</a>.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Consent unsigned blocks Mark Ready</td><td><b>Surgical consent isn&rsquo;t signed yet.</b> <a href="#">Open the consent step</a></td></tr>
+      <tr><td>PAC incomplete</td><td><b>PAC isn&rsquo;t finished</b> &mdash; anaesthetist, ASA grade and fitness are still needed. <a href="#">Open PAC</a></td></tr>
+      <tr><td>Consent eye differs from the journey</td><td><b>The consent says left eye but the surgery is booked for the right.</b> This must be resolved before the patient goes to theatre.</td></tr>
+      <tr><td>Dose not signed off</td><td><b>One dose hasn&rsquo;t been signed.</b> Phenylephrine at 07:00 &mdash; record it as given, withheld or refused.</td></tr>
+      <tr><td>Save fails</td><td><b>We couldn&rsquo;t save that.</b> Your entry is still on screen &mdash; try again. <span class="cell-sub">Details for IT</span></td></tr>
+      <tr><td>Someone else edited the same step</td><td><b>K. Menon updated this step a moment ago.</b> Reload to see their changes before saving yours.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

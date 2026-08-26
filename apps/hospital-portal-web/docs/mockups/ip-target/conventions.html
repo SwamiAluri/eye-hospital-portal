@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conventions &mdash; record creation, history, messages, endpoint reality</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a href="index.html">&larr; All screens</a>
+  <span class="sid">C</span>
+  <span class="title">Conventions</span>
+  <span class="meta">Record creation &middot; history &middot; message copy &middot; verified endpoints</span>
+  <span class="spacer"></span>
+  <span class="meta">Applies to every screen</span>
+</header>
+
+<main>
+
+  <p class="lede">
+    Three rules that every screen in this set follows, and the verified list of endpoints they are allowed to call.
+    <strong>Section 3 was checked against the source</strong> &mdash; routes, tables and permission codes here are what
+    exists in <code>microservices/ip-management-service</code> and <code>microservices/auth-service</code> today, not
+    what the design wishes existed. Anything the design needs but the backend does not have is listed as a gap with
+    the work item that closes it.
+  </p>
+
+  <h2 class="sec">1. Every record a user can create has an Add action and a history</h2>
+
+  <p class="lede" style="margin-bottom:14px">
+    A panel that displays values but offers no way to create them is a read-only report pretending to be a workflow.
+    Wherever the backend supports appending a row, the screen shows an <b>Add</b> control and, below it, the
+    <b>history of what has already been added</b> &mdash; who, when, and from where.
+  </p>
+
+  <div class="cols-2">
+    <div class="panel">
+      <p class="panel-h">The pattern</p>
+      <ol class="small" style="margin:0;padding-left:18px;line-height:1.7">
+        <li><b>Add control</b> in the panel header, right-aligned, labelled with the noun: &ldquo;Add observation&rdquo;, not &ldquo;+&rdquo;.</li>
+        <li><b>Focused dialog</b> with only the fields the append needs.</li>
+        <li><b>Server validates</b>; the row is appended with actor and timestamp taken from the token, never from the form.</li>
+        <li><b>History table</b> refreshes and the new row is highlighted briefly.</li>
+        <li><b>Correction</b> follows the domain rule below &mdash; edit, append-a-correction, or not at all.</li>
+      </ol>
+    </div>
+    <div class="panel">
+      <p class="panel-h">History columns, always the same order</p>
+      <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+        <thead><tr><th>Column</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>When</td><td>server timestamp, never the client clock</td></tr>
+          <tr><td>What</td><td>the values recorded</td></tr>
+          <tr><td>By</td><td>display name resolved from the actor id</td></tr>
+          <tr><td>Source</td><td>manual, device, LIS/imaging webhook, or seeded</td></tr>
+          <tr><td>State</td><td>current, corrected, or superseded</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h3 class="sub">Correction rules by record type</h3>
+  <table class="map">
+    <thead><tr><th>Record type</th><th>Create</th><th>Correct</th><th>Delete</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Clinical observation</b><br><span class="cell-sub">vitals, nurse records, progress notes</span></td>
+        <td>Append</td>
+        <td><b>Edit in place, marked corrected</b> &mdash; <code>PATCH</code> exists for vitals and nurse records</td>
+        <td>Not offered</td>
+        <td>A wrong BP typed at 09:25 must be fixable, but the record must show it was corrected and by whom.</td>
+      </tr>
+      <tr>
+        <td><b>Progress note</b></td>
+        <td>Append</td>
+        <td><span class="badge danger no-dot">Gap</span> no update endpoint</td>
+        <td>Not offered</td>
+        <td>Narrative notes are append-only by design; an addendum is the correct mechanism and needs building.</td>
+      </tr>
+      <tr>
+        <td><b>Financial line</b><br><span class="cell-sub">payment, discount, refund, reversal</span></td>
+        <td>Append to the ledger</td>
+        <td><b>Never</b> &mdash; append a reversing line</td>
+        <td>Never</td>
+        <td><code>opd_bill_payments</code> is the accounting record. Editing it destroys auditability.</td>
+      </tr>
+      <tr>
+        <td><b>Consent</b></td>
+        <td>Capture</td>
+        <td>Revoke, then re-capture</td>
+        <td>Never</td>
+        <td>A revoked consent is a clinically meaningful event, not an absence of one.</td>
+      </tr>
+      <tr>
+        <td><b>Single-record form</b><br><span class="cell-sub">PAC, intra-op note, discharge summary, safety checklist</span></td>
+        <td>Upsert &mdash; first save creates</td>
+        <td>Edit until signed / completed, then locked</td>
+        <td>Never</td>
+        <td>One per journey by design. The history that matters is the <em>signing</em> event, not each keystroke.</td>
+      </tr>
+      <tr>
+        <td><b>Document</b></td>
+        <td>Upload (append)</td>
+        <td>Upload a replacement, both retained</td>
+        <td>Not offered</td>
+        <td>Scanned consent and lab reports are evidence. Superseding is fine; erasing is not.</td>
+      </tr>
+      <tr>
+        <td><b>Master data</b><br><span class="cell-sub">wards, surgery note templates</span></td>
+        <td>Create</td>
+        <td>Update</td>
+        <td>Soft delete</td>
+        <td>Referenced by historical records, so rows must survive removal from the picker.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>Where an Add is shown but no endpoint exists</b>, the mockup marks the control
+    <span class="badge danger no-dot">Gap</span> and the map row names the work item. It is not drawn as if it works.
+    The largest of these is that <b>most clinical form writes are not audited</b> &mdash;
+    <code>journey_audit_log</code> is written for journey lifecycle changes and two pre-op actions only, so a vitals
+    correction currently leaves no audit row.
+  </div>
+
+  <h2 class="sec">2. Messages are written for the person reading them</h2>
+
+  <p class="lede" style="margin-bottom:14px">
+    A status code, an exception name or a service name in front of a ward nurse is a defect. The message has to answer
+    three things: <b>what happened to my work</b>, <b>what do I do now</b>, and only if asked,
+    <b>what does support need to know</b>.
+  </p>
+
+  <table class="map">
+    <thead><tr><th>What the backend produces</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>503 Service Unavailable</code> from ip-management</td>
+        <td><b>We couldn&rsquo;t refresh the patient list.</b> Showing what we had at 1:58 pm. <a href="#">Try again</a></td>
+      </tr>
+      <tr>
+        <td><code>409 Conflict</code> on a payment</td>
+        <td><b>This bill changed while you were typing.</b> Another &#8377;10,000 was collected at 2:14 pm, so nothing is due now.</td>
+      </tr>
+      <tr>
+        <td>Idempotency key replay</td>
+        <td><b>This payment was already recorded.</b> Showing receipt RCP-20260824-00001188 &mdash; the patient was not charged twice.</td>
+      </tr>
+      <tr>
+        <td><code>InvalidOperationException: transition ReadyForSurgery &rarr; Admitted not allowed</code></td>
+        <td><b>This can&rsquo;t be undone now</b> &mdash; the patient has already gone to theatre.</td>
+      </tr>
+      <tr>
+        <td><code>HARD_BLOCK: consent_unsigned</code></td>
+        <td><b>Surgical consent isn&rsquo;t signed yet.</b> <a href="#">Open the consent step</a></td>
+      </tr>
+      <tr>
+        <td><code>Bill is finalized (is_locked = true)</code></td>
+        <td><b>This bill is closed.</b> To change it now, raise a credit note.</td>
+      </tr>
+      <tr>
+        <td><code>No variant mapping for SKU CTR-001</code></td>
+        <td><b>This item has no price set up yet</b>, so it can&rsquo;t be charged. <a href="#">Set up pricing</a></td>
+      </tr>
+      <tr>
+        <td><code>403 Forbidden &mdash; missing bill.update</code></td>
+        <td><b>You don&rsquo;t have access to collect payments.</b> Ask an administrator, or send the patient to the cashier.</td>
+      </tr>
+      <tr>
+        <td>Auth billing client timeout</td>
+        <td><b>Payments are temporarily unavailable.</b> Nothing was charged &mdash; please don&rsquo;t write a manual receipt. <a href="#">Try again</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="cols-3">
+    <div class="panel">
+      <p class="panel-h">Always say what happened to the work</p>
+      <p class="small muted">&ldquo;Nothing was charged&rdquo; and &ldquo;your change wasn&rsquo;t saved&rdquo; are the
+      most important words in a failure message. Without them staff invent a workaround, and at a cash counter the
+      workaround is a handwritten receipt.</p>
+    </div>
+    <div class="panel">
+      <p class="panel-h">Put the fix in the message</p>
+      <p class="small muted">Every blocking message carries the action that clears it as a link. A message that names a
+      problem and leaves the user to find the screen is only half written.</p>
+    </div>
+    <div class="panel">
+      <p class="panel-h">Technical detail is opt-in</p>
+      <p class="small muted">One <b>Details for IT</b> line, collapsed, carrying the correlation id and the raw
+      response. That id is the only thing support actually needs, and it is what ties the screen to the audit row and
+      the outbox event.</p>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <b>The IT-facing screens are the exception.</b> On integration health (S-16) and reconciliation (S-15) the reader
+    <em>is</em> the engineer, so event types, attempt counts and HTTP status are the content. Even there the headline
+    is plain and the effect is named in money or patients, not in queue depth.
+  </div>
+
+  <h3 class="sub">Success messages</h3>
+  <div class="cols-2">
+    <div class="panel">
+      <p class="panel-h">Name the artefact</p>
+      <div class="callout ok" style="margin:0"><b>&#8377;10,000 collected.</b> Receipt
+      <b class="mono">RCP-20260824-00001188</b>. Patient due is now &#8377;0.</div>
+      <p class="hint">The receipt number is what the patient leaves with, so it is the thing the message is about.</p>
+    </div>
+    <div class="panel">
+      <p class="panel-h">Confirm the consequence, not the API call</p>
+      <div class="callout ok" style="margin:0"><b>Observation recorded at 10:25 am.</b> Three stable readings now
+      &mdash; recovery criteria met.</div>
+      <p class="hint">&ldquo;Saved successfully&rdquo; tells the nurse nothing she did not already assume.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">3. Verified endpoints behind the Add actions</h2>
+
+  <p class="lede" style="margin-bottom:14px">
+    Read against the source. IP Management routes are prefixed <code>/api/</code> by <code>host.json</code>, so the
+    full path is <code>/api/ip-management/&hellip;</code>. Auth routes are ASP.NET controllers under
+    <code>/api/&hellip;</code>. <b>Append</b> means every call inserts a row; <b>upsert</b> means one logical row per
+    journey that the first call creates.
+  </p>
+
+  <h3 class="sub">IP Management &mdash; appends (real history exists)</h3>
+  <table class="map">
+    <thead><tr><th>User action</th><th>Method &amp; route</th><th>Function &rarr; service</th><th>Table</th><th>History read</th></tr></thead>
+    <tbody>
+      <tr><td>Add observation (ward)</td><td><code>POST /api/ip-management/journeys/{id}/vitals</code></td><td><code>VitalSignFunctions.AddVital</code> &rarr; <code>VitalSignService.AddVitalAsync</code></td><td><code>vital_sign</code></td><td><code>GET &hellip;/vitals</code></td></tr>
+      <tr><td>Add observation (pre-op)</td><td><code>POST /api/ip-management/journeys/{id}/pre-op/vitals</code></td><td><code>PreOpFunctions.AddPreOpVital</code></td><td><code>vital_sign</code> <span class="cell-sub">context = PreOp</span></td><td><code>GET &hellip;/vitals</code></td></tr>
+      <tr><td>Correct an observation</td><td><code>PATCH /api/ip-management/journeys/{jid}/vitals/{vitalId}</code></td><td><code>VitalSignService.UpdateVitalAsync</code></td><td><code>vital_sign</code></td><td>same</td></tr>
+      <tr><td>Add nursing note</td><td><code>POST /api/ip-management/journeys/{id}/nurse-records</code></td><td><code>VitalSignFunctions.AddNurseRecord</code></td><td><code>nurse_record</code></td><td><code>GET &hellip;/nurse-records</code></td></tr>
+      <tr><td>Add progress note</td><td><code>POST /api/ip-management/journeys/{id}/progress-notes</code></td><td><code>BedAndStayFunctions</code> &rarr; <code>DailyProgressNoteService.AddAsync</code></td><td><code>ip_daily_progress_note</code></td><td><code>GET &hellip;/progress-notes</code></td></tr>
+      <tr><td>Add drug to the medication log</td><td><code>POST /api/ip-management/journeys/{id}/medication-log/drugs</code></td><td><code>MedicationLogService.AddDrugAsync</code></td><td><code>pre_op_medication_log</code> <span class="cell-sub">inserts one row per dose slot</span></td><td><code>GET &hellip;/medication-log</code></td></tr>
+      <tr><td>Record a dose given</td><td><code>POST /api/ip-management/journeys/{id}/medication-log/doses/{doseId}</code></td><td><code>MedicationLogService.SaveDoseAsync</code></td><td><code>pre_op_medication_log</code></td><td>same</td></tr>
+      <tr><td>Remove a drug</td><td><code>DELETE /api/ip-management/journeys/{id}/medication-log/drugs/{name}</code></td><td><code>RemoveDrugAsync</code> <span class="cell-sub">soft delete</span></td><td><code>pre_op_medication_log</code></td><td>same</td></tr>
+      <tr><td>Upload a document</td><td><code>POST /api/ip-management/journeys/{id}/pre-op/documents</code></td><td><code>PreOpClearanceService.UploadDocumentAsync</code></td><td><code>pre_op_documents</code> + blob</td><td>on the clearance read</td></tr>
+      <tr><td>Verify a document</td><td><code>POST &hellip;/pre-op/documents/{docId}/verify</code></td><td><code>VerifyDocumentAsync</code></td><td><code>pre_op_documents</code></td><td>same</td></tr>
+      <tr><td>Add anaesthesia reading</td><td><code>POST /api/ip-management/journeys/{id}/anaesthesia-monitoring/readings</code></td><td><code>AnaesthesiaMonitoringService.AddReadingAsync</code></td><td><code>anaesthesia_monitoring</code> <span class="cell-sub">JSONB array</span></td><td><code>GET &hellip;/anaesthesia-monitoring</code></td></tr>
+      <tr><td>Record an IOL return</td><td><code>POST /api/ip-management/journeys/{id}/iol-returns</code></td><td><code>PostOpWorkflowService.RecordIolReturnAsync</code></td><td><code>iol_returns</code></td><td><code>GET &hellip;/iol-returns</code></td></tr>
+      <tr><td>Transfer bed</td><td><code>POST /api/ip-management/journeys/{id}/transfer-bed</code></td><td><code>PatientJourneyService.TransferBedAsync</code></td><td><code>journey_bed_assignment</code> <span class="cell-sub">closes the open row, opens a new one</span></td><td><code>GET &hellip;/bed-assignments</code></td></tr>
+      <tr><td>Add surgery note template</td><td><code>POST /api/ip-management/surgery-note-templates</code></td><td><code>PostOpWorkflowService.AddTemplateAsync</code></td><td><code>surgery_note_templates</code></td><td><code>GET</code> same route</td></tr>
+      <tr><td>Create a ward</td><td><code>POST /api/ip-management/wards</code></td><td><code>WardService.CreateAsync</code></td><td><code>ward</code></td><td><code>GET /api/ip-management/wards</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub">IP Management &mdash; upserts (one record per journey)</h3>
+  <table class="map">
+    <thead><tr><th>User action</th><th>Method &amp; route</th><th>Table</th><th>Cardinality</th></tr></thead>
+    <tbody>
+      <tr><td>Save a checklist item</td><td><code>POST &hellip;/pre-op/completions/{itemId}</code> &middot; batch at <code>&hellip;/completions/batch</code></td><td><code>pre_op_completions</code></td><td>one per (clearance, item)</td></tr>
+      <tr><td>Capture / revoke consent</td><td><code>POST &hellip;/pre-op/consent/{itemId}/capture</code> &middot; <code>/revoke</code></td><td><code>pre_op_consent_details</code></td><td>one per completion</td></tr>
+      <tr><td>Save an investigation result</td><td><code>PUT &hellip;/ward-investigation-checklist/completions/{itemId}/result</code></td><td><code>pre_op_completions</code></td><td>one per item &mdash; <b>overwrites</b></td></tr>
+      <tr><td>Verify an investigation</td><td><code>POST &hellip;/ward-investigation-checklist/completions/{itemId}/verify</code></td><td><code>pre_op_completions</code></td><td>same row</td></tr>
+      <tr><td>Save / complete PAC</td><td><code>PUT &hellip;/pac-assessment</code> &middot; <code>POST &hellip;/pac-assessment/complete</code></td><td><code>pac_assessment</code></td><td>one per journey</td></tr>
+      <tr><td>Department clearance workflow</td><td><code>POST &hellip;/pre-op/sections/{category}/</code> <span class="cell-sub">request &middot; respond &middot; confirm &middot; hold &middot; reject &middot; needs-info &middot; escalate</span></td><td><code>preop_section_clearance</code></td><td>one per (clearance, section)</td></tr>
+      <tr><td>WHO safety checklist</td><td><code>PUT &hellip;/surgical-safety/before-anaesthesia</code> &middot; <code>/who-timeout</code> &middot; <code>/after-surgery</code></td><td><code>surgical_safety_checklist</code></td><td>one per journey, three signings</td></tr>
+      <tr><td>Intra-op note</td><td><code>POST &hellip;/intra-op</code> &middot; <code>POST &hellip;/intra-op/sign</code></td><td><code>intra_op_notes</code></td><td>one per journey</td></tr>
+      <tr><td>Post-op nurse / surgeon checklist</td><td><code>POST &hellip;/nurse-checklist</code> &middot; <code>POST &hellip;/surgeon-checklist</code></td><td><code>nurse_checklist_responses</code>, <code>surgeon_checklist_responses</code></td><td>one per (journey, item)</td></tr>
+      <tr><td>Post-op instructions</td><td><code>POST &hellip;/post-op-instructions</code></td><td><code>post_op_instructions</code></td><td>one per journey</td></tr>
+      <tr><td>Discharge summary</td><td><code>POST &hellip;/discharge-summary</code> &middot; <code>/finalize</code></td><td><code>discharge_summary</code></td><td>one per journey</td></tr>
+      <tr><td>IOL sticker checks</td><td><code>PUT &hellip;/ward-postop-checklist/iol-sticker</code></td><td><code>patient_journey.ward_postop_iol_checks</code> <span class="cell-sub">JSONB</span></td><td>one per journey</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub">Auth &mdash; billing appends</h3>
+  <table class="map">
+    <thead><tr><th>User action</th><th>Method &amp; route</th><th>Permission</th><th>Table</th></tr></thead>
+    <tbody>
+      <tr><td>Collect payment / advance</td><td><code>POST /api/OpdBills/payment</code></td><td><code>bill.update</code></td><td><code>opd_bill_payments</code> <span class="cell-sub">append</span></td></tr>
+      <tr><td>Apply discount</td><td><code>POST /api/OpdBills/discount</code></td><td><code>bill.update</code></td><td><code>opd_bill_payments</code> <span class="cell-sub">kind = Discount</span></td></tr>
+      <tr><td>Add a charge line</td><td><code>POST /api/BillItems</code></td><td><code>bill.update</code></td><td><code>opd_bill_items</code></td></tr>
+      <tr><td>Create a bill</td><td><code>POST /api/OpdBills</code></td><td><code>bill.create</code></td><td><code>opd_bills</code></td></tr>
+      <tr><td>Finalize</td><td><code>POST /api/OpdBills/{id}/finalize</code></td><td><code>bill.update</code></td><td><code>opd_bills</code> + <code>billing_ccms_outbox</code></td></tr>
+      <tr><td>Request a refund</td><td><code>POST /api/Refunds/request</code></td><td><code>opd_bill.refund</code></td><td><code>refunds</code></td></tr>
+      <tr><td>Approve a refund</td><td><code>POST /api/Refunds/{id}/authorize</code></td><td><code>opd_bill.refund.authorize</code></td><td><code>refunds</code></td></tr>
+      <tr><td>Pay the refund out</td><td><code>POST /api/Refunds/{id}/complete</code></td><td><code>opd_bill.refund</code></td><td><code>opd_bill_payments</code> <span class="cell-sub">kind = Refund</span></td></tr>
+      <tr><td>Refund approval queue</td><td><code>GET /api/Refunds/pending</code></td><td><code>opd_bill.refund.authorize</code></td><td><code>refunds</code></td></tr>
+      <tr><td>IP billing dashboard</td><td><code>GET /api/OpdBills/ip-dashboard</code></td><td>service-level: any of <code>bill.view</code>, <code>opd_bill.view</code>, <code>bill.update</code>, <code>ip.view</code>, <code>ward.checklist.edit</code></td><td><code>opd_bills</code></td></tr>
+      <tr><td>Bed lifecycle (service to service)</td><td><code>POST /api/internal/ip-beds/lifecycle</code></td><td><code>X-Internal-Key</code></td><td><code>bed_inventory</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout danger">
+    <b>Receipt numbering is <code>RCP-{yyyyMMdd}-{seq:D8}</code></b> from the Postgres sequence
+    <code>opd_receipt_number_seq</code>, so a real receipt reads <b class="mono">RCP-20260824-00001188</b>. Payment
+    references are <code>PAY-{yyyyMMdd}-{seq:D8}</code>. Screens must not invent a shorter format.
+  </div>
+
+  <h2 class="sec">4. Corrections to earlier drafts of these mockups</h2>
+  <table class="map">
+    <thead><tr><th>Was documented as</th><th>Actually</th><th>Effect on the screens</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>ip.billing.collect</code> permission</td>
+        <td><b>Does not exist.</b> Collection is gated by <code>bill.update</code></td>
+        <td>Corrected everywhere. A finer-grained collect permission is a proposal, marked <span class="mark new">2</span>, not current state.</td>
+      </tr>
+      <tr>
+        <td><code>RowVersion</code> optimistic concurrency on bills</td>
+        <td><b>No concurrency token exists</b> on <code>OpdBill</code>, <code>OpdBillPayment</code>, <code>Refund</code> or <code>OpdBillItem</code></td>
+        <td>The concurrency state in S-12 is now labelled as a gap to build, not existing behaviour. Idempotency keys on payments <em>do</em> exist and are unique per tenant.</td>
+      </tr>
+      <tr>
+        <td><code>PUT /journeys/{id}/ward-assignment</code></td>
+        <td><code>PUT /api/ip-management/journeys/{id}/ward</code></td>
+        <td>Route corrected in S-04 and S-10.</td>
+      </tr>
+      <tr>
+        <td><code>GET &hellip;/outbox/dead</code> dead-letter list</td>
+        <td>Only <code>GET /api/ip-management/integration/outbox/stats</code> and <code>POST &hellip;/outbox/process</code> exist</td>
+        <td>S-16 outbox dead-letter, requeue and abandon are live on IP and Billing outbox admin APIs.</td>
+      </tr>
+      <tr>
+        <td><code>journey_implant_usage</code> table</td>
+        <td>Live: <code>journey_implant_usage</code> via <code>/journeys/{id}/implants</code>; legacy <code>iol_returns</code> and journey IOL fields remain. Was: read-only <code>iol_catalog_master</code></td>
+        <td>Kept as the proposed target, clearly marked <span class="mark new">2</span> in S-07, S-08 and S-10.</td>
+      </tr>
+      <tr>
+        <td>Most journey writes are audited</td>
+        <td><code>journey_audit_log</code> covers journey lifecycle plus pre-op approve and clinical-evaluation amend. <b>Vitals, medications, PAC, checklists, investigations and safety checklists are not audited.</b></td>
+        <td>Every history panel states whether the action lands in the audit log, and the gap is called out where it does not.</td>
+      </tr>
+      <tr>
+        <td>Payment events published from IP Management</td>
+        <td>IP&rsquo;s <code>integration_outbox_event</code> publishes only <code>JourneyAdmitted</code>, <code>SurgeryCompleted</code>, <code>PatientClinicallyDischarged</code>, <code>EmergencyFcApplied</code>. Billing events come from Auth&rsquo;s <code>billing_ccms_outbox</code></td>
+        <td>Event columns corrected; S-16 shows the two outboxes as separate systems, which is what they are.</td>
+      </tr>
+      <tr>
+        <td>Realtime event names</td>
+        <td>SignalR <code>NotificationHub</code> at <code>/notificationHub</code> invokes one client method, <code>ReceiveNotification(type, message, details)</code>. Beds broadcast separately on <code>CapacityHub</code> as <code>BedStatusChanged</code></td>
+        <td>Realtime rows now name the hub and the type string rather than an imagined per-event method.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">5. Gaps the design depends on</h2>
+  <table class="map">
+    <thead><tr><th>#</th><th>Gap</th><th>Why the design needs it</th><th>Screens affected</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>No audit rows for clinical form writes</td><td>A corrected vital or a removed drug currently leaves no trace of who changed it</td><td>S-04, S-05, S-08</td></tr>
+      <tr><td class="num">2</td><td>Investigation results overwrite in place</td><td>A re-run result silently replaces the first; there is no result history to show</td><td>S-05, S-10</td></tr>
+      <tr><td class="num">3</td><td>Department clearance keeps one row per section</td><td>Request &rarr; hold &rarr; respond &rarr; confirm is a trail, but only the latest state survives</td><td>S-05</td></tr>
+      <tr><td class="num">4</td><td>No update or addendum for progress notes</td><td>Append-only is right, but a typo needs an addendum path</td><td>S-04, S-10</td></tr>
+      <tr><td class="num">5</td><td>No implant usage table</td><td>Traceability for a recall or payer audit needs serial &rarr; patient, which <code>iol_returns</code> alone cannot give</td><td>S-07, S-08, S-10, S-15</td></tr>
+      <tr><td class="num">6</td><td>No concurrency token on billing rows</td><td>Two cashiers on one bill is a real scenario with no current protection</td><td>S-03, S-12</td></tr>
+      <tr><td class="num">7</td><td>Dead-letter listing and per-event requeue not exposed</td><td>S-16 cannot be built beyond aggregate stats without them</td><td>S-16</td></tr>
+      <tr><td class="num">8</td><td>No charge reconciliation service</td><td>S-15 has no backing query today; the exception buckets must be built</td><td>S-14, S-15</td></tr>
+      <tr><td class="num">9</td><td>Billing rules CRUD has no permission attribute</td><td>Anyone authenticated can change billing rules</td><td>S-14</td></tr>
+      <tr><td class="num">10</td><td>Two bill-item models</td><td>OPD create writes a JSON column on the header; the catalog path writes <code>opd_bill_items</code></td><td>S-12, S-14</td></tr>
+    </tbody>
+  </table>
+
+</main>
+</body>
+</html>

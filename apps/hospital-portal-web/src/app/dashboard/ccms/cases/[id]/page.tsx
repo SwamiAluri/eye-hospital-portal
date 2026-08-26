@@ -741,6 +741,10 @@ export default function CcmsCaseDetailPage() {
               {/* Documents */}
               <CaseDocumentsPanel
                 caseId={case_.id}
+                patientId={case_.patientId}
+                insuranceProviderId={case_.insuranceProviderId}
+                tpaProviderId={case_.tpaProviderId}
+                governmentSchemeId={case_.governmentSchemeId}
                 documents={caseDocuments}
                 documentsLoading={caseDocumentsLoading}
               />

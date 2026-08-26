@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body data-screen="W-05">
+<main>
+  <p class="lede">
+    Arrival on the day: occupy a day-care chair and print a wristband. Laterality is spelled RIGHT, never colour alone.
+    Occupancy still uses <code>BedLifecyclePolicy</code> — this is a map, not a new bed machine.
+  </p>
+
+  <h2 class="sec">Day-care chair map on the ward board</h2>
+  <div class="frame">
+    <div class="app-header">
+      <h1>Ward Management</h1>
+      <span class="scope">Day Care · 25 Aug 2026 AM</span>
+      <span class="spacer"></span>
+      <span class="btn sm">Refresh</span>
+    </div>
+    <div class="bed-map">
+      <div class="bed-cell occupied sel"><div class="bn">C-04</div><div class="st">Occupied</div><div class="who">Meena Iyer · UAT-002</div></div>
+      <div class="bed-cell occupied"><div class="bn">C-05</div><div class="st">Occupied</div><div class="who">Ananya Sharma · UAT-014</div></div>
+      <div class="bed-cell available"><div class="bn">C-06</div><div class="st">Available</div><div class="who">Chair</div></div>
+      <div class="bed-cell cleaning"><div class="bn">C-07</div><div class="st">Cleaning</div><div class="who">Turnaround</div></div>
+      <div class="bed-cell reserved"><div class="bn">C-08</div><div class="st">Reserved</div><div class="who">Slot AM-5</div></div>
+      <div class="bed-cell available"><div class="bn">C-09</div><div class="st">Available</div><div class="who">Chair</div></div>
+      <div class="bed-cell available"><div class="bn">C-10</div><div class="st">Available</div><div class="who">Recliner</div></div>
+      <div class="bed-cell occupied"><div class="bn">C-11</div><div class="st">Occupied</div><div class="who">Rekha Menon · UAT-009</div></div>
+    </div>
+    <div class="bed-legend">
+      <span><i style="background:#ecfdf5;border-color:#6ee7b7"></i> Available</span>
+      <span><i style="background:#eff6ff;border-color:#93c5fd"></i> Occupied</span>
+      <span><i style="background:#fffbeb;border-color:#fcd34d"></i> Cleaning</span>
+      <span><i style="background:#fff"></i> Reserved</span>
+      <span>Status is labelled on every chair — colour is not the only cue.</span>
+    </div>
+    <div class="split docked">
+      <div class="list">
+        <table class="grid">
+          <thead><tr><th>Patient</th><th>Chair</th><th>Next</th></tr></thead>
+          <tbody>
+            <tr class="row-selected"><td><div class="cell-primary">Meena Iyer</div><div class="cell-sub">UAT-002</div></td><td>C-04</td><td>Open pre-op</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="rail">
+        <div class="pib">
+          <div class="pib-main">
+            <div class="pib-id">
+              <div class="pib-name">Meena Iyer</div>
+              <div class="pib-nums"><span>UHID <b>UAT-002</b></span><span>54 years · Female</span><span>DOB <b>12 Mar 1972</b></span></div>
+            </div>
+            <div class="eye"><span class="eye-k">Operating eye</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+          </div>
+          <div class="pib-where"><span><span class="k">Chair</span> <span class="v">C-04 · Occupied</span></span></div>
+        </div>
+        <div class="rail-foot">
+          <span class="btn sm">Print wristband</span>
+          <span class="btn sm primary">Open pre-op</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <h2 class="sec" id="wristband">Wristband print</h2>
+  <div class="frame" style="padding:24px">
+    <div class="wristband">
+      <div class="small muted">Day-care · 25 Aug 2026</div>
+      <div class="wb-name">Meena Iyer</div>
+      <div class="small">UHID <b class="mono">UAT-002</b> · DOB 12 Mar 1972 · 54 years · Female</div>
+      <div class="wb-eye">OPERATING EYE · RIGHT (OD)</div>
+      <div class="bars" aria-hidden="true"></div>
+      <div class="small mono" style="margin-top:6px">WB-260825-00041</div>
+    </div>
+    <p class="hint" style="text-align:center;margin-top:10px">Print from admit or reprint from the rail. Same token until revoked.</p>
+  </div>
+
+  <h2 class="sec">Reprint (same token)</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout info">
+      <b>Wristband already issued</b> · token <span class="mono">WB-260825-00041</span>.
+      Reprint uses the same token. Do not mint a second band unless the first is revoked.
+    </div>
+    <span class="btn sm" style="margin-top:8px">Reprint wristband</span>
+  </div>
+
+  <h2 class="sec">No print permission</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout">Print wristband is hidden. Occupancy and pre-op are still available.</div>
+  </div>
+
+  <table class="map" style="margin-top:16px">
+    <thead><tr><th>Element</th><th>API</th><th>BE</th><th>DB</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>Map</td><td>GET /ip-management/wards/{id}/beds</td><td>existing beds list</td><td>bed_inventory</td><td class="owner o-auth">Auth beds</td></tr>
+      <tr><td>Token</td><td>POST /ip-management/journeys/{id}/safety-token</td><td>JourneySafetyTokenService</td><td>journey_safety_token</td><td class="owner o-ip">IP</td></tr>
+    </tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

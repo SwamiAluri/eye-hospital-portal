@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remaining-work workflow mockups</title>
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="sid">W</span>
+  <span class="title">Remaining IPD work — screen-by-screen workflow</span>
+  <span class="spacer"></span>
+  <a href="readiness.html">API / BE / DB map</a>
+  <a href="workflow.html">Click paths</a>
+  <a href="../ip-target/index.html">Original 18 screens (S-01–S-18)</a>
+  <span class="meta">Static · one patient · no application code</span>
+</header>
+<main>
+  <p class="lede">
+    <strong>To finalize:</strong> open
+    <a href="workflow.html">How each screen opens</a>
+    (live sidebar + button click). Then step W-01 → W-09 with Next at the bottom.
+    None of these is a new menu item. OPD does not open W-01 — the Waiting List row does.
+  </p>
+
+  <div class="start-row">
+    <a class="btn primary" href="readiness.html">0. API / BE / DB map (approve before code)</a>
+    <a class="btn" href="workflow.html">1. How each screen opens (click path)</a>
+    <a class="btn" href="w-01-counsellor-opd.html">2. Walk patient day at W-01</a>
+    <span class="small muted">No application code until you approve one screen. You test that screen in UI, then the next.</span>
+  </div>
+  <div class="callout info">
+    <b>Separate review:</b>
+    <a href="w-ward-board-redesign.html">Ward board UX redesign</a>
+    &mdash; locked spec (nurse + coordinator, Day Care vs IPD, list + floor). Confirm, then implement.
+  </div>
+
+  <div class="callout info">
+    <b>Scenario.</b> Meena Iyer · UHID UAT-002 · 54F · Phaco + IOL · operating eye <b>RIGHT (OD)</b> ·
+    planned power <b>+21.00 D</b> · Alcon SN60WF · Day Care chair C-04 · TPA approved ₹35,000.
+  </div>
+  <div class="callout warn">
+    <b>Locked rules drawn in these mockups.</b> Dilation and vitals are warnings, not hard stops.
+    IOL power must match after a 2-decimal parse (21.00 vs 21.50 is blocked). Follow-up must be a booked
+    clinic appointment, not a typed date. Status is never colour alone. Eye mismatch has no override.
+  </div>
+
+  <h2 class="sec">Build order (what to code, in this sequence)</h2>
+  <p class="small muted" style="margin-top:-8px;margin-bottom:10px">
+    Walk the patient journey below to see the day. Use this table when starting PRs. E1 has no screen.
+  </p>
+  <table class="map">
+    <thead>
+      <tr><th>PR</th><th>Tasks</th><th>Mockup — review these frames first</th><th>Migration?</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><b>A2</b> IOL exact compare</td>
+        <td>
+          <a href="w-07-ot-gs1-iol.html#power-mismatch">W-07 · 21.00 vs 21.50 block</a> ·
+          <a href="w-07-ot-gs1-iol.html#empty-planned">empty planned warn</a> ·
+          <a href="w-07-ot-gs1-iol.html#no-override">no override permission</a>
+        </td>
+        <td>None</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><b>A3 + A4</b> dilation / vitals warns</td>
+        <td>
+          <a href="w-06-preop-dilation-vitals.html">W-06</a> —
+          countdown chip, BP 192/114 warning, Mark Ready still enabled; hard stops unchanged
+        </td>
+        <td>Vitals threshold only</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><b>A1</b> GS1 · <b>A5</b> wristband · <b>E1</b> seeder</td>
+        <td>
+          <a href="w-07-ot-gs1-iol.html#gs1-match">W-07 GS1 resolved</a> /
+          <a href="w-07-ot-gs1-iol.html#gs1-unreadable">unreadable</a> ·
+          <a href="w-05-ward-bed-wristband.html#wristband">W-05 wristband</a> ·
+          E1 backend only
+        </td>
+        <td>Token table (A5)</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><b>B2</b> follow-up lock</td>
+        <td>
+          <a href="w-09-discharge-followup.html">W-09</a> —
+          not booked (block), book slot, conflict, linked, admin override
+        </td>
+        <td><code>followup_appointment_id</code></td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td><b>B1</b> taper · <b>A6</b> bed map · <b>C2</b> queue · <b>C1</b> docs · <b>D1</b> mapping · KPI · OPD copy</td>
+        <td>
+          <a href="w-08-postop-taper.html">W-08</a> ·
+          <a href="w-05-ward-bed-wristband.html">W-05 map</a> ·
+          <a href="w-03-ccms-ops-queue.html">W-03</a> ·
+          <a href="w-02-ccms-docs.html">W-02</a> ·
+          <a href="w-10-charge-mapping.html">W-10</a> ·
+          <a href="w-04-census-kpi.html">W-04</a> ·
+          <a href="w-01-counsellor-opd.html">W-01</a>
+        </td>
+        <td>Taper table (B1)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">How each mockup opens (live click — not “previous W”)</h2>
+  <p class="small muted" style="margin-top:-8px;margin-bottom:10px">
+    Full cards: <a href="workflow.html">workflow.html</a>. W-01 is the counsellor session after a waiting-list row click, not a screen that sits on Doctors Desk.
+  </p>
+  <table class="map">
+    <thead>
+      <tr><th>W</th><th>You are on this live screen</th><th>You click</th><th>W UI appears here</th><th>Next click</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="w-01-counsellor-opd.html">W-01</a></td>
+        <td>Counsellor → Waiting List</td>
+        <td>Meena Iyer’s row</td>
+        <td>Counsellor session — From OPD / planned IOL</td>
+        <td>Coverage &amp; Pre-Auth → CCMS case</td>
+      </tr>
+      <tr>
+        <td><a href="w-02-ccms-docs.html">W-02</a></td>
+        <td>CCMS case</td>
+        <td>Documents → Full workspace</td>
+        <td>Required slots + Submit to TPA</td>
+        <td>Sidebar: Pre-Auth Queue (Ops)</td>
+      </tr>
+      <tr>
+        <td><a href="w-03-ccms-ops-queue.html">W-03</a></td>
+        <td>Sidebar Coverage &amp; Claims</td>
+        <td>Pre-Auth Queue (Ops)</td>
+        <td>That queue page (the list itself)</td>
+        <td>Sidebar: IP Management</td>
+      </tr>
+      <tr>
+        <td><a href="w-04-census-kpi.html">W-04</a></td>
+        <td>Ward &amp; Inpatient → IP Management</td>
+        <td>Open census (no extra button)</td>
+        <td>Top KPI: Patient dues</td>
+        <td>Sidebar: Ward, then her row</td>
+      </tr>
+      <tr>
+        <td><a href="w-05-ward-bed-wristband.html">W-05</a></td>
+        <td>Ward</td>
+        <td>Open Ward; then her row → Print wristband</td>
+        <td>Chair map on the board; wristband from the drawer</td>
+        <td>Same drawer: Open Pre-Op Workspace</td>
+      </tr>
+      <tr>
+        <td><a href="w-06-preop-dilation-vitals.html">W-06</a></td>
+        <td>Ward drawer (Admitted)</td>
+        <td>Open Pre-Op Workspace</td>
+        <td>Vitals tab + Fasting &amp; Medication + footer chip</td>
+        <td>Operation Theatre → Accept → Edit OT Details</td>
+      </tr>
+      <tr>
+        <td><a href="w-07-ot-gs1-iol.html">W-07</a></td>
+        <td>Operation Theatre board</td>
+        <td>Edit OT Details → Record implant</td>
+        <td>Inside OT Details dialog, while In OT</td>
+        <td>Move to Post-Op Ward → Open Post-Op Care</td>
+      </tr>
+      <tr>
+        <td><a href="w-08-postop-taper.html">W-08</a></td>
+        <td>Ward drawer (Post-op)</td>
+        <td>Open Post-Op Care → Post-op instructions</td>
+        <td>Eyedrop taper table on that step</td>
+        <td>Discharge Patient → Follow-up</td>
+      </tr>
+      <tr>
+        <td><a href="w-09-discharge-followup.html">W-09</a></td>
+        <td>Ward drawer (Ready for discharge)</td>
+        <td>Discharge Patient → step Follow-up</td>
+        <td>Book clinic appointment (not a typed date)</td>
+        <td>Chair released · Appointments board</td>
+      </tr>
+      <tr>
+        <td><a href="w-10-charge-mapping.html">W-10</a></td>
+        <td>Admin → Charge mapping (S-14)</td>
+        <td>Open the page · Map SN60WF · Replay</td>
+        <td>Parked implant / package lines → OpdBill</td>
+        <td>Census dues includes the line</td>
+      </tr>
+      <tr>
+        <td><a href="w-11-deferred.html">W-11</a></td>
+        <td>No product screen</td>
+        <td>Do not add a page</td>
+        <td>E1 seeder + P2/P3 listed, not built</td>
+        <td>Pack boundary</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Screens</h2>
+  <div class="cards" id="cards"></div>
+
+  <h2 class="sec">Coverage</h2>
+  <table class="map" id="coverage">
+    <thead><tr><th>ID</th><th>Screen</th><th>Views</th><th>Rendered</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script>
+(function () {
+  var cards = document.getElementById('cards');
+  var cbody = document.querySelector('#coverage tbody');
+  var total = 0;
+  window.REMAINING_SCREENS.forEach(function (s) {
+    var covers = s.covers || [];
+    total += covers.length;
+    var cls = s.status === 'Fix' ? 'new' : '';
+    var a = document.createElement('a');
+    a.className = 'card';
+    a.href = s.file;
+    a.innerHTML =
+      '<div class="id">' + s.id + '</div>' +
+      '<div class="t">' + s.title + '</div>' +
+      '<div class="r">' + s.route + '</div>' +
+      '<div class="f">' +
+        '<span class="tagr ' + cls + '">' + s.status + '</span>' +
+        '<span class="tagr">' + s.persona + '</span>' +
+        '<span class="tagr">' + s.tasks + '</span>' +
+        '<span class="tagr">' + covers.length + ' views</span>' +
+      '</div>';
+    cards.appendChild(a);
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><b>' + s.id + '</b></td>' +
+      '<td><a href="' + s.file + '">' + s.title + '</a></td>' +
+      '<td class="num"><b>' + covers.length + '</b></td>' +
+      '<td>' + covers.map(function (c) {
+        return '<span class="badge no-dot" style="margin:2px 4px 2px 0">' + c + '</span>';
+      }).join('') + '</td>';
+    cbody.appendChild(tr);
+  });
+  var foot = document.createElement('tr');
+  foot.innerHTML =
+    '<td></td><td><b>Total</b></td><td class="num"><b>' + total + '</b></td>' +
+    '<td class="muted">across ' + window.REMAINING_SCREENS.length + ' screens · E1 has no UI</td>';
+  cbody.appendChild(foot);
+})();
+</script>
+</body>
+</html>

@@ -112,12 +112,15 @@ namespace AuthService.Controllers
         public async Task<ActionResult<List<BedInventoryDto>>> GetBedInventory(
             Guid branchId,
             [FromQuery] string? bedType = null,
-            [FromQuery] string? bedStatus = null)
+            [FromQuery] string? bedStatus = null,
+            [FromQuery] Guid? wardId = null,
+            [FromQuery] string? wardName = null)
         {
             try
             {
                 var tenantId = GetTenantId();
-                var beds = await _capacityService.GetBedInventoryAsync(branchId, tenantId, bedType, bedStatus);
+                var beds = await _capacityService.GetBedInventoryAsync(
+                    branchId, tenantId, bedType, bedStatus, wardId, wardName);
                 return Ok(beds);
             }
             catch (Exception ex)
@@ -132,12 +135,14 @@ namespace AuthService.Controllers
         [HttpGet("branch/{branchId}/beds/available")]
         public async Task<ActionResult<List<BedInventoryDto>>> GetAvailableBeds(
             Guid branchId,
-            [FromQuery] string? bedType = null)
+            [FromQuery] string? bedType = null,
+            [FromQuery] Guid? wardId = null,
+            [FromQuery] string? wardName = null)
         {
             try
             {
                 var tenantId = GetTenantId();
-                var beds = await _capacityService.GetAvailableBedsAsync(branchId, tenantId, bedType);
+                var beds = await _capacityService.GetAvailableBedsAsync(branchId, tenantId, bedType, wardId, wardName);
                 return Ok(beds);
             }
             catch (Exception ex)

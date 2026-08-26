@@ -18,7 +18,7 @@ export async function goCcmsPreAuth(page: Page) {
 }
 
 export async function goCcmsClaims(page: Page) {
-  await page.goto('/dashboard/ccms/operations/claims');
+  await page.goto('/dashboard/ccms/claims');
   await expect(page.getByRole('heading', { name: /claim/i }))
     .toBeVisible({ timeout: 10_000 });
 }
@@ -33,6 +33,11 @@ export async function goCcmsAnalytics(page: Page) {
   await page.goto('/dashboard/ccms/analytics');
   await expect(page.getByRole('heading', { name: /analytic/i }))
     .toBeVisible({ timeout: 10_000 });
+}
+
+export async function goCcmsOperationalAnalytics(page: Page) {
+  await page.goto('/dashboard/ccms/analytics/operational');
+  await expect(page.getByTestId('ccms-operational-analytics')).toBeVisible({ timeout: 20_000 });
 }
 
 // ── Assertions ────────────────────────────────────────────────────────────────

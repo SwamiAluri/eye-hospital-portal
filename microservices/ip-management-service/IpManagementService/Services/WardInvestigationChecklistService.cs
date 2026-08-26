@@ -214,6 +214,9 @@ public class WardInvestigationChecklistService
         completion.UpdatedByUserId   = userId;
         completion.UpdatedAt       = now;
 
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "InvestigationVerified", "Investigation",
+            "entered", "verified", correlationId: completion.Id));
         await _db.SaveChangesAsync();
 
         var journey = await RequireJourneyAsync(journeyId, tenantId);

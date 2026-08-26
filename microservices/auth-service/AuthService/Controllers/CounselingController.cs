@@ -314,6 +314,27 @@ namespace AuthService.Controllers
             }
         }
 
+        /// <summary>W-01 — copy latest OPD biometry / procedure onto the session (and journey if present).</summary>
+        [HttpPost("sessions/{id}/refresh-from-opd")]
+        [RequirePermission("counseling_sessions.update")]
+        public async Task<IActionResult> RefreshSessionFromOpd(Guid id)
+        {
+            try
+            {
+                var snap = await _otFinalizeService.RefreshSessionFromOpdAsync(id, GetTenantId(), GetCurrentUserId());
+                return Ok(snap);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing session {SessionId} from OPD", id);
+                return StatusCode(500, new { message = "Error refreshing from OPD", error = ex.Message });
+            }
+        }
+
         /// <summary>
         /// Marks the counselling queue item for this session as "AddOnSurgery".
         /// Called by the frontend when a counsellor upgrades the package on a Done session.

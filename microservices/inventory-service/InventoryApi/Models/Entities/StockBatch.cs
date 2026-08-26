@@ -17,6 +17,8 @@ public class StockBatch
     public decimal QuantityIn { get; set; }
     public decimal QuantityOut { get; set; } = 0;
     public decimal QuantityAvailable { get; set; }
+    public bool IsConsignment { get; set; }
+    public Guid? VendorId { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

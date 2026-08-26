@@ -565,7 +565,6 @@ export default function DoctorExaminationForm({
                         placeholder="Additional notes..."
                       />
                     </div>
-                  </div>
                 </div>
               </div>
 
@@ -1025,8 +1024,6 @@ export default function DoctorExaminationForm({
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
               </div>
             </div>
           </div>

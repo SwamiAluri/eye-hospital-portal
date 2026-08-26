@@ -24,6 +24,7 @@ import type {
 import { useAnesthesiaTypeMaster } from '@/hooks/use-anesthesia-type-master';
 import { CounsellorOutpatientChecklist } from '@/components/counsellors-desk/CounsellorOutpatientChecklist';
 import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
+import { biometryMissingEyePhrase } from '@/lib/ip-management/iol-diopter';
 
 const STATUS_COLORS: Record<FinalizeStatus, string> = {
   NotConfirmed: 'bg-orange-100 text-orange-700 border border-orange-200',
@@ -278,6 +279,8 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
   const [isActioning, setIsActioning] = useState(false);  const [scheduleDate, setScheduleDate] = useState<string>('');  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const isLocked = detail ? LOCKED_STATUSES.includes(detail.status) : false;
+  const cannotFinalize = !canEditCounsellorOutpatient;
+  const formLocked = isLocked || cannotFinalize;
   const isEdited  = detail
     ? (
         LOCKED_STATUSES.includes(detail.status) === false &&
@@ -390,7 +393,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
   };
 
   const handleSave = async () => {
-    if (!scheduleId || isLocked) return;
+    if (!scheduleId || isLocked || cannotFinalize) return;
     setIsSaving(true);
     try {
       const updated = await counsellorsDeskApi.updateOtDetails(scheduleId, buildSavePayload());
@@ -406,7 +409,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
 
   // ── Status actions ──────────────────────────────────────────────────────────
   const runAction = async (action: 'confirm' | 'finalise' | 'cancel' | 'reopen', cancelReason?: string) => {
-    if (!scheduleId) return;
+    if (!scheduleId || cannotFinalize) return;
     setIsActioning(true);
     try {
       let updated: FinalizeSurgeryRecord;
@@ -500,6 +503,12 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
             Editing a <strong className="mx-0.5">{status}</strong> record will revert it to <strong className="mx-0.5">Not Confirmed</strong>.
           </div>
         )}
+        {!isLoading && !canEditCounsellorOutpatient && (
+          <div className="flex items-center gap-2 px-6 py-2.5 bg-gray-50 border-b border-gray-200 text-gray-800 text-xs">
+            <LockKeyhole className="w-4 h-4 flex-shrink-0" />
+            <span><b>You cannot finalize surgery.</b> Ask a counsellor with finalize rights.</span>
+          </div>
+        )}
 
         {/* ─── Body ────────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
@@ -546,7 +555,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     value={form.packageName ?? ''}
                     onChange={(v) => set('packageName', v)}
                     placeholder={!detail?.packageName ? 'No package selected' : 'e.g. Phaco Standard'}
-                    readOnly={isLocked || !detail?.packageName}
+                    readOnly={formLocked || !detail?.packageName}
                   />
                   <SelectInput
                     label="Surgeon"
@@ -558,7 +567,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     }}
                     options={surgeons}
                     placeholder={detail?.surgeon ?? 'Select surgeon'}
-                    readOnly={isLocked}
+                    readOnly={formLocked}
                   />
                   <SelectInput
                     label="Theatre"
@@ -570,7 +579,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     }}
                     options={theaters}
                     placeholder={detail?.theaterName ?? 'Select theatre'}
-                    readOnly={isLocked}
+                    readOnly={formLocked}
                   />
                   {detail?.diagnosis && (
                     <ReadonlyField label="Diagnosis" value={detail.diagnosis} />
@@ -582,7 +591,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
               <section className="rounded-xl border border-gray-200 p-4 space-y-3">
                 <SectionHeader icon={<Calendar className="w-4 h-4" />} title="Schedule" />
                 <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-                  {isLocked
+                  {formLocked
                     ? <ReadonlyField label="Surgery Date" value={fmtDate(scheduleDate || detail?.scheduleDate)} />
                     : (
                       <div>
@@ -600,13 +609,13 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     label="Start Time"
                     value={form.startTime ?? ''}
                     onChange={(v) => set('startTime', v)}
-                    readOnly={isLocked}
+                    readOnly={formLocked}
                   />
                   <TimeInput
                     label="End Time"
                     value={form.endTime ?? ''}
                     onChange={(v) => set('endTime', v)}
-                    readOnly={isLocked}
+                    readOnly={formLocked}
                   />
                   <TimeInput
                     label="Reporting Time"
@@ -614,7 +623,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     onChange={(v) => set('reportingTime', v)}
                     required
                     error={errors.reportingTime}
-                    readOnly={isLocked}
+                    readOnly={formLocked}
                   />
                 </div>
               </section>
@@ -628,7 +637,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     value={form.anesthesiaType ?? ''}
                     onChange={(v) => set('anesthesiaType', v)}
                     options={anesthesiaSelectOptions}
-                    readOnly={isLocked}
+                    readOnly={formLocked}
                   />
                   {/* Anesthetist — dropdown with External option for manual entry */}
                   <div>
@@ -646,7 +655,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                               set('anesthetistName', e.target.value);
                             }
                           }}
-                          disabled={isLocked}
+                          disabled={formLocked}
                           className="w-full text-sm rounded-lg border border-gray-300 px-3 py-2 pr-8 outline-none appearance-none bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-default"
                         >
                           <option value="">Select anesthetist…</option>
@@ -657,7 +666,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                         </select>
                         <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                       </div>
-                      {anesthetistMode === 'external' && !isLocked && (
+                      {anesthetistMode === 'external' && !formLocked && (
                         <input
                           type="text"
                           value={form.anesthetistName ?? ''}
@@ -666,19 +675,27 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                           className="w-full text-sm rounded-lg border border-gray-300 px-3 py-2 outline-none bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                         />
                       )}
-                      {anesthetistMode === 'external' && isLocked && form.anesthetistName && (
+                      {anesthetistMode === 'external' && formLocked && form.anesthetistName && (
                         <p className="text-sm text-gray-900 py-1">{form.anesthetistName}</p>
                       )}
                     </div>
                   </div>
                   {isCataractSurgery && (
-                    <TextInput
+                    <>
+                      {detail?.biometryMissingForEye && (
+                        <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          <b>No biometry on file for the {biometryMissingEyePhrase(detail.eyes)}.</b>{' '}
+                          Package can still be selected. Planned IOL power stays empty — OT will warn, not block, if a lens is scanned later.
+                        </div>
+                      )}
+                      <TextInput
                       label="IOL Power"
                       value={form.iolPower ?? ''}
                       onChange={(v) => set('iolPower', v)}
                       placeholder="e.g. +21.5 D"
-                      readOnly={isLocked}
+                      readOnly={formLocked}
                     />
+                    </>
                   )}
                 </div>
               </section>
@@ -703,11 +720,11 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                         min={0}
                         value={form.packageRate != null && form.packageRate !== 0 ? form.packageRate : ''}
                         onChange={(e) => set('packageRate', e.target.value ? parseFloat(e.target.value) : undefined)}
-                        readOnly={isLocked}
+                        readOnly={formLocked}
                         placeholder="0.00"
                         className={[
                           'w-full text-sm rounded-lg border border-gray-300 px-3 py-2 outline-none transition-colors',
-                          isLocked ? 'bg-gray-50 text-gray-500 cursor-default' : 'bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500',
+                          formLocked ? 'bg-gray-50 text-gray-500 cursor-default' : 'bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500',
                         ].join(' ')}
                       />
                     )}
@@ -721,7 +738,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                 {detail?.counsellingSessionId ? (
                   <CounsellorOutpatientChecklist
                     counselingSessionId={detail.counsellingSessionId}
-                    readOnly={isLocked || !canEditCounsellorOutpatient}
+                    readOnly={formLocked}
                     showRollup
                     integrationContext={{
                       patientId: undefined,
@@ -745,7 +762,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     value={form.remarks ?? ''}
                     onChange={(v) => set('remarks', v)}
                     placeholder="Any special pre-op notes…"
-                    readOnly={isLocked}
+                    readOnly={formLocked}
                   />
                   {status === 'Cancelled' && (
                     <TextareaInput
@@ -777,21 +794,21 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                 <>
                   <button
                     onClick={handleSave}
-                    disabled={isSaving || isActioning}
+                    disabled={isSaving || isActioning || cannotFinalize}
                     className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
                   >
                     {isSaving ? 'Saving…' : 'Save'}
                   </button>
                   <button
                     onClick={() => runAction('confirm')}
-                    disabled={isSaving || isActioning}
+                    disabled={isSaving || isActioning || cannotFinalize}
                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                   >
                     {isActioning ? 'Processing…' : 'Confirm'}
                   </button>
                   <button
                     onClick={() => runAction('cancel')}
-                    disabled={isSaving || isActioning}
+                    disabled={isSaving || isActioning || cannotFinalize}
                     className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
                   >
                     Cancel Surgery
@@ -804,21 +821,21 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                 <>
                   <button
                     onClick={handleSave}
-                    disabled={isSaving || isActioning}
+                    disabled={isSaving || isActioning || cannotFinalize}
                     className="px-4 py-2 text-sm font-medium text-yellow-800 bg-yellow-50 border border-yellow-300 rounded-lg hover:bg-yellow-100 disabled:opacity-50 transition-colors"
                   >
                     {isSaving ? 'Saving…' : 'Save (will revert)'}
                   </button>
                   <button
                     onClick={() => runAction('finalise')}
-                    disabled={isSaving || isActioning}
+                    disabled={isSaving || isActioning || cannotFinalize}
                     className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                   >
                     {isActioning ? 'Processing…' : 'Finalise'}
                   </button>
                   <button
                     onClick={() => runAction('cancel')}
-                    disabled={isSaving || isActioning}
+                    disabled={isSaving || isActioning || cannotFinalize}
                     className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
                   >
                     Cancel Surgery
@@ -831,14 +848,14 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                 <>
                   <button
                     onClick={handleSave}
-                    disabled={isSaving || isActioning}
+                    disabled={isSaving || isActioning || cannotFinalize}
                     className="px-4 py-2 text-sm font-medium text-yellow-800 bg-yellow-50 border border-yellow-300 rounded-lg hover:bg-yellow-100 disabled:opacity-50 transition-colors"
                   >
                     {isSaving ? 'Saving…' : 'Save (will revert)'}
                   </button>
                   <button
                     onClick={() => runAction('cancel')}
-                    disabled={isSaving || isActioning}
+                    disabled={isSaving || isActioning || cannotFinalize}
                     className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
                   >
                     Cancel Surgery
@@ -850,7 +867,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
               {status === 'OTPrepared' && (
                 <button
                   onClick={() => runAction('reopen')}
-                  disabled={isActioning}
+                  disabled={isActioning || cannotFinalize}
                   className="px-4 py-2 text-sm font-medium text-amber-800 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors"
                 >
                   {isActioning ? 'Processing…' : 'Reopen Case'}
@@ -861,7 +878,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
               {status === 'Cancelled' && (
                 <button
                   onClick={() => runAction('reopen')}
-                  disabled={isActioning}
+                  disabled={isActioning || cannotFinalize}
                   className="px-4 py-2 text-sm font-medium text-amber-800 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors"
                 >
                   {isActioning ? 'Processing…' : 'Reopen Case'}

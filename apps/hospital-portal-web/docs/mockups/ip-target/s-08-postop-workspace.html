@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-08">
+<main>
+
+  <p class="lede">
+    Recovery-side workflow between surgery and discharge readiness, shown in full &mdash; shell plus all five steps.
+    Content is unchanged; the screen gains dialog semantics, reads the OT implant registry instead of asking the ward
+    to re-key it, and the permission to mark discharge-ready is
+    <strong>split away from the permission that actually discharges</strong>.
+  </p>
+
+  <h2 class="sec">The shell</h2>
+  <div class="frame">
+    <div class="workspace">
+      <div class="ws-head">
+        <div>
+          <div class="name">Rekha Menon</div>
+          <div class="ident">UAT-009 &middot; 70F &middot; Cataract &middot; <b>OS</b> &middot; Day Care &middot; B-02</div>
+        </div>
+        <span class="badge inhouse">Post-op</span>
+        <span class="badge info">Surgery completed 09:12</span>
+        <span class="spacer"></span>
+        <span class="muted">&#10005; Close</span>
+      </div>
+      <div class="ws-body" style="min-height:150px">
+        <nav class="ws-steps">
+          <div class="ws-step done"><span class="n">&#10003;</span> Recovery vitals</div>
+          <div class="ws-step active"><span class="n">2</span> Nurse checklist</div>
+          <div class="ws-step blocked"><span class="n">3</span> IOL sticker &amp; returns</div>
+          <div class="ws-step"><span class="n">4</span> Post-op instructions</div>
+          <div class="ws-step"><span class="n">5</span> Follow-up &amp; handover</div>
+        </nav>
+        <div class="ws-content">
+          <p class="muted small" style="margin-top:0">All five steps are rendered below.</p>
+          <div class="callout info">Recovery is time-boxed in day care. The step nav doubles as a progress indicator
+          the nurse can read across a bay without opening the record.</div>
+        </div>
+      </div>
+      <div class="ws-foot">
+        <div class="meter"><span class="track"><span class="fill" style="width:40%"></span></span><span>Post-op 2 of 5</span></div>
+        <div class="small muted">Marking ready for discharge does <b>not</b> discharge the patient.</div>
+        <span class="spacer"></span>
+        <span class="btn">Save</span>
+        <span class="btn primary disabled">Mark ready for discharge</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 1 &mdash; Recovery vitals</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Recovery vitals</h3>
+        <div class="row">
+          <span class="badge ok">3 observations recorded</span>
+          <span class="btn sm primary">Add observation</span>
+        </div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>Time</th><th>BP</th><th>Pulse</th><th>SpO&#8322;</th><th>Pain (0&ndash;10)</th><th>Nausea</th><th>By</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>09:25</td><td>138/84</td><td>78</td><td>98%</td><td>2</td><td>None</td><td>S. Nair</td><td><span class="btn sm ghost">Correct</span></td></tr>
+          <tr><td>09:55</td><td>134/80</td><td>74</td><td>99%</td><td>1</td><td>None</td><td>S. Nair</td><td><span class="btn sm ghost">Correct</span></td></tr>
+          <tr><td>10:25</td><td>132/78</td><td>72</td><td>99%</td><td>1</td><td>None</td><td>S. Nair</td><td><span class="btn sm ghost">Correct</span></td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 0 0">
+        <div class="row"><span class="btn sm primary">Add observation</span><span class="btn sm ghost">Escalate to doctor</span></div>
+        <div class="callout ok" style="margin-top:10px">
+          <b>Stable across three readings 30 minutes apart.</b> Discharge-readiness criteria for topical day-care
+          cataract are met on the observation side.
+        </div>
+        <p class="hint">
+          There is <b>no separate post-op vitals endpoint</b>. Recovery observations append to
+          <code>vital_sign</code> through <code>POST /api/ip-management/journeys/{id}/vitals</code>, the same series
+          the ward board and pre-op step write to, so the whole stay reads as one observation chart. Corrections use
+          <code>PATCH &hellip;/vitals/{vitalId}</code>.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 2 &mdash; Nurse checklist</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Nurse checklist</h3>
+        <span class="badge ot">3 of 4 complete</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Recovery checks</p>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> Eye pad and shield in place</li>
+            <li><span class="bx on">&#10003;</span> Ambulating safely without assistance</li>
+            <li><span class="bx on">&#10003;</span> Oral intake tolerated</li>
+            <li><span class="bx off"></span> Attendant briefed and present</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Complications</p>
+          <div class="field"><label>Any intra-op or recovery complication?</label>
+            <div class="radio-row"><label><input type="radio" name="cx" checked> No</label><label><input type="radio" name="cx"> Yes</label></div>
+          </div>
+          <div class="field"><label>Notes</label><input class="input placeholder" value="Optional" readonly></div>
+          <p class="hint">A recorded complication routes the patient to a doctor review before discharge-readiness can
+          be marked.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 3 &mdash; IOL sticker &amp; returns <span class="badge danger no-dot">1 to confirm</span></h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Implant record confirmation</h3>
+        <span class="badge danger">1 item to confirm</span>
+      </div>
+      <table class="grid">
+        <thead><tr><th>Implant</th><th>Serial</th><th>Recorded in OT</th><th>Sticker in file</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Alcon SN60WF +19.5&nbsp;D <span class="cell-sub">OS</span></td><td class="mono">88117</td>
+            <td><span class="badge ok">Implanted</span></td><td><span class="badge ok">Confirmed</span></td><td></td>
+          </tr>
+          <tr>
+            <td>Alcon SN60WF +20.0&nbsp;D</td><td class="mono">88118</td>
+            <td><span class="badge cancel">Opened, not used</span></td><td><span class="badge danger">Confirm write-off</span></td>
+            <td><span class="btn sm">Confirm</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 0 0">
+        <div class="callout info">
+          <b>Read from the OT registry, not re-entered.</b> The ward confirms what theatre recorded. Double entry is
+          precisely how two records of the same implant drift apart.
+        </div>
+        <div class="callout warn">
+          <b>Unopened returns to stores</b> are recorded here and reverse the stock movement. Opened-and-unused items
+          are write-offs and appear in the wastage report &mdash; neither is ever charged to the patient.
+        </div>
+        <div class="row" style="margin-top:10px"><span class="btn sm primary">Record return</span><span class="btn sm ghost">View implant history</span></div>
+
+        <div class="panel">
+          <div class="row between" style="margin-bottom:8px">
+            <p class="panel-h" style="margin:0">Returns and write-offs <span class="faint">2 recorded</span></p>
+            <span class="btn sm primary">Record return</span>
+          </div>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th>When</th><th>Item</th><th>Serial</th><th>Outcome</th><th>Reason</th><th>By</th></tr></thead>
+            <tbody>
+              <tr><td>24 Aug 10:40 am</td><td>Alcon SN60WF +20.0 D</td><td class="mono">88118</td><td><span class="badge cancel">Opened, not used</span></td><td class="cell-sub">Power changed after biometry re-check</td><td>S. Nair</td></tr>
+              <tr><td>24 Aug 10:38 am</td><td>Alcon SN60WF +21.0 D</td><td class="mono">88121</td><td><span class="badge ok">Returned unopened</span></td><td class="cell-sub">Not required</td><td>S. Nair</td></tr>
+            </tbody>
+          </table>
+          <p class="hint">
+            <code>POST /api/ip-management/journeys/{id}/iol-returns</code> appends to <code>iol_returns</code>;
+            <code>GET</code> on the same route is the history. Append-only, with no delete &mdash; a write-off that
+            could be quietly removed is an invitation to hide wastage.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="variants c2">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Record return</span></div>
+      <div class="frame"><div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+        <div class="dialog-head"><span class="t">Record implant return</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div class="cols-2">
+            <div class="field"><label>Item</label><input class="input" value="Alcon SN60WF +20.0 D" readonly></div>
+            <div class="field"><label>Serial</label><input class="input mono" value="88118" readonly></div>
+          </div>
+          <div class="field"><label>Outcome</label>
+            <div class="radio-row">
+              <label><input type="radio" name="ret"> Returned to stores, unopened</label>
+              <label><input type="radio" name="ret" checked> Opened, not used &mdash; write-off</label>
+            </div>
+          </div>
+          <div class="field"><label>Reason</label><input class="input" value="Power changed after biometry re-check" readonly></div>
+          <div class="callout warn">A write-off appears in the wastage report and is <b>never charged to the
+          patient</b>. An unopened return reverses the stock movement instead.</div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Record return</span></div>
+      </div></div>
+      <p class="vc">The two outcomes have completely different financial consequences, so the dialog states them
+      rather than leaving the nurse to pick a label.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n ok">2</span><span class="t">After recording</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout ok" style="margin:0"><b>Write-off recorded.</b> Serial 88118 will appear in today&rsquo;s
+        wastage report. The patient has not been charged for it.</div>
+        <p class="hint" style="margin-top:8px">Confirming the <b>money consequence</b> is what the nurse needs to
+        hear; whether a row was inserted is not.</p>
+      </div></div>
+      <p class="vc">Wastage is a sensitive number, so the message says out loud where the record will surface.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 2b &mdash; Surgeon checklist</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Surgeon post-op checklist</h3>
+        <span class="badge ot">2 of 3 complete</span>
+      </div>
+      <ul class="checklist">
+        <li><span class="bx on">&#10003;</span> Operative findings documented in the intra-op note</li>
+        <li><span class="bx on">&#10003;</span> Post-op regime prescribed</li>
+        <li><span class="bx off"></span> Follow-up interval confirmed</li>
+      </ul>
+      <p class="hint">
+        <code>GET</code> and <code>POST /api/ip-management/journeys/{id}/surgeon-checklist</code> against
+        <code>surgeon_checklist_responses</code>, one row per (journey, item), with the item definitions in
+        <code>surgeon_checklist_items</code>. This exists in the service and had been missing from the earlier
+        version of this screen &mdash; the nurse checklist alone does not close a post-op record.
+      </p>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 4 &mdash; Post-op instructions</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Post-op instructions</h3>
+        <span class="badge no-dot">Auto-drafted from procedure</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Medication</p>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th>Drug</th><th>Dose</th><th>Frequency</th><th>Duration</th></tr></thead>
+            <tbody>
+              <tr><td>Moxifloxacin 0.5%</td><td>1 drop</td><td>4&times; daily</td><td>2 weeks</td></tr>
+              <tr><td>Prednisolone 1%</td><td>1 drop</td><td>6&times; daily, tapering</td><td>4 weeks</td></tr>
+              <tr><td>Carboxymethylcellulose</td><td>1 drop</td><td>4&times; daily</td><td>4 weeks</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Care instructions</p>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> Wear shield at night for 1 week</li>
+            <li><span class="bx on">&#10003;</span> No rubbing, no water in the eye for 1 week</li>
+            <li><span class="bx on">&#10003;</span> No heavy lifting or bending for 2 weeks</li>
+            <li><span class="bx on">&#10003;</span> Return immediately if pain, redness or vision loss</li>
+          </ul>
+          <div class="field" style="margin-top:8px"><label>Language for printed copy</label><input class="input" value="Malayalam" readonly></div>
+          <div class="row"><span class="btn sm">Print instructions</span><span class="btn sm ghost">Send via SMS</span></div>
+        </div>
+      </div>
+      <div class="callout warn">
+        <b>Red-flag symptoms must be on the printed copy in the patient&rsquo;s language.</b> Post-operative
+        endophthalmitis presents late and at home; the printed sheet is the only safety net once the patient leaves.
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 5 &mdash; Follow-up &amp; handover</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Follow-up &amp; handover</h3>
+        <span class="badge">Not started</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Follow-up appointment</p>
+          <div class="cols-2">
+            <div class="field"><label>First review</label><input class="input" value="25 Aug 2026, 10:00 am" readonly></div>
+            <div class="field"><label>With</label><input class="input" value="Dr. S. Iyer" readonly></div>
+            <div class="field"><label>Second review</label><input class="input" value="31 Aug 2026" readonly></div>
+            <div class="field"><label>Clinic</label><input class="input" value="Downtown OPD" readonly></div>
+          </div>
+          <p class="hint">Booked into the OPD schedule, not recorded as free text &mdash; an unbooked &ldquo;review in
+          one week&rdquo; is how day-care follow-up is lost.</p>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Handover</p>
+          <ul class="checklist">
+            <li><span class="bx off"></span> Attendant briefed on medication schedule</li>
+            <li><span class="bx off"></span> Red-flag symptoms explained and understood</li>
+            <li><span class="bx off"></span> Printed instructions handed over</li>
+            <li><span class="bx off"></span> Follow-up date confirmed with attendant</li>
+            <li><span class="bx off"></span> Contact number for emergencies given</li>
+          </ul>
+          <div class="field" style="margin-top:8px"><label>Handed over to</label><input class="input placeholder" value="Attendant name and relationship" readonly></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Footer states</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n bad">1</span><span class="t">Incomplete</span></div>
+      <div class="frame"><div class="ws-foot" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div class="meter"><span class="track"><span class="fill" style="width:40%"></span></span><span>2 of 5</span></div>
+        <div class="small" style="color:var(--danger)">Implant confirmation and handover outstanding.</div>
+        <span class="btn primary block disabled">Mark ready for discharge</span>
+      </div></div>
+      <p class="vc">Named outstanding items, not just a disabled button.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Complication recorded</span></div>
+      <div class="frame"><div class="ws-foot" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div class="meter"><span class="track"><span class="fill" style="width:80%"></span></span><span>4 of 5</span></div>
+        <div class="small" style="color:var(--ot)"><b>Doctor review required</b> &mdash; complication recorded in step 2.</div>
+        <span class="btn primary block disabled">Mark ready for discharge</span>
+      </div></div>
+      <p class="vc">A recorded complication escalates rather than merely annotates.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n ok">3</span><span class="t">Complete</span></div>
+      <div class="frame"><div class="ws-foot" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div class="meter"><span class="track"><span class="fill ok" style="width:100%"></span></span><span>5 of 5</span></div>
+        <div class="small" style="color:var(--ok)">All post-op steps complete. Discharge gates are evaluated on S-09.</div>
+        <span class="btn primary block">Mark ready for discharge</span>
+      </div></div>
+      <p class="vc">Moves the journey to <code>ReadyForDischarge</code>. It does not discharge.</p>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker fix">3</span><span><b>Step 3 reads the OT implant registry</b> instead of asking the ward to re-enter what theatre already recorded.</span></li>
+    <li><span class="marker fix">3</span><span><code>iol_returns</code> is <b>migrated into <code>journey_implant_usage</code></b> so there is one implant record per journey with a status, rather than two tables telling partial stories.</span></li>
+    <li><span class="marker new">2</span><span>New <code>ip.postop.manage</code> permission. Today a recovery nurse marking readiness and a coordinator performing the discharge share one permission, which is more authority than the recovery role needs.</span></li>
+    <li><span class="marker">1</span><span>The footer states plainly that readiness is not discharge. Conflating the two is a recurring source of confusion in the current wording.</span></li>
+  </ul>
+
+  <h2 class="sec">Step map</h2>
+  <p class="lede" style="margin-bottom:14px">
+    Verified against <code>PostOpFunctions</code>, <code>WardPostOpChecklistFunctions</code> and
+    <code>VitalSignFunctions</code>. Routes carry the <code>/api/</code> prefix.
+  </p>
+  <table class="map">
+    <thead><tr><th>Step</th><th>Add action &rarr; route</th><th>Write</th><th>Backend</th><th>Table</th><th>History read</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1 &middot; Recovery vitals</td>
+        <td>Add observation &rarr; <code>POST /api/ip-management/journeys/{id}/vitals</code><br>Correct &rarr; <code>PATCH &hellip;/vitals/{vitalId}</code></td>
+        <td><span class="badge ok no-dot">Append</span></td>
+        <td><code>VitalSignService.AddVitalAsync</code></td>
+        <td><code>vital_sign</code></td>
+        <td><code>GET &hellip;/vitals</code></td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td>2 &middot; Nurse checklist</td>
+        <td><code>POST /api/ip-management/journeys/{id}/nurse-checklist</code></td>
+        <td>Upsert per item</td>
+        <td><code>PostOpWorkflowService.SaveNurseResponsesAsync</code></td>
+        <td><code>nurse_checklist_responses</code>, items in <code>nurse_checklist_items</code></td>
+        <td><code>GET</code> same route</td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td>2b &middot; Surgeon checklist</td>
+        <td><code>POST /api/ip-management/journeys/{id}/surgeon-checklist</code></td>
+        <td>Upsert per item</td>
+        <td><code>PostOpWorkflowService.SaveSurgeonResponsesAsync</code></td>
+        <td><code>surgeon_checklist_responses</code></td>
+        <td><code>GET</code> same route</td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td>2c &middot; Ward post-op checklist</td>
+        <td><code>POST &hellip;/ward-postop-checklist/completions/{itemId}</code></td>
+        <td>Upsert</td>
+        <td><code>WardPostOpChecklistService</code></td>
+        <td><code>pre_op_completions</code></td>
+        <td><code>GET &hellip;/ward-postop-checklist</code></td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td>3 &middot; IOL sticker check</td>
+        <td><code>PUT &hellip;/ward-postop-checklist/iol-sticker</code></td>
+        <td>Update JSONB</td>
+        <td><code>WardPostOpChecklistService.SaveIolStickerChecksAsync</code></td>
+        <td><code>patient_journey.ward_postop_iol_checks</code></td>
+        <td>on the checklist read</td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td>3 &middot; Return / write-off</td>
+        <td>Record return &rarr; <code>POST /api/ip-management/journeys/{id}/iol-returns</code></td>
+        <td><span class="badge ok no-dot">Append</span></td>
+        <td><code>PostOpWorkflowService.RecordIolReturnAsync</code></td>
+        <td><code>iol_returns</code></td>
+        <td><code>GET &hellip;/iol-returns</code></td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td>3 &middot; Implant record (read) <span class="mark new">2</span></td>
+        <td><code>GET /journeys/{id}/implants</code> · <b>live</b></td>
+        <td>&mdash;</td>
+        <td>implant usage service (live)</td>
+        <td><code>journey_implant_usage</code> <span class="cell-sub">proposed; today only <code>iol_returns</code> and IOL fields on <code>patient_journey</code></span></td>
+        <td>&mdash;</td>
+        <td><code>ip.view</code></td>
+      </tr>
+      <tr>
+        <td>3 &middot; Stock reversal</td>
+        <td>internal, via outbox</td><td>&mdash;</td><td><code>StockService</code></td>
+        <td><code>inv_stock_ledger</code></td><td>&mdash;</td><td>internal</td>
+      </tr>
+      <tr>
+        <td>4 &middot; Post-op instructions</td>
+        <td><code>POST /api/ip-management/journeys/{id}/post-op-instructions</code></td>
+        <td>Upsert</td>
+        <td><code>PostOpWorkflowService.SaveInstructionsAsync</code></td>
+        <td><code>post_op_instructions</code></td>
+        <td><code>GET</code> same route</td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td>4 &middot; Note templates</td>
+        <td>Add template &rarr; <code>POST /api/ip-management/surgery-note-templates</code></td>
+        <td><span class="badge ok no-dot">Append</span></td>
+        <td><code>PostOpWorkflowService.AddTemplateAsync</code></td>
+        <td><code>surgery_note_templates</code> <span class="cell-sub">soft delete</span></td>
+        <td><code>GET</code> same route</td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td>5 &middot; Follow-up booking</td>
+        <td><code>POST /api/Appointments</code></td><td>Append</td>
+        <td>OPD scheduling service</td><td>appointment tables</td><td>appointment list</td>
+        <td><code>appointment.create</code></td>
+      </tr>
+      <tr>
+        <td>5 &middot; Handover</td>
+        <td>part of the nurse checklist &mdash; <b>no separate handover route exists</b></td>
+        <td>Upsert</td>
+        <td><code>PostOpWorkflowService</code></td>
+        <td><code>nurse_checklist_responses</code></td><td>&mdash;</td>
+        <td><code>ward.checklist.edit</code></td>
+      </tr>
+      <tr>
+        <td><b>Mark ready for discharge</b></td>
+        <td><code>POST /api/ip-management/journeys/{id}/clinical-transition</code></td>
+        <td>Journey state</td>
+        <td><code>PatientJourneyService.TransitionClinicalAsync</code></td>
+        <td><code>patient_journey</code>, <code>journey_audit_log</code>, <code>integration_outbox_event</code></td>
+        <td><code>GET &hellip;/audit</code></td>
+        <td><code>ip.postop.manage</code> <span class="mark new">2</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>Two corrections from reading the service.</b> There is no <code>/post-op/vitals</code> route and no
+    <code>/post-op/handover</code> route &mdash; recovery observations go to the shared <code>vital_sign</code>
+    series and handover is a nurse-checklist item. The surgeon checklist, which does exist, had been missing from
+    this screen entirely.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Observation recorded, criteria met</td><td><b>Observation recorded at 10:25 am.</b> Three stable readings 30 minutes apart &mdash; recovery criteria met.</td></tr>
+      <tr><td>Complication recorded</td><td><b>Noted.</b> A doctor now needs to review before this patient can be marked ready for discharge.</td></tr>
+      <tr><td>Implant not confirmed</td><td><b>One implant still needs confirming</b> &mdash; serial 88118 was opened but not used.</td></tr>
+      <tr><td>Write-off recorded</td><td><b>Write-off recorded.</b> Serial 88118 will appear in today&rsquo;s wastage report. The patient has not been charged for it.</td></tr>
+      <tr><td>Save fails</td><td><b>We couldn&rsquo;t save that.</b> Your entry is still on screen &mdash; try again.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

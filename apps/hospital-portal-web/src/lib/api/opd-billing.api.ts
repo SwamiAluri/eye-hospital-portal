@@ -40,6 +40,9 @@ export interface OpdBill {
   insuranceProvider?: string;
   insurancePolicyNumber?: string;
   insuranceClaimAmount: number;
+  patientName?: string;
+  patientMrn?: string;
+  patientJourneyId?: string;
   billItems?: OpdBillItem[];
   notes?: string;
   generatedBy: string;
@@ -71,6 +74,29 @@ export interface OpdBillItem {
   discountable: boolean;
 }
 
+/** Line from GET /billitems/bill/{id} — BILL-030 grouped bill view. */
+export interface BillChargeLine {
+  id: string;
+  opdBillId: string;
+  serviceVariantId?: string | null;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  discountAmount: number;
+  discountPercentage: number;
+  taxAmount: number;
+  taxPercentage: number;
+  totalAmount: number;
+  status: string;
+  notes?: string | null;
+  serviceCode: string;
+  serviceName: string;
+  sourceType: string;
+  sourceRefId?: string | null;
+  idempotencyKey?: string | null;
+  performedAt?: string | null;
+}
+
 export interface OpdBillPayment {
   id: string;
   opdBillId: string;
@@ -89,6 +115,8 @@ export interface OpdBillPayment {
   insuranceResponse?: string;
   receivedBy?: string;
   receiptNumber?: string;
+  /** Present when the Auth payment ledger recorded a kind (Payment, Advance, Discount, Refund). */
+  paymentKind?: 'Payment' | 'Advance' | 'Discount' | 'Refund' | 'Reversal';
   status: PaymentStatus;
   notes?: string;
   createdAt: string;
@@ -151,6 +179,8 @@ export interface AddPaymentRequest {
   opdBillId: string;
   paymentMode: PaymentMode;
   amount: number;
+  paymentKind: 'Payment' | 'Advance';
+  idempotencyKey: string;
   cardType?: string;
   cardLastFour?: string;
   cardNetwork?: string;
@@ -159,6 +189,10 @@ export interface AddPaymentRequest {
   bankName?: string;
   chequeNumber?: string;
   notes?: string;
+}
+
+export interface EnsureIpBillRequest {
+  patientJourneyId: string;
 }
 
 export interface ApplyCreditRequest {
@@ -171,6 +205,7 @@ export interface ApplyDiscountRequest {
   discountPercentage: number;
   discountReason: string;
   authorizationPin?: string;
+  idempotencyKey: string;
 }
 
 export interface BillingCheckResult {
@@ -254,11 +289,28 @@ export const createOpdBill = async (request: CreateOpdBillRequest): Promise<OpdB
 };
 
 /**
- * Add payment to an OPD Bill
+ * Add payment to an OPD Bill. Returns the full bill (including payments/receipts).
+ * Replaying the same idempotencyKey returns the original bill — treat as success.
  */
-export const addPayment = async (request: AddPaymentRequest): Promise<OpdBillPayment> => {
+export const addPayment = async (request: AddPaymentRequest): Promise<OpdBill> => {
+  if (!request.opdBillId) {
+    throw new Error('opdBillId is required');
+  }
+  if (!request.idempotencyKey) {
+    throw new Error('idempotencyKey is required');
+  }
   const api = getApi();
   const response = await api.post('/opdbills/payment', request);
+  return response.data;
+};
+
+/**
+ * JWT cashier path to create (or reuse) the inpatient OpdBill.
+ * Do not call the internal X-Internal-Key ensure-bill route from the browser.
+ */
+export const ensureIpBill = async (request: EnsureIpBillRequest): Promise<OpdBill> => {
+  const api = getApi();
+  const response = await api.post('/opdbills/ip-ensure', request);
   return response.data;
 };
 
@@ -266,6 +318,9 @@ export const addPayment = async (request: AddPaymentRequest): Promise<OpdBillPay
  * Apply credit (allow payment later)
  */
 export const applyCredit = async (request: ApplyCreditRequest): Promise<OpdBill> => {
+  if (!request.opdBillId) {
+    throw new Error('opdBillId is required');
+  }
   const api = getApi();
   const response = await api.post('/opdbills/credit', request);
   return response.data;
@@ -296,6 +351,33 @@ export const cancelOpdBill = async (id: string): Promise<OpdBill> => {
 export const finalizeBill = async (billId: string): Promise<OpdBill> => {
   const api = getApi();
   const response = await api.post(`/opdbills/${billId}/finalize`);
+  return response.data;
+};
+
+export const getBillItems = async (billId: string): Promise<BillChargeLine[]> => {
+  const api = getApi();
+  const response = await api.get(`/billitems/bill/${billId}`);
+  return response.data ?? [];
+};
+
+export interface AddBillItemRequest {
+  opdBillId: string;
+  serviceVariantId: string;
+  quantity: number;
+  idempotencyKey: string;
+  sourceType?: string;
+  notes?: string;
+}
+
+export const addBillItem = async (request: AddBillItemRequest): Promise<BillChargeLine> => {
+  if (!request.opdBillId) {
+    throw new Error('opdBillId is required');
+  }
+  if (!request.idempotencyKey) {
+    throw new Error('idempotencyKey is required');
+  }
+  const api = getApi();
+  const response = await api.post('/billitems', request);
   return response.data;
 };
 
@@ -399,16 +481,79 @@ export async function getAppointmentBillingStatus(appointmentId: string): Promis
   return response.data;
 }
 
+export interface IpBillingDashboard {
+  fromUtc: string;
+  toUtcExclusive: string;
+  rangeLabel: string;
+  billedDateBasis: string;
+  collectionDateBasis: string;
+  admissionDateBasis?: string;
+  patientCount: number;
+  pendingRefundCount?: number;
+  pendingRefundAmount?: number;
+  pendingCreditApprovalCount?: number;
+  packageEstimate: number;
+  totalBilled: number;
+  totalCollected: number;
+  patientOutstanding: number;
+  payerOutstanding: number;
+  refunds: number;
+  adjustments: number;
+  pipeline: { key: string; label: string; count: number; billedAmount: number }[];
+  paymentInstruments: { key: string; label: string; amount: number }[];
+  payerMix: { key: string; label: string; amount: number }[];
+  aging: { key: string; label: string; count: number; patientOutstanding: number; payerOutstanding: number }[];
+  patients: {
+    billId: string;
+    patientId: string;
+    journeyId?: string | null;
+    patientName: string;
+    mrn?: string | null;
+    admissionDate?: string | null;
+    billDate: string;
+    billNumber: string;
+    billedAmount: number;
+    patientResponsibility: number;
+    payerResponsibility: number;
+    collected: number;
+    patientOutstanding: number;
+    payerOutstanding: number;
+    lifecycle: string;
+    lastTransactionAt?: string | null;
+    chargeStatus?: 'complete' | 'missing_charges' | 'unmapped' | string;
+    chargeStatusLabel?: string;
+  }[];
+  unbilledActivityCount?: number;
+  unbilledActivityAmount?: number;
+  unbilledImplantCount?: number;
+  unbilledConsumableCount?: number;
+  unmappedExceptionCount?: number;
+}
+
+export async function getIpBillingDashboard(params: {
+  branchId: string;
+  preset?: string;
+  from?: string;
+  to?: string;
+}): Promise<IpBillingDashboard> {
+  const api = getApi();
+  const response = await api.get('/opdbills/ip-dashboard', { params });
+  return response.data;
+}
+
 export const opdBillingApi = {
   // Bills
   getOpdBill,
   getOpdBills,
   createOpdBill,
   addPayment,
+  ensureIpBill,
   applyCredit,
   applyDiscount,
   cancelOpdBill,
   finalizeBill,
+  getBillItems,
+  addBillItem,
   checkBillingRules,
   
   // Rules
@@ -421,6 +566,7 @@ export const opdBillingApi = {
   // Day 8: Billing Status Checks
   getVisitBillingStatus,
   getAppointmentBillingStatus,
+  getIpBillingDashboard,
 };
 
 export default opdBillingApi;

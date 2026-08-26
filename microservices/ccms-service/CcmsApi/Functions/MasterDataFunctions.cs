@@ -303,7 +303,17 @@ public class MasterDataFunctions
 
         var payerType = req.Query["payerType"];
         var stage = req.Query["stage"];
-        var list = await _svc.ListDocumentRequirementsAsync(claims!.TenantId, payerType, stage);
+        Guid? ParseGuid(string? raw) => Guid.TryParse(raw, out var g) ? g : null;
+        var caseScoped = string.Equals(req.Query["caseScoped"], "true", StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(req.Query["caseScoped"], "1", StringComparison.OrdinalIgnoreCase);
+        var list = await _svc.ListDocumentRequirementsAsync(
+            claims!.TenantId,
+            payerType,
+            stage,
+            ParseGuid(req.Query["insuranceProviderId"]),
+            ParseGuid(req.Query["tpaProviderId"]),
+            ParseGuid(req.Query["governmentSchemeId"]),
+            caseScoped);
         return await req.OkJsonAsync(list);
     }
 

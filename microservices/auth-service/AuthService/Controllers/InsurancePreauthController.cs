@@ -121,10 +121,11 @@ namespace AuthService.Controllers
                 _logger.LogWarning(
                     "Blocked legacy insurance-preauth create for session {SessionId}. Use CCMS.",
                     request.SessionId);
-                return Conflict(new
+                return StatusCode(410, new
                 {
                     message = "New insurance pre-authorizations must be created via CCMS.",
                     ccmsRedirect = $"/dashboard/ccms/cases?sessionId={request.SessionId}",
+                    code = "CCMS_LEGACY_WRITE_FROZEN",
                 });
             }
 
@@ -183,10 +184,11 @@ namespace AuthService.Controllers
                 && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
             if (!isBypass)
             {
-                return Conflict(new
+                return StatusCode(410, new
                 {
                     message = "Legacy insurance-preauth status updates are frozen. Use CCMS.",
                     ccmsRedirect = "/dashboard/ccms/cases",
+                    code = "CCMS_LEGACY_WRITE_FROZEN",
                 });
             }
 
@@ -295,10 +297,11 @@ namespace AuthService.Controllers
                 && bypassVal.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
             if (!isBypass)
             {
-                return Conflict(new
+                return StatusCode(410, new
                 {
                     message = "Legacy insurance-preauth document writes are frozen. Use CCMS.",
                     ccmsRedirect = "/dashboard/ccms/cases",
+                    code = "CCMS_LEGACY_WRITE_FROZEN",
                 });
             }
 

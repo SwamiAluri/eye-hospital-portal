@@ -47,6 +47,13 @@ public class InternalNotificationController : ControllerBase
         string Details
     );
 
+    public record PushTenantNotificationRequest(
+        Guid   TenantId,
+        string Type,
+        string Message,
+        string Details
+    );
+
     // ── Endpoints ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -99,6 +106,32 @@ public class InternalNotificationController : ControllerBase
         _logger.LogInformation(
             "Internal user notification pushed: userId={UserId} type={Type}",
             req.UserId, req.Type);
+
+        return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Pushes a SignalR notification to the tenant group (IP dashboard, billing, OT).
+    /// Details must be identity-only — never ledger amounts.
+    /// </summary>
+    [HttpPost("push-tenant")]
+    public async Task<IActionResult> PushTenantNotification([FromBody] PushTenantNotificationRequest req)
+    {
+        if (!IsAuthorized())
+            return Unauthorized(new { error = "Invalid or missing internal API key." });
+
+        if (req is null || req.TenantId == Guid.Empty)
+            return BadRequest(new { error = "TenantId is required." });
+
+        await _notifications.SendTenantNotificationAsync(
+            req.TenantId,
+            req.Type,
+            req.Message,
+            req.Details);
+
+        _logger.LogInformation(
+            "Internal tenant notification pushed: tenant={Tenant} type={Type}",
+            req.TenantId, req.Type);
 
         return Ok(new { success = true });
     }

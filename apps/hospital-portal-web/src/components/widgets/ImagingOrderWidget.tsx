@@ -9,7 +9,7 @@ import {
   X as XIcon, Plus, IndianRupee, Check,
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { getApi } from '@/lib/api';

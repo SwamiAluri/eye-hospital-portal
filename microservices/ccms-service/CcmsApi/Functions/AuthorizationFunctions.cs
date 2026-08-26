@@ -103,6 +103,10 @@ public class AuthorizationFunctions
         {
             return await req.NotFoundAsync(ex.Message);
         }
+        catch (InvalidOperationException ex)
+        {
+            return await req.BadRequestAsync(ex.Message);
+        }
     }
 
     // POST /api/ccms/authorizations/{id}/tpa-response

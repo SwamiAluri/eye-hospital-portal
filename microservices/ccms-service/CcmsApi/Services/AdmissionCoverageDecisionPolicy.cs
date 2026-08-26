@@ -44,7 +44,8 @@ public static class AdmissionCoverageDecisionPolicy
             // Already past clinical admission in CCMS — do not re-block IP.
             "ADMITTED" or "SURGERY_SCHEDULED" or "SURGERY_COMPLETED"
                 or "BILL_PENDING" or "BILL_FINALIZED" or "CLAIM_READY"
-                or "CLAIM_SUBMITTED" or "CLAIM_IN_PROCESS" or "SETTLEMENT_PENDING"
+                or "CLAIM_SUBMITTED" or "CLAIM_IN_PROCESS" or "CLAIM_QUERY_RAISED" or "CLAIM_QUERY_RESPONDED"
+                or "SETTLEMENT_PENDING"
                 or "PARTIAL_SETTLEMENT" or "FULL_SETTLEMENT" or "RECONCILED" or "CLOSED" =>
                 AdmissionValidationResult.Allow($"Coverage case already in {state}.", coverageCase, DecisionAllow),
 

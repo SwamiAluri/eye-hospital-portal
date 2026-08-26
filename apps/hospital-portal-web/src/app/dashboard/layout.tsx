@@ -96,7 +96,7 @@ export default function DashboardLayout({
         <Sidebar isMobileOpen onClose={closeSidebar} drawerOnly />
       )}
 
-      <div className="flex h-screen bg-gray-100 p-3 gap-3 overflow-hidden">
+      <div className="flex h-screen min-h-0 min-w-0 overflow-hidden bg-gray-100 p-3 gap-3">
         {/* Nav Sidebar card — desktop only (hidden below lg / 1024px) */}
         <div className="hidden lg:flex flex-shrink-0 rounded-2xl overflow-hidden shadow-md">
           <Sidebar />

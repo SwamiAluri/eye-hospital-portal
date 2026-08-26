@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { X, Search, UserCheck, Calendar, Clock } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useAuthStore } from '@/lib/auth-store';
 import { frontdeskApi, FrontdeskBoardRow, FrontdeskPatientSearchRow } from '@/lib/api/frontdesk.api';
 import { frontdeskRoutingApi } from '@/lib/api/frontdesk-routing.api';

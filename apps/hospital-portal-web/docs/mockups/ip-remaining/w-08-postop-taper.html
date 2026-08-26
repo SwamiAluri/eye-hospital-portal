@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body data-screen="W-08">
+<main>
+  <p class="lede">
+    Post-op workspace (existing S-08). Eyedrop taper is a table with Add and history — not a free-text paragraph.
+    Free-text instructions can remain as notes underneath.
+  </p>
+
+  <h2 class="sec">Taper recorded</h2>
+  <div class="frame">
+    <div class="workspace">
+      <div class="ws-head">
+        <div>
+          <div class="name">Meena Iyer</div>
+          <div class="ident">UHID UAT-002 · 54 years · Female · Surgery completed</div>
+        </div>
+        <span class="badge inhouse">Post-op</span>
+        <div class="eye"><span class="eye-k">Operating eye</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+      </div>
+      <div class="ws-body">
+        <nav class="ws-steps">
+          <div class="ws-step done"><span class="n">✓</span> Recovery vitals</div>
+          <div class="ws-step done"><span class="n">✓</span> Nurse checklist</div>
+          <div class="ws-step active"><span class="n">3</span> Eyedrop plan</div>
+          <div class="ws-step"><span class="n">4</span> Follow-up</div>
+        </nav>
+        <div class="ws-content">
+          <div class="row between">
+            <h3 style="margin:0;font-size:15px">Eyedrop taper · RIGHT</h3>
+            <span class="btn sm">Add step</span>
+          </div>
+          <table class="grid" style="margin-top:10px">
+            <thead><tr><th>Drug</th><th>Step</th><th>How often</th><th>Days</th><th>When</th><th>By</th></tr></thead>
+            <tbody>
+              <tr><td>Prednisolone 1%</td><td>1</td><td>6 times a day</td><td>7</td><td>11:02</td><td>Priya N</td></tr>
+              <tr><td>Prednisolone 1%</td><td>2</td><td>4 times a day</td><td>7</td><td>11:02</td><td>Priya N</td></tr>
+              <tr><td>Prednisolone 1%</td><td>3</td><td>2 times a day</td><td>7</td><td>11:02</td><td>Priya N</td></tr>
+              <tr><td>Moxifloxacin 0.5%</td><td>1</td><td>4 times a day</td><td>14</td><td>11:04</td><td>Priya N</td></tr>
+            </tbody>
+          </table>
+          <p class="small muted" style="margin-top:8px">Printed on the discharge sheet. Corrections: add a new step; do not silently edit history.</p>
+        </div>
+      </div>
+      <div class="ws-foot">
+        <span class="small muted">4 steps on file</span>
+        <span class="spacer"></span>
+        <span class="btn primary">Continue to follow-up</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Add step</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Add taper step</span></div>
+        <div class="dialog-body">
+          <div class="field"><label>Drug</label><input class="input" value="Prednisolone 1%" readonly></div>
+          <div class="field"><label>Eye</label><div class="radio-row"><label><input type="radio" checked> RIGHT</label><label><input type="radio"> LEFT</label></div></div>
+          <div class="field"><label>How often</label><input class="input" value="6 times a day" readonly></div>
+          <div class="field"><label>Days</label><input class="input" value="7" readonly></div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Add step</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Empty</h2>
+  <div class="frame" style="padding:16px">
+    <div class="muted">No taper recorded. Add at least the steroid plan before handover.</div>
+    <span class="btn sm" style="margin-top:8px">Add step</span>
+  </div>
+
+  <h2 class="sec">No permission</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout">You can read the plan. You cannot add steps.</div>
+  </div>
+
+  <table class="map" style="margin-top:16px">
+    <thead><tr><th>Element</th><th>API</th><th>BE</th><th>DB</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>List / save</td><td>GET/PUT .../post-op/taper</td><td>PostOpTaperService</td><td>post_op_taper_step</td><td class="owner o-ip">IP</td></tr>
+    </tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

@@ -567,7 +567,34 @@ public class CoverageCaseService
         if (coverageCase is null && sessionId.HasValue)
             coverageCase = await GetBySessionIdAsync(sessionId.Value, ct);
 
-        return AdmissionCoverageDecisionPolicy.Decide(coverageCase, emergencyFcApplied);
+        var decision = AdmissionCoverageDecisionPolicy.Decide(coverageCase, emergencyFcApplied);
+        if (coverageCase is null)
+            return decision;
+
+        CcmsCoverageAuthorization? auth = await _db.CoverageAuthorizations.AsNoTracking()
+            .Where(a => a.CoverageCase_Id == coverageCase.Id && a.DeletedAt == null)
+            .OrderByDescending(a => a.UpdatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        CcmsBillingSummary? bill = await _db.BillingSummaries.AsNoTracking()
+            .Where(b => b.CoverageCase_Id == coverageCase.Id && b.DeletedAt == null)
+            .OrderByDescending(b => b.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        var (payer, patient) = CoverageShareProjection.From(coverageCase, auth, bill);
+        var projection = await _db.CollectionProjections.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.CoverageCaseId == coverageCase.Id && p.DeletedAt == null, ct);
+        var obligation = projection is { PatientObligationAmount: > 0 }
+            ? projection.PatientObligationAmount
+            : patient;
+        return decision with
+        {
+            PayerShareAmount = payer,
+            PatientShareAmount = patient,
+            CoverageStatus = CoverageStatusClassifier.Classify(coverageCase.CurrentState),
+            CollectedAmount = projection?.NetCollected ?? 0,
+            PatientObligationAmount = obligation,
+        };
     }
 
     /// <summary>
@@ -621,9 +648,11 @@ public class CoverageCaseService
     {
         CcmsCoverageCase? coverageCase = null;
         if (journeyId.HasValue)
-            coverageCase = await GetByJourneyIdAsync(journeyId.Value, ct);
+            coverageCase = await _db.CoverageCases
+                .FirstOrDefaultAsync(c => c.JourneyId == journeyId && c.DeletedAt == null, ct);
         if (coverageCase is null && sessionId.HasValue)
-            coverageCase = await GetBySessionIdAsync(sessionId.Value, ct);
+            coverageCase = await _db.CoverageCases
+                .FirstOrDefaultAsync(c => c.SessionId == sessionId && c.DeletedAt == null, ct);
         if (coverageCase is null || coverageCase.TenantId != tenantId)
             return null;
 
@@ -781,7 +810,12 @@ public record AdmissionValidationResult(
     string? CoverageState = null,
     bool    IsEmergencyFinancialClearance = false,
     string? PaymentType = null,
-    DateTime? LastUpdatedAt = null
+    DateTime? LastUpdatedAt = null,
+    decimal PayerShareAmount = 0,
+    decimal PatientShareAmount = 0,
+    string? CoverageStatus = null,
+    decimal CollectedAmount = 0,
+    decimal PatientObligationAmount = 0
 )
 {
     public static AdmissionValidationResult Allow(
@@ -791,7 +825,8 @@ public record AdmissionValidationResult(
         new(true, message is null ? "none" : "info", message, null,
             c?.Id, c?.ApprovedAmount ?? 0, c?.RoomClassApproved,
             c?.PreAuthExpiry, c?.PreAuthNumber, false,
-            decision, c?.CurrentState, false, c?.PaymentType, c?.UpdatedAt);
+            decision, c?.CurrentState, false, c?.PaymentType, c?.UpdatedAt,
+            CoverageStatus: CoverageStatusClassifier.Classify(c?.CurrentState));
 
     public static AdmissionValidationResult Warn(
         string msg,
@@ -801,14 +836,16 @@ public record AdmissionValidationResult(
         new(true, "warning", msg, null,
             c?.Id, c?.ApprovedAmount ?? 0, c?.RoomClassApproved,
             c?.PreAuthExpiry, c?.PreAuthNumber, isEmergencyFc,
-            decision, c?.CurrentState, isEmergencyFc, c?.PaymentType, c?.UpdatedAt);
+            decision, c?.CurrentState, isEmergencyFc, c?.PaymentType, c?.UpdatedAt,
+            CoverageStatus: CoverageStatusClassifier.Classify(c?.CurrentState));
 
     public static AdmissionValidationResult Block(string reason, CcmsCoverageCase? c = null) =>
         new(false, "blocked", null, reason,
             c?.Id, c?.ApprovedAmount ?? 0, c?.RoomClassApproved,
             c?.PreAuthExpiry, c?.PreAuthNumber, true,
             AdmissionCoverageDecisionPolicy.DecisionBlock,
-            c?.CurrentState, false, c?.PaymentType, c?.UpdatedAt);
+            c?.CurrentState, false, c?.PaymentType, c?.UpdatedAt,
+            CoverageStatus: CoverageStatusClassifier.Classify(c?.CurrentState));
 }
 
 // EF raw SQL helper

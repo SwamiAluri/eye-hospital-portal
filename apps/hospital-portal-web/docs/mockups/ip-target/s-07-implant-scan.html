@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-07">
+<main>
+
+  <p class="lede">
+    One action that is simultaneously the <strong>wrong-implant control</strong>, the
+    <strong>traceability record</strong>, the <strong>stock movement</strong> and the <strong>charge trigger</strong>.
+    Today none of these four exist as a linked chain, which is the single largest revenue-leakage and
+    device-traceability gap in the system.
+  </p>
+
+  <h2 class="sec">Scan and confirm</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head">
+          <span class="t">Record implant</span>
+          <span class="spacer"></span>
+          <span class="muted">&#10005;</span>
+        </div>
+        <div class="dialog-body">
+          <div class="row between">
+            <div>
+              <div style="font-weight:650">Amit Verma</div>
+              <div class="small muted">UAT-021 &middot; Retinal detachment repair &middot; Theatre 1</div>
+            </div>
+            <span class="badge ot no-dot">Operating eye: <b>OD</b></span>
+          </div>
+        </div>
+        <div class="dialog-body">
+          <div class="field">
+            <label>Scan or enter barcode / UDI</label>
+            <input class="input mono lg" value="08901234567890" readonly>
+          </div>
+          <div class="panel">
+            <p class="panel-h">Resolved</p>
+            <div class="rail-line"><span class="k">Item</span><span class="v">Alcon SN60WF &middot; IOL</span></div>
+            <div class="rail-line"><span class="k">Power</span><span class="v">+21.0 D</span></div>
+            <div class="rail-line"><span class="k">Batch</span><span class="v mono">B-2291</span></div>
+            <div class="rail-line"><span class="k">Serial</span><span class="v mono">88213</span></div>
+            <div class="rail-line"><span class="k">Expiry</span><span class="v">06/2028</span></div>
+            <div class="rail-line"><span class="k">Charge</span><span class="v num">&#8377;14,000</span></div>
+          </div>
+        </div>
+        <div class="dialog-body">
+          <div class="field">
+            <label>Eye</label>
+            <div class="radio-row">
+              <label><input type="radio" name="eye" checked> OD (right)</label>
+              <label><input type="radio" name="eye"> OS (left)</label>
+            </div>
+            <p class="hint">Must match the operating eye recorded on the journey and the consent.</p>
+          </div>
+          <div class="field">
+            <label>Status</label>
+            <div class="radio-row" style="flex-direction:column;gap:6px">
+              <label><input type="radio" name="st" checked> Implanted</label>
+              <label><input type="radio" name="st"> Opened, not used</label>
+              <label><input type="radio" name="st"> Wasted / damaged</label>
+              <label><input type="radio" name="st"> Returned unopened</label>
+            </div>
+          </div>
+          <div class="field">
+            <label>Reason <span class="faint">(required unless Implanted)</span></label>
+            <input class="input placeholder" value="Disabled &mdash; status is Implanted" readonly>
+          </div>
+          <div class="callout ok"><b>Implanted</b> &rarr; charge posts automatically and stock is deducted.</div>
+          <div class="callout"><b>Opened, not used</b> or <b>Wasted</b> &rarr; hospital write-off. Stock is deducted, <b>no patient charge</b>, and the item appears in the wastage report.</div>
+        </div>
+        <div class="dialog-foot">
+          <span class="btn">Cancel</span>
+          <span class="btn primary">Record implant</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Hard blocks</h2>
+  <div class="cols-2">
+    <div class="frame">
+      <div class="dialog-stage" style="padding:18px">
+        <div class="dialog" style="max-width:100%">
+          <div class="dialog-head"><span class="t">Eye mismatch</span></div>
+          <div class="dialog-body">
+            <div class="callout danger">
+              <b>This implant is marked OS, the operating eye is OD.</b> Recording is blocked. Confirm the eye with the
+              surgeon, or correct the operating eye on the journey first.
+            </div>
+          </div>
+          <div class="dialog-foot"><span class="btn primary">Back to scan</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="dialog-stage" style="padding:18px">
+        <div class="dialog" style="max-width:100%">
+          <div class="dialog-head"><span class="t">Serial already used</span></div>
+          <div class="dialog-body">
+            <div class="callout danger">
+              <b>Serial 88213 is already recorded as implanted</b> for UAT-009 on 22 Aug. Recording is blocked. Scan the
+              correct device, or reverse the earlier entry if it was made in error.
+            </div>
+          </div>
+          <div class="dialog-foot"><span class="btn">View earlier record</span><span class="btn primary">Back to scan</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker fix">3</span><span><b>Eye mismatch and duplicate serial are hard blocks.</b> Everything else &mdash; unmapped price, billing unavailable, stock discrepancy &mdash; is recorded and reconciled later. Clinical safety blocks; commercial concerns do not.</span></li>
+    <li><span class="marker new">2</span><span>The clinical row and the outbox row commit in <b>one transaction</b>. Stock and charge are eventually consistent, so a Billing or Inventory outage cannot stop a surgeon mid-procedure.</span></li>
+    <li><span class="marker new">2</span><span>Price resolution runs through the <b>MD-055 catalog resolver</b>. If the item has no billable variant mapping, usage is still recorded and a charge exception is raised &mdash; the clinical record is never held hostage to a pricing gap.</span></li>
+    <li><span class="marker new">2</span><span>Corrections use <code>PATCH</code> and emit <code>ImplantUsageReversed</code>, producing a credit line rather than editing history. The registry is append-and-correct, never overwrite.</span></li>
+  </ul>
+
+  <h2 class="sec">All outcomes of a scan</h2>
+  <p class="lede" style="margin-bottom:14px">One barcode can end in six different places. Only the first charges the
+  patient; the panel makes the destination explicit every time, because the difference between a charge, a write-off
+  and a return is the difference between revenue leakage and an accurate margin.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n ok">1</span><span class="t">Implanted &mdash; charged</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="callout ok"><b>Recorded and charged.</b> Alcon SN60WF +19.5&nbsp;D, serial
+          <b class="mono">88117</b>, left eye.</div>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Stock</span><span class="v">Issued from OT store &middot; on hand 23</span></div>
+          <div class="rail-line"><span class="k">Charge</span><span class="v num">&#8377;14,000 &rarr; IPD-2026-00841</span></div>
+          <div class="rail-line"><span class="k">Coverage</span><span class="v">Within approved &#8377;80,000</span></div>
+          <div class="row" style="margin-top:10px"><span class="btn sm">Scan next item</span><span class="btn sm ghost">Undo</span></div>
+        </div>
+      </div>
+      <p class="vc">Three effects from one scan &mdash; traceability, stock, charge &mdash; all named. Undo remains
+      available until the case closes.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Opened, not used &mdash; write-off</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="field"><label>Outcome</label>
+            <div class="radio-row">
+              <label><input type="radio" name="o2"> Implanted</label>
+              <label><input type="radio" name="o2" checked> Opened, not used</label>
+              <label><input type="radio" name="o2"> Unopened return</label>
+            </div>
+          </div>
+          <div class="field"><label>Wastage reason <span style="color:var(--danger)">*</span></label>
+            <input class="input" value="Wrong power selected" readonly></div>
+          <div class="callout warn"><b>Not charged to the patient.</b> Recorded as a hospital write-off, deducted from
+          stock, and reported in the <a href="s-15-reconciliation.html">wastage report</a>.</div>
+          <div class="row" style="margin-top:10px"><span class="btn sm">Cancel</span><span class="btn sm primary">Record write-off</span></div>
+        </div>
+      </div>
+      <p class="vc">Reason is mandatory. A write-off without a reason is indistinguishable from theft, and the wastage
+      report exists precisely to make that distinction.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">3</span><span class="t">Unopened return to stores</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="callout info"><b>Returned to stores.</b> Serial <b class="mono">88119</b> was never opened, so
+          the stock issue is reversed and the item is available again.</div>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Stock movement</span><span class="v">Issue reversed &middot; on hand 24</span></div>
+          <div class="rail-line"><span class="k">Charge</span><span class="v">None &mdash; nothing was posted</span></div>
+          <div class="rail-line"><span class="k">Wastage</span><span class="v">Not counted</span></div>
+        </div>
+      </div>
+      <p class="vc">Distinct from a write-off: the item is still sellable. Collapsing the two would overstate wastage
+      and understate stock.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">4</span><span class="t">Correction after charging</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Reverse implant record</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>Serial 88117 was already charged &#8377;14,000.</b> Reversing creates a
+            credit line on the bill; it does not delete the original.</div>
+            <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Wrong serial scanned &mdash; correct serial is 88121" readonly></div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Credit line &minus;&#8377;14,000 added to IPD-2026-00841</li>
+              <li><span class="bx on">&#10003;</span> Stock returned to OT store</li>
+              <li><span class="bx on">&#10003;</span> Original entry retained with status <b>Reversed</b></li>
+              <li><span class="bx on">&#10003;</span> CCMS notified through the billing outbox</li>
+            </ul>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn danger">Reverse and re-scan</span></div>
+        </div>
+      </div>
+      <p class="vc"><b>Append-only.</b> Corrections add a reversing line; nothing is ever deleted from a financial
+      record. Uses the <a href="s-17-reason-confirm.html">S-17</a> pattern.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">5</span><span class="t">Manual entry fallback</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="callout warn"><b>Barcode unreadable.</b> Manual entry is allowed but is flagged for review, and
+          both the serial and the batch are mandatory.</div>
+          <div class="cols-2" style="margin-top:8px">
+            <div class="field"><label>Item</label><input class="input" value="Alcon SN60WF +19.5 D" readonly></div>
+            <div class="field"><label>Power</label><input class="input" value="+19.5 D" readonly></div>
+            <div class="field"><label>Batch <span style="color:var(--danger)">*</span></label><input class="input" value="B-2291" readonly></div>
+            <div class="field"><label>Serial <span style="color:var(--danger)">*</span></label><input class="input" value="88117" readonly></div>
+          </div>
+          <div class="field"><label>Reason for manual entry <span style="color:var(--danger)">*</span></label>
+            <input class="input" value="Barcode damaged on packaging" readonly></div>
+          <div class="row" style="margin-top:8px"><span class="btn sm">Cancel</span><span class="btn sm primary">Record manually</span></div>
+        </div>
+      </div>
+      <p class="vc">Blocking manual entry entirely would stop surgery. Allowing it silently would destroy the
+      traceability the scan exists to create. Flagging it is the workable middle.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">6</span><span class="t">Consumables &mdash; not implants</span></div>
+      <div class="frame">
+        <div style="padding:14px">
+          <div class="row between" style="margin-bottom:8px"><b style="font-size:14px">Consumables used</b><span class="badge no-dot">Charged per D4</span></div>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th>Item</th><th>Qty</th><th>In package</th><th>Charge</th></tr></thead>
+            <tbody>
+              <tr><td>Viscoelastic (OVD)</td><td>1</td><td><span class="badge ok no-dot">Yes</span></td><td class="muted">Included</td></tr>
+              <tr><td>Phaco tip</td><td>1</td><td><span class="badge ok no-dot">Yes</span></td><td class="muted">Included</td></tr>
+              <tr><td>Capsular tension ring</td><td>1</td><td><span class="badge danger no-dot">No</span></td><td class="num">&#8377;3,200</td></tr>
+              <tr><td>Trypan blue</td><td>1</td><td><span class="badge danger no-dot">No</span></td><td class="num">&#8377;450</td></tr>
+            </tbody>
+          </table>
+          <p class="hint">Package-included items are recorded for costing but not charged again. Out-of-package items
+          post as separate lines.</p>
+        </div>
+      </div>
+      <p class="vc">Decision <b>D4</b> in practice: consumables are tracked for stock and margin regardless, and
+      charged only when they fall outside the package.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">What has been recorded for this case</h2>
+  <p class="lede" style="margin-bottom:14px">
+    Every scan appends, so the panel that matters most is the list of what is already on the record. Without it the
+    surgeon has no way to know whether the lens they just implanted was captured, and a silent miss is exactly how an
+    implant goes uncharged.
+  </p>
+
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:10px">
+        <h3 style="margin:0;font-size:15px">Rekha Menon &middot; Theatre 1 &mdash; items recorded</h3>
+        <div class="row"><span class="badge ok">1 implanted</span><span class="btn sm primary">Scan item</span></div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>When</th><th>Item</th><th>Serial / batch</th><th>Eye</th><th>Outcome</th><th>Charged</th><th>By</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td>09:22</td><td>Alcon SN60WF +19.5 D</td><td class="mono">88117</td><td>OS</td>
+            <td><span class="badge ok">Implanted</span></td><td class="num">&#8377;14,000</td><td>Dr. S. Iyer</td>
+            <td><span class="btn sm ghost">Correct</span></td>
+          </tr>
+          <tr>
+            <td>09:19</td><td>Alcon SN60WF +20.0 D</td><td class="mono">88118</td><td>OS</td>
+            <td><span class="badge cancel">Opened, not used</span></td><td class="muted">Not charged</td><td>Dr. S. Iyer</td>
+            <td><span class="btn sm ghost">Correct</span></td>
+          </tr>
+          <tr>
+            <td>09:05</td><td>Viscoelastic 1.0 ml</td><td class="mono">VE-2291</td><td class="muted">&mdash;</td>
+            <td><span class="badge ok">Used</span></td><td class="cell-sub">In package</td><td>Scrub nurse</td>
+            <td><span class="btn sm ghost">Correct</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 0 0">
+        <div class="callout info">
+          <b>The charged column is a read from Auth, refreshed as the outbox drains.</b> It shows &ldquo;Posting&hellip;&rdquo;
+          briefly and then the amount. If it stays unposted the item appears in
+          <a href="s-15-reconciliation.html">S-15</a> as implanted-not-charged &mdash; the theatre never has to chase
+          it, and it is never silently dropped either.
+        </div>
+        <div class="callout warn">
+          <b>Today this list cannot be built.</b> There is no implant usage table and no
+          <code>GET /journeys/{id}/implants</code>. The only existing write is
+          <code>POST /api/ip-management/journeys/{id}/verify-iol-barcode</code>, which validates a barcode against
+          <code>iol_catalog_master</code> and stamps IOL fields on <code>patient_journey</code> &mdash; one lens per
+          journey, no returns, no consumables, no history. That single-value limitation is the whole reason for
+          gap 5.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th><th>Event</th></tr></thead>
+    <tbody>
+      <tr><td>Barcode resolve <span class="badge ok no-dot">exists</span></td><td><code>ipManagementApi.verifyIolBarcode</code></td><td><code>POST /api/ip-management/journeys/{id}/verify-iol-barcode</code></td><td><code>PatientJourneyService.VerifyIolBarcodeAsync</code></td><td><code>iol_catalog_master</code> <span class="cell-sub">read-only master</span>; result stamped on <code>patient_journey</code>; audited as <code>IolBarcodeVerified</code></td><td class="owner o-ip">IP + <span class="o-inv">Inventory</span></td><td><code>ot.safety.sign</code></td><td>&mdash;</td></tr>
+      <tr><td><b>Record usage</b> <span class="mark new">2</span></td><td><code>ipManagementApi.recordImplant</code></td><td><code>POST /journeys/{id}/implants</code> · <b>live</b></td><td>implant usage service (live)</td><td><code>journey_implant_usage</code>, new <span class="cell-sub">append, one row per item</span></td><td class="owner o-ip">IP</td><td><code>ot.safety.sign</code> | <code>ip.surgery.complete</code></td><td><code>ImplantUsed</code></td></tr>
+      <tr><td>History of this case <span class="mark new">2</span></td><td><code>listImplants</code></td><td><code>GET /journeys/{id}/implants</code> · <b>live</b></td><td>same service</td><td><code>journey_implant_usage</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Correct / reverse <span class="mark new">2</span></td><td><code>ipManagementApi.updateImplant</code></td><td><code>PATCH /journeys/{id}/implants/{usageId}</code> · <b>live</b></td><td>same service</td><td><code>journey_implant_usage</code> <span class="cell-sub">correction row, never an in-place edit</span></td><td class="owner o-ip">IP</td><td>same</td><td><code>ImplantUsageReversed</code></td></tr>
+      <tr><td>Returns today <span class="badge ok no-dot">exists</span></td><td><code>recordIolReturn</code></td><td><code>POST /api/ip-management/journeys/{id}/iol-returns</code></td><td><code>PostOpWorkflowService.RecordIolReturnAsync</code></td><td><code>iol_returns</code> <span class="cell-sub">append; the only implant history that exists today</span></td><td class="owner o-ip">IP</td><td><code>ward.checklist.edit</code></td><td>&mdash;</td></tr>
+      <tr><td>Stock effect</td><td>&mdash; (outbox consumer)</td><td>internal</td><td><code>StockService</code> deduct / wastage</td><td><code>inv_stock_ledger</code>, <code>inv_stock_batches</code></td><td class="owner o-inv">Inventory</td><td>internal</td><td>&mdash;</td></tr>
+      <tr><td>Charge effect <span class="faint">(only when Implanted)</span></td><td>&mdash; (outbox consumer)</td><td><code>POST /api/internal/ip-billing/charge-items</code></td><td><code>OpdBillService</code> + <code>BillItemService</code></td><td><code>opd_bill_items</code></td><td class="owner o-billing">Billing</td><td>internal key</td><td><code>PatientObligationChanged</code></td></tr>
+      <tr><td>Price resolution</td><td>&mdash;</td><td>&mdash;</td><td>MD-055 resolver &rarr; <code>variant_prices</code></td><td><code>service_variant_item_map</code> (new)</td><td class="owner o-billing">Billing</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>Unmapped fallback</td><td>&mdash;</td><td>&mdash;</td><td>charge exception writer</td><td><code>charge_exception</code> (new)</td><td class="owner o-billing">Billing</td><td>&mdash;</td><td>surfaces in <a href="s-14-charge-mapping.html">S-14</a></td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Validation rules</h2>
+  <table class="map">
+    <thead><tr><th>Rule</th><th>Severity</th><th>Enforced</th></tr></thead>
+    <tbody>
+      <tr><td>Implant eye must equal <code>journey.EyeOperated</code></td><td><b style="color:var(--danger)">Hard block</b></td><td>Server, in the usage handler</td></tr>
+      <tr><td>Serial must not already be recorded as implanted</td><td><b style="color:var(--danger)">Hard block</b></td><td>Server + unique filtered index</td></tr>
+      <tr><td>Journey must be <code>InOT</code> or <code>SurgeryCompleted</code></td><td><b style="color:var(--danger)">Hard block</b></td><td>Server, state check</td></tr>
+      <tr><td>Reason required for any status other than <code>Implanted</code></td><td><b style="color:var(--danger)">Hard block</b></td><td>Server + client</td></tr>
+      <tr><td>Batch expiry in the past</td><td><b style="color:var(--ot)">Warn, confirm</b></td><td>Client, with the confirmation audited</td></tr>
+      <tr><td>Power differs from the biometry plan</td><td><b style="color:var(--ot)">Warn, confirm</b></td><td>Client; intra-op power changes are legitimate</td></tr>
+      <tr><td>No billable variant mapping</td><td><b class="muted">Record anyway</b></td><td>Server raises a charge exception</td></tr>
+      <tr><td>Billing service unavailable</td><td><b class="muted">Record anyway</b></td><td>Outbox retries, then reconciliation</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

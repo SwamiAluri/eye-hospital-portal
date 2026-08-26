@@ -34,6 +34,7 @@ import {
 } from '@/components/admin/service-catalog-admin-dialogs';
 import { ServiceCatalogIolPanel } from '@/components/admin/service-catalog-iol-panel';
 import { ServiceCatalogBranchPricingPanel } from '@/components/admin/service-catalog-branch-pricing-panel';
+import { ServiceCatalogPayerPricingPanel } from '@/components/admin/service-catalog-payer-pricing-panel';
 import { ServiceCatalogStructureDrawer } from '@/components/admin/service-catalog-structure-drawer';
 import { VariantIolMappingDialog } from '@/components/admin/service-catalog-variant-iol-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -70,6 +71,7 @@ const MODE_TABS: { id: ServiceCatalogMode; label: string; countKey?: 'investigat
   { id: 'surgery', label: 'Surgery & procedures', countKey: 'surgery' },
   { id: 'iol', label: 'IOL catalog' },
   { id: 'branch', label: 'Branch pricing' },
+  { id: 'payer', label: 'Payer tariffs' },
 ];
 
 export function ServiceCatalogBrowser() {
@@ -254,7 +256,7 @@ export function ServiceCatalogBrowser() {
                 Service Catalog
               </h1>
               <p className="text-sm text-gray-500 mt-1">
-                Procedures, investigations, IOL models, and branch price overrides for Counsellor desk and billing.
+                Procedures, investigations, IOL models, branch prices, and insurer tariffs for Counsellor desk and billing.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -326,6 +328,10 @@ export function ServiceCatalogBrowser() {
 
         {mode === 'branch' && (
           <ServiceCatalogBranchPricingPanel categoryFilter={categoryFilter} />
+        )}
+
+        {mode === 'payer' && (
+          <ServiceCatalogPayerPricingPanel categoryFilter={categoryFilter} />
         )}
 
         {(mode === 'investigations' || mode === 'surgery') && catalogQuery.isLoading && (
@@ -510,7 +516,7 @@ export function ServiceCatalogBrowser() {
         <ServiceCatalogStructureDrawer
           open={structureOpen}
           onClose={() => setStructureOpen(false)}
-          mode={mode === 'branch' || mode === 'iol' ? 'investigations' : mode}
+          mode={mode === 'branch' || mode === 'payer' || mode === 'iol' ? 'investigations' : mode}
           categories={categories}
           onAddCategory={() => {
             setStructureOpen(false);

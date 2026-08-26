@@ -47,7 +47,7 @@ public class PreOpReadinessService
             journeyId, tenantId, userId, paymentMode ?? journey.PaymentMode);
         var pacDto = await _pac.GetAssessmentAsync(journeyId, tenantId);
 
-        return BuildFromSources(
+        var dto = BuildFromSources(
             journey,
             detail?.Completions ?? [],
             detail?.SectionClearances,
@@ -55,6 +55,11 @@ public class PreOpReadinessService
             investigation.UnverifiedCriticalKeys,
             ward.Items,
             pacDto.AssessmentStatus);
+
+        var meds = await _db.PreOpMedicationLogs.AsNoTracking()
+            .Where(m => m.PatientJourneyId == journeyId && m.TenantId == tenantId && m.DeletedAt == null)
+            .ToListAsync();
+        return dto with { Dilation = DilationReadiness.ToDto(DilationReadiness.From(meds, DateTime.UtcNow)) };
     }
 
     /// <summary>

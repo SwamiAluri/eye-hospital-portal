@@ -127,6 +127,37 @@ public sealed class InMemoryDbFixture : IDisposable
         return e;
     }
 
+    public CcmsBillingSummary SeedBillingSummary(
+        Guid caseId,
+        decimal totalBill,
+        decimal insuranceShare,
+        decimal patientShare,
+        decimal copayAmount = 0,
+        decimal deductibleAmount = 0)
+    {
+        var s = new CcmsBillingSummary
+        {
+            Id = Guid.NewGuid(),
+            TenantId = TenantId,
+            CoverageCase_Id = caseId,
+            BillDate = DateTime.UtcNow,
+            TotalBillAmount = totalBill,
+            InsuranceShareAmount = insuranceShare,
+            PatientShareAmount = patientShare,
+            CopayAmount = copayAmount,
+            DeductibleAmount = deductibleAmount,
+            DisallowedAmount = 0,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            CreatedByUserId = ActorId,
+            UpdatedByUserId = ActorId,
+            Status = "active",
+        };
+        Db.BillingSummaries.Add(s);
+        Db.SaveChanges();
+        return s;
+    }
+
     public CcmsSettlement SeedSettlement(
         Guid caseId,
         decimal settledAmount = 40_000m,
@@ -169,6 +200,7 @@ public sealed class InMemoryDbFixture : IDisposable
             ClaimType       = "cashless",
             SubmissionMode  = "manual",
             Status          = claimStatus,
+            QueryStatus     = "none",
             CreatedAt       = DateTime.UtcNow,
             UpdatedAt       = DateTime.UtcNow,
             CreatedByUserId = ActorId,

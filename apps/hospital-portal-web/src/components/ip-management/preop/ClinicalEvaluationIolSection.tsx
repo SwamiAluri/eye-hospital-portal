@@ -3,6 +3,7 @@
 import type { IolMasterDto } from '@/lib/api/service-catalog.api';
 import type { ClinicalEvaluationFields, WardIolPlan } from '@/lib/ip-management/clinical-evaluation';
 import { WARD_PREOP_TEST_IDS } from '@/lib/ip-management/ward-preop-test-ids';
+import { biometryMissingEyePhrase, plannedIolDiffers } from '@/lib/ip-management/iol-diopter';
 
 export interface ClinicalEvaluationIolSectionProps {
   fields: ClinicalEvaluationFields;
@@ -10,8 +11,12 @@ export interface ClinicalEvaluationIolSectionProps {
   iolOptions: IolMasterDto[];
   biometryPowerSuggestion?: string | null;
   journeyIolPower?: string | null;
+  eyeOperated?: string | null;
+  emptyBiometry?: boolean;
   disabled: boolean;
+  refreshingFromOpd?: boolean;
   onChange: (iol: WardIolPlan) => void;
+  onRefreshFromOpd?: () => void;
 }
 
 function iolLabel(iol: IolMasterDto): string {
@@ -24,8 +29,12 @@ export function ClinicalEvaluationIolSection({
   iolOptions,
   biometryPowerSuggestion,
   journeyIolPower,
+  eyeOperated,
+  emptyBiometry = false,
   disabled,
+  refreshingFromOpd = false,
   onChange,
+  onRefreshFromOpd,
 }: ClinicalEvaluationIolSectionProps) {
   const { iol } = fields;
   const selected =
@@ -60,9 +69,32 @@ export function ClinicalEvaluationIolSection({
     onChange({ ...iol, power });
   }
 
+  const showRefresh =
+    !!onRefreshFromOpd
+    && plannedIolDiffers(biometryPowerSuggestion, journeyIolPower);
+
   return (
     <div className="space-y-3" data-testid={WARD_PREOP_TEST_IDS.clinicalEvalIolPlan}>
       <label className="text-xs font-medium text-gray-700">IOL / implant plan</label>
+
+      {emptyBiometry && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="font-medium">No biometry on file for the {biometryMissingEyePhrase(eyeOperated)}.</p>
+          <p className="mt-0.5">Package can still be selected. Planned IOL power stays empty — OT will warn, not block, if a lens is scanned later.</p>
+        </div>
+      )}
+
+      {showRefresh && (
+        <button
+          type="button"
+          data-testid={WARD_PREOP_TEST_IDS.clinicalEvalRefreshOpd}
+          disabled={disabled || refreshingFromOpd}
+          onClick={onRefreshFromOpd}
+          className="rounded-md bg-white px-2 py-1 text-[11px] font-medium text-sky-800 ring-1 ring-sky-200 hover:bg-sky-50 disabled:opacity-50"
+        >
+          {refreshingFromOpd ? 'Refreshing…' : 'Refresh from OPD'}
+        </button>
+      )}
 
       {counsellingIol && (
         <div className="rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs text-violet-900">

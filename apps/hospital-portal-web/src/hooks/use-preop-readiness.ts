@@ -22,6 +22,11 @@ import {
   computeMarkReadyGates,
   type MarkReadyGateResult,
 } from '@/lib/ip-management/preop-mark-ready-gates';
+import {
+  mapTransitionGatesToMarkReady,
+  mergeMarkReadyGates,
+} from '@/lib/ip-management/map-transition-gates-to-mark-ready';
+import type { DilationSlice } from '@/lib/ip-management/dilation-readiness';
 
 export interface UsePreOpReadinessParams {
   journeyId: string;
@@ -60,6 +65,7 @@ export function usePreOpReadiness({
   const [readiness, setReadiness] = useState<PreOpReadiness | null>(null);
   const [safetySignals, setSafetySignals] = useState<PreOpSafetySignals | null>(null);
   const [markReadyGates, setMarkReadyGates] = useState<MarkReadyGateResult | null>(null);
+  const [dilation, setDilation] = useState<DilationSlice | null>(null);
   const [pac, setPac] = useState<PacAssessmentDto | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -69,12 +75,15 @@ export function usePreOpReadiness({
       ? Promise.resolve(sharedClearance.detail)
       : ipManagementApi.getPreOpClearance(journeyId).catch(() => null);
 
-    const [serverReadiness, detail, investigation, ward, pac] = await Promise.all([
+    const [serverReadiness, detail, investigation, ward, pac, transitionGates] = await Promise.all([
       ipManagementApi.getPreOpReadiness(journeyId, paymentMode).catch(() => null),
       clearancePromise,
       ipManagementApi.getWardInvestigationChecklist(journeyId).catch(() => null),
       ipManagementApi.getWardChecklist(journeyId, paymentMode).catch(() => null),
       ipManagementApi.getPacAssessment(journeyId).catch(() => null),
+      clinicalState === 'Admitted'
+        ? ipManagementApi.getTransitionGates(journeyId, 'ReadyForSurgery').catch(() => null)
+        : Promise.resolve(null),
     ]);
     const safeDetail = safeClearanceDetail(detail);
     const safeInvestigation = investigation as WardInvestigationChecklistDto | null;
@@ -96,6 +105,7 @@ export function usePreOpReadiness({
             clinicalState,
           }),
     );
+    setDilation(parsedReadiness?.dilation ?? null);
     setSafetySignals(
       computePreOpSafetySignals({
         investigation: safeInvestigation,
@@ -104,13 +114,17 @@ export function usePreOpReadiness({
         scheduledEye,
       }),
     );
+    const clientGates = computeMarkReadyGates({
+      investigation: safeInvestigation,
+      pac: safePac,
+      detail: safeDetail,
+      scheduledEye,
+    });
     setMarkReadyGates(
-      computeMarkReadyGates({
-        investigation: safeInvestigation,
-        pac: safePac,
-        detail: safeDetail,
-        scheduledEye,
-      }),
+      mergeMarkReadyGates(
+        clientGates,
+        mapTransitionGatesToMarkReady(transitionGates),
+      ),
     );
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,5 +153,5 @@ export function usePreOpReadiness({
     });
   }, [sharedClearance, load]);
 
-  return { readiness, safetySignals, markReadyGates, pac, loading, reload: load };
+  return { readiness, safetySignals, markReadyGates, dilation, pac, loading, reload: load };
 }

@@ -1,0 +1,41 @@
+---
+description: Coverage, insurance, and CCMS UX — eligibility, preauth, claims, settlement vs billing, counselling intake vs ops.
+globs:
+  - apps/hospital-portal-web/src/components/ccms/**
+  - apps/hospital-portal-web/src/lib/ccms/**
+  - apps/hospital-portal-web/src/app/dashboard/ccms/**
+  - apps/hospital-portal-web/src/components/counsellors-desk/coverage/**
+  - apps/hospital-portal-web/src/app/dashboard/insurance/**
+  - apps/hospital-portal-web/src/app/dashboard/finance/insurance/**
+  - microservices/ccms-service/**
+alwaysApply: false
+---
+
+# Coverage / claims (CCMS) UX
+
+Coverage/Claims owns: payers, plans, eligibility, coverage, authorization/preauth, claims, claim documents, enhancements, denials, settlement vs payer, reconciliation, payer workflows, coverage analytics.
+
+**SoT:** CCMS (`microservices/ccms-service`). Canonical UI: `src/components/ccms/` + `/dashboard/ccms/*`.
+
+Also follow `.cursor/rules/ip-billing-ward-cross-module.mdc`.
+
+## Must not duplicate Billing
+
+CCMS does not own cash/card/UPI capture, receipts, or the OpdBill ledger. Billing and Coverage integrate through **explicit contracts** (allocation, payer responsibility, settlement recording). Do not post silent bill mutations from a claims screen without the existing billing APIs.
+
+## Complementary UIs (do not merge without approval)
+
+| Surface | Job |
+|---|---|
+| `components/ccms` + `/dashboard/ccms` | **Ops desk** — cases, preauth queue, claims, settlement, master payers |
+| `counsellors-desk/coverage` | **Session intake** — discuss coverage/estimate during counselling |
+| IP `CoverageContextBlock` | Rail **display** of coverage context |
+| `/dashboard/insurance`, `/dashboard/finance/insurance` | Retired redirects to CCMS — do not rebuild standalone insurance |
+
+Do not clone Underwriting / VisitPolicies / Estimate panels across CCMS and counselling. Extend the owner for that job. Prefer `lib/hooks/useCoverageForm.ts` over a second hook.
+
+## UX / safety
+
+Eligibility and auth states are controlled workflow states. Documents and PHI respect permissions. Failed TPA/integration must not look approved. Settlement/reconciliation states stay explicit. Analytics/reports must not mutate cases.
+
+Counsellor session styling stays scoped to `.counselling-session` — do not globalize it onto CCMS ops pages.

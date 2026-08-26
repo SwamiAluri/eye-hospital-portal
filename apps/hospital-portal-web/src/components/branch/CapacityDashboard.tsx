@@ -18,6 +18,8 @@ interface BranchCapacitySummaryDto {
   generalBeds: BedTypeCapacity;
   icuBeds: BedTypeCapacity;
   emergencyBeds: BedTypeCapacity;
+  reclinerBeds?: BedTypeCapacity;
+  dayCareChairBeds?: BedTypeCapacity;
   lastUpdated: string;
 }
 
@@ -414,7 +416,7 @@ export default function CapacityDashboard() {
 
       {/* Bed Type Breakdown */}
       {capacitySummary && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {/* General Beds */}
           <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
             <h4 className="text-sm font-semibold text-gray-700 mb-4">General Beds</h4>
@@ -492,6 +494,60 @@ export default function CapacityDashboard() {
               <div className="flex justify-between">
                 <span className="text-sm text-gray-600">Reserved:</span>
                 <span className="font-semibold text-blue-600">{capacitySummary.emergencyBeds.reserved}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Recliners */}
+          <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+            <h4 className="text-sm font-semibold text-gray-700 mb-4">Recliners</h4>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Total:</span>
+                <span className="font-semibold">{capacitySummary.reclinerBeds?.total ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Available:</span>
+                <span className="font-semibold text-green-600">{capacitySummary.reclinerBeds?.available ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Occupied:</span>
+                <span className="font-semibold text-red-600">{capacitySummary.reclinerBeds?.occupied ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Maintenance:</span>
+                <span className="font-semibold text-gray-500">{capacitySummary.reclinerBeds?.underMaintenance ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Reserved:</span>
+                <span className="font-semibold text-blue-600">{capacitySummary.reclinerBeds?.reserved ?? 0}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Day-care chairs */}
+          <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+            <h4 className="text-sm font-semibold text-gray-700 mb-4">Day-care chairs</h4>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Total:</span>
+                <span className="font-semibold">{capacitySummary.dayCareChairBeds?.total ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Available:</span>
+                <span className="font-semibold text-green-600">{capacitySummary.dayCareChairBeds?.available ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Occupied:</span>
+                <span className="font-semibold text-red-600">{capacitySummary.dayCareChairBeds?.occupied ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Maintenance:</span>
+                <span className="font-semibold text-gray-500">{capacitySummary.dayCareChairBeds?.underMaintenance ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Reserved:</span>
+                <span className="font-semibold text-blue-600">{capacitySummary.dayCareChairBeds?.reserved ?? 0}</span>
               </div>
             </div>
           </div>

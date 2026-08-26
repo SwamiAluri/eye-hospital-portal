@@ -24,12 +24,14 @@ function inr(n: number) {
 
 function statusConfig(status: string) {
   const cfg: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
+    PREAUTH_GENERATED:        { label: 'Ready to send',       cls: 'bg-indigo-50 text-indigo-700', icon: <ShieldCheck className="w-3 h-3" /> },
     PREAUTH_SENT:             { label: 'Sent to TPA',         cls: 'bg-blue-50 text-blue-700',   icon: <ShieldCheck className="w-3 h-3" /> },
-    WAITING_APPROVAL:         { label: 'Awaiting Approval',   cls: 'bg-amber-50 text-amber-700', icon: <Clock className="w-3 h-3" /> },
-    CLARIFICATION_REQUIRED:   { label: 'Clarification Due',   cls: 'bg-red-50 text-red-700',     icon: <MessageSquare className="w-3 h-3" /> },
+    WAITING_APPROVAL:         { label: 'Waiting for approval', cls: 'bg-amber-50 text-amber-700', icon: <Clock className="w-3 h-3" /> },
+    CLARIFICATION_REQUIRED:   { label: 'Query from TPA',      cls: 'bg-red-50 text-red-700',     icon: <MessageSquare className="w-3 h-3" /> },
+    RESUBMITTED:              { label: 'Resubmitted',         cls: 'bg-blue-50 text-blue-700',   icon: <RefreshCw className="w-3 h-3" /> },
     PARTIAL_APPROVAL:         { label: 'Partial Approval',    cls: 'bg-purple-50 text-purple-700', icon: <CheckCircle className="w-3 h-3" /> },
   };
-  return cfg[status] ?? { label: status, cls: 'bg-gray-100 text-gray-600', icon: null };
+  return cfg[status] ?? { label: status.replace(/_/g, ' '), cls: 'bg-gray-100 text-gray-600', icon: null };
 }
 
 function urgencyColor(days: number) {
@@ -82,7 +84,7 @@ function QueueRow({
   onSelect: () => void;
   onOpenCase: () => void;
 }) {
-  const s = statusConfig(item.status);
+  const s = statusConfig(item.caseState || item.status);
   return (
     <tr
       className={`border-b border-gray-100 cursor-pointer transition-colors border-l-2 ${
@@ -197,10 +199,11 @@ export default function OperationsPreAuthQueuePage() {
       item.patientName?.toLowerCase().includes(q) ||
       item.insurerName?.toLowerCase().includes(q) ||
       item.preAuthNumber?.toLowerCase().includes(q);
+    const workflowState = item.caseState || item.status;
     const matchesFilter =
       filter === 'all' ? true
       : filter === 'INBOUND_TO_REVIEW' ? Boolean(item.hasInboundDraft)
-      : item.status === filter;
+      : workflowState === filter;
     return matchesSearch && matchesFilter;
   });
 
@@ -209,9 +212,11 @@ export default function OperationsPreAuthQueuePage() {
   const FILTER_OPTIONS = [
     { value: 'all',                   label: 'All' },
     { value: 'INBOUND_TO_REVIEW',     label: 'Inbound to review', count: inboundDraftCount },
-    { value: 'WAITING_APPROVAL',      label: 'Awaiting Approval' },
-    { value: 'CLARIFICATION_REQUIRED', label: 'Clarification Due' },
+    { value: 'WAITING_APPROVAL',      label: 'Waiting for approval' },
+    { value: 'CLARIFICATION_REQUIRED', label: 'Query from TPA' },
     { value: 'PREAUTH_SENT',          label: 'Sent to TPA' },
+    { value: 'PREAUTH_GENERATED',     label: 'Ready to send' },
+    { value: 'RESUBMITTED',           label: 'Resubmitted' },
     { value: 'PARTIAL_APPROVAL',      label: 'Partial Approval' },
   ];
 
@@ -318,7 +323,7 @@ export default function OperationsPreAuthQueuePage() {
             <button onClick={load} className="ml-auto text-xs font-semibold text-red-600 hover:underline">Retry</button>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex flex-col items-center justify-center py-16 text-center" data-testid="ccms-preauth-queue-empty">
             <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-400 mb-3">
               <ShieldCheck className="w-6 h-6" />
             </div>
@@ -333,7 +338,7 @@ export default function OperationsPreAuthQueuePage() {
           </div>
         ) : (
           <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-xs">
+            <table className="w-full text-xs" data-testid="ccms-preauth-queue-table">
               <thead className="bg-gray-50/80 border-b border-gray-100">
                 <tr>
                   <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-gray-400">Case / Patient</th>

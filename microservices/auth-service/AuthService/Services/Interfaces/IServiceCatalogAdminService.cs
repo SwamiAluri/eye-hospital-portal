@@ -39,4 +39,11 @@ public interface IServiceCatalogAdminService
         UpsertBranchVariantPriceRequest request,
         Guid userId);
     Task RemoveBranchVariantPriceAsync(Guid branchId, Guid variantId, Guid userId);
+
+    Task<List<PayerPricingRowDto>> GetPayerPricingRowsAsync(Guid payerId);
+    Task<BranchVariantPricingDto> UpsertPayerVariantPriceAsync(
+        Guid payerId,
+        UpsertBranchVariantPriceRequest request,
+        Guid userId);
+    Task RemovePayerVariantPriceAsync(Guid payerId, Guid variantId, Guid userId);
 }

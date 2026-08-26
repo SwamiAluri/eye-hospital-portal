@@ -6,6 +6,7 @@ import { counsellingPackageTemplatesApi } from '@/lib/api/counselling-package-te
 import type { DiagnosisLaterality, OutpatientDiagnosisSource, WardDiagnosisEntry } from './clinical-evaluation';
 import type { ComorbidityReviewState } from './clinical-evaluation';
 import { COMORBIDITY_CHECKLIST_ITEMS } from './clinical-evaluation';
+import { formatIolDiopter } from './iol-diopter';
 
 function mapLaterality(raw?: string | null): DiagnosisLaterality {
   const v = (raw ?? '').toUpperCase();
@@ -116,8 +117,7 @@ export async function loadSuggestedIolPower(
     if (!match) return null;
     const power = match.calculatedIOL ?? match.iolCalculations?.[0]?.iolPower;
     if (power == null || Number.isNaN(Number(power))) return null;
-    const sign = Number(power) > 0 ? '+' : '';
-    return `${sign}${Number(power).toFixed(1)} D`;
+    return formatIolDiopter(Number(power));
   } catch {
     return null;
   }

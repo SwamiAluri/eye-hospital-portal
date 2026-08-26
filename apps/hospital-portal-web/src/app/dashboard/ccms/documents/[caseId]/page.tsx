@@ -3,13 +3,40 @@
 import React from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, FolderOpen } from 'lucide-react';
 import { CaseDocumentsWorkspace } from '@/components/ccms/CaseDocumentsWorkspace';
-import { ALL_DOC_SLOTS } from '@/lib/ccms/ccms-document-slots';
+import { getCoverageCaseById } from '@/lib/api/ccms/ccms-coverage-cases.api';
+import { listDocumentRequirements } from '@/lib/api/ccms/ccms-master-data.api';
+import { slotsFromMasterOrFallback } from '@/lib/ccms/ccms-document-slots';
 
 export default function DocumentsPage() {
   const params = useParams<{ caseId: string }>();
   const caseId = params.caseId;
+
+  const caseQuery = useQuery({
+    queryKey: ['ccms', 'case', caseId],
+    queryFn: () => getCoverageCaseById(caseId),
+    enabled: Boolean(caseId),
+  });
+
+  const case_ = caseQuery.data;
+  const reqQuery = useQuery({
+    queryKey: [
+      'ccms', 'document-requirements', caseId,
+      case_?.insuranceProviderId, case_?.tpaProviderId, case_?.governmentSchemeId,
+    ],
+    queryFn: () => listDocumentRequirements({
+      insuranceProviderId: case_?.insuranceProviderId,
+      tpaProviderId: case_?.tpaProviderId,
+      governmentSchemeId: case_?.governmentSchemeId,
+      caseScoped: true,
+    }),
+    enabled: Boolean(caseId) && caseQuery.isSuccess,
+    staleTime: 60_000,
+  });
+
+  const slots = slotsFromMasterOrFallback(reqQuery.data ?? []);
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -25,7 +52,7 @@ export default function DocumentsPage() {
             <FolderOpen className="w-5 h-5 text-indigo-600" />
             <div>
               <h1 className="text-lg font-bold text-gray-900">Case Documents</h1>
-              <p className="text-xs text-gray-500 font-mono">{caseId}</p>
+              <p className="text-xs text-gray-500 font-mono">{case_?.caseNumber ?? caseId}</p>
             </div>
           </div>
         </div>
@@ -33,15 +60,16 @@ export default function DocumentsPage() {
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-6">
-          {/* Intake / pre-auth documents */}
           <div className="bg-white border border-gray-200 rounded-2xl p-5">
             <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-4">
               Intake &amp; Pre-Authorization
             </p>
             <CaseDocumentsWorkspace
               caseId={caseId}
-              slots={ALL_DOC_SLOTS}
+              patientId={case_?.patientId}
+              slots={slots}
               showScanButton={true}
+              documentsLoading={caseQuery.isLoading || reqQuery.isLoading}
             />
           </div>
         </div>

@@ -20,6 +20,7 @@ public class IntegrationFunctions
     private readonly EnhancementService _enhancements;
     private readonly JwtService _jwt;
     private readonly IIntegrationIdempotencyGuard _idempotency;
+    private readonly ICollectionSettlementService _collections;
     private readonly ILogger<IntegrationFunctions> _log;
 
     public IntegrationFunctions(
@@ -29,6 +30,7 @@ public class IntegrationFunctions
         EnhancementService enhancements,
         JwtService jwt,
         IIntegrationIdempotencyGuard idempotency,
+        ICollectionSettlementService collections,
         ILogger<IntegrationFunctions> log)
     {
         _caseService = caseService;
@@ -37,6 +39,7 @@ public class IntegrationFunctions
         _enhancements = enhancements;
         _jwt         = jwt;
         _idempotency = idempotency;
+        _collections = collections;
         _log         = log;
     }
 
@@ -47,9 +50,16 @@ public class IntegrationFunctions
     /// </summary>
     private async Task<(bool IsDup, string Key)> IsDuplicateAsync(HttpRequestData req)
     {
-        var key = req.Headers.TryGetValues("X-Idempotency-Key", out var vals)
-            ? vals.FirstOrDefault() ?? string.Empty
-            : string.Empty;
+        string key = string.Empty;
+        foreach (var header in new[] { "Idempotency-Key", "X-Idempotency-Key" })
+        {
+            if (req.Headers.TryGetValues(header, out var vals)
+                && !string.IsNullOrWhiteSpace(vals.FirstOrDefault()))
+            {
+                key = vals.First()!;
+                break;
+            }
+        }
         var isDup = await _idempotency.IsDuplicateAsync(key);
         return (isDup, key);
     }
@@ -168,9 +178,7 @@ public class IntegrationFunctions
             emergencyFcApplied);
 
         // Always 200 — Allowed / Decision / BlockReason live in the body.
-        var resp = req.CreateResponse(HttpStatusCode.OK);
-        await resp.WriteAsJsonAsync(result);
-        return resp;
+        return await req.OkJsonAsync(result);
     }
 
     // POST /api/ccms/integration/emergency-fc
@@ -412,6 +420,74 @@ public class IntegrationFunctions
         return req.CreateResponse(HttpStatusCode.OK);
     }
 
+    [Function("PaymentReceived")]
+    public async Task<HttpResponseData> PaymentReceived(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/integration/payment-received")] HttpRequestData req)
+        => await ApplyLedgerAsync(req, BillingLedgerEventTypes.PaymentReceived);
+
+    [Function("PaymentReversed")]
+    public async Task<HttpResponseData> PaymentReversed(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/integration/payment-reversed")] HttpRequestData req)
+        => await ApplyLedgerAsync(req, BillingLedgerEventTypes.PaymentReversed);
+
+    [Function("PatientObligationChanged")]
+    public async Task<HttpResponseData> PatientObligationChanged(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/integration/patient-obligation-changed")] HttpRequestData req)
+        => await ApplyLedgerAsync(req, BillingLedgerEventTypes.PatientObligationChanged);
+
+    [Function("ClaimStatusChanged")]
+    public async Task<HttpResponseData> ClaimStatusChanged(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "ccms/integration/claim-status-changed")] HttpRequestData req)
+        => await AckLifecycleAsync(req, "ClaimStatusChanged");
+
+    private async Task<HttpResponseData> ApplyLedgerAsync(HttpRequestData req, string eventType)
+    {
+        if (!_jwt.TryValidateInternalKey(req) && !_jwt.ValidateAndExtract(req, out _, out _))
+            return req.CreateResponse(HttpStatusCode.Unauthorized);
+
+        var (isDup, key) = await IsDuplicateAsync(req);
+        if (isDup)
+            return req.CreateResponse(HttpStatusCode.OK);
+
+        BillingLedgerEventPayload? body;
+        try
+        {
+            body = await JsonSerializer.DeserializeAsync<BillingLedgerEventPayload>(
+                req.Body, Services.HttpRequestDataExtensions.DeserializeOpts);
+        }
+        catch
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        if (body is null || (body.JourneyId is null && body.SessionId is null))
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+
+        await _collections.ApplyAsync(new BillingLedgerEvent(
+            eventType,
+            body.TenantId,
+            body.JourneyId,
+            body.SessionId,
+            body.BillId,
+            body.PaymentId,
+            body.Amount,
+            body.ActorUserId,
+            body.OccurredAt,
+            string.IsNullOrWhiteSpace(key) ? null : key));
+
+        return req.CreateResponse(HttpStatusCode.OK);
+    }
+
+    private async Task<HttpResponseData> AckLifecycleAsync(HttpRequestData req, string eventType)
+    {
+        if (!_jwt.TryValidateInternalKey(req) && !_jwt.ValidateAndExtract(req, out _, out _))
+            return req.CreateResponse(HttpStatusCode.Unauthorized);
+        if ((await IsDuplicateAsync(req)).IsDup)
+            return req.CreateResponse(HttpStatusCode.OK);
+        _log.LogInformation("CCMS integration ack {Event} (idempotent, no IP financial mutation)", eventType);
+        return req.CreateResponse(HttpStatusCode.OK);
+    }
+
     // POST /api/ccms/integration/tpa-inbound-email
     [Function("TpaInboundEmail")]
     public async Task<HttpResponseData> TpaInboundEmail(
@@ -517,6 +593,18 @@ public record BillFinalizedPayload(
     Guid?    BillId,
     decimal? TotalAmount,
     Guid?    ActorUserId = null
+);
+
+public record BillingLedgerEventPayload(
+    Guid     TenantId,
+    Guid?    JourneyId,
+    Guid?    SessionId,
+    Guid?    BillId,
+    Guid?    PaymentId,
+    decimal  Amount,
+    Guid?    ActorUserId = null,
+    string?  EventType = null,
+    DateTime? OccurredAt = null
 );
 
 public record TpaInboundEmailPayload(

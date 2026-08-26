@@ -1,3 +1,9 @@
+-- DEPRECATED — do not apply on Azure Auth (PascalCase tables).
+-- Env-correct seed is: seed_ccms_phase2_permission_aliases_pascal.sql
+-- This file targets snake_case `permissions` / `role_permission` / `tenants`
+-- which do not match the live Auth EF schema (`Permissions`, `RolePermissions`, `tenant`).
+-- Kept for historical local/dev copies only.
+--
 -- Phase 2 residual: seed CCMS Phase-2 permission aliases + map into JWT-bearing roles.
 -- Targets table names used by AuthService EF: permissions, role_permission.
 -- Idempotent.

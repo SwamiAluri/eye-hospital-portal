@@ -9,6 +9,7 @@ import {
   Search, X, Lock, Activity, ClipboardList, Stethoscope, CirclePlus, Pencil, Pill, AlertTriangle,
 } from 'lucide-react';
 import { PacAssessmentForm } from '@/components/ip-management/PacAssessmentForm';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
 import { PreOpMedicationLog } from '@/components/ip-management/PreOpMedicationLog';
 import {
   ipManagementApi,
@@ -26,6 +27,7 @@ import {
 } from '@/lib/api/ip-management.api';
 import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
 import { transitionClinicalWithGates } from '@/lib/ip-checklist/transition-gates';
+import { classifyVitals } from '@/lib/ip-management/vital-thresholds';
 
 const PAC_EDITABLE_STATES = new Set(['Admitted', 'ReadyForSurgery']);
 
@@ -99,7 +101,7 @@ export interface WardUpdationModalInnerProps {
 
 function RoomStatusQueryPopup({ wards, onSelect, onClose }: {
   wards: WardDto[];
-  onSelect: (roomNo: string) => void;
+  onSelect: (bed: WardBedDto) => void;
   onClose: () => void;
 }) {
   type BedWithWard = WardBedDto & { wardName: string };
@@ -138,8 +140,8 @@ function RoomStatusQueryPopup({ wards, onSelect, onClose }: {
   const to = Math.min(currentPage * PAGE_SIZE, filtered.length);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+    <IpOverlayDialog onClose={onClose} size="2xl" title="Room Status Query" className="max-h-[85vh]">
+      <div className="flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 shrink-0">
           <h3 className="text-sm font-semibold text-gray-800">Room Status Query</h3>
@@ -186,7 +188,7 @@ function RoomStatusQueryPopup({ wards, onSelect, onClose }: {
                     <td className="px-4 py-2.5 text-center text-gray-400">—</td>
                     <td className="px-4 py-2.5 text-right pr-5">
                       <button
-                        onClick={() => { onSelect(bed.roomNo); onClose(); }}
+                        onClick={() => { onSelect(bed); onClose(); }}
                         title="Assign this room"
                         className="w-6 h-6 flex items-center justify-center rounded-full border border-gray-300 text-gray-500 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors text-sm font-bold leading-none ml-auto">
                         +
@@ -222,7 +224,7 @@ function RoomStatusQueryPopup({ wards, onSelect, onClose }: {
           </div>
         )}
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -245,6 +247,7 @@ function WardUpdationModalInner({
   const [activeTab, setActiveTab] = useState<WardUpdationTab>(forcedTab ?? 'General');
   const [wardId, setWardId] = useState(wards.find(w => w.wardName === journey.wardName)?.id ?? '');
   const [roomBed, setRoomBed] = useState(journey.bedNumber ?? '');
+  const [assignedBedId, setAssignedBedId] = useState('');
   const [showBedPopup, setShowBedPopup] = useState(false);
   const [remark, setRemark] = useState('');
   const [saving, setSaving] = useState(false);
@@ -313,6 +316,7 @@ function WardUpdationModalInner({
   useEffect(() => {
     if (!wardId) { setWardBeds([]); return; }
     ipManagementApi.getBedAvailability(wardId).then(setWardBeds).catch(() => {});
+    setAssignedBedId('');
   }, [wardId]);
 
   useEffect(() => {
@@ -349,7 +353,11 @@ function WardUpdationModalInner({
     setError('');
     try {
       if (wardId) {
-        await ipManagementApi.updateWardAssignment(journey.id, { wardId, bedNumber: roomBed });
+        await ipManagementApi.updateWardAssignment(journey.id, {
+          wardId,
+          bedNumber: roomBed,
+          assignedBedId: assignedBedId || undefined,
+        });
       }
       for (const v of pendingVitals) {
         await ipManagementApi.addVital(journey.id, v);
@@ -476,12 +484,15 @@ function WardUpdationModalInner({
       {showBedPopup && (
         <RoomStatusQueryPopup
           wards={wards}
-          onSelect={roomNo => setRoomBed(roomNo)}
+          onSelect={bed => {
+            setAssignedBedId(bed.bedId);
+            setRoomBed(bed.roomNo);
+          }}
           onClose={() => setShowBedPopup(false)}
         />
       )}
-      <div className={embedded ? 'flex flex-col min-h-0' : 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm'}>
-        <div className={embedded ? 'flex flex-col min-h-0' : 'bg-white rounded-2xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col'}>
+      <div className="flex flex-col min-h-0">
+        <div className="flex flex-col min-h-0">
 
           {/* Header */}
           {!hideHeader && (
@@ -573,17 +584,30 @@ function WardUpdationModalInner({
                       <label className="block text-xs font-medium text-gray-600 mb-1">Room / Bed</label>
                       <div className="flex gap-1">
                         {wardBeds.length > 0 ? (
-                          <select value={roomBed} onChange={e => setRoomBed(e.target.value)} disabled={RO}
+                          <select
+                            value={assignedBedId || roomBed}
+                            onChange={e => {
+                              const v = e.target.value;
+                              const match = wardBeds.find(b => b.bedId === v);
+                              if (match) {
+                                setAssignedBedId(match.bedId);
+                                setRoomBed(match.roomNo);
+                              } else {
+                                setAssignedBedId('');
+                                setRoomBed(v);
+                              }
+                            }}
+                            disabled={RO}
                             className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50">
                             <option value="">— Select room/bed —</option>
                             {wardBeds.map(b => (
-                              <option key={b.bedId} value={b.roomNo}>
+                              <option key={b.bedId} value={b.bedId}>
                                 {b.description}{b.isAvailable ? '' : ' (occupied)'}
                               </option>
                             ))}
                           </select>
                         ) : (
-                          <input type="text" value={roomBed} onChange={e => setRoomBed(e.target.value)} disabled={RO}
+                          <input type="text" value={roomBed} onChange={e => { setAssignedBedId(''); setRoomBed(e.target.value); }} disabled={RO}
                             placeholder="Room 4 – Bed B"
                             className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50" />
                         )}
@@ -606,7 +630,7 @@ function WardUpdationModalInner({
               <div className="p-6 space-y-2">
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-semibold text-gray-700">Remarks / Notes</label>
-                  <span className="text-xs text-gray-400">Saved when you click "Save &amp; Mark Ready for Surgery"</span>
+                  <span className="text-xs text-gray-400">Saved when you click &quot;Save &amp; Mark Ready for Surgery&quot;</span>
                 </div>
                 <textarea value={remark} onChange={e => setRemark(e.target.value)} disabled={RO} rows={10}
                   placeholder="Any clinical or administrative notes about this patient's ward stay…"
@@ -631,6 +655,22 @@ function WardUpdationModalInner({
                     </button>
                   )}
                 </div>
+
+                {vitals.length === 0 && pendingVitals.length === 0 && !vitalAddMode && (
+                  <div className="flex gap-2 text-xs text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span><b>No bedside vitals on this visit.</b> Add an observation. This does not stop Mark Ready.</span>
+                  </div>
+                )}
+                {vitals[0] && classifyVitals(vitals[0]).length > 0 && (
+                  <div className="flex gap-2 text-xs text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>
+                      {classifyVitals(vitals[0]).map(f => `${f.measure} is ${f.direction} (${f.detail})`).join('. ')}.
+                      {' '}Tell the surgeon. This is a warning — you can still mark ready for OT.
+                    </span>
+                  </div>
+                )}
 
                 {vitalAddMode && (
                   <form onSubmit={handleAddVital} className="bg-blue-50 rounded-xl p-4 border border-blue-100 space-y-3">
@@ -722,7 +762,7 @@ function WardUpdationModalInner({
                   <div className="py-10 text-center text-gray-400">
                     <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">No vital readings recorded yet</p>
-                    {!RO && <p className="text-xs mt-1">Click "Add Reading" to record the first reading</p>}
+                    {!RO && <p className="text-xs mt-1">Click &quot;Add Reading&quot; to record the first reading</p>}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -764,8 +804,9 @@ function WardUpdationModalInner({
                             </tr>
                           );
                         })}
-                        {vitals.map(v => {
+                        {vitals.map((v, i) => {
                           const key = v.id;
+                          const bpHigh = i === 0 && classifyVitals(v).some(f => f.measure === 'Blood pressure');
                           return (
                             <tr key={key} className={`border-b ${editingVitalKey === key ? 'bg-blue-50 outline outline-2 outline-blue-300' : 'border-gray-50 hover:bg-gray-50'}`}>
                               <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{fmtDate(v.recordedAt)}</td>
@@ -773,6 +814,9 @@ function WardUpdationModalInner({
                               <td className="px-3 py-2 font-medium text-gray-700">
                                 {v.bloodPressureSystolic != null && v.bloodPressureDiastolic != null
                                   ? `${v.bloodPressureSystolic}/${v.bloodPressureDiastolic}` : '—'}
+                                {bpHigh && (
+                                  <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-amber-800">High · warning</span>
+                                )}
                               </td>
                               <td className="px-3 py-2">{v.pulseRate ?? '—'}</td>
                               <td className="px-3 py-2">{v.temperature ?? '—'}</td>
@@ -986,7 +1030,7 @@ function WardUpdationModalInner({
                   <div className="py-10 text-center text-gray-400">
                     <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">No nurse records yet</p>
-                    {!RO && <p className="text-xs mt-1">Click "Add Entry" to log the first record</p>}
+                    {!RO && <p className="text-xs mt-1">Click &quot;Add Entry&quot; to log the first record</p>}
                   </div>
                 ) : (
                   <div className="space-y-3">

@@ -60,3 +60,21 @@ export async function getStateDistribution(): Promise<StateDistributionItem[]> {
   const { data } = await getCcmsApi().get('/ccms/dashboard/state-distribution');
   return Array.isArray(data) ? data : [];
 }
+
+export interface JourneyKpiSnapshot {
+  coverageCases: number;
+  emergencyFcCount: number;
+  approvedCount: number;
+  partialApprovalCount: number;
+  rejectedCount: number;
+  claimSubmittedCount: number;
+  claimQueryOpenCount: number;
+  settledCount: number;
+  avgPreauthTurnaroundHours: number | null;
+  avgDischargeToSettlementHours: number | null;
+}
+
+export async function getJourneyKpis(): Promise<JourneyKpiSnapshot> {
+  const { data } = await getCcmsApi().get('/ccms/analytics/journey-kpis');
+  return data;
+}

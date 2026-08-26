@@ -16,16 +16,13 @@ public class IpChecklistAuthEmergencyFcTests
 
     [Theory]
     [InlineData(new[] { "ip.emergency_fc.apply" }, true)]
-    [InlineData(new[] { "ward.checklist.edit" }, true)]
+    [InlineData(new[] { "ward.checklist.edit" }, false)]
     [InlineData(new[] { "ip_management.view" }, false)]
     [InlineData(new[] { "ot.safety.sign" }, false)]
-    [InlineData(new string[0], true)] // empty claims = legacy JWT without permission list
+    [InlineData(new string[0], false)] // Wave 1 D3: empty JWT permissions deny
     public void EmergencyFcPermissionMatrix(string[] permissions, bool allowed)
     {
-        var has =
-            permissions.Length == 0
-            || IpChecklistAuth.HasPermission(permissions, IpChecklistAuth.PermEmergencyFc)
-            || IpChecklistAuth.HasPermission(permissions, IpChecklistAuth.PermWardEdit);
+        var has = IpChecklistAuth.HasPermission(permissions, IpChecklistAuth.PermEmergencyFc);
 
         Assert.Equal(allowed, has);
     }

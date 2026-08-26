@@ -3,6 +3,7 @@ import {
   AmbiguousFinancialPhrases,
   CoveragePaymentTerms,
   isAmbiguousFinancialPhrase,
+  patientDueFromCollection,
 } from './coverage-payment-terminology';
 
 describe('coverage-payment-terminology (Phase 3)', () => {
@@ -24,5 +25,13 @@ describe('coverage-payment-terminology (Phase 3)', () => {
     }
     expect(isAmbiguousFinancialPhrase(CoveragePaymentTerms.coverageStatus)).toBe(false);
     expect(isAmbiguousFinancialPhrase(CoveragePaymentTerms.patientPaymentStatus)).toBe(false);
+  });
+
+  it('computes remaining patient due from CCMS collection projection', () => {
+    expect(patientDueFromCollection(40_000, 0)).toBe(40_000);
+    expect(patientDueFromCollection(40_000, 25_000)).toBe(15_000);
+    expect(patientDueFromCollection(40_000, 40_000)).toBe(0);
+    expect(patientDueFromCollection(40_000, 50_000)).toBe(0);
+    expect(patientDueFromCollection(null, 10)).toBe(0);
   });
 });

@@ -11,6 +11,8 @@ public class JourneyAuditLog
     public string?  NewValue            { get; set; }
     public string?  PreviousState       { get; set; } // JSONB snapshot
     public string?  NewState            { get; set; } // JSONB snapshot
+    public string?  Notes               { get; set; }
+    public Guid?    CorrelationId       { get; set; }
     public Guid?    PerformedByUserId   { get; set; }
     public DateTime PerformedAt         { get; set; }
     public DateTime CreatedAt           { get; set; }

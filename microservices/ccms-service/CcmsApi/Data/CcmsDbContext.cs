@@ -56,6 +56,8 @@ public class CcmsDbContext : DbContext
     // ── Phase 9: Settlements ──────────────────────────────────────────────
     public DbSet<CcmsSettlement>            Settlements               { get; set; }
     public DbSet<CcmsSettlementLineItem>    SettlementLineItems       { get; set; }
+    public DbSet<CcmsCollectionProjection>  CollectionProjections     { get; set; }
+    public DbSet<CcmsCollectionEvent>       CollectionEvents          { get; set; }
 
     // ── Phase 10: Documents ───────────────────────────────────────────────
     public DbSet<CcmsDocument>              Documents                 { get; set; }
@@ -505,6 +507,9 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.TpaReferenceNumber).HasColumnName("tpa_reference_number");
             e.Property(x => x.RecordedByUserId).HasColumnName("recorded_by_user_id");
             e.Property(x => x.RecordedAt).HasColumnName("recorded_at");
+            e.Property(x => x.PreviousState).HasColumnName("previous_state");
+            e.Property(x => x.CorrelationId).HasColumnName("correlation_id");
+            e.HasIndex(x => x.CorrelationId);
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id");
             e.Property(x => x.Status).HasColumnName("status");
@@ -601,6 +606,7 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.TpaClaimNumber).HasColumnName("tpa_claim_number");
             e.Property(x => x.ExpectedSettlementDate).HasColumnName("expected_settlement_date");
             e.Property(x => x.ClaimPacketJson).HasColumnName("claim_packet_json");
+            e.Property(x => x.QueryStatus).HasColumnName("query_status");
         });
 
         mb.Entity<CcmsClaimDocument>(e =>
@@ -650,6 +656,32 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.SettledAmount).HasColumnName("settled_amount");
             e.Property(x => x.DisallowedAmount).HasColumnName("disallowed_amount");
             e.Property(x => x.DisallowedReason).HasColumnName("disallowed_reason");
+        });
+
+        mb.Entity<CcmsCollectionProjection>(e =>
+        {
+            e.ToTable("ccms_collection_projections");
+            e.HasKey(x => x.Id);
+            MapStandardColumns(e);
+            e.Property(x => x.CoverageCaseId).HasColumnName("coverage_case_id");
+            e.Property(x => x.BillId).HasColumnName("bill_id");
+            e.Property(x => x.NetCollected).HasColumnName("net_collected");
+            e.Property(x => x.PatientObligationAmount).HasColumnName("patient_obligation_amount");
+            e.Property(x => x.LastOccurredAt).HasColumnName("last_occurred_at");
+        });
+
+        mb.Entity<CcmsCollectionEvent>(e =>
+        {
+            e.ToTable("ccms_collection_events");
+            e.HasKey(x => x.Id);
+            MapStandardColumns(e);
+            e.Property(x => x.CoverageCaseId).HasColumnName("coverage_case_id");
+            e.Property(x => x.EventType).HasColumnName("event_type");
+            e.Property(x => x.SourceRefId).HasColumnName("source_ref_id");
+            e.Property(x => x.BillId).HasColumnName("bill_id");
+            e.Property(x => x.Amount).HasColumnName("amount");
+            e.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key");
+            e.Property(x => x.OccurredAt).HasColumnName("occurred_at");
         });
 
         // ── Phase 10: Documents ────────────────────────────────────────────

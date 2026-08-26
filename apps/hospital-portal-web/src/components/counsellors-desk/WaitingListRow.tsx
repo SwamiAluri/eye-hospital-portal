@@ -3,6 +3,7 @@
 import React, { memo } from 'react';
 import { ChevronRight, User } from 'lucide-react';
 import type { WaitingListPatient } from '@/types/counsellors-desk';
+import { isCoveragePaymentTypeValue } from '@/lib/counsellors-desk/session-utils';
 
 const STATUS_BORDER: Record<string, string> = {
   Pending:           'border-l-amber-400',
@@ -22,7 +23,6 @@ const STATUS_BADGE: Record<string, string> = {
   SurgeryDone:       'bg-teal-100 text-teal-700 ring-teal-200',
 };
 
-const INSURANCE_TYPES = ['Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme'];
 
 const CCMS_STATE_BADGE: Record<string, { label: string; cls: string }> = {
   DRAFT:                  { label: 'Draft',            cls: 'bg-gray-100 text-gray-600' },
@@ -73,7 +73,7 @@ function WaitingListRowComponent({
   onPreAuth,
 }: WaitingListRowProps) {
   const borderColor = STATUS_BORDER[patient.status] ?? 'border-l-gray-200';
-  const isInsurance = INSURANCE_TYPES.includes(patient.paymentType as string);
+  const isInsurance = isCoveragePaymentTypeValue(patient.paymentType as string);
 
   return (
     <tr

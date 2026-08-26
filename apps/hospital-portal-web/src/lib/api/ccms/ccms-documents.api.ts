@@ -49,3 +49,22 @@ export async function uploadCaseDocument(
 export async function deleteCaseDocument(_caseId: string, docId: string): Promise<void> {
   await getCcmsApi().delete(`/ccms/documents/${docId}`);
 }
+
+export interface AttachBiometryRecordBody {
+  biometryRecordId: string;
+  eye?: string | null;
+  examinationDate?: string | null;
+  calculatedIol?: number | null;
+  device?: string | null;
+}
+
+export async function attachBiometryRecord(
+  caseId: string,
+  body: AttachBiometryRecordBody,
+): Promise<CaseDocument> {
+  const { data } = await getCcmsApi().post(
+    `/ccms/coverage-cases/${caseId}/documents/biometry`,
+    body,
+  );
+  return data;
+}

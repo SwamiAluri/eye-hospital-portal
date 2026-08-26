@@ -44,6 +44,11 @@ public class OpdBillItem
     
     // Notes
     public string? Notes { get; set; }
+
+    /// <summary>BILL-030: Package | PackageDiscount | Implant | Consumable | Room | Procedure | Manual.</summary>
+    public string SourceType { get; set; } = "Manual";
+    public Guid? SourceRefId { get; set; }
+    public string? IdempotencyKey { get; set; }
     
     // Standard Fields
     public DateTime CreatedAt { get; set; }

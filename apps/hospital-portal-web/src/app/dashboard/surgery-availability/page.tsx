@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { Calendar } from '@/components/ui/calendar';
 import { Siren, User, Clock, AlertCircle, Send, Calendar as CalendarIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { getApi } from '@/lib/api';
 
 interface Surgeon {

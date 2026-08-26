@@ -1,5 +1,6 @@
 using AuthService.Authorization;
 using AuthService.DTOs.Billing;
+using AuthService.Services;
 using AuthService.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -76,6 +77,10 @@ public class BillItemsController : ControllerBase
             var item = await _billItemService.AddBillItemAsync(request, GetTenantId(), GetUserId());
             return CreatedAtAction(nameof(GetById), new { id = item.Id }, item);
         }
+        catch (InvalidOperationException ex) when (BillConcurrency.IsStale(ex))
+        {
+            return Conflict(new { error = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -99,9 +104,13 @@ public class BillItemsController : ControllerBase
             var item = await _billItemService.UpdateBillItemAsync(id, request, GetTenantId(), GetUserId());
             return Ok(item);
         }
+        catch (InvalidOperationException ex) when (BillConcurrency.IsStale(ex))
+        {
+            return Conflict(new { error = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { error = ex.Message });
+            return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {
@@ -119,9 +128,17 @@ public class BillItemsController : ControllerBase
     {
         try
         {
-            var result = await _billItemService.DeleteBillItemAsync(id, GetTenantId());
+            var result = await _billItemService.DeleteBillItemAsync(id, GetTenantId(), GetUserId());
             if (!result) return NotFound(new { error = "Bill item not found" });
             return Ok(new { message = "Bill item deleted successfully" });
+        }
+        catch (InvalidOperationException ex) when (BillConcurrency.IsStale(ex))
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {

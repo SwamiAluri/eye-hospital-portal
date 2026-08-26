@@ -77,3 +77,17 @@ export async function acknowledgeClaim(
   const { data } = await getCcmsApi().post(`/ccms/claims/${id}/acknowledge`, req ?? {});
   return data;
 }
+
+export async function raiseClaimQuery(
+  id: string,
+  query: string,
+  additionalInfoRequired = false,
+): Promise<ClaimPacket> {
+  const { data } = await getCcmsApi().post(`/ccms/claims/${id}/query`, { query, additionalInfoRequired });
+  return data;
+}
+
+export async function respondClaimQuery(id: string, response: string): Promise<ClaimPacket> {
+  const { data } = await getCcmsApi().post(`/ccms/claims/${id}/query-response`, { response });
+  return data;
+}

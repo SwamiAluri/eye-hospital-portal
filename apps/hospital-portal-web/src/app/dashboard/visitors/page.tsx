@@ -23,7 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { UserPlus, UserCheck, Clock, Search, Download, QrCode } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { getApi } from '@/lib/api';
 
 interface Visitor {

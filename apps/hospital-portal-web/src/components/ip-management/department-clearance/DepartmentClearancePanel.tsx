@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
 import {
   CheckCircle2,
   Circle,
@@ -142,6 +143,41 @@ export function DepartmentClearancePanel({
   // Distinguishes the initial load from later mutations so `onChanged` only fires on real edits.
   const hasLoadedRef = useRef(false);
 
+  const syncDetail = useCallback(
+    (
+      nextOrUpdater:
+        | PreOpClearanceDetailDto
+        | null
+        | ((prev: PreOpClearanceDetailDto | null) => PreOpClearanceDetailDto | null),
+    ) => {
+      const notify = hasLoadedRef.current;
+      if (sharedClearance) {
+        sharedClearance.patchDetail(nextOrUpdater);
+        const resolved =
+          typeof nextOrUpdater === 'function'
+            ? nextOrUpdater(sharedClearance.detail)
+            : nextOrUpdater;
+        onDetailChange?.(resolved);
+        if (notify) {
+          sharedClearance.notifyChanged();
+        }
+        return;
+      }
+      if (typeof nextOrUpdater === 'function') {
+        setLocalDetail(prev => {
+          const next = nextOrUpdater(prev);
+          onDetailChange?.(next);
+          return next;
+        });
+      } else {
+        setLocalDetail(nextOrUpdater);
+        onDetailChange?.(nextOrUpdater);
+      }
+      if (notify) onChanged?.();
+    },
+    [sharedClearance, onDetailChange, onChanged],
+  );
+
   // Collapsed by default (Phase 11). A single-category step (categoryFilter of one)
   // auto-expands; the logged-in user's own department also auto-expands (effect below).
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
@@ -191,7 +227,7 @@ export function DepartmentClearancePanel({
     } finally {
       setLocalLoading(false);
     }
-  }, [journeyId, paymentMode, onDetailChange, sharedClearance]);
+  }, [journeyId, paymentMode, onDetailChange, sharedClearance, syncDetail]);
 
   useEffect(() => {
     if (sharedClearance) {
@@ -561,39 +597,6 @@ export function DepartmentClearancePanel({
   ).length;
 
   const pct = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
-
-  function syncDetail(
-    nextOrUpdater:
-      | PreOpClearanceDetailDto
-      | null
-      | ((prev: PreOpClearanceDetailDto | null) => PreOpClearanceDetailDto | null),
-  ) {
-    const notify = hasLoadedRef.current;
-    if (sharedClearance) {
-      sharedClearance.patchDetail(nextOrUpdater);
-      const resolved =
-        typeof nextOrUpdater === 'function'
-          ? nextOrUpdater(sharedClearance.detail)
-          : nextOrUpdater;
-      onDetailChange?.(resolved);
-      if (notify) {
-        sharedClearance.notifyChanged();
-      }
-      return;
-    }
-    if (typeof nextOrUpdater === 'function') {
-      setLocalDetail(prev => {
-        const next = nextOrUpdater(prev);
-        onDetailChange?.(next);
-        return next;
-      });
-    } else {
-      setLocalDetail(nextOrUpdater);
-      onDetailChange?.(nextOrUpdater);
-    }
-    // Only a post-load syncDetail represents a real mutation worth rolling up.
-    if (notify) onChanged?.();
-  }
 
   function SectionDeptActions({ category }: { category: string }) {
     const sc = getSectionClearance(category);
@@ -1187,8 +1190,12 @@ function RespondSectionInlineModal({ category, isExternal, onClose, onSubmit, sa
   const label = departmentClearanceCategoryLabel(category);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+    <IpOverlayDialog
+      onClose={onClose}
+      size="md"
+      title={`${isExternal ? 'Log External Response' : 'Respond to Section'}: ${label}`}
+    >
+      <div>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-base font-semibold text-gray-900">
@@ -1252,7 +1259,7 @@ function RespondSectionInlineModal({ category, isExternal, onClose, onSubmit, sa
           </button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -1271,8 +1278,8 @@ function ConfirmSectionInlineModal({ category, sectionClearance, blockingIncompl
   const isConcerns = sectionClearance?.status === 'RespondedConcerns';
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+    <IpOverlayDialog onClose={onClose} size="md" title={`Ward Confirm: ${label}`}>
+      <div>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Ward Confirm: {label}</h2>
         </div>
@@ -1313,7 +1320,7 @@ function ConfirmSectionInlineModal({ category, sectionClearance, blockingIncompl
           </button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -1335,8 +1342,8 @@ function SimpleReasonModal({ title, label, placeholder, confirmLabel, confirmCla
   const canSubmit = !saving && (!required || value.trim().length > 0);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+    <IpOverlayDialog onClose={onClose} size="md" title={title}>
+      <div>
         <div className="px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
         </div>
@@ -1372,7 +1379,7 @@ function SimpleReasonModal({ title, label, placeholder, confirmLabel, confirmCla
           </button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -1386,8 +1393,8 @@ function DocUploadModal({ completion, onClose, onUpload }: {
   const [file, setFile] = useState<File | null>(null);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+    <IpOverlayDialog onClose={onClose} size="md" title="Upload Document">
+      <div>
         <div className="px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Upload Document</h2>
           <p className="text-xs text-gray-500 mt-0.5">{completion.itemLabel}</p>
@@ -1427,6 +1434,6 @@ function DocUploadModal({ completion, onClose, onUpload }: {
           </button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }

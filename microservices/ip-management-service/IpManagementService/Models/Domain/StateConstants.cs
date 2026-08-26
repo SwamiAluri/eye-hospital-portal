@@ -19,6 +19,12 @@ public static class ClinicalState
     /// Not part of the forward graph.
     /// </summary>
     public const string CancelledSurgery   = "CancelledSurgery";
+
+    /// <summary>
+    /// Terminal off-ramp: admission cancelled before irreversible clinical activity.
+    /// Valid only from Expected. Not part of the forward graph.
+    /// </summary>
+    public const string AdmissionCancelled = "AdmissionCancelled";
 }
 
 /// <summary>Values for patient_journey.ot_state</summary>
@@ -53,4 +59,66 @@ public static class PostOpState
     public const string NotStarted = "NotStarted";
     public const string InProgress = "InProgress";
     public const string Completed  = "Completed";
+}
+
+/// <summary>
+/// Classification of how the clinical episode closed. Independent of ClinicalState
+/// (still Discharged). Product aliases: NORMAL → Routine, LAMA → Lama.
+/// </summary>
+public static class DischargeType
+{
+    public const string Routine  = "Routine";
+    public const string Lama     = "Lama";
+    public const string Transfer = "Transfer";
+    public const string Death    = "Death";
+    public const string Other    = "Other";
+
+    public static readonly HashSet<string> All =
+    [
+        Routine, Lama, Transfer, Death, Other,
+    ];
+
+    public static string Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return Routine;
+        var v = value.Trim();
+        if (v.Equals("NORMAL", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("Routine", StringComparison.OrdinalIgnoreCase))
+            return Routine;
+        if (v.Equals("LAMA", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("Lama", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("DAMA", StringComparison.OrdinalIgnoreCase))
+            return Lama;
+        if (v.Equals("TRANSFER", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("Transfer", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("Referred", StringComparison.OrdinalIgnoreCase))
+            return Transfer;
+        if (v.Equals("DEATH", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("Death", StringComparison.OrdinalIgnoreCase))
+            return Death;
+        if (v.Equals("OTHER", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("Other", StringComparison.OrdinalIgnoreCase))
+            return Other;
+        throw new InvalidOperationException($"Unknown discharge type '{value}'.");
+    }
+}
+
+/// <summary>Historical bed/ward assignment kinds. Occupancy SoT remains Auth.</summary>
+public static class BedAssignmentType
+{
+    public const string Initial      = "Initial";
+    public const string Transfer     = "Transfer";
+    public const string Release      = "Release";
+    public const string Cancellation = "Cancellation";
+    public const string Discharge    = "Discharge";
+    public const string Reoccupy     = "Reoccupy";
+}
+
+/// <summary>Discharge gate categories — clinical state is never flipped by financial/coverage.</summary>
+public static class DischargeBlockerCategory
+{
+    public const string Clinical     = "Clinical";
+    public const string Financial    = "Financial";
+    public const string Coverage     = "Coverage";
+    public const string Operational  = "Operational";
 }

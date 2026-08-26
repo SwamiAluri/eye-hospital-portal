@@ -20,10 +20,17 @@ public class IpManagementDbContext : DbContext
     public DbSet<PostOpInstruction>      PostOpInstructions       { get; set; }
     public DbSet<DischargeSummary>       DischargeSummaries       { get; set; }
     public DbSet<JourneyAuditLog>        JourneyAuditLogs         { get; set; }
+    public DbSet<JourneyBedAssignment>   JourneyBedAssignments    { get; set; }
+    public DbSet<JourneySlot>            JourneySlots             { get; set; }
+    public DbSet<JourneyImplantUsage>    JourneyImplantUsages     { get; set; }
+    public DbSet<JourneySafetyToken>     JourneySafetyTokens      { get; set; }
+    public DbSet<PostOpTaperStep>        PostOpTaperSteps         { get; set; }
     public DbSet<IntegrationOutboxEvent> IntegrationOutboxEvents  { get; set; }
+    public DbSet<IpDailyProgressNote>    DailyProgressNotes       { get; set; }
     public DbSet<IolReturn>              IolReturns               { get; set; }
     public DbSet<SurgeryNoteTemplate>    SurgeryNoteTemplates     { get; set; }
     public DbSet<VitalSign>              VitalSigns               { get; set; }
+    public DbSet<IpVitalThreshold>       IpVitalThresholds        { get; set; }
     public DbSet<NurseRecord>            NurseRecords             { get; set; }
     public DbSet<IpPatient>              Patients                 { get; set; }
     public DbSet<IpStaffUser>           StaffUsers               { get; set; }
@@ -111,6 +118,7 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.CounselingSessionId).HasColumnName("counseling_session_id");
             e.Property(p => p.AdmissionId).HasColumnName("admission_id");
             e.Property(p => p.WardId).HasColumnName("ward_id");
+            e.Property(p => p.SlotId).HasColumnName("slot_id");
             e.Property(p => p.ClinicalState).HasColumnName("clinical_state");
             e.Property(p => p.OtState).HasColumnName("ot_state");
             e.Property(p => p.FinancialState).HasColumnName("financial_state");
@@ -132,6 +140,8 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.AdmittingDoctorId).HasColumnName("admitting_doctor_id");
             e.Property(p => p.PrimaryNurseId).HasColumnName("primary_nurse_id");
             e.Property(p => p.BedNumber).HasColumnName("bed_number");
+            e.Property(p => p.AssignedBedId).HasColumnName("assigned_bed_id");
+            e.Property(p => p.DischargePlanningReady).HasColumnName("discharge_planning_ready");
             e.Property(p => p.RoomNumber).HasColumnName("room_number");
             e.Property(p => p.AttendantName).HasColumnName("attendant_name");
             e.Property(p => p.AttendantPhone).HasColumnName("attendant_phone");
@@ -141,7 +151,7 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.InformedOtTeamAt).HasColumnName("informed_ot_team_at");
             e.Property(p => p.XylocaineSensitivityResult).HasColumnName("xylocaine_sensitivity_result");
             e.Property(p => p.MedicationLogSurgeryNotes).HasColumnName("medication_log_surgery_notes");
-            e.Property(p => p.WardPostopIolChecks).HasColumnName("ward_postop_iol_checks");
+            e.Property(p => p.WardPostopIolChecks).HasColumnName("ward_postop_iol_checks").HasColumnType("jsonb");
             e.Property(p => p.SentToOtAt).HasColumnName("sent_to_ot_at");
             e.Property(p => p.ReceivedFromOtAt).HasColumnName("received_from_ot_at");
             e.Property(p => p.WardCheckoutAt).HasColumnName("ward_checkout_at");
@@ -163,6 +173,9 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.DischargeOverrideReason).HasColumnName("discharge_override_reason");
             e.Property(p => p.DischargeOverrideBy).HasColumnName("discharge_override_by");
             e.Property(p => p.OtReturnReason).HasColumnName("ot_return_reason");
+            e.Property(p => p.UnmarkReadyReason).HasColumnName("unmark_ready_reason");
+            e.Property(p => p.UnmarkedReadyAt).HasColumnName("unmarked_ready_at");
+            e.Property(p => p.UnmarkedReadyByUserId).HasColumnName("unmarked_ready_by_user_id");
             e.Property(p => p.SurgeryCancelledAt).HasColumnName("surgery_cancelled_at");
             e.Property(p => p.SurgeryCancelReason).HasColumnName("surgery_cancel_reason");
             e.Property(p => p.PendingRebook).HasColumnName("pending_rebook");
@@ -178,11 +191,117 @@ public class IpManagementDbContext : DbContext
             // balance_due is GENERATED ALWAYS — map as read-only
             e.Property(p => p.BalanceDue).HasColumnName("balance_due").ValueGeneratedOnAddOrUpdate();
             e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at").IsConcurrencyToken();
+            e.Property(p => p.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.Property(p => p.Status).HasColumnName("status");
+            e.Property(p => p.DischargeType).HasColumnName("discharge_type");
+            e.Property(p => p.DischargeTypeReason).HasColumnName("discharge_type_reason");
+            e.Property(p => p.ClinicalStateBeforeDischarge).HasColumnName("clinical_state_before_discharge");
+            e.Property(p => p.PriorJourneyId).HasColumnName("prior_journey_id");
+            e.Property(p => p.OpdBillId).HasColumnName("opd_bill_id");
+        });
+
+        modelBuilder.Entity<JourneySlot>(e =>
+        {
+            e.ToTable("journey_slot");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.BranchId).HasColumnName("branch_id");
+            e.Property(p => p.SlotDate).HasColumnName("slot_date");
+            e.Property(p => p.Session).HasColumnName("session");
+            e.Property(p => p.TheatreId).HasColumnName("theatre_id");
+            e.Property(p => p.TheatreName).HasColumnName("theatre_name");
+            e.Property(p => p.SequenceNo).HasColumnName("sequence_no");
+            e.Property(p => p.PlannedArrivalAt).HasColumnName("planned_arrival_at");
+            e.Property(p => p.JourneyId).HasColumnName("journey_id");
+            e.Property(p => p.ReleasedAt).HasColumnName("released_at");
+            e.Property(p => p.ReleasedReason).HasColumnName("released_reason");
+            e.Property(p => p.ReleasedByUserId).HasColumnName("released_by_user_id");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
+            // Postgres filtered unique. EF InMemory ignores HasFilter and does not enforce this.
+            e.HasIndex(p => new { p.TenantId, p.TheatreId, p.SlotDate, p.Session, p.SequenceNo })
+                .IsUnique()
+                .HasFilter("released_at IS NULL")
+                .HasDatabaseName("ux_journey_slot_theatre_session_seq");
+            e.HasIndex(p => p.JourneyId)
+                .IsUnique()
+                .HasFilter("released_at IS NULL")
+                .HasDatabaseName("ux_journey_slot_active_journey");
+        });
+
+        modelBuilder.Entity<JourneyBedAssignment>(e =>
+        {
+            e.ToTable("journey_bed_assignment");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.PatientJourneyId).HasColumnName("patient_journey_id");
+            e.Property(p => p.PatientId).HasColumnName("patient_id");
+            e.Property(p => p.WardId).HasColumnName("ward_id");
+            e.Property(p => p.WardName).HasColumnName("ward_name");
+            e.Property(p => p.RoomNumber).HasColumnName("room_number");
+            e.Property(p => p.BedNumber).HasColumnName("bed_number");
+            e.Property(p => p.AssignedBedId).HasColumnName("assigned_bed_id");
+            e.Property(p => p.AssignmentType).HasColumnName("assignment_type");
+            e.Property(p => p.AssignedFromBedId).HasColumnName("assigned_from_bed_id");
+            e.Property(p => p.AssignedToBedId).HasColumnName("assigned_to_bed_id");
+            e.Property(p => p.StartedAt).HasColumnName("started_at");
+            e.Property(p => p.EndedAt).HasColumnName("ended_at");
+            e.Property(p => p.PerformedByUserId).HasColumnName("performed_by_user_id");
+            e.Property(p => p.Reason).HasColumnName("reason");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
             e.Property(p => p.CreatedByUserId).HasColumnName("created_by_user_id");
             e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
             e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
             e.Property(p => p.Status).HasColumnName("status");
+            // Postgres filtered unique. EF InMemory ignores HasFilter and does not enforce this.
+            e.HasIndex(p => p.PatientJourneyId)
+                .IsUnique()
+                .HasFilter("ended_at IS NULL AND deleted_at IS NULL")
+                .HasDatabaseName("ux_journey_bed_assignment_one_open");
+        });
+
+        modelBuilder.Entity<JourneyImplantUsage>(e =>
+        {
+            e.ToTable("journey_implant_usage");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.JourneyId).HasColumnName("journey_id");
+            e.Property(p => p.PatientId).HasColumnName("patient_id");
+            e.Property(p => p.Eye).HasColumnName("eye");
+            e.Property(p => p.ItemId).HasColumnName("item_id");
+            e.Property(p => p.CatalogRef).HasColumnName("catalog_ref");
+            e.Property(p => p.Brand).HasColumnName("brand");
+            e.Property(p => p.Model).HasColumnName("model");
+            e.Property(p => p.Power).HasColumnName("power").HasPrecision(6, 2);
+            e.Property(p => p.SerialNumber).HasColumnName("serial_number");
+            e.Property(p => p.BatchNumber).HasColumnName("batch_number");
+            e.Property(p => p.UdiBarcode).HasColumnName("udi_barcode");
+            e.Property(p => p.UsageStatus).HasColumnName("usage_status");
+            e.Property(p => p.SurgeonUserId).HasColumnName("surgeon_user_id");
+            e.Property(p => p.ScannedAt).HasColumnName("scanned_at");
+            e.Property(p => p.ScannedByUserId).HasColumnName("scanned_by_user_id");
+            e.Property(p => p.InventoryTxnId).HasColumnName("inventory_txn_id");
+            e.Property(p => p.ChargeItemId).HasColumnName("charge_item_id");
+            e.Property(p => p.ChargeStatus).HasColumnName("charge_status");
+            e.Property(p => p.WastageReason).HasColumnName("wastage_reason");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.Property(p => p.Status).HasColumnName("status");
+            e.HasIndex(p => new { p.TenantId, p.SerialNumber })
+                .HasFilter("usage_status = 'Implanted' AND serial_number IS NOT NULL AND deleted_at IS NULL")
+                .HasDatabaseName("ix_journey_implant_serial");
         });
 
         // ── IpBillingTransaction ─────────────────────────────────────────
@@ -205,6 +324,9 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
             e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
             e.Property(p => p.Status).HasColumnName("status");
+            e.Property(p => p.OpdBillId).HasColumnName("opd_bill_id");
+            e.Property(p => p.OpdBillPaymentId).HasColumnName("opd_bill_payment_id");
+            e.Property(p => p.MappingStatus).HasColumnName("mapping_status");
         });
 
         // ── IntraOpNote ───────────────────────────────────────────────────
@@ -334,6 +456,7 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.DietaryInstructions).HasColumnName("dietary_instructions");
             e.Property(p => p.FollowupDate).HasColumnName("followup_date");
             e.Property(p => p.FollowupDoctorId).HasColumnName("followup_doctor_id");
+            e.Property(p => p.FollowupAppointmentId).HasColumnName("followup_appointment_id");
             e.Property(p => p.EyeCareInstructions).HasColumnName("eye_care_instructions");
             e.Property(p => p.WarningSigns).HasColumnName("warning_signs");
             e.Property(p => p.IsSaved).HasColumnName("is_saved");
@@ -384,6 +507,8 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.NewValue).HasColumnName("new_value");
             e.Property(p => p.PreviousState).HasColumnName("previous_state").HasColumnType("jsonb");
             e.Property(p => p.NewState).HasColumnName("new_state").HasColumnType("jsonb");
+            e.Property(p => p.Notes).HasColumnName("notes");
+            e.Property(p => p.CorrelationId).HasColumnName("correlation_id");
             e.Property(p => p.PerformedByUserId).HasColumnName("performed_by_user_id");
             e.Property(p => p.PerformedAt).HasColumnName("performed_at");
             e.Property(p => p.CreatedAt).HasColumnName("created_at");
@@ -411,9 +536,30 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.LastAttemptAt).HasColumnName("last_attempt_at");
             e.Property(p => p.ProcessedAt).HasColumnName("processed_at");
             e.Property(p => p.Error).HasColumnName("error");
+            e.Property(p => p.AbandonReason).HasColumnName("abandon_reason");
+            e.Property(p => p.CompensatingAction).HasColumnName("compensating_action");
+            e.Property(p => p.AbandonedAt).HasColumnName("abandoned_at");
+            e.Property(p => p.AbandonedByUserId).HasColumnName("abandoned_by_user_id");
             e.Property(p => p.CreatedAt).HasColumnName("created_at");
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(p => p.IdempotencyKey).IsUnique();
+        });
+
+        modelBuilder.Entity<IpDailyProgressNote>(e =>
+        {
+            e.ToTable("ip_daily_progress_note");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.PatientJourneyId).HasColumnName("patient_journey_id");
+            e.Property(p => p.Note).HasColumnName("note");
+            e.Property(p => p.RecordedAt).HasColumnName("recorded_at");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.Property(p => p.Status).HasColumnName("status");
         });
 
         // ── IolReturn ─────────────────────────────────────────────────────
@@ -878,6 +1024,75 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.UpdatedByUserId).HasColumnName("updated_by_user_id");
             e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
             e.Property(p => p.Status).HasColumnName("status");
+        });
+
+        // ── PostOpTaperStep (W-08 B1) ─────────────────────────────────────
+        modelBuilder.Entity<PostOpTaperStep>(e =>
+        {
+            e.ToTable("post_op_taper_step");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.JourneyId).HasColumnName("journey_id");
+            e.Property(p => p.DrugName).HasColumnName("drug_name").HasMaxLength(160);
+            e.Property(p => p.Eye).HasColumnName("eye").HasMaxLength(8);
+            e.Property(p => p.StepNo).HasColumnName("step_no");
+            e.Property(p => p.FrequencyLabel).HasColumnName("frequency_label").HasMaxLength(80);
+            e.Property(p => p.Days).HasColumnName("days");
+            e.Property(p => p.Instructions).HasColumnName("instructions");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.CreatedBy).HasColumnName("created_by");
+            e.Property(p => p.DeletedAt).HasColumnName("deleted_at");
+            e.HasIndex(p => new { p.JourneyId, p.DrugName, p.Eye, p.StepNo })
+                .HasFilter("deleted_at IS NULL")
+                .HasDatabaseName("ux_post_op_taper_active_step");
+            e.HasIndex(p => new { p.TenantId, p.JourneyId })
+                .HasFilter("deleted_at IS NULL")
+                .HasDatabaseName("ix_post_op_taper_journey");
+        });
+
+        // ── JourneySafetyToken (W-05 A5) ──────────────────────────────────
+        modelBuilder.Entity<JourneySafetyToken>(e =>
+        {
+            e.ToTable("journey_safety_token");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.JourneyId).HasColumnName("journey_id");
+            e.Property(p => p.TokenCode).HasColumnName("token_code").HasMaxLength(32);
+            e.Property(p => p.BarcodeValue).HasColumnName("barcode_value").HasMaxLength(64);
+            e.Property(p => p.Laterality).HasColumnName("laterality").HasMaxLength(8);
+            e.Property(p => p.PrintedAt).HasColumnName("printed_at");
+            e.Property(p => p.PrintedBy).HasColumnName("printed_by");
+            e.Property(p => p.RevokedAt).HasColumnName("revoked_at");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.CreatedBy).HasColumnName("created_by");
+            e.HasIndex(p => new { p.TenantId, p.JourneyId })
+                .IsUnique()
+                .HasFilter("revoked_at IS NULL")
+                .HasDatabaseName("ux_journey_safety_token_active");
+            e.HasIndex(p => new { p.TenantId, p.TokenCode })
+                .IsUnique()
+                .HasDatabaseName("ux_journey_safety_token_code");
+        });
+
+        // ── IpVitalThreshold (W-06 A4) ────────────────────────────────────
+        modelBuilder.Entity<IpVitalThreshold>(e =>
+        {
+            e.ToTable("ip_vital_threshold");
+            e.HasKey(p => p.Id);
+            e.HasIndex(p => p.TenantId).IsUnique();
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id");
+            e.Property(p => p.SystolicMax).HasColumnName("systolic_max");
+            e.Property(p => p.DiastolicMax).HasColumnName("diastolic_max");
+            e.Property(p => p.PulseMin).HasColumnName("pulse_min");
+            e.Property(p => p.PulseMax).HasColumnName("pulse_max");
+            e.Property(p => p.Spo2Min).HasColumnName("spo2_min");
+            e.Property(p => p.TempMaxC).HasColumnName("temp_max_c");
+            e.Property(p => p.Severity).HasColumnName("severity");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
         });
 
         // ── OphthMedication (read-only, owned by auth-service) ────────────

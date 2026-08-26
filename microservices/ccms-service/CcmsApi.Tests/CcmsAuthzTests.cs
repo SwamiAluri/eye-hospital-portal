@@ -6,10 +6,10 @@ namespace CcmsApi.Tests;
 public class CcmsAuthzTests
 {
     [Fact]
-    public void EmptyPermissions_Allow_ForLegacyTokens()
+    public void EmptyPermissions_Deny_PrivilegedWrites()
     {
         var claims = new JwtClaims(Guid.NewGuid(), Guid.NewGuid(), Permissions: Array.Empty<string>());
-        Assert.True(CcmsAuthz.HasAny(claims, "ccms.preauth.process"));
+        Assert.False(CcmsAuthz.HasAny(claims, "ccms.preauth.process"));
     }
 
     [Fact]

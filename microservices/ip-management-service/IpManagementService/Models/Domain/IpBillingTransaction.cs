@@ -21,4 +21,7 @@ public class IpBillingTransaction
     public Guid?     UpdatedByUserId   { get; set; }
     public DateTime? DeletedAt        { get; set; }
     public string    Status           { get; set; } = "active";
+    public Guid?     OpdBillId              { get; set; }
+    public Guid?     OpdBillPaymentId       { get; set; }
+    public string    MappingStatus          { get; set; } = "unmapped";
 }

@@ -5,6 +5,14 @@
  */
 
 import { getApi } from '../api';
+import {
+  buildAuthorizeRefundBody,
+  buildAuthorizeRefundPath,
+  buildCompleteRefundBody,
+  buildCompleteRefundPath,
+  buildRequestRefundRequest,
+  refundsByBillPath,
+} from '../billing/refund-contract';
 
 // ============================================================================
 // Types & Interfaces
@@ -79,7 +87,7 @@ export interface AuthorizeRefundRequest {
 
 export interface CompleteRefundRequest {
   refundId: string;
-  paymentReference: string;
+  refundMode: RefundMode;
   notes?: string;
 }
 
@@ -103,7 +111,7 @@ export interface RefundStatistics {
  */
 export const requestRefund = async (request: RequestRefundRequest): Promise<Refund> => {
   const api = getApi();
-  const response = await api.post('/refunds/request', request);
+  const response = await api.post('/refunds/request', buildRequestRefundRequest(request));
   return response.data;
 };
 
@@ -146,16 +154,22 @@ export const getPendingRefunds = async (): Promise<Refund[]> => {
  */
 export const authorizeRefund = async (request: AuthorizeRefundRequest): Promise<Refund> => {
   const api = getApi();
-  const response = await api.post('/refunds/authorize', request);
+  const response = await api.post(
+    buildAuthorizeRefundPath(request.refundId),
+    buildAuthorizeRefundBody(request),
+  );
   return response.data;
 };
 
 /**
- * Complete refund (mark as paid)
+ * Complete refund (mark as paid). Ledger payment reference is assigned by Auth.
  */
 export const completeRefund = async (request: CompleteRefundRequest): Promise<Refund> => {
   const api = getApi();
-  const response = await api.post('/refunds/complete', request);
+  const response = await api.post(
+    buildCompleteRefundPath(request.refundId),
+    buildCompleteRefundBody(request),
+  );
   return response.data;
 };
 
@@ -176,8 +190,9 @@ export const getRefundStatistics = async (params?: {
  */
 export const getRefundsByBill = async (billId: string): Promise<Refund[]> => {
   const api = getApi();
-  const response = await api.get(`/refunds/by-bill/${billId}`);
-  return response.data;
+  const response = await api.get(refundsByBillPath(billId));
+  const payload = response.data;
+  return Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [];
 };
 
 // ============================================================================

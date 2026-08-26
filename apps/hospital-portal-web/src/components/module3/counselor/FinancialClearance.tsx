@@ -18,7 +18,7 @@ import {
   Plus,
   Loader2,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useSessionPackages, useCreatePackage, usePackageTemplates } from '@/hooks/use-packages';
 import { usePayments, useCreatePayment } from '@/hooks/use-payments';
 import type { CounselorPackageDto, PaymentTransaction } from '@/types/counselor';

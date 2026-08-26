@@ -32,6 +32,25 @@ public class ApprovalFunctions
         return await req.OkJsonAsync(list);
     }
 
+    // GET /api/ccms/coverage-cases/{id}/approval-snapshot
+    [Function("GetApprovalSnapshot")]
+    public async Task<HttpResponseData> GetSnapshot(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ccms/coverage-cases/{id:guid}/approval-snapshot")] HttpRequestData req, Guid id)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        try
+        {
+            var snapshot = await _svc.GetSnapshotAsync(id);
+            return await req.OkJsonAsync(snapshot);
+        }
+        catch (KeyNotFoundException)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+    }
+
     // POST /api/ccms/authorizations/{id}/approve
     [Function("ApproveCoverageCase")]
     public async Task<HttpResponseData> Approve(

@@ -27,6 +27,7 @@ import { resolveCoverageSessionFinalPayable } from '@/lib/counsellors-desk/build
 import { humanizeProcedureCode } from '@/lib/counsellors-desk/coverage-estimate-sync';
 import { CoveragePreauthPanel } from '@/components/counsellors-desk/coverage/CoveragePreauthPanel';
 import { CounsellingTabPanel } from '@/components/counsellors-desk/session/CounsellingTabPanel';
+import { CounsellingCcmsStatusStrip } from '@/components/counsellors-desk/session/CounsellingCcmsStatusStrip';
 
 const ScheduleSurgeryModal = dynamic(
   () =>
@@ -133,22 +134,28 @@ export function CounsellingSessionPageContent() {
 
   return (
     <CounsellingTooltipProvider delayDuration={300}>
-    <div className="counselling-session grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4">
-      <ctx.ConfirmationComponent />
-      <SessionPageHeader
-        session={ctx.session}
-        queueStatus={ctx.queueStatus}
-        patientDetails={ctx.patientDetails}
-        patientDetailsLoading={ctx.patientDetailsLoading}
-        onBack={ctx.handleBack}
-        doctorRecommendation={doctorRecommendation}
-        onSaveSession={ctx.handleSave}
-        saveDisabledReason={ctx.saveDisabledReason}
-        isSaving={ctx.isSaving}
-        showSaveSession={showFooterActions}
-      />
+    <div className="counselling-session flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4">
+      <div className="flex min-h-0 shrink-0 flex-col gap-3">
+        <SessionPageHeader
+          session={ctx.session}
+          queueStatus={ctx.queueStatus}
+          patientDetails={ctx.patientDetails}
+          patientDetailsLoading={ctx.patientDetailsLoading}
+          onBack={ctx.handleBack}
+          doctorRecommendation={doctorRecommendation}
+          onSaveSession={ctx.handleSave}
+          saveDisabledReason={ctx.saveDisabledReason}
+          isSaving={ctx.isSaving}
+          showSaveSession={showFooterActions}
+        />
 
-      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-counselling-border/80 bg-counselling-card shadow-sm">
+        {showCoverageTab ? (
+          <CounsellingCcmsStatusStrip sessionId={ctx.sessionId} />
+        ) : null}
+      </div>
+
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-counselling-border/80 bg-counselling-card shadow-sm">
         {isRepeatGateActive ? (
           <CounsellingRepeatSessionBanner
             sessionTypeCode={ctx.repeatSessionTypeCode}
@@ -388,7 +395,9 @@ export function CounsellingSessionPageContent() {
           ) : null}
         </div>
       </div>
+    </div>
 
+      <ctx.ConfirmationComponent />
       <CounsellingEstimatePrintDialog
         open={ctx.estimatePrintOpen}
         onOpenChange={ctx.setEstimatePrintOpen}

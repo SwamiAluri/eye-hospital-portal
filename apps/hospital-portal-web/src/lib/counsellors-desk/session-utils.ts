@@ -18,9 +18,16 @@ export function resolvePackageSelectValue(
 
 export const INSURANCE_PAYMENT_TYPES: CombinedPaymentType[] = ['Insurance', 'CoPay', 'CGHS', 'TPA', 'SGHS', 'ESH', 'Arograshree', 'Railway'];
 
+/** Payment types that open counsellor Coverage tab and sync a CCMS case. Aligned with IP admit gate (except ESI). */
 export const COVERAGE_PAYMENT_TYPES = [
   'Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme',
+  'ESH', 'Arograshree', 'Railway',
 ] as const;
+
+export function isCoveragePaymentTypeValue(paymentType: string | null | undefined): boolean {
+  if (!paymentType) return false;
+  return (COVERAGE_PAYMENT_TYPES as readonly string[]).includes(paymentType);
+}
 
 /** Whether counsellor session should show insurance company picker (B1.4 — master-driven when configs supplied). */
 export function requiresInsuranceCompany(

@@ -1,0 +1,46 @@
+---
+description: Billing UX — OPD and IP billing worklists, charges, OpdBill source of truth, and financial display vs ledger.
+globs:
+  - apps/hospital-portal-web/src/components/billing/**
+  - apps/hospital-portal-web/src/lib/billing/**
+  - apps/hospital-portal-web/src/app/dashboard/billing/**
+  - apps/hospital-portal-web/src/app/dashboard/ip-management/billing/**
+  - apps/hospital-portal-web/src/app/dashboard/admin/charge-mapping/**
+  - apps/hospital-portal-web/src/app/dashboard/admin/charge-reconciliation/**
+  - apps/hospital-portal-web/src/app/dashboard/admin/integration-health/**
+  - apps/hospital-portal-web/src/components/ip-management/CollectPaymentDrawer.tsx
+  - apps/hospital-portal-web/src/app/admin/billing/**
+alwaysApply: false
+---
+
+# Billing UX (OPD + IP)
+
+Billing owns **financial transactions**: charges and charge lines, packages, pricing, advances, payments, refunds, receipts, invoices, financial clearance, charge completeness, reconciliation, financial summaries.
+
+**Source of truth:** Billing `OpdBill` / Auth `OpdBillService` — not IP journey fields, not CCMS, not frontend totals.
+
+Also follow `.cursor/rules/ip-billing-ward-cross-module.mdc`.
+
+## Canonical surfaces
+
+| Surface | Role |
+|---|---|
+| `/dashboard/billing/opd` (+ create/coding) | Canonical cashier / OPD bill desk |
+| `components/billing` (`OpdBillForm`, `PaymentDialog`, `ItemizedBillingDialog`, `GroupedBillItems`) | Canonical bill UI |
+| `/dashboard/ip-management/billing` + `CollectPaymentDrawer` | IP **worklist / projection / deep link** into OpdBill |
+| Charge mapping / reconciliation / integration-health | Admin billing ops |
+| `/admin/billing` | Legacy mock — do not extend as production billing |
+
+Do not build a second bill desk. Pharmacy/optical billing stay in those domains but still must not invent a parallel general ledger.
+
+## Rules
+
+- Never implement financial state solely in the frontend.
+- Never silently overwrite financial totals.
+- Client-side sums are display-only; persist via billing APIs.
+- Coverage may allocate/split **responsibility**; it does not own the cash ledger.
+- IP `FinancialState` / `TotalPaid` / `IpBillingTransaction` are workflow projections.
+- Prefer `react-hot-toast`. Do not expand sonner usage in billing (`ItemizedBillingDialog` / `PaymentDialog` currently import sonner — do not migrate without approval, and do not add more sonner).
+- Failed payment/integration must not render as success.
+
+Charge catalog / service catalog / payer pricing are master data with owners — do not hardcode price lists in the UI.

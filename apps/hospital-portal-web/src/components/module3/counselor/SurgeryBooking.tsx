@@ -21,7 +21,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import {

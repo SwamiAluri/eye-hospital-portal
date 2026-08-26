@@ -18,7 +18,7 @@ public class IntraOpNoteService
     {
         var note = await _db.IntraOpNotes.FirstOrDefaultAsync(
             n => n.PatientJourneyId == journeyId && n.TenantId == tenantId && n.DeletedAt == null);
-        return note is null ? null : Map(note);
+        return note is null ? null : await MapAsync(note);
     }
 
     public async Task<IntraOpNoteDto> SaveAsync(
@@ -52,8 +52,7 @@ public class IntraOpNoteService
         existing.EyeOperated        = req.EyeOperated;
         existing.Findings           = req.Findings;
         existing.Complications      = req.Complications;
-        existing.ImplantUsed        = req.ImplantUsed;
-        existing.ImplantPower       = req.ImplantPower;
+        // E4: do not persist ImplantUsed / ImplantPower from the client. Registry is usage SoT.
         existing.BloodLossMl        = req.BloodLossMl;
         existing.IvFluidMl          = req.IvFluidMl;
         existing.SpecimenSent       = req.SpecimenSent;
@@ -61,8 +60,16 @@ public class IntraOpNoteService
         existing.UpdatedAt          = DateTime.UtcNow;
         existing.UpdatedByUserId    = userId;
 
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId,
+            "IntraOpNoteSaved", "IntraOp",
+            oldValue: existing.NotesStatus,
+            newValue: existing.NotesStatus,
+            notes: existing.ProcedurePerformed,
+            correlationId: existing.Id));
+
         await _db.SaveChangesAsync();
-        return Map(existing);
+        return await MapAsync(existing);
     }
 
     public async Task<IntraOpNoteDto> SignAsync(Guid journeyId, Guid tenantId, Guid userId)
@@ -74,20 +81,53 @@ public class IntraOpNoteService
         if (note.NotesStatus == "Locked")
             throw new InvalidOperationException("Intra-op note is already locked.");
 
+        var previousStatus = note.NotesStatus;
         note.NotesStatus       = "Signed";
         note.SignedAt          = DateTime.UtcNow;
         note.SignedByUserId    = userId;
         note.UpdatedAt         = DateTime.UtcNow;
         note.UpdatedByUserId   = userId;
 
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId,
+            "IntraOpNoteSigned", "IntraOp",
+            oldValue: previousStatus,
+            newValue: note.NotesStatus,
+            notes: note.ProcedurePerformed,
+            correlationId: note.Id));
+
         await _db.SaveChangesAsync();
-        return Map(note);
+        return await MapAsync(note);
     }
 
-    private static IntraOpNoteDto Map(IntraOpNote n) => new(
-        n.Id, n.PrimarySurgeonId, n.AssistantSurgeonId, n.AnesthesiologistId, n.ScrubNurseId,
-        n.SurgeryStartTime, n.SurgeryEndTime, n.AnesthesiaType, n.AnesthesiaNotes,
-        n.ProcedurePerformed, n.EyeOperated, n.Findings, n.Complications,
-        n.ImplantUsed, n.ImplantPower, n.BloodLossMl, n.IvFluidMl,
-        n.SpecimenSent, n.SpecimenDetails, n.NotesStatus, n.SignedAt);
+    private async Task<IntraOpNoteDto> MapAsync(IntraOpNote n)
+    {
+        var usage = await _db.JourneyImplantUsages
+            .AsNoTracking()
+            .Where(u => u.JourneyId == n.PatientJourneyId
+                        && u.TenantId == n.TenantId
+                        && u.DeletedAt == null
+                        && u.UsageStatus == ImplantUsageStatus.Implanted)
+            .OrderByDescending(u => u.ScannedAt)
+            .FirstOrDefaultAsync();
+
+        var implantUsed = n.ImplantUsed;
+        var implantPower = n.ImplantPower;
+        if (usage is not null)
+        {
+            var label = string.Join(" ", new[] { usage.Brand, usage.Model }
+                .Where(s => !string.IsNullOrWhiteSpace(s)));
+            if (!string.IsNullOrWhiteSpace(label))
+                implantUsed = label;
+            if (usage.Power is decimal p)
+                implantPower = IolDiopter.Format(p);
+        }
+
+        return new IntraOpNoteDto(
+            n.Id, n.PrimarySurgeonId, n.AssistantSurgeonId, n.AnesthesiologistId, n.ScrubNurseId,
+            n.SurgeryStartTime, n.SurgeryEndTime, n.AnesthesiaType, n.AnesthesiaNotes,
+            n.ProcedurePerformed, n.EyeOperated, n.Findings, n.Complications,
+            implantUsed, implantPower, n.BloodLossMl, n.IvFluidMl,
+            n.SpecimenSent, n.SpecimenDetails, n.NotesStatus, n.SignedAt);
+    }
 }

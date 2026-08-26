@@ -8,15 +8,7 @@ namespace IpManagementService.Services;
 /// <summary>Form 1 OT — Surgical Safety Checklist (Before Anaesthesia, WHO, After Surgery).</summary>
 public class SurgicalSafetyService
 {
-    private static readonly HashSet<string> BillingOkStates =
-    [
-        FinancialState.Paid,
-        FinancialState.PartiallyPaid,
-        FinancialState.Confirmed,
-        FinancialState.Settled,
-    ];
-
-    private readonly IpManagementDbContext           _db;
+    private readonly IpManagementDbContext         _db;
     private readonly ChecklistPhaseStatusService   _phaseStatus;
 
     public SurgicalSafetyService(
@@ -54,6 +46,10 @@ public class SurgicalSafetyService
 
         ApplyBeforeAnaesthesiaCompletion(checklist, userId);
         checklist.UpdatedAt = DateTime.UtcNow;
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "WhoBeforeAnaesthesiaSaved", "WHO",
+            null, IsBeforeAnaesthesiaComplete(checklist) ? "Complete" : "Incomplete",
+            correlationId: checklist.Id));
         await _db.SaveChangesAsync();
 
         await _phaseStatus.UpdateAsync(journeyId, tenantId, d =>
@@ -85,6 +81,10 @@ public class SurgicalSafetyService
         }
 
         checklist.UpdatedAt = DateTime.UtcNow;
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "WhoTimeoutSigned", "WHO",
+            null, IsWhoComplete(checklist) ? "Complete" : "Incomplete",
+            correlationId: checklist.Id));
         await _db.SaveChangesAsync();
 
         await _phaseStatus.UpdateAsync(journeyId, tenantId, d =>
@@ -115,6 +115,10 @@ public class SurgicalSafetyService
         }
 
         checklist.UpdatedAt = DateTime.UtcNow;
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "WhoAfterSurgerySaved", "WHO",
+            null, IsAfterSurgeryComplete(checklist) ? "Complete" : "Incomplete",
+            correlationId: checklist.Id));
         await _db.SaveChangesAsync();
 
         await _phaseStatus.UpdateAsync(journeyId, tenantId, d =>
@@ -136,17 +140,20 @@ public class SurgicalSafetyService
         }
     }
 
+    /// <summary>
+    /// OT billing tick uses Emergency FC, a privileged override, or a linked OpdBill.
+    /// IP FinancialState Paid/Settled is not billing SoT and must not gate OT.
+    /// </summary>
     public static bool IsBillingGateSatisfied(PatientJourney journey, SurgicalSafetyChecklist checklist)
     {
         if (journey.EmergencyFcApplied) return true;
         if (checklist.BillingVerifiedOverride) return true;
-        if (!BillingOkStates.Contains(journey.FinancialState)) return false;
-        return journey.BalanceDue is null or <= 0;
+        return journey.OpdBillId is { } billId && billId != Guid.Empty;
     }
 
     public static bool IsBillingVerifiedAuto(PatientJourney journey)
-        => BillingOkStates.Contains(journey.FinancialState)
-           && (journey.BalanceDue is null or <= 0);
+        => journey.EmergencyFcApplied
+           || (journey.OpdBillId is { } billId && billId != Guid.Empty);
 
     public static bool IsBeforeAnaesthesiaComplete(SurgicalSafetyChecklist c)
         => c.IdentityConfirmed

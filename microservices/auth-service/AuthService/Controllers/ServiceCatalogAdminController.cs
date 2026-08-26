@@ -439,4 +439,62 @@ public class ServiceCatalogAdminController : ControllerBase
             return StatusCode(500, new { error = "Failed to remove branch price" });
         }
     }
+
+    // ── Payer (insurer/corporate) tariffs ─────────────────────────────────────
+
+    [HttpGet("payer/{payerId:guid}/pricing-rows")]
+    [RequirePermission("master_data.view")]
+    public async Task<ActionResult<List<PayerPricingRowDto>>> GetPayerPricingRows(Guid payerId)
+    {
+        try
+        {
+            return Ok(await _adminService.GetPayerPricingRowsAsync(payerId));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving payer pricing rows for {PayerId}", payerId);
+            return StatusCode(500, new { error = "Failed to retrieve payer tariffs" });
+        }
+    }
+
+    [HttpPut("payer/{payerId:guid}/pricing")]
+    [RequirePermission("master_data.manage")]
+    public async Task<ActionResult<BranchVariantPricingDto>> UpsertPayerPrice(
+        Guid payerId,
+        [FromBody] UpsertBranchVariantPriceRequest request)
+    {
+        try
+        {
+            return Ok(await _adminService.UpsertPayerVariantPriceAsync(payerId, request, CurrentUserId));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error upserting payer tariff for {PayerId}", payerId);
+            return StatusCode(500, new { error = "Failed to save payer tariff" });
+        }
+    }
+
+    [HttpDelete("payer/{payerId:guid}/pricing/{variantId:guid}")]
+    [RequirePermission("master_data.manage")]
+    public async Task<IActionResult> RemovePayerPrice(Guid payerId, Guid variantId)
+    {
+        try
+        {
+            await _adminService.RemovePayerVariantPriceAsync(payerId, variantId, CurrentUserId);
+            return NoContent();
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(new { error = "Payer tariff override not found" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing payer tariff for {PayerId}/{VariantId}", payerId, variantId);
+            return StatusCode(500, new { error = "Failed to remove payer tariff" });
+        }
+    }
 }

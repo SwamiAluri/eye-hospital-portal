@@ -111,6 +111,7 @@ export interface VendorDto {
   creditDays: number;
   outstandingBalance: number;
   status: string;
+  isConsignmentVendor?: boolean;
 }
 
 export interface CreateVendorRequest {
@@ -146,6 +147,7 @@ export interface CreateVendorRequest {
   bankAccountType: string;
   creditDays?: number;
   status?: string;
+  isConsignmentVendor?: boolean;
 }
 
 export interface PurchaseInvoiceDto {
@@ -771,6 +773,7 @@ export interface SurgeryConsumableDto {
   tenantId: string;
   storeId: string;
   surgeryId?: string;
+  journeyId?: string;
   itemId: string;
   stockBatchId?: string;
   iolBillingMode: string;
@@ -783,6 +786,8 @@ export interface SurgeryConsumableDto {
   barcode?: string;
   remarks?: string;
   consumableStatus: ConsumableStatus;
+  chargeStatus?: 'Pending' | 'Posted' | 'Suppressed' | 'Exception' | 'UnmappedJourney';
+  chargeItemId?: string;
   escalationReason?: string;
   issuedAt: string;
   closedAt?: string;
@@ -820,6 +825,7 @@ export const inventoryPharmacyApi = {
     iolBillingMode: string;
     patientName?: string;
     patientIpNo?: string;
+    journeyId?: string;
     items: { itemId: string; plannedQuantity: number; stockBatchId?: string; barcode?: string; remarks?: string }[];
   }) =>
     getClient().post<SurgeryConsumableDto[]>('/surgery/consumables/plan', req).then(r => r.data),

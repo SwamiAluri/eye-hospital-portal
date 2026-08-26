@@ -1,9 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Stethoscope, X } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { priceSuffix } from '@/lib/api/service-catalog.api';
 import type { IolMasterDto } from '@/lib/api/service-catalog.api';
+import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { sanitizeVariantName } from '@/lib/utils/sanitize-names';
 import {
   deriveProcedureCategoryFilters,
@@ -33,6 +35,87 @@ import {
   CounsellingToggleGroupItem,
 } from '@/components/counsellors-desk/session/primitives';
 import { cn } from '@/lib/utils';
+import { useCounsellingSession } from '@/components/counsellors-desk/session/CounsellingSessionContext';
+import { useInvalidateCounsellorsDesk } from '@/hooks/use-counsellors-desk-queries';
+import { biometryMissingEyePhrase } from '@/lib/ip-management/iol-diopter';
+import { loadSuggestedIolPower } from '@/lib/ip-management/clinical-evaluation-prefill';
+
+function CounsellorOpdCopyBanner({
+  selectedEye,
+  isReadOnly,
+}: {
+  selectedEye: CounsellingEyeOption;
+  isReadOnly: boolean;
+}) {
+  const { sessionId, session } = useCounsellingSession();
+  const { invalidateSession } = useInvalidateCounsellorsDesk();
+  const [missing, setMissing] = useState(false);
+  const [plannedPower, setPlannedPower] = useState<string | null>(session?.iolPower ?? null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    const patientId = session?.patientId;
+    if (!patientId) return;
+    let cancelled = false;
+    void (async () => {
+      const power = await loadSuggestedIolPower(patientId, selectedEye);
+      if (cancelled) return;
+      setMissing(!power);
+      if (power) setPlannedPower(power);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.patientId, selectedEye]);
+
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      const snap = await counsellorsDeskApi.refreshSessionFromOpd(sessionId);
+      setMissing(snap.biometryMissing === true);
+      if (snap.iolPower) setPlannedPower(snap.iolPower);
+      invalidateSession(sessionId);
+      if (snap.biometryMissing) {
+        toast.error(`No biometry on file for the ${snap.eyePhrase ?? biometryMissingEyePhrase(selectedEye)}.`);
+      } else {
+        toast.success('Copied latest OPD biometry onto this session.');
+      }
+    } catch {
+      toast.error('Could not refresh from OPD.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-counselling-border/80 bg-counselling-card px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold text-counselling-foreground">From OPD / Doctors Desk</p>
+          {plannedPower ? (
+            <p className="text-xs text-counselling-muted-foreground">Planned IOL {plannedPower}</p>
+          ) : null}
+        </div>
+        <CounsellingButton
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid={counsellingTestIds.refreshFromOpd}
+          disabled={isReadOnly || refreshing}
+          onClick={() => void refresh()}
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh from OPD'}
+        </CounsellingButton>
+      </div>
+      {missing && (
+        <CounsellingInfoAlert variant="warning" title={`No biometry on file for the ${biometryMissingEyePhrase(selectedEye)}.`}>
+          Package can still be selected. Planned IOL power stays empty — OT will warn, not block, if a lens is
+          scanned later.
+        </CounsellingInfoAlert>
+      )}
+    </div>
+  );
+}
 
 function groupVariantsByCategory(
   variants: CounsellorProcedureVariant[],
@@ -147,6 +230,8 @@ export function CounsellingProceduresWorkspace({
 
   const content = (
     <>
+      <CounsellorOpdCopyBanner selectedEye={selectedEye} isReadOnly={isReadOnly} />
+
       {procedureLoading && <CounsellingProcedureCatalogSkeleton />}
 
       {!procedureLoading && (procedureError || procedureVariants.length === 0) && (

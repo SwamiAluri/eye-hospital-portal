@@ -82,6 +82,9 @@ public class MedicationLogService
             });
         }
 
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "MedicationAdded", "Medication",
+            null, name, correlationId: journeyId));
         await _db.SaveChangesAsync();
         var added = await GetMedicationLogAsync(journeyId, tenantId);
         await SyncPhaseStatusAsync(journeyId, tenantId, added);
@@ -115,6 +118,9 @@ public class MedicationLogService
             row.Notes = req.Notes;
 
         row.UpdatedAt = DateTime.UtcNow;
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "MedicationDoseSaved", "Medication",
+            null, row.MedicineName, correlationId: row.Id));
         await _db.SaveChangesAsync();
         var dto = await GetMedicationLogAsync(journeyId, tenantId);
         await SyncPhaseStatusAsync(journeyId, tenantId, dto);

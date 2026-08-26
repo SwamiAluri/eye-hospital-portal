@@ -266,7 +266,8 @@ public class PreOpClearanceService
                 var v = await _ccms.ValidateAdmissionAsync(
                     journey.Id, journey.CounselingSessionId, tenantId,
                     coverageBased, journey.EmergencyFcApplied);
-                coverageApproved = v.Allowed || journey.EmergencyFcApplied;
+                coverageApproved = string.Equals(
+                    v.CoverageStatus, "CoverageApproved", StringComparison.OrdinalIgnoreCase);
                 coverageNote = coverageApproved
                     ? $"Auto: CCMS {(v.CoverageState ?? v.Decision)}{(v.CaseId is Guid cid ? $" · case {cid:N}" : "")}"
                     : $"Auto: CCMS {(v.CoverageState ?? v.Decision)} — {v.BlockReason ?? v.WarningMessage ?? "not ready"}";
@@ -657,6 +658,11 @@ public class PreOpClearanceService
             existing.EnteredAt       = trimmed is null ? null : DateTime.UtcNow;
         }
 
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "ChecklistItemSaved", "Checklist",
+            null, itemMeta?.ItemKey,
+            notes: done ? "completed" : "cleared",
+            correlationId: existing.Id));
         await _db.SaveChangesAsync();
 
         var item = await _db.PreOpSectionItems
@@ -980,6 +986,10 @@ public class PreOpClearanceService
             Status                 = "active",
         };
         _db.VitalSigns.Add(vital);
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "VitalRecorded", "Vitals",
+            null, $"{vital.BloodPressureSystolic}/{vital.BloodPressureDiastolic}",
+            notes: "PreOp", correlationId: vital.Id));
         await _db.SaveChangesAsync();
 
         return new VitalSignDto(
@@ -1195,6 +1205,8 @@ public class PreOpClearanceService
             NewState          = SnapshotClinical(ClinicalState.Admitted),
             PerformedByUserId = userId,
             PerformedAt       = DateTime.UtcNow,
+            Notes             = req.ClearanceNotes,
+            CorrelationId     = journeyId,
             CreatedAt         = DateTime.UtcNow,
             UpdatedAt         = DateTime.UtcNow,
         });
@@ -1708,6 +1720,8 @@ public class PreOpClearanceService
             StateType = "ClinicalEvaluation",
             OldValue = "Signed",
             NewValue = auditPayload,
+            Notes = "Clinical evaluation amendment",
+            CorrelationId = journeyId,
             PerformedByUserId = userId,
             PerformedAt = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,

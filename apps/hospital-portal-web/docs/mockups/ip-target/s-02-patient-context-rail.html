@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-02">
+<main>
+
+  <p class="lede">
+    The whole answer for one patient without leaving the census. <strong>One component, four persona orderings.</strong>
+    Persona controls section order and visibility only &mdash; never authorisation. The server stays the boundary;
+    <code>resolveIpPersona(permissions, roles)</code> derives from permission codes with role strings as a fallback.
+  </p>
+
+  <div class="callout danger">
+    <b>Removed from today&rsquo;s <code>PatientQuickPanel</code>:</b> <code>MiniStepper</code> (renders 5 steps for a
+    9-state machine, so <code>ReadyForSurgery</code>, <code>SentToOT</code>, <code>PostOp</code> and
+    <code>ReadyForDischarge</code> are invisible) &middot; <code>AddTransactionForm</code> (writes to the
+    <code>ip_billing_transactions</code> projection, bypassing receipt numbering, idempotency, refund rules and the
+    CCMS outbox) &middot; three of four billing CTAs &middot; 9&ndash;10&nbsp;px type on clinical data &middot;
+    permission-code and <code>OpdBill</code> jargon &middot; question-style headings.
+  </div>
+
+  <div class="callout info">
+    <b>The identification banner is the same for everyone.</b> Persona changes which sections appear below it and in
+    what order, but never the identity block: full name, UHID, age, sex, date of birth, alerts and the
+    <b>operating eye</b> are identical for a cashier and a surgeon. Safety identifiers are not a matter of role.
+    The one exception is the alert strip, which a cashier does not need and does not see, since allergy is clinical
+    data with no bearing on taking a payment. See
+    <a href="s-01-ip-census.html">S-01</a> for the rationale and the full banner states.
+  </div>
+
+  <h2 class="sec">All four personas, same patient, side by side</h2>
+  <p class="lede" style="margin-bottom:14px">
+    Meena Iyer, UAT-002, admitted for LASIK on the <b>right eye</b>, two clinical blockers and &#8377;90,000
+    outstanding. Scroll horizontally if your window is narrow &mdash; the point of this view is direct comparison.
+  </p>
+
+  <div class="scroller">
+    <div class="inner">
+
+      <!-- ------------------------------------------------ WARD / COORDINATOR -->
+      <div class="col">
+        <div class="vh" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+          <span class="n" style="flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--accent);color:#fff">1</span>
+          <span class="t" style="font-size:13px;font-weight:650">Ward / coordinator</span>
+        </div>
+        <div class="frame">
+          <aside class="rail">
+            <div class="pib">
+              <div class="pib-main">
+                <div class="pib-id">
+                  <div class="pib-name">Meena Iyer</div>
+                  <div class="pib-nums"><span>UHID <b>UAT-002</b></span><span>54 y &middot; Female</span><span>DOB <b>14-Mar-1972</b></span></div>
+                </div>
+                <div class="eye"><span class="eye-k">Operating</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+              </div>
+              <div class="pib-alerts"><span class="badge danger">Allergy: Xylocaine</span><span class="badge ot">Diabetic</span></div>
+              <div class="pib-where"><span><span class="k">Ward</span> <span class="v">Day Care</span></span><span><span class="k">Bed</span> <span class="v">B-04</span></span><span><span class="k">Slot</span> <span class="v">AM-3</span></span></div>
+            </div>
+            <div class="rail-sec" style="padding-top:10px;padding-bottom:10px">
+              <div class="row"><span class="badge inhouse">Admitted</span><span class="badge info">Day care</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Location</p>
+              <div class="rail-line"><span class="k">Ward &middot; bed</span><span class="v">Day Care &middot; B-04</span></div>
+              <div class="rail-line"><span class="k">Slot</span><span class="v">AM-3 &middot; 07:45</span></div>
+              <div class="rail-line"><span class="k">Next</span><span class="v">Mark ready (Ward)</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Blockers</p>
+              <ul class="blockers">
+                <li class="hard"><span class="icon">&#9940;</span><span class="body">Surgical consent unsigned<a class="fix" href="s-05-preop-workspace.html">Open consent step &rarr;</a></span></li>
+                <li class="hard"><span class="icon">&#9940;</span><span class="body">PAC incomplete<a class="fix" href="s-05-preop-workspace.html">Open PAC step &rarr;</a></span></li>
+                <li class="soft"><span class="icon">&#9888;</span><span class="body">Patient due &#8377;90,000</span></li>
+              </ul>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Actions</p>
+              <div class="actionstack">
+                <span class="btn primary block disabled">Mark Ready for OT</span>
+                <span class="small muted">Blocked by 2 hard stops above.</span>
+                <span class="btn ghost">Transfer bed</span>
+                <span class="btn ghost">View full journey</span>
+              </div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Payments</p>
+              <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;90,000</span></div>
+              <div style="margin-top:8px"><a class="btn sm" href="s-12-bill-detail.html">Open billing</a></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Coverage</p>
+              <span class="badge ok">Approved &middot; Star Health</span>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Activity</p>
+              <ul class="timeline">
+                <li><b>Admitted</b> &middot; 01:21 pm</li>
+                <li><b>Bed B-04 assigned</b> &middot; 01:19 pm</li>
+                <li><b>Advance &#8377;30,000</b> &middot; 12:58 pm</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+        <p class="vc" style="font-size:12px;color:var(--muted);margin:7px 2px 0">
+          <b>Clinical first.</b> Blockers above actions, money reduced to one line and one link. No entry form of any
+          kind.
+        </p>
+      </div>
+
+      <!-- ------------------------------------------------------------ CASHIER -->
+      <div class="col">
+        <div class="vh" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+          <span class="n" style="flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--ok);color:#fff">2</span>
+          <span class="t" style="font-size:13px;font-weight:650">Cashier</span>
+        </div>
+        <div class="frame">
+          <aside class="rail">
+            <div class="pib">
+              <div class="pib-main">
+                <div class="pib-id">
+                  <div class="pib-name">Meena Iyer</div>
+                  <div class="pib-nums"><span>UHID <b>UAT-002</b></span><span>54 y &middot; Female</span><span>DOB <b>14-Mar-1972</b></span></div>
+                </div>
+                <div class="eye"><span class="eye-k">Operating</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+              </div>
+              <div class="pib-where"><span><span class="k">Ward</span> <span class="v">Day Care</span></span><span><span class="k">Bed</span> <span class="v">B-04</span></span></div>
+            </div>
+            <div class="rail-sec" style="padding-top:10px;padding-bottom:10px">
+              <div class="row"><span class="badge ot">Partially paid</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Payments</p>
+              <div class="rail-line"><span class="k">Bill</span><span class="v mono">IPD-2026-00841</span></div>
+              <div class="rail-line"><span class="k">Billed</span><span class="v num">&#8377;1,20,000</span></div>
+              <div class="rail-line"><span class="k">Payer share</span><span class="v num">&#8377;80,000</span></div>
+              <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+              <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;10,000</span></div>
+              <div class="actionstack" style="margin-top:10px">
+                <a class="btn primary block" href="s-03-collect-payment.html">Collect payment</a>
+                <a class="btn ghost" href="s-12-bill-detail.html">Open full bill</a>
+              </div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Receipts</p>
+              <ul class="timeline">
+                <li><b>RCP-20260824-00001188</b> &middot; &#8377;30,000 Cash</li>
+                <li class="faint">24 Aug 12:58 pm &middot; R. Kumar</li>
+              </ul>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Coverage</p>
+              <div class="row between"><span class="badge ok">Approved</span><span class="small muted">Star Health</span></div>
+              <div class="rail-line" style="margin-top:6px"><span class="k">Approved</span><span class="v num">&#8377;80,000</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Location</p>
+              <div class="rail-line"><span class="k">Ward &middot; bed</span><span class="v">Day Care &middot; B-04</span></div>
+              <div class="rail-line"><span class="k">Clinical state</span><span class="v">Admitted</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Financial activity</p>
+              <ul class="timeline">
+                <li><b>Advance &#8377;30,000</b> &middot; 12:58 pm</li>
+                <li><b>Bill created &#8377;1,20,000</b> &middot; 12:40 pm</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+        <p class="vc" style="font-size:12px;color:var(--muted);margin:7px 2px 0">
+          <b>Money first.</b> Clinical actions and non-financial blockers are omitted, not greyed out. Refund and
+          adjustment are deliberately absent &mdash; they live in S-12.
+        </p>
+      </div>
+
+      <!-- ---------------------------------------------------- SURGEON / CLINICAL -->
+      <div class="col">
+        <div class="vh" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+          <span class="n" style="flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--accent);color:#fff">3</span>
+          <span class="t" style="font-size:13px;font-weight:650">Surgeon / clinical</span>
+        </div>
+        <div class="frame">
+          <aside class="rail">
+            <div class="pib">
+              <div class="pib-main">
+                <div class="pib-id">
+                  <div class="pib-name">Meena Iyer</div>
+                  <div class="pib-nums"><span>UHID <b>UAT-002</b></span><span>54 y &middot; Female</span><span>DOB <b>14-Mar-1972</b></span></div>
+                </div>
+                <div class="eye"><span class="eye-k">Operating</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+              </div>
+              <div class="pib-alerts">
+                <span class="badge danger">Allergy: Xylocaine</span><span class="badge ot">Diabetic</span><span class="badge ot">On anticoagulant</span>
+              </div>
+              <div class="pib-where"><span><span class="k">Procedure</span> <span class="v">LASIK</span></span><span><span class="k">Bed</span> <span class="v">B-04</span></span><span><span class="k">Slot</span> <span class="v">AM-3</span></span></div>
+            </div>
+            <div class="rail-sec" style="padding-top:10px;padding-bottom:10px">
+              <div class="row"><span class="badge inhouse">Admitted</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Location</p>
+              <div class="rail-line"><span class="k">Ward &middot; bed</span><span class="v">Day Care &middot; B-04</span></div>
+              <div class="rail-line"><span class="k">Slot</span><span class="v">AM-3 &middot; 07:45</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Clinical readiness</p>
+              <ul class="blockers">
+                <li class="hard"><span class="icon">&#9940;</span><span class="body">Surgical consent unsigned</span></li>
+                <li class="hard"><span class="icon">&#9940;</span><span class="body">PAC incomplete</span></li>
+                <li class="done"><span class="icon">&#10003;</span><span class="body">Biometry recorded &middot; IOL +21.0&nbsp;D</span></li>
+                <li class="done"><span class="icon">&#10003;</span><span class="body">Laterality confirmed OD</span></li>
+                <li class="done"><span class="icon">&#10003;</span><span class="body">Allergies: none recorded</span></li>
+              </ul>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Actions</p>
+              <div class="actionstack">
+                <a class="btn block" href="s-10-journey-detail.html">Open full journey</a>
+              </div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Clinical activity</p>
+              <ul class="timeline">
+                <li><b>PAC started</b> &middot; 01:05 pm &middot; Dr. Rao</li>
+                <li><b>Biometry recorded</b> &middot; 22 Aug</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+        <p class="vc" style="font-size:12px;color:var(--muted);margin:7px 2px 0">
+          <b>No money at all.</b> Laterality is emphasised in the header and repeated as a confirmed readiness item
+          &mdash; wrong-eye surgery is the never-event this rail helps prevent.
+        </p>
+      </div>
+
+      <!-- -------------------------------------------------------------- ADMIN -->
+      <div class="col">
+        <div class="vh" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+          <span class="n" style="flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--danger);color:#fff">4</span>
+          <span class="t" style="font-size:13px;font-weight:650">Admin / supervisor</span>
+        </div>
+        <div class="frame">
+          <aside class="rail">
+            <div class="pib">
+              <div class="pib-main">
+                <div class="pib-id">
+                  <div class="pib-name">Meena Iyer</div>
+                  <div class="pib-nums"><span>UHID <b>UAT-002</b></span><span>54 y &middot; Female</span><span>DOB <b>14-Mar-1972</b></span></div>
+                </div>
+                <div class="eye"><span class="eye-k">Operating</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+              </div>
+              <div class="pib-alerts"><span class="badge danger">Allergy: Xylocaine</span><span class="badge ot">Diabetic</span></div>
+              <div class="pib-where"><span><span class="k">Ward</span> <span class="v">Day Care</span></span><span><span class="k">Bed</span> <span class="v">B-04</span></span><span><span class="k">Slot</span> <span class="v">AM-3</span></span></div>
+            </div>
+            <div class="rail-sec" style="padding-top:10px;padding-bottom:10px">
+              <div class="row"><span class="badge inhouse">Admitted</span><span class="badge info">Day care</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Location</p>
+              <div class="rail-line"><span class="k">Ward &middot; bed</span><span class="v">Day Care &middot; B-04</span></div>
+              <div class="rail-line"><span class="k">Slot</span><span class="v">AM-3 &middot; 07:45</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Blockers</p>
+              <ul class="blockers">
+                <li class="hard"><span class="icon">&#9940;</span><span class="body">Surgical consent unsigned</span></li>
+                <li class="hard"><span class="icon">&#9940;</span><span class="body">PAC incomplete</span></li>
+                <li class="soft"><span class="icon">&#9888;</span><span class="body">Patient due &#8377;90,000</span></li>
+              </ul>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Actions</p>
+              <div class="actionstack">
+                <span class="btn primary block disabled">Mark Ready for OT</span>
+                <span class="btn ghost">Transfer bed</span>
+                <span class="btn ghost">View full journey</span>
+              </div>
+            </div>
+            <div class="rail-sec" style="background:var(--efc-weak)">
+              <p class="rail-h" style="color:var(--efc)">Supervisor overrides</p>
+              <div class="actionstack">
+                <a class="btn sm" style="border-color:#fed7aa;color:var(--efc)" href="s-17-reason-confirm.html">Apply Emergency FC</a>
+                <a class="btn sm danger" href="s-17-reason-confirm.html">Override discharge block</a>
+                <a class="btn sm danger" href="s-17-reason-confirm.html">Revert clinical state</a>
+              </div>
+              <p class="hint" style="margin-top:6px">All three require a reason and are reported.</p>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Payments</p>
+              <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+              <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;90,000</span></div>
+            </div>
+            <div class="rail-sec">
+              <p class="rail-h">Activity</p>
+              <ul class="timeline">
+                <li><b>Admitted</b> &middot; 01:21 pm &middot; S. Nair</li>
+                <li><b>Advance &#8377;30,000</b> &middot; 12:58 pm</li>
+              </ul>
+              <a class="small" href="s-10-journey-detail.html">Full audit trail &rarr;</a>
+            </div>
+          </aside>
+        </div>
+        <p class="vc" style="font-size:12px;color:var(--muted);margin:7px 2px 0">
+          <b>Everything, plus overrides.</b> Override actions are visually quarantined in their own tinted block so
+          they are never clicked by muscle memory.
+        </p>
+      </div>
+
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker">1</span><span><b>Section order is the reading order each role actually needs.</b> Nothing is hidden to save space; it is hidden because the role does not act on it.</span></li>
+    <li><span class="marker">1</span><span>Blockers are stated in the <b>same words</b> as the pre-op footer, from the same <code>ChecklistGateService</code> evaluation. Two phrasings for one rule is how staff learn to distrust the system.</span></li>
+    <li><span class="marker">1</span><span>Exactly <b>one filled primary button</b> per persona. It is disabled with visible reasons rather than failing on click &mdash; the current panel calls the transition blind and surfaces a toast on rejection.</span></li>
+    <li><span class="marker fix">3</span><span>Persona resolution is <b>fail-closed</b>. Today an empty JWT permission claim resolves to full access in <code>ip-role-actions.operational()</code>, <code>canBill</code> and <code>resolveBillingDashboardAccess</code>.</span></li>
+  </ul>
+
+  <h2 class="sec">The rail in context</h2>
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Docked &mdash; &ge;1280 px</span></div>
+      <div class="frame">
+        <div class="split" style="min-height:300px;grid-template-columns:1fr 260px">
+          <div class="list">
+            <table class="grid">
+              <thead><tr><th>State</th><th>Patient</th><th>Bed</th><th>Next</th></tr></thead>
+              <tbody>
+                <tr class="row-selected"><td><span class="badge inhouse">Admitted</span></td><td class="cell-primary">Meena Iyer</td><td>B-04</td><td>Mark ready</td></tr>
+                <tr><td><span class="badge inhouse">Admitted</span></td><td>Ananya Sharma</td><td>B-05</td><td>Mark ready</td></tr>
+                <tr><td><span class="badge ot">Ready for OT</span></td><td>Amit Verma</td><td>B-07</td><td>Send to OT</td></tr>
+                <tr><td><span class="badge">Expected</span></td><td>Tara Nair</td><td class="muted">&mdash;</td><td>Admit</td></tr>
+              </tbody>
+            </table>
+            <div class="listfoot">The list stays fully readable and clickable.</div>
+          </div>
+          <aside class="rail">
+            <div class="rail-head"><div class="name" style="font-size:14px">Meena Iyer</div><div class="ident">UAT-002 &middot; LASIK OD</div></div>
+            <div class="rail-sec"><p class="rail-h">Blockers</p><ul class="blockers"><li class="hard"><span class="icon">&#9940;</span><span class="body">Consent unsigned</span></li><li class="hard"><span class="icon">&#9940;</span><span class="body">PAC incomplete</span></li></ul></div>
+            <div class="rail-sec"><span class="btn primary block disabled">Mark Ready for OT</span></div>
+          </aside>
+        </div>
+      </div>
+      <p class="vc"><b>No backdrop, no blur.</b> A landmark <code>&lt;aside&gt;</code> with <code>aria-label</code>, not a
+      dialog. The coordinator never loses the list they were working.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Sheet &mdash; &lt;1280 px</span></div>
+      <div class="frame">
+        <div class="split" style="min-height:300px;grid-template-columns:1fr 220px;position:relative">
+          <div class="list" style="opacity:.35">
+            <table class="grid">
+              <thead><tr><th>State</th><th>Patient</th><th>Bed</th></tr></thead>
+              <tbody>
+                <tr><td><span class="badge inhouse">Admitted</span></td><td>Meena Iyer</td><td>B-04</td></tr>
+                <tr><td><span class="badge inhouse">Admitted</span></td><td>Ananya Sharma</td><td>B-05</td></tr>
+                <tr><td><span class="badge ot">Ready for OT</span></td><td>Amit Verma</td><td>B-07</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <aside class="rail" style="box-shadow:-8px 0 24px rgba(15,23,42,.18)">
+            <div class="rail-head"><div class="row between"><div><div class="name" style="font-size:14px">Meena Iyer</div><div class="ident">UAT-002</div></div><span class="muted">&#10005;</span></div></div>
+            <div class="rail-sec"><p class="rail-h">Blockers</p><ul class="blockers"><li class="hard"><span class="icon">&#9940;</span><span class="body">Consent</span></li><li class="hard"><span class="icon">&#9940;</span><span class="body">PAC</span></li></ul></div>
+            <div class="rail-sec"><span class="btn primary block disabled">Mark Ready</span></div>
+          </aside>
+        </div>
+      </div>
+      <p class="vc"><b>Radix <code>Sheet</code>:</b> <code>role="dialog"</code>, <code>aria-modal</code>, focus trap,
+      Escape, focus restored to the originating row. Dim only &mdash; never blur, which makes the list unreadable
+      rather than merely de-emphasised.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Rail states</h2>
+  <div class="variants c4">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">No selection</span></div>
+      <div class="frame">
+        <aside class="rail" style="min-height:230px">
+          <div class="empty">
+            <div class="big">No patient selected</div>
+            Select a row to see location, blockers and next actions.
+            <div style="margin-top:10px" class="small faint">&uarr;&darr; to move &middot; Enter to open</div>
+          </div>
+        </aside>
+      </div>
+      <p class="vc">The default on load. Explains the interaction rather than showing a blank panel.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Loading</span></div>
+      <div class="frame">
+        <aside class="rail" style="min-height:230px">
+          <div class="rail-head"><span class="sk tall w70"></span><span class="sk w50"></span></div>
+          <div class="rail-sec"><span class="sk w30"></span><span class="sk w100"></span><span class="sk w80"></span></div>
+          <div class="rail-sec"><span class="sk w40"></span><span class="sk w100"></span><span class="sk w60"></span></div>
+          <div class="rail-sec"><span class="sk tall w100"></span></div>
+        </aside>
+      </div>
+      <p class="vc"><b>Skeleton, never a spinner.</b> The shape of the answer is visible before the answer arrives, so
+      the eye is already in the right place.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">3</span><span class="t">Partial failure</span></div>
+      <div class="frame">
+        <aside class="rail" style="min-height:230px">
+          <div class="rail-head"><div class="name" style="font-size:14px">Meena Iyer</div><div class="ident">UAT-002 &middot; LASIK OD</div></div>
+          <div class="rail-sec"><p class="rail-h">Blockers</p><ul class="blockers"><li class="hard"><span class="icon">&#9940;</span><span class="body">Consent unsigned</span></li></ul></div>
+          <div class="rail-sec">
+            <p class="rail-h">Payments</p>
+            <div class="callout warn">Billing unreachable. Last known due <b>&#8377;90,000</b> as of 01:02 pm.
+            <a href="#">Retry</a></div>
+          </div>
+          <div class="rail-sec"><span class="btn primary block disabled">Mark Ready for OT</span></div>
+        </aside>
+      </div>
+      <p class="vc"><b>Sections fail independently.</b> A billing outage must not blank the clinical blockers; stale
+      money is labelled stale rather than hidden or shown as zero.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n ok">4</span><span class="t">Clear &mdash; action available</span></div>
+      <div class="frame">
+        <aside class="rail" style="min-height:230px">
+          <div class="rail-head"><div class="name" style="font-size:14px">Ananya Sharma</div><div class="ident">UAT-014 &middot; Corneal OS</div></div>
+          <div class="rail-sec"><p class="rail-h">Location</p><div class="rail-line"><span class="k">Bed</span><span class="v">B-05</span></div></div>
+          <div class="rail-sec">
+            <p class="rail-h">Blockers</p>
+            <div class="row"><span class="badge ok">No blockers &middot; 9 of 9 complete</span></div>
+          </div>
+          <div class="rail-sec"><div class="actionstack"><span class="btn primary block">Mark Ready for OT</span><span class="btn ghost">Transfer bed</span></div></div>
+          <div class="rail-sec"><p class="rail-h">Payments</p><div class="rail-line"><span class="k">Patient due</span><span class="v num">&#8377;0</span></div></div>
+        </aside>
+      </div>
+      <p class="vc">The enabled case. One click, no confirmation dialog &mdash; the action is preflighted and
+      reversible through S-17.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Persona visibility matrix</h2>
+  <table class="map">
+    <thead><tr><th>Block</th><th>Ward / coordinator</th><th>Cashier</th><th>Surgeon / clinical</th><th>Admin</th></tr></thead>
+    <tbody>
+      <tr><td>Identity + location</td><td>Yes</td><td>Yes</td><td>Yes, laterality emphasised</td><td>Yes</td></tr>
+      <tr><td>Readiness + blockers</td><td><b>Primary</b></td><td>Financial only</td><td>Clinical only</td><td>All</td></tr>
+      <tr><td>Clinical actions</td><td><b>Primary</b></td><td>Hidden</td><td>Journey link only</td><td>All</td></tr>
+      <tr><td>Money</td><td>One due line + link</td><td><b>Primary, with Collect</b></td><td>Hidden</td><td>Summary</td></tr>
+      <tr><td>Receipts</td><td>Hidden</td><td><b>Visible</b></td><td>Hidden</td><td>Visible</td></tr>
+      <tr><td>Coverage</td><td>Status chip</td><td>Status + payer share</td><td>Hidden</td><td>All</td></tr>
+      <tr><td>Activity</td><td>3 recent events</td><td>Financial events</td><td>Clinical events</td><td>All + audit link</td></tr>
+      <tr><td>Emergency FC / overrides</td><td>Hidden</td><td>Hidden</td><td>Hidden</td><td><b>Quarantined block, reason required</b></td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead>
+      <tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th><th>Event</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Identity, status chips</td><td>row DTO, no fetch</td><td>&mdash;</td><td>&mdash;</td><td><code>patient_journey</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Location, next action</td><td><code>buildIpRowSituation</code></td><td>&mdash;</td><td>&mdash;</td><td>derived</td><td class="owner o-fe">FE</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>Clinical blockers</td><td><code>useTransitionGatesQuery</code></td><td><code>GET /journeys/{id}/transition-gates?newState=ReadyForSurgery</code></td><td><code>ChecklistGateFunctions</code> &rarr; <code>ChecklistGateService.EvaluateTransitionAsync</code></td><td>pre-op chain, <code>pac_assessment</code>, ward investigations</td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Financial blockers, payments</td><td><code>getFinancialSummary</code></td><td><code>GET /journeys/{id}/financial-summary</code></td><td><code>JourneyFunctions</code> &rarr; <code>BillingService.GetFinancialSummaryAsync</code> &rarr; <code>AuthBillingClient</code> &rarr; <code>OpdBillService.GetInpatientSummaryAsync</code></td><td><code>opd_bills</code>, <code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Receipts (cashier)</td><td><code>listPayments</code></td><td><code>GET /api/OpdBills/{id}/payments</code></td><td><code>OpdBillService</code></td><td><code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>bill.view</code></td><td>&mdash;</td></tr>
+      <tr><td><b>Mark Ready</b></td><td><code>ipManagementApi.transitionClinical</code></td><td><code>POST /journeys/{id}/clinical-transition</code></td><td><code>PatientJourneyService.TransitionClinicalAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ip.ot.mark_ready</code> | <code>ward.checklist.edit</code></td><td><code>JourneyReadyForOt</code> <span class="mark new">2</span></td></tr>
+      <tr><td>Revert clinical state <span class="mark new">2</span></td><td>same + <a href="s-17-reason-confirm.html">S-17</a></td><td>same, <code>newState=Admitted</code></td><td>same, new guard</td><td>+ <code>unmark_ready_reason</code></td><td class="owner o-ip">IP</td><td><code>ip.ot.unmark_ready</code></td><td><code>JourneyReadyReverted</code></td></tr>
+      <tr><td>Admit</td><td><code>ipManagementApi.admitPatient</code></td><td><code>POST /journeys/{id}/admit</code></td><td><code>PatientJourneyService.AdmitAsync</code></td><td><code>patient_journey</code>, <code>journey_bed_assignment</code>, <code>bed_inventory</code></td><td class="owner o-ip">IP + <span class="o-auth">Auth</span></td><td><code>ip.admit</code></td><td><code>JourneyAdmitted</code></td></tr>
+      <tr><td>Transfer bed</td><td><code>ipManagementApi.transferBed</code></td><td><code>POST /journeys/{id}/transfer-bed</code></td><td><code>TransferBedAsync</code> &rarr; <code>AuthBedLifecycleClient</code></td><td><code>journey_bed_assignment</code>, <code>bed_inventory</code></td><td class="owner o-auth">Auth beds</td><td><code>ip.bed.transfer</code></td><td>&mdash;</td></tr>
+      <tr><td><b>Collect payment</b></td><td>opens <a href="s-03-collect-payment.html">S-03</a></td><td><code>POST /api/OpdBills/payment</code></td><td><code>OpdBillService.AddPaymentAsync</code></td><td><code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td><code>PaymentReceived</code></td></tr>
+      <tr><td>Open billing</td><td><code>router.push('/dashboard/billing/opd?billId=&hellip;')</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td class="owner o-fe">FE</td><td><code>bill.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Coverage block</td><td><code>getPreauthStatus</code> (<a href="s-18-coverage-context.html">S-18</a>)</td><td><code>GET /journeys/{id}/financial/preauth-status</code></td><td><code>PatientJourneyService.GetPreauthStatusAsync</code> &rarr; <code>CcmsAdmissionClient</code></td><td><code>ccms_coverage_cases</code>, <code>ccms_coverage_authorizations</code></td><td class="owner o-ccms">CCMS</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Emergency FC (admin)</td><td><code>applyEmergencyFc</code> + S-17</td><td><code>POST /journeys/{id}/emergency-fc</code></td><td><code>ApplyEmergencyFcAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ip.emergency_fc.apply</code> (fail-closed)</td><td><code>EmergencyFcApplied</code></td></tr>
+      <tr><td>Discharge override (admin)</td><td><code>applyDischargeOverride</code> + S-17</td><td><code>PUT /journeys/{id}/discharge-override</code></td><td><code>ApplyDischargeOverrideAsync</code></td><td><code>patient_journey</code></td><td class="owner o-ip">IP</td><td><code>ip.discharge.override</code></td><td>&mdash;</td></tr>
+      <tr><td>Activity</td><td><code>getJourneyAudit</code></td><td><code>GET /journeys/{id}/audit</code></td><td><code>GetAuditLogsAsync</code></td><td><code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Caching and accessibility</h2>
+  <div class="cols-3">
+    <div class="panel"><p class="panel-h">Caching <span class="mark fix">3</span></p><p class="small muted">All three per-patient reads &mdash; gates, financial summary, preauth &mdash; move to react-query keyed on <code>journeyId</code> with a ~30&nbsp;s <code>staleTime</code>, so re-selecting a row is free. Today they are uncached <code>useEffect</code> calls that refire on every click.</p></div>
+    <div class="panel"><p class="panel-h">Docked semantics</p><p class="small muted">Not a dialog. A landmark <code>&lt;aside&gt;</code> with <code>aria-label</code>, reachable in tab order after the table. No focus trap, because the list must stay usable alongside it.</p></div>
+    <div class="panel"><p class="panel-h">Announcements</p><p class="small muted">Selection changes announce the patient name in a live region. Blocker counts are text, never colour alone. 12&nbsp;px minimum throughout, replacing today&rsquo;s 9&ndash;10&nbsp;px labels on clinical data.</p></div>
+  </div>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

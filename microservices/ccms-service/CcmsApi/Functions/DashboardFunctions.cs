@@ -169,4 +169,76 @@ public class DashboardFunctions
 
         return await req.OkJsonAsync(list);
     }
+
+    // GET /api/ccms/dashboard/state-distribution
+    [Function("CcmsDashboardStateDistribution")]
+    public async Task<HttpResponseData> StateDistribution(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ccms/dashboard/state-distribution")] HttpRequestData req)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        var counts = await _db.CoverageCases
+            .AsNoTracking()
+            .Where(c => c.TenantId == claims!.TenantId && c.DeletedAt == null)
+            .GroupBy(c => c.CurrentState)
+            .Select(g => new { state = g.Key, count = g.Count() })
+            .ToListAsync();
+
+        var total = counts.Sum(c => c.count);
+        var list = counts
+            .OrderByDescending(c => c.count)
+            .Select(c => new
+            {
+                state = c.state,
+                count = c.count,
+                percentage = total == 0 ? 0 : Math.Round(c.count * 100.0 / total, 1),
+            })
+            .ToList();
+
+        return await req.OkJsonAsync(list);
+    }
+
+    // GET /api/ccms/dashboard/cash-flow
+    [Function("CcmsDashboardCashFlow")]
+    public async Task<HttpResponseData> CashFlow(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ccms/dashboard/cash-flow")] HttpRequestData req)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        var tenantId = claims!.TenantId;
+        var claimsRows = await _db.ClaimPackets
+            .AsNoTracking()
+            .Where(c => c.TenantId == tenantId && c.DeletedAt == null)
+            .Select(c => new { At = c.SubmittedAt ?? c.CreatedAt, c.ClaimedAmount })
+            .ToListAsync();
+
+        var settlements = await _db.Settlements
+            .AsNoTracking()
+            .Where(s => s.TenantId == tenantId && s.DeletedAt == null)
+            .Select(s => new { At = s.SettledAt ?? s.CreatedAt, s.SettledAmount })
+            .ToListAsync();
+
+        var months = Enumerable.Range(0, 6)
+            .Select(i => DateTime.UtcNow.AddMonths(-5 + i))
+            .Select(mo => new DateTime(mo.Year, mo.Month, 1, 0, 0, 0, DateTimeKind.Utc))
+            .ToList();
+
+        var list = months.Select(mo =>
+        {
+            var next = mo.AddMonths(1);
+            var claimed = claimsRows.Where(c => c.At >= mo && c.At < next).Sum(c => c.ClaimedAmount);
+            var settled = settlements.Where(s => s.At >= mo && s.At < next).Sum(s => s.SettledAmount);
+            return new
+            {
+                period = mo.ToString("MMM yyyy"),
+                claimed,
+                settled,
+                pending = Math.Max(claimed - settled, 0),
+            };
+        }).ToList();
+
+        return await req.OkJsonAsync(list);
+    }
 }

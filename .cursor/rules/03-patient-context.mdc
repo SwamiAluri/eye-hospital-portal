@@ -1,0 +1,44 @@
+---
+description: Canonical patient identity, encounter context, MPI, and patient-header reuse across all staff and portal workflows.
+alwaysApply: true
+---
+
+# Patient and encounter context
+
+Patient identity has **one** canonical source: the existing patient / MPI implementation under `src/components/patients`, patient APIs, and related backend — not a new model invented per screen.
+
+## Patient context (staff workflows)
+
+Where a staff workflow is patient-specific, preserve a consistent context. Communicate as applicable:
+
+- Identity (name, MRN/identifiers)
+- Age / sex when clinically relevant
+- Encounter (if the work is encounter-scoped)
+- Location / department / current workflow
+- Alerts, allergies, critical clinical flags
+- Financial / coverage indicators only when that domain already shows them
+- Current status
+
+Do **not** create a competing `PatientHeader` / `PatientContext` / banner without explicit approval. Reuse existing pieces:
+
+- Hub / record: `components/patients` (lookup, record, encounter, tabs)
+- Shared search: `shared/PatientSearchCombobox` and existing hub search — do not add a fifth search widget
+- IP rail / identification: `PatientContextRail`, `PatientIdentificationBanner`, `PatientQuickPanel` (IP-scoped; do not replace the patient record header with these, or vice versa, without approval)
+
+Patient **portal** (`/patient/*`) is a distinct UX. Do not force staff census/chart chrome onto patients, and do not rebuild MPI inside the portal.
+
+## Encounter context
+
+If the workflow is encounter-specific, establish all of: patient, encounter, encounter type, department, provider, date/time, current state. Never use patient-only context where an encounter is required (exam, billing visit, counselling session, IP journey, OT case, claim case).
+
+Do not replace encounter architecture. Do not key clinical writes on “latest patient visit” guesses when an encounter id exists.
+
+## MPI / identity operations
+
+Registration, demographics, contacts, emergency contacts, search, duplicate detection, merge (`/dashboard/patients/merge`), timeline, documents, alerts, identifiers: extend existing patient flows. Do not add a second identity store or a parallel “quick patient” entity.
+
+Merge and identity changes are clinically and legally sensitive — plan, permissions, audit, and approval before destructive behavior.
+
+## Downstream
+
+Identity changes affect front desk, appointments, queue, EHR, imaging, counselling, IP, billing, CCMS, pharmacy, documents, and portal. Search consumers before altering shared patient components or identifiers.

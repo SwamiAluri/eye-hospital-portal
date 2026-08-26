@@ -11,7 +11,7 @@ import AppointmentsFilterPanel, { AppointmentsFilters } from '@/components/appoi
 import AppointmentsActionButtons from '@/components/appointments/AppointmentsActionButtons';
 import CheckInModal from '@/components/appointments/CheckInModal';
 import UnifiedAppointmentBooking from '@/components/appointments/UnifiedAppointmentBooking';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useMasterValues } from '@/hooks/use-master-values';
 import { masterLabelForValue } from '@/lib/master-data/appointment-master';
 import { AppointmentCancelDialog } from '@/components/appointments/AppointmentCancelDialog';

@@ -209,6 +209,44 @@ public class WardChecklistAutoSyncService
         }
     }
 
+    /// <summary>
+    /// Reverses only the Mark Ready auto-tick of <see cref="InformedOtKey"/>.
+    /// A nurse who completed the item manually is left untouched.
+    /// </summary>
+    public async Task ReverseMarkReadyOptionalAsync(
+        Guid journeyId, Guid tenantId, Guid userId, string previousState, string newState)
+    {
+        if (!UnmarkReadyRules.IsUnmarkReady(previousState, newState)) return;
+
+        var item = await _db.PreOpSectionItems
+            .FirstOrDefaultAsync(i => i.ItemKey == InformedOtKey
+                                      && i.FormCode == WardChecklistService.WardFormCode
+                                      && i.FormContext == WardChecklistService.WardFormContext
+                                      && i.DeletedAt == null);
+        if (item is null) return;
+
+        var clearance = await _db.PreOpClearances
+            .FirstOrDefaultAsync(c => c.JourneyId == journeyId && c.TenantId == tenantId && c.DeletedAt == null);
+        if (clearance is null) return;
+
+        var existing = await _db.PreOpCompletions
+            .FirstOrDefaultAsync(c => c.ClearanceId == clearance.Id
+                                      && c.ItemId == item.Id
+                                      && c.DeletedAt == null);
+        if (existing is null) return;
+        if (existing.Notes is null
+            || !existing.Notes.Contains("Auto-synced on Mark Ready", StringComparison.Ordinal))
+            return;
+
+        existing.IsCompleted = false;
+        existing.CompletedAt = null;
+        existing.CompletedByUserId = null;
+        existing.Notes = "Reversed on Un-mark Ready";
+        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedByUserId = userId;
+        await _db.SaveChangesAsync();
+    }
+
     private static bool InvestigationsReportsReady(IReadOnlyList<WardInvestigationItemDto> applicable)
     {
         if (applicable.Count == 0) return false;

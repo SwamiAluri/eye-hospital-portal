@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IP / Ward / OT / Billing / Coverage — target screen mockups</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+
+<header class="topbar">
+  <span class="sid">18</span>
+  <span class="title">IP &middot; Ward &middot; OT &middot; Billing &middot; Coverage — target screen mockups</span>
+  <span class="spacer"></span>
+  <a href="../ip-remaining/workflow.html">Remaining work — how each W screen opens</a>
+  <span class="meta">Static mockups &middot; no build step &middot; open any file directly</span>
+</header>
+
+<main>
+
+  <p class="lede">
+    Visual companion to <strong>&sect;20.4&ndash;&sect;20.7</strong> of
+    <code>docs/ip-ward-ot-billing-coverage-target-architecture.md</code>. Every screen below carries its own
+    <strong>data &amp; action map</strong> resolving each interface element to API &rarr; backend service &rarr;
+    database table &rarr; owning module &rarr; permission &rarr; event, so a mockup can be read as an
+    implementation contract rather than a picture. These are static HTML: nothing here is wired to a running service,
+    and no application code is changed by this folder.
+  </p>
+
+  <div class="callout info">
+    <b>How to read the maps.</b> <span class="mark">1</span> markers point at a change to an existing element,
+    <span class="mark new">2</span> at something net-new, and <span class="mark fix">3</span> at a defect being
+    corrected. The <em>Owner</em> column is the module that owns the write &mdash; it is the boundary that must not be
+    inverted.
+  </div>
+
+  <div class="callout warn">
+    <b>Start here: <a href="conventions.html">Conventions</a>.</b> It carries three things every screen depends on
+    &mdash; the rule that any record a user can create has an <b>Add control and a visible history</b>, the copy rules
+    that keep <b>status codes and service names out of the user interface</b>, and the
+    <b>verified list of endpoints, tables and permission codes</b> read from
+    <code>ip-management-service</code> and <code>auth-service</code>. That last section also lists what an earlier
+    draft of these mockups got wrong, including a permission code and a concurrency mechanism that do not exist.
+  </div>
+
+  <h2 class="sec">Screens</h2>
+  <div class="cards" id="cards"></div>
+
+  <h2 class="sec">Coverage checklist</h2>
+  <p class="lede" style="margin-bottom:14px">
+    Every sub-view rendered in each file &mdash; each step of a workspace, each tab of a detail page, each dialog, and
+    each loading, empty, error and permission state. Use this to verify nothing is missing: the count in the left
+    column is the number of distinct views drawn in that file, not the number of things described in prose.
+    Views covering <b>record creation and history</b> (add dialogs, activity logs, ledgers) and the per-screen
+    <b>Messages</b> tables are included in these counts.
+  </p>
+  <table class="map" id="coverage">
+    <thead>
+      <tr><th>ID</th><th>Screen</th><th>Views</th><th>Rendered sub-views</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2 class="sec">Inventory</h2>
+  <table class="map" id="inventory">
+    <thead>
+      <tr><th>ID</th><th>Screen</th><th>Route / component</th><th>Primary persona</th><th>Pattern</th><th>Status</th><th>Tasks</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2 class="sec">Shared layout shells</h2>
+  <div class="cols-3">
+    <div class="panel">
+      <p class="panel-h">Shell A &mdash; list + context</p>
+      <p class="small muted">S-01, S-04, S-06, S-13. Header, server-derived KPI strip, URL-persisted filters, tab strip
+      with server counts, virtualised table, docked context rail. <b>Never covers its own list.</b></p>
+    </div>
+    <div class="panel">
+      <p class="panel-h">Shell B &mdash; full-screen workspace</p>
+      <p class="small muted">S-05, S-08, S-09. Sticky identity header, left step nav, scrolling content, sticky footer
+      carrying readiness and exactly one primary action. Used only for multi-step, clinically high-risk work.</p>
+    </div>
+    <div class="panel">
+      <p class="panel-h">Shell C &mdash; focused task dialog</p>
+      <p class="small muted">S-03, S-07, S-17. Radix <code>Dialog</code>/<code>AlertDialog</code> with focus trap,
+      Escape and <code>aria-modal</code>. Context recap, minimal fields, consequence preview.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Colour semantics</h2>
+  <div class="strip" style="border:1px solid var(--line); border-radius:6px; background:var(--surface);">
+    <span class="badge info no-dot">Accent &mdash; the only non-semantic colour</span>
+    <span class="badge inhouse">In-house</span>
+    <span class="badge ot">OT / warning</span>
+    <span class="badge danger">Blocker / patient due</span>
+    <span class="badge efc">Emergency FC</span>
+    <span class="badge cancel">Cancelled</span>
+    <span class="badge ok">Cleared</span>
+  </div>
+  <p class="small muted" style="margin-top:8px;">Status is never conveyed by colour alone &mdash; every chip carries a
+  label, and blockers carry an icon and a reason sentence.</p>
+
+</main>
+
+<script src="screens.js"></script>
+<script>
+(function () {
+  var cards = document.getElementById('cards');
+  var tbody = document.querySelector('#inventory tbody');
+  var cbody = document.querySelector('#coverage tbody');
+  var total = 0;
+
+  window.IP_SCREENS.forEach(function (s) {
+    var cls = s.status === 'New' ? 'new' : s.status === 'Keep' ? 'keep' : '';
+    var covers = s.covers || [];
+    total += covers.length;
+
+    var a = document.createElement('a');
+    a.className = 'card';
+    a.href = s.file;
+    a.innerHTML =
+      '<div class="id">' + s.id + '</div>' +
+      '<div class="t">' + s.title + '</div>' +
+      '<div class="r">' + s.route + '</div>' +
+      '<div class="f">' +
+        '<span class="tagr ' + cls + '">' + s.status + '</span>' +
+        '<span class="tagr">' + s.persona + '</span>' +
+        '<span class="tagr">' + covers.length + ' views</span>' +
+      '</div>';
+    cards.appendChild(a);
+
+    var cr = document.createElement('tr');
+    cr.innerHTML =
+      '<td><b>' + s.id + '</b></td>' +
+      '<td><a href="' + s.file + '">' + s.title + '</a></td>' +
+      '<td class="num"><b>' + covers.length + '</b></td>' +
+      '<td>' + covers.map(function (c) {
+        return '<span class="badge no-dot" style="margin:2px 4px 2px 0">' + c + '</span>';
+      }).join('') + '</td>';
+    cbody.appendChild(cr);
+
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><b>' + s.id + '</b></td>' +
+      '<td><a href="' + s.file + '">' + s.title + '</a></td>' +
+      '<td><code>' + s.route + '</code></td>' +
+      '<td>' + s.persona + '</td>' +
+      '<td>' + s.shell + '</td>' +
+      '<td>' + s.status + '</td>' +
+      '<td>' + s.tasks + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  var foot = document.createElement('tr');
+  foot.innerHTML =
+    '<td></td><td><b>Total</b></td><td class="num"><b>' + total + '</b></td>' +
+    '<td class="muted">across ' + window.IP_SCREENS.length + ' screens</td>';
+  cbody.appendChild(foot);
+})();
+</script>
+</body>
+</html>

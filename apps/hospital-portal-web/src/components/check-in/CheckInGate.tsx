@@ -28,7 +28,7 @@ import {
   Loader2,
   ShieldAlert,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { visitsApi, CheckInValidation, CheckInResult } from '@/lib/api/visits.api';
 
 interface CheckInGateProps {

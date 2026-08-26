@@ -296,6 +296,8 @@ public class PostOpFunctions
             return await Created(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
         catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
         catch (Exception ex) { return await InternalError(req, ex.Message); }
     }
@@ -405,6 +407,13 @@ public class PostOpFunctions
     private static async Task<HttpResponseData> NotFound(HttpRequestData req, string message)
     {
         var r = req.CreateResponse(HttpStatusCode.NotFound);
+        await r.WriteAsJsonAsync(new { error = message });
+        return r;
+    }
+
+    private static async Task<HttpResponseData> Conflict(HttpRequestData req, string message)
+    {
+        var r = req.CreateResponse(HttpStatusCode.Conflict);
         await r.WriteAsJsonAsync(new { error = message });
         return r;
     }

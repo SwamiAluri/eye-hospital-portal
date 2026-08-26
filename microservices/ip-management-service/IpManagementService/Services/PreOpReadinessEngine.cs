@@ -14,13 +14,13 @@ public static class PreOpReadinessEngine
 
     private static readonly string[] StepOrder =
     [
-        "investigations", "evaluation", "pac", "consent", "financial",
-        "fasting", "bedside", "admit", "records",
+        "admit", "evaluation", "consent", "investigations", "pac",
+        "bedside", "fasting", "financial", "records",
     ];
 
     private static readonly HashSet<string> AdmissionGated = new(StringComparer.OrdinalIgnoreCase)
     {
-        "evaluation", "pac", "records",
+        "evaluation", "pac", "bedside", "records",
     };
 
     public sealed record InvestigationSlice(int Completed, int Total, int Blocking);

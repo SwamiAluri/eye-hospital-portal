@@ -178,6 +178,41 @@ public class BillItemService : IBillItemService
 
     public async Task<BillItemDto> AddBillItemAsync(AddBillItemRequest request, Guid tenantId, Guid userId)
     {
+        var staged = await StageBillItemAsync(request, tenantId, userId);
+        if (!staged.Created) return staged.Item;
+
+        var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+            ? null
+            : request.IdempotencyKey.Trim();
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException) when (idempotencyKey is not null)
+        {
+            var replay = await FindByIdempotencyKeyAsync(tenantId, idempotencyKey);
+            if (replay != null) return MapToDto(replay);
+            throw;
+        }
+
+        // Cashier Add item must move OpdBill header totals (ChargeItems uses ApplyItemisedGrossAsync).
+        // Increment gross by the new line so OPD consultation headers are not replaced by item-sum.
+        var bill = await _context.OpdBills
+            .FirstOrDefaultAsync(b => b.Id == request.OpdBillId && b.TenantId == tenantId && b.DeletedAt == null);
+        if (bill != null)
+        {
+            bill.GrossAmount = Math.Max(0, bill.GrossAmount) + staged.Item.TotalAmount;
+            await ProjectBillFromPaymentLedgerAsync(bill, userId);
+            await _context.SaveChangesAsync();
+        }
+
+        _logger.LogInformation("Bill item added: {ServiceCode} to bill {BillId}", staged.Item.ServiceCode, request.OpdBillId);
+        return staged.Item;
+    }
+
+    public async Task<StagedBillItem> StageBillItemAsync(AddBillItemRequest request, Guid tenantId, Guid userId)
+    {
         // Day 5: Check if bill is locked before adding items
         var bill = await _context.OpdBills
             .Where(b => b.Id == request.OpdBillId && b.TenantId == tenantId && b.DeletedAt == null)
@@ -188,48 +223,88 @@ public class BillItemService : IBillItemService
             throw new InvalidOperationException("Bill not found.");
         }
 
+        if (bill.IsFinalized)
+        {
+            throw new InvalidOperationException("Bill is finalized and cannot be modified");
+        }
+
+        if (string.Equals(bill.Status, "cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Cannot add items to a cancelled bill.");
+        }
+
         if (bill.IsLocked)
         {
             throw new InvalidOperationException($"Cannot add items to locked bill {bill.BillNumber}. Bill must be unlocked by an administrator.");
         }
 
-        // Get service variant from catalog
+        var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+            ? null
+            : request.IdempotencyKey.Trim();
+
+        if (idempotencyKey is not null)
+        {
+            var existing = await FindByIdempotencyKeyAsync(tenantId, idempotencyKey);
+            if (existing != null) return new StagedBillItem(MapToDto(existing), Created: false);
+        }
+
+        var sourceType = BillChargeSource.Normalize(request.SourceType);
+
         ServiceVariant? variant = null;
         if (request.ServiceVariantId.HasValue)
         {
-            variant = await _context.ServiceVariants
-                .Include(v => v.CatalogService)
-                    .ThenInclude(s => s.Category)
-                .FirstOrDefaultAsync(v => v.Id == request.ServiceVariantId.Value && v.IsActive);
+            variant = await FindVariantAsync(v => v.Id == request.ServiceVariantId.Value && v.IsActive);
         }
         else if (!string.IsNullOrEmpty(request.ServiceCode))
         {
-            variant = await _context.ServiceVariants
-                .Include(v => v.CatalogService)
-                    .ThenInclude(s => s.Category)
-                .FirstOrDefaultAsync(v => v.VariantCode == request.ServiceCode && v.IsActive);
+            variant = await FindVariantAsync(v => v.VariantCode == request.ServiceCode && v.IsActive);
         }
 
-        if (variant == null)
+        Guid? variantId;
+        string serviceCode;
+        string serviceName;
+        string serviceCategory;
+        decimal unitPrice;
+
+        if (variant != null)
         {
-            throw new InvalidOperationException("Service not found in catalog.");
+            var globalPrice = await _context.VariantPrices
+                .Where(p => p.VariantId == variant.Id
+                         && p.BranchId == null
+                         && p.EffectiveTo == null
+                         && p.IsActive)
+                .OrderByDescending(p => p.EffectiveFrom)
+                .Select(p => p.Amount)
+                .FirstOrDefaultAsync();
+
+            variantId = variant.Id;
+            serviceCode = variant.VariantCode ?? string.Empty;
+            serviceName = variant.VariantName;
+            serviceCategory = variant.CatalogService?.Category?.Code ?? string.Empty;
+            unitPrice = request.UnitPriceOverride ?? globalPrice;
+        }
+        else
+        {
+            var named = !string.IsNullOrWhiteSpace(request.ServiceName);
+            var priced = request.UnitPriceOverride.HasValue;
+            var packageDiscount = sourceType == BillChargeSource.PackageDiscount && named;
+            if (!((named && priced) || packageDiscount))
+            {
+                throw new InvalidOperationException("Service not found in catalog.");
+            }
+
+            variantId = null;
+            serviceCode = string.IsNullOrWhiteSpace(request.ServiceCode) ? sourceType : request.ServiceCode.Trim();
+            serviceName = request.ServiceName!.Trim();
+            serviceCategory = sourceType;
+            unitPrice = request.UnitPriceOverride ?? 0m;
         }
 
-        // Resolve the global tariff price for this variant from the normalised price table
-        var globalPrice = await _context.VariantPrices
-            .Where(p => p.VariantId == variant.Id
-                     && p.BranchId == null
-                     && p.EffectiveTo == null
-                     && p.IsActive)
-            .OrderByDescending(p => p.EffectiveFrom)
-            .Select(p => p.Amount)
-            .FirstOrDefaultAsync();
-
-        var unitPrice = request.UnitPriceOverride ?? globalPrice;
-        var subtotal = unitPrice * request.Quantity;
+        var quantity = request.Quantity < 1 ? 1 : request.Quantity;
+        var subtotal = unitPrice * quantity;
         var discountAmount = subtotal * (request.DiscountPercentage / 100);
         var taxableAmount = subtotal - discountAmount;
-        var taxAmount = 0m; // No tax in V2 catalog
+        var taxAmount = 0m;
         var totalAmount = taxableAmount + taxAmount;
 
         var item = new OpdBillItem
@@ -237,12 +312,12 @@ public class BillItemService : IBillItemService
             Id = Guid.NewGuid(),
             TenantId = tenantId,
             OpdBillId = request.OpdBillId,
-            ServiceVariantId = variant.Id,
-            ServiceCode = variant.VariantCode ?? string.Empty,
-            ServiceName = variant.VariantName,
-            ServiceCategory = variant.CatalogService?.Category?.Code ?? string.Empty,
+            ServiceVariantId = variantId,
+            ServiceCode = serviceCode,
+            ServiceName = serviceName,
+            ServiceCategory = serviceCategory,
             Description = null,
-            Quantity = request.Quantity,
+            Quantity = quantity,
             UnitPrice = unitPrice,
             Subtotal = subtotal,
             DiscountAmount = discountAmount,
@@ -253,17 +328,40 @@ public class BillItemService : IBillItemService
             TotalAmount = totalAmount,
             Status = "pending",
             Notes = request.Notes,
+            SourceType = sourceType,
+            SourceRefId = request.SourceRefId,
+            IdempotencyKey = idempotencyKey,
             CreatedAt = DateTime.UtcNow,
             CreatedByUserId = userId
         };
 
         _context.Set<OpdBillItem>().Add(item);
-        await _context.SaveChangesAsync();
+        bill.UpdatedAt = DateTime.UtcNow;
+        bill.UpdatedByUserId = userId;
 
-        _logger.LogInformation("Bill item added: {ServiceCode} to bill {BillId}", variant.VariantCode, request.OpdBillId);
-
-        return MapToDto(item);
+        return new StagedBillItem(MapToDto(item), Created: true);
     }
+
+    /// <summary>
+    /// Required CatalogService Include is an inner join. A variant whose parent row is missing
+    /// must still post at the catalog price rather than disappear.
+    /// </summary>
+    private async Task<ServiceVariant?> FindVariantAsync(System.Linq.Expressions.Expression<Func<ServiceVariant, bool>> predicate)
+    {
+        var withCatalog = await _context.ServiceVariants
+            .Include(v => v.CatalogService)
+                .ThenInclude(s => s.Category)
+            .FirstOrDefaultAsync(predicate);
+        if (withCatalog != null) return withCatalog;
+        return await _context.ServiceVariants.FirstOrDefaultAsync(predicate);
+    }
+
+    private Task<OpdBillItem?> FindByIdempotencyKeyAsync(Guid tenantId, string idempotencyKey)
+        => _context.Set<OpdBillItem>()
+            .FirstOrDefaultAsync(i =>
+                i.TenantId == tenantId
+                && i.IdempotencyKey == idempotencyKey
+                && i.DeletedAt == null);
 
     public async Task<BillItemDto> UpdateBillItemAsync(Guid id, UpdateBillItemRequest request, Guid tenantId, Guid userId)
     {
@@ -277,11 +375,22 @@ public class BillItemService : IBillItemService
             throw new InvalidOperationException("Bill item not found.");
         }
 
-        // Day 5: Check if bill is locked before updating items
-        if (item.OpdBill?.IsLocked == true)
+        if (item.OpdBill is null)
+        {
+            throw new InvalidOperationException("Bill item not found.");
+        }
+
+        if (item.OpdBill.IsFinalized)
+        {
+            throw new InvalidOperationException("Bill is finalized and cannot be modified");
+        }
+
+        if (item.OpdBill.IsLocked)
         {
             throw new InvalidOperationException($"Cannot update items on locked bill {item.OpdBill.BillNumber}. Bill must be unlocked by an administrator.");
         }
+
+        var previousTotal = item.TotalAmount;
 
         // Recalculate amounts
         var unitPrice = request.UnitPriceOverride ?? item.UnitPrice;
@@ -304,6 +413,8 @@ public class BillItemService : IBillItemService
         item.UpdatedAt = DateTime.UtcNow;
         item.UpdatedByUserId = userId;
 
+        AdjustGross(item.OpdBill, totalAmount - previousTotal);
+        await ProjectBillFromPaymentLedgerAsync(item.OpdBill, userId);
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Bill item updated: {ItemId}", id);
@@ -311,7 +422,7 @@ public class BillItemService : IBillItemService
         return MapToDto(item);
     }
 
-    public async Task<bool> DeleteBillItemAsync(Guid id, Guid tenantId)
+    public async Task<bool> DeleteBillItemAsync(Guid id, Guid tenantId, Guid userId)
     {
         var item = await _context.Set<OpdBillItem>()
             .Include(i => i.OpdBill)
@@ -319,13 +430,23 @@ public class BillItemService : IBillItemService
 
         if (item == null) return false;
 
-        // Day 5: Check if bill is locked before deleting items
-        if (item.OpdBill?.IsLocked == true)
+        if (item.OpdBill is null)
+            return false;
+
+        if (item.OpdBill.IsFinalized)
+        {
+            throw new InvalidOperationException("Bill is finalized and cannot be modified");
+        }
+
+        if (item.OpdBill.IsLocked)
         {
             throw new InvalidOperationException($"Cannot delete items from locked bill {item.OpdBill.BillNumber}. Bill must be unlocked by an administrator.");
         }
 
         item.DeletedAt = DateTime.UtcNow;
+        item.UpdatedByUserId = userId;
+        AdjustGross(item.OpdBill, -item.TotalAmount);
+        await ProjectBillFromPaymentLedgerAsync(item.OpdBill, userId);
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Bill item deleted: {ItemId}", id);
@@ -368,18 +489,51 @@ public class BillItemService : IBillItemService
 
         if (bill != null)
         {
-            bill.GrossAmount = summary.Subtotal;
-            bill.DiscountAmount = summary.TotalDiscount;
-            bill.TaxAmount = summary.TotalTax;
-            bill.NetAmount = summary.NetAmount;
-            bill.UpdatedAt = DateTime.UtcNow;
-
+            var items = await _context.Set<OpdBillItem>()
+                .Where(i => i.OpdBillId == billId && i.TenantId == tenantId && i.DeletedAt == null)
+                .ToListAsync();
+            var itemTotal = items.Sum(i => i.TotalAmount);
+            var exploded = items.Any(i =>
+                i.SourceType == BillChargeSource.Package || i.SourceType == BillChargeSource.PackageDiscount);
+            bill.GrossAmount = exploded ? itemTotal : Math.Max(0, bill.AdditionalCharges) + itemTotal;
+            await ProjectBillFromPaymentLedgerAsync(bill, bill.UpdatedByUserId ?? bill.CreatedByUserId);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Bill recalculated: {BillId} - Net Amount: {NetAmount}", billId, summary.NetAmount);
+            _logger.LogInformation("Bill recalculated: {BillId} - Net Amount: {NetAmount}", billId, bill.NetAmount);
+            return await GetBillSummaryAsync(billId, tenantId);
         }
 
         return summary;
+    }
+
+    private static void AdjustGross(OpdBill bill, decimal delta)
+        => bill.GrossAmount = Math.Max(0, bill.GrossAmount + delta);
+
+    private async Task ProjectBillFromPaymentLedgerAsync(OpdBill bill, Guid userId)
+    {
+        var lines = await _context.OpdBillPayments
+            .Where(p => p.OpdBillId == bill.Id)
+            .Select(p => new OpdBillLedgerCalculator.Line(
+                string.IsNullOrWhiteSpace(p.PaymentKind) ? OpdBillLedgerCalculator.Payment : p.PaymentKind,
+                p.Amount,
+                p.Status))
+            .ToListAsync();
+
+        var snap = OpdBillLedgerCalculator.Compute(
+            bill.GrossAmount,
+            bill.TaxAmount,
+            bill.InsuranceClaimAmount,
+            bill.IsFinalized,
+            lines);
+
+        bill.DiscountAmount = snap.DiscountTotal;
+        bill.NetAmount = snap.BilledAmount;
+        bill.AmountPaid = snap.Collected;
+        bill.BalanceDue = snap.BalanceDue;
+        if (bill.Status is not ("cancelled" or "credit_approved"))
+            bill.Status = snap.DerivedStatus;
+        bill.UpdatedAt = DateTime.UtcNow;
+        bill.UpdatedByUserId = userId;
     }
 
     private static BillItemDto MapToDto(OpdBillItem item)
@@ -401,7 +555,12 @@ public class BillItemService : IBillItemService
             PerformedByUserId = item.PerformedByUserId,
             PerformedAt = item.PerformedAt,
             Status = item.Status,
-            Notes = item.Notes
+            Notes = item.Notes,
+            ServiceCode = item.ServiceCode,
+            ServiceName = item.ServiceName,
+            SourceType = string.IsNullOrWhiteSpace(item.SourceType) ? BillChargeSource.Manual : item.SourceType,
+            SourceRefId = item.SourceRefId,
+            IdempotencyKey = item.IdempotencyKey
         };
     }
 }

@@ -12,6 +12,12 @@ namespace AuthService.Services
         // Basic audit logging
         Task LogAsync(string action, string resourceType, Guid? resourceId, string? details = null, string? oldValue = null, string? newValue = null);
         Task LogAsync(Guid userId, string action, string resourceType, Guid? resourceId, string? details = null, string? oldValue = null, string? newValue = null);
+
+        /// <summary>
+        /// Queues an audit row on the shared DbContext without saving, so the caller's
+        /// SaveChangesAsync writes the audit and the audited change atomically.
+        /// </summary>
+        Task StageAsync(Guid userId, string action, string resourceType, Guid? resourceId, string? details = null, string? oldValue = null, string? newValue = null);
         
         // Enhanced security logging
         Task LogSecurityEventAsync(Guid userId, string eventType, string riskLevel, Dictionary<string, object> metadata);
@@ -106,6 +112,18 @@ namespace AuthService.Services
 
         public async Task LogAsync(Guid userId, string action, string resourceType, Guid? resourceId, string? details = null, string? oldValue = null, string? newValue = null)
         {
+            await StageAsync(userId, action, resourceType, resourceId, details, oldValue, newValue);
+            await _context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Adds the audit row to the change tracker without saving, so the caller's
+        /// own SaveChangesAsync commits the audit and the change it describes in one
+        /// transaction. Financial mutations use this: an audit that cannot be written
+        /// must take the money operation down with it rather than be logged and lost.
+        /// </summary>
+        public async Task StageAsync(Guid userId, string action, string resourceType, Guid? resourceId, string? details = null, string? oldValue = null, string? newValue = null)
+        {
             var tenantId = GetCurrentTenantId();
             var previousLog = await GetPreviousAuditLogAsync(tenantId);
 
@@ -143,7 +161,6 @@ namespace AuthService.Services
             auditLog.EventHash = CalculateEventHash(auditLog);
 
             _context.AuditLogs.Add(auditLog);
-            await _context.SaveChangesAsync();
         }
 
         public async Task LogSecurityEventAsync(Guid userId, string eventType, string riskLevel, Dictionary<string, object> metadata)

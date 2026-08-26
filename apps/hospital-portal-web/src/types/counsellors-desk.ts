@@ -137,6 +137,7 @@ export interface CounsellingSession {
   surgeries: SurgeryOption[];
   selectedSurgeryId: string | null;
   /** Restored eye axis from DB (surgeryTentativeEye or blob). Used to pre-set the eye toggle when selectedSurgeryId is null. */
+  iolPower?: string;
   restoredEye?: string;
   /** Internal-only sub-type selected for the procedure (e.g. 'Supraphob', 'Premium'). Staff use only. */
   variantSubOption?: string | null;
@@ -253,6 +254,7 @@ export interface OtScheduleDetail extends FinalizeSurgeryRecord {
   checklistItems?: OtChecklist;
   doctorId?: string;
   theatreId?: string;
+  biometryMissingForEye?: boolean;
   // Patient demographics
   contactNumber?: string;
   bloodGroup?: string;

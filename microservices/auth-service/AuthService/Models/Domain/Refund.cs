@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using AuthService.Models.Identity;
 
@@ -73,22 +74,29 @@ public class Refund
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // Navigation properties
+    // Navigation properties. JsonIgnore: OpdBill/Patient/AppUser graphs are cyclic
+    // and abort the HTTP response after the refund row is already committed.
     [ForeignKey("BillId")]
+    [JsonIgnore]
     public virtual OpdBill? Bill { get; set; }
 
     [ForeignKey("PatientId")]
+    [JsonIgnore]
     public virtual Patient? Patient { get; set; }
 
     [ForeignKey("VisitId")]
+    [JsonIgnore]
     public virtual Visit? Visit { get; set; }
 
     [ForeignKey("TenantId")]
+    [JsonIgnore]
     public virtual Tenant? Tenant { get; set; }
 
     [ForeignKey("RequestedByUserId")]
+    [JsonIgnore]
     public virtual AppUser? RequestedByUser { get; set; }
 
     [ForeignKey("AuthorizedByUserId")]
+    [JsonIgnore]
     public virtual AppUser? AuthorizedByUser { get; set; }
 }

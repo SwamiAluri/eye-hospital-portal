@@ -14,6 +14,7 @@ var host = new HostBuilder()
     .ConfigureAppConfiguration((context, config) =>
     {
         config.AddJsonFile("local.settings.json", optional: true, reloadOnChange: false);
+        config.AddEnvironmentVariables();
     })
     .ConfigureServices((context, services) =>
     {
@@ -41,6 +42,7 @@ var host = new HostBuilder()
         services.AddScoped<ITaxService, TaxService>();
         services.AddScoped<IApprovalService, ApprovalService>();
         services.AddScoped<IStockService, StockService>();
+        services.AddScoped<IImplantStockService, ImplantStockService>();
         services.AddScoped<IGrnPartialAcceptanceService, GrnPartialAcceptanceService>();
         services.AddScoped<IGrnService, GrnService>();
         services.AddScoped<IStockTransferService, StockTransferService>();

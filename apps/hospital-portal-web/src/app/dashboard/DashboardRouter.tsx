@@ -14,20 +14,27 @@ const ROLE_DASHBOARD_MAP: Record<string, string> = {
   'Compliance Officer': '/dashboard/admin/overview',
   'System Auditor': '/dashboard/admin/overview',
   'Support Engineer': '/dashboard/admin/overview',
-  Doctor: '/dashboard/clinical',
-  Consultant: '/dashboard/clinical',
-  'Junior Doctor': '/dashboard/clinical',
-  Nurse: '/dashboard/clinical',
-  'Nurse Manager': '/dashboard/clinical',
+  // Clinical: /dashboard/clinical does not exist. Doctor's Desk is the live
+  // queue at /dashboard/doctors-desk (sidebar "Doctor's Desk").
+  Doctor: '/dashboard/doctors-desk',
+  Consultant: '/dashboard/doctors-desk',
+  'Junior Doctor': '/dashboard/doctors-desk',
+  // Nursing: ward board is the operational home (sidebar "Ward").
+  Nurse: '/dashboard/ip-management/ward',
+  'Nurse Manager': '/dashboard/ip-management/ward',
   Receptionist: '/dashboard/frontdesk',
   Counsellor: '/dashboard/frontdesk',
   Pharmacist: '/dashboard/pharmacy',
   'Pharmacy Manager': '/dashboard/pharmacy',
-  'Lab Technician': '/dashboard/lab',
-  'Lab Manager': '/dashboard/lab',
-  'Billing Clerk': '/dashboard/billing',
-  'Housekeeping Supervisor': '/dashboard/support',
-  'Maintenance Technician': '/dashboard/support',
+  // Lab: /dashboard/lab does not exist. Sidebar "Laboratory (Pathology)".
+  'Lab Technician': '/dashboard/laboratory',
+  'Lab Manager': '/dashboard/laboratory',
+  // Billing: /dashboard/billing has no index. Sidebar "Billing & Finance".
+  'Billing Clerk': '/dashboard/billing/opd',
+  // Support: /dashboard/support does not exist. Sidebar maps Housekeeping → CSSD
+  // and Asset Management / maintenance → biomedical.
+  'Housekeeping Supervisor': '/dashboard/operations/cssd',
+  'Maintenance Technician': '/dashboard/operations/biomedical',
 };
 
 const ADMIN_ROLE_PATTERNS = [

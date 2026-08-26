@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
 using IpManagementService.Models.Dtos;
 using IpManagementService.Services;
 
@@ -17,12 +18,14 @@ namespace IpManagementService.Functions;
 ///   PUT    /api/ip-management/journeys/{id}/ward    → Update ward assignment (Ward Updation Modal)
 ///   PUT    /api/ip-management/journeys/{id}/ot      → Update OT details (OT inline form)
 ///   POST   /api/ip-management/journeys/{id}/clinical-transition  → Clinical state transition
-///   POST   /api/ip-management/journeys/{id}/financial-transition → Financial state transition
+///   POST   /api/ip-management/journeys/{id}/financial-transition → deprecated; Billing owns Paid/Settled
 ///   POST   /api/ip-management/journeys/{id}/emergency-fc         → Emergency FC modal
 ///   POST   /api/ip-management/journeys/{id}/discharge-override   → Discharge override
 ///   GET    /api/ip-management/journeys/{id}/audit   → audit log
-///   POST   /api/ip-management/journeys/{id}/billing             → add billing transaction
-///   GET    /api/ip-management/journeys/{id}/billing             → list billing transactions
+///   GET/POST /api/ip-management/journeys/{id}/safety-token → wristband (W-05 A5)
+///   POST   /api/ip-management/journeys/{id}/safety-token/reprint
+///   GET    /api/ip-management/journeys/{id}/billing             → list billing transactions (read projection)
+///   POST   /api/ip-management/journeys/{id}/billing             → deprecated write path; Billing OpdBill owns money
 ///   GET/POST /api/ip-management/journeys/{id}/intra-op         → intra-op note
 ///   POST   /api/ip-management/journeys/{id}/intra-op/sign      → sign intra-op note
 /// </summary>
@@ -34,6 +37,10 @@ public class JourneyFunctions
     private readonly IntraOpPresetService  _presetSvc;
     private readonly JwtService            _jwt;
     private readonly IIolCatalogService    _iolCatalogSvc;
+    private readonly ImplantUsageService   _implantSvc;
+    private readonly JourneySafetyTokenService _safetyTokenSvc;
+    private readonly JourneyCommandAuthContext _commandAuth;
+    private readonly ILogger<JourneyFunctions> _log;
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -48,7 +55,11 @@ public class JourneyFunctions
         IntraOpNoteService    intraOpSvc,
         IntraOpPresetService  presetSvc,
         JwtService            jwt,
-        IIolCatalogService    iolCatalogSvc)
+        IIolCatalogService    iolCatalogSvc,
+        ImplantUsageService   implantSvc,
+        JourneySafetyTokenService safetyTokenSvc,
+        JourneyCommandAuthContext commandAuth,
+        ILogger<JourneyFunctions> log)
     {
         _journeySvc    = journeySvc;
         _billingSvc    = billingSvc;
@@ -56,6 +67,10 @@ public class JourneyFunctions
         _presetSvc     = presetSvc;
         _jwt           = jwt;
         _iolCatalogSvc = iolCatalogSvc;
+        _implantSvc    = implantSvc;
+        _safetyTokenSvc = safetyTokenSvc;
+        _commandAuth   = commandAuth;
+        _log           = log;
     }
 
     // ── List journeys ─────────────────────────────────────────────────────────
@@ -95,6 +110,27 @@ public class JourneyFunctions
                 tid, branchId, clinicalState, wardId,
                 otRoom, anaesthetist, paymentMode, surgeryDate, limit, offset);
             return await Ok(req, rows, total);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("CensusTabCounts")]
+    public async Task<HttpResponseData> CensusTabCounts(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+             Route = "ip-management/journeys/tab-counts")]
+        HttpRequestData req)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var qs = ParseQs(req.Url.Query);
+            if (!qs.TryGetValue("branchId", out var branchStr) || !Guid.TryParse(branchStr, out var branchId))
+                return await BadRequest(req, "branchId is required.");
+
+            var counts = await _journeySvc.GetCensusTabCountsAsync(tid, branchId);
+            return await Ok(req, counts);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
         catch (Exception ex) { return await InternalError(req, ex.Message); }
@@ -147,6 +183,91 @@ public class JourneyFunctions
         catch (Exception ex) { return await InternalError(req, ex.Message); }
     }
 
+    [Function("GetJourneyAudit")]
+    public async Task<HttpResponseData> GetJourneyAudit(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "ip-management/journeys/{id:guid}/audit")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            _commandAuth.Bind(req, _jwt);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var rows = await _journeySvc.GetAuditLogsAsync(id, tid);
+            return await Ok(req, rows);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    // ── Safety token / wristband (W-05 A5) ────────────────────────────────────
+
+    [Function("GetJourneySafetyToken")]
+    public async Task<HttpResponseData> GetJourneySafetyToken(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+            Route = "ip-management/journeys/{id:guid}/safety-token")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            IpChecklistAuth.RequireSafetyTokenPrint(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var token = await _safetyTokenSvc.GetActiveAsync(id, tid);
+            // No token yet is a valid state (wristband not printed). Do not 404 —
+            // that collides with a missing route and surfaces as a red banner.
+            if (token is null) return NoContent(req);
+            return await Ok(req, token);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("IssueJourneySafetyToken")]
+    public async Task<HttpResponseData> IssueJourneySafetyToken(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+            Route = "ip-management/journeys/{id:guid}/safety-token")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            IpChecklistAuth.RequireSafetyTokenPrint(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var token = await _safetyTokenSvc.IssueAsync(id, tid, userId);
+            return token.AlreadyIssued ? await Ok(req, token) : await Created(req, token);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("ReprintJourneySafetyToken")]
+    public async Task<HttpResponseData> ReprintJourneySafetyToken(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+            Route = "ip-management/journeys/{id:guid}/safety-token/reprint")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            IpChecklistAuth.RequireSafetyTokenPrint(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var token = await _safetyTokenSvc.ReprintAsync(id, tid, userId);
+            return await Ok(req, token);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
     [Function("OnboardExpectedJourneys")]
     public async Task<HttpResponseData> OnboardExpectedJourneys(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "ip-management/journeys/onboard-expected")]
@@ -193,7 +314,8 @@ public class JourneyFunctions
     {
         try
         {
-            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            IpChecklistAuth.RequireAdmit(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<AdmitPatientRequest>(req.Body, Json)
@@ -217,7 +339,8 @@ public class JourneyFunctions
     {
         try
         {
-            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            IpChecklistAuth.RequireBedTransfer(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<UpdateWardAssignmentRequest>(req.Body, Json)
@@ -256,6 +379,31 @@ public class JourneyFunctions
         catch (Exception ex) { return await InternalError(req, ex.Message); }
     }
 
+    [Function("RefreshJourneyFromOpd")]
+    public async Task<HttpResponseData> RefreshJourneyFromOpd(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+             Route = "ip-management/journeys/{id:guid}/refresh-from-opd")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequireAnyPermission(
+                req, _jwt,
+                IpChecklistAuth.PermCounsellorEdit,
+                IpChecklistAuth.PermWardEdit,
+                IpChecklistAuth.PermClinicalEvalSign);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var result = await _journeySvc.RefreshFromOpdAsync(id, tid, userId);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
     // ── Clinical transition ────────────────────────────────────────────────────
 
     [Function("TransitionClinical")]
@@ -266,11 +414,12 @@ public class JourneyFunctions
     {
         try
         {
-            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<TransitionRequest>(req.Body, Json)
                        ?? throw new ArgumentException("Body required.");
+            IpChecklistAuth.RequireClinicalTransitionTo(req, _jwt, body.NewState);
+            _commandAuth.Bind(req, _jwt);
             var roles  = _jwt.ExtractRoles(req);
             var result = await _journeySvc.TransitionClinicalAsync(id, tid, userId, body, roles);
             return await Ok(req, result);
@@ -293,11 +442,36 @@ public class JourneyFunctions
         try
         {
             IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<CancelTodaySurgeryRequest>(req.Body, Json)
                        ?? throw new ArgumentException("Body required.");
             var result = await _journeySvc.CancelTodaySurgeryAsync(id, tid, userId, body);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("CancelAdmission")]
+    public async Task<HttpResponseData> CancelAdmission(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+             Route = "ip-management/journeys/{id:guid}/cancel-admission")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid  = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<CancelAdmissionRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _journeySvc.CancelAdmissionAsync(id, tid, userId, body);
             return await Ok(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
@@ -318,9 +492,100 @@ public class JourneyFunctions
         try
         {
             IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid = _jwt.ExtractTenantId(req, tenantId);
             var result = await _journeySvc.RebookCancelledSurgeryAsync(id, tid, userId);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("TransferJourneyBed")]
+    public async Task<HttpResponseData> TransferJourneyBed(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+             Route = "ip-management/journeys/{id:guid}/transfer-bed")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequireBedTransfer(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<TransferBedRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _journeySvc.TransferBedAsync(id, tid, userId, body);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("ListJourneyBedAssignments")]
+    public async Task<HttpResponseData> ListJourneyBedAssignments(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+             Route = "ip-management/journeys/{id:guid}/bed-assignments")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var result = await _journeySvc.ListBedAssignmentsAsync(id, tid);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("DischargeJourneyWithType")]
+    public async Task<HttpResponseData> DischargeJourneyWithType(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+             Route = "ip-management/journeys/{id:guid}/discharge")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<DischargeWithTypeRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _journeySvc.DischargeWithTypeAsync(id, tid, userId, body);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("CancelJourneyDischarge")]
+    public async Task<HttpResponseData> CancelJourneyDischarge(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+             Route = "ip-management/journeys/{id:guid}/cancel-discharge")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequireDischargeCancel(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<CancelDischargeRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _journeySvc.CancelDischargeAsync(id, tid, userId, body);
             return await Ok(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
@@ -340,6 +605,7 @@ public class JourneyFunctions
     {
         try
         {
+            IpChecklistAuth.RequireBillingCollect(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<TransitionRequest>(req.Body, Json)
@@ -354,6 +620,25 @@ public class JourneyFunctions
         catch (Exception ex) { return await InternalError(req, ex.Message); }
     }
 
+    [Function("GetJourneyFinancialSummary")]
+    public async Task<HttpResponseData> GetJourneyFinancialSummary(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+             Route = "ip-management/journeys/{id:guid}/financial-summary")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var summary = await _billingSvc.GetFinancialSummaryAsync(id, tid);
+            return await Ok(req, summary);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
     // ── Accept patient in OT ──────────────────────────────────────────────────
 
     [Function("AcceptInOt")]
@@ -364,7 +649,8 @@ public class JourneyFunctions
     {
         try
         {
-            IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermOtSign);
+            IpChecklistAuth.RequireAcceptInOt(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid = _jwt.ExtractTenantId(req, tenantId);
             var qs  = ParseQs(req.Url.Query);
@@ -389,7 +675,8 @@ public class JourneyFunctions
     {
         try
         {
-            IpChecklistAuth.RequirePermission(req, _jwt, IpChecklistAuth.PermOtSign);
+            IpChecklistAuth.RequireStartSurgery(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid = _jwt.ExtractTenantId(req, tenantId);
             var qs  = ParseQs(req.Url.Query);
@@ -415,6 +702,7 @@ public class JourneyFunctions
         try
         {
             IpChecklistAuth.RequireEmergencyFc(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<EmergencyFcRequest>(req.Body, Json)
@@ -438,7 +726,8 @@ public class JourneyFunctions
     {
         try
         {
-            IpChecklistAuth.RequireClinicalTransition(req, _jwt);
+            IpChecklistAuth.RequireDischargeOverride(req, _jwt);
+            _commandAuth.Bind(req, _jwt);
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
             var tid  = _jwt.ExtractTenantId(req, tenantId);
             var body = await JsonSerializer.DeserializeAsync<DischargeOverrideRequest>(req.Body, Json)
@@ -516,12 +805,22 @@ public class JourneyFunctions
         try
         {
             var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            if (BrowserOrigin.LooksLikeBrowser(req))
+            {
+                _log.LogWarning(
+                    "Rejected browser POST /journeys/{JourneyId}/billing. Money must be collected through Billing OpdBill APIs. User {UserId}.",
+                    id, userId);
+                return await Gone(req,
+                    "This billing endpoint is retired. Collect payment through Billing OpdBill APIs.");
+            }
             var tid = _jwt.ExtractTenantId(req, tenantId);
             var qs  = ParseQs(req.Url.Query);
             qs.TryGetValue("branchId", out var branchStr);
             Guid.TryParse(branchStr, out var branchId);
             var body = await JsonSerializer.DeserializeAsync<AddBillingTransactionRequest>(req.Body, Json)
                        ?? throw new ArgumentException("Body required.");
+            IpChecklistAuth.RequireBillingMutation(req, _jwt, body.TransactionType);
+            _commandAuth.Bind(req, _jwt);
             var tx = await _billingSvc.AddAsync(id, tid, branchId, userId, body);
             return await Created(req, tx);
         }
@@ -569,10 +868,76 @@ public class JourneyFunctions
                 return await BadRequest(req, "Barcode must not be empty.");
 
             var result = await _journeySvc.VerifyIolBarcodeAsync(id, tid, userId, body.Barcode);
+            result = await _implantSvc.ResolveBarcodeAsync(id, tid, userId, body.Barcode, result);
             return await Ok(req, result);
         }
         catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
         catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("ListImplants")]
+    public async Task<HttpResponseData> ListImplants(
+        [HttpTrigger(AuthorizationLevel.Function, "get",
+            Route = "ip-management/journeys/{id:guid}/implants")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            var (_, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var rows = await _implantSvc.ListAsync(id, tid);
+            return await Ok(req, rows);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("RecordImplant")]
+    public async Task<HttpResponseData> RecordImplant(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+            Route = "ip-management/journeys/{id:guid}/implants")]
+        HttpRequestData req, Guid id)
+    {
+        try
+        {
+            IpChecklistAuth.RequireImplantRecord(req, _jwt);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            _commandAuth.Bind(req, _jwt);
+            var body = await JsonSerializer.DeserializeAsync<RecordImplantRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _implantSvc.RecordAsync(id, tid, userId, body);
+            return await Created(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
+        catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
+        catch (Exception ex) { return await InternalError(req, ex.Message); }
+    }
+
+    [Function("UpdateImplant")]
+    public async Task<HttpResponseData> UpdateImplant(
+        [HttpTrigger(AuthorizationLevel.Function, "patch",
+            Route = "ip-management/journeys/{id:guid}/implants/{usageId:guid}")]
+        HttpRequestData req, Guid id, Guid usageId)
+    {
+        try
+        {
+            IpChecklistAuth.RequireImplantRecord(req, _jwt);
+            var (userId, tenantId) = _jwt.ValidateAndExtract(req);
+            var tid = _jwt.ExtractTenantId(req, tenantId);
+            var body = await JsonSerializer.DeserializeAsync<UpdateImplantRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            var result = await _implantSvc.UpdateAsync(id, tid, userId, usageId, body);
+            return await Ok(req, result);
+        }
+        catch (UnauthorizedAccessException ex) { return await Unauthorized(req, ex.Message); }
+        catch (KeyNotFoundException ex) { return await NotFound(req, ex.Message); }
+        catch (InvalidOperationException ex) { return await Conflict(req, ex.Message); }
         catch (ArgumentException ex) { return await BadRequest(req, ex.Message); }
         catch (Exception ex) { return await InternalError(req, ex.Message); }
     }
@@ -702,38 +1067,32 @@ public class JourneyFunctions
         return r;
     }
 
-    private static async Task<HttpResponseData> BadRequest(HttpRequestData req, string message)
+    private static HttpResponseData NoContent(HttpRequestData req)
+        => req.CreateResponse(HttpStatusCode.NoContent);
+
+    private static async Task<HttpResponseData> WriteError(HttpRequestData req, HttpStatusCode status, string message)
     {
-        var r = req.CreateResponse(HttpStatusCode.BadRequest);
-        await r.WriteAsJsonAsync(new { error = message });
+        var r = req.CreateResponse(status);
+        r.Headers.Add("Content-Type", "application/json; charset=utf-8");
+        await r.WriteStringAsync(JsonSerializer.Serialize(new { error = message }, Json));
         return r;
     }
 
-    private static async Task<HttpResponseData> Unauthorized(HttpRequestData req, string message)
-    {
-        var r = req.CreateResponse(HttpStatusCode.Unauthorized);
-        await r.WriteAsJsonAsync(new { error = message });
-        return r;
-    }
+    private static Task<HttpResponseData> Gone(HttpRequestData req, string message)
+        => WriteError(req, HttpStatusCode.Gone, message);
 
-    private static async Task<HttpResponseData> NotFound(HttpRequestData req, string message)
-    {
-        var r = req.CreateResponse(HttpStatusCode.NotFound);
-        await r.WriteAsJsonAsync(new { error = message });
-        return r;
-    }
+    private static Task<HttpResponseData> BadRequest(HttpRequestData req, string message)
+        => WriteError(req, HttpStatusCode.BadRequest, message);
 
-    private static async Task<HttpResponseData> Conflict(HttpRequestData req, string message)
-    {
-        var r = req.CreateResponse(HttpStatusCode.Conflict);
-        await r.WriteAsJsonAsync(new { error = message });
-        return r;
-    }
+    private static Task<HttpResponseData> Unauthorized(HttpRequestData req, string message)
+        => WriteError(req, HttpStatusCode.Unauthorized, message);
 
-    private static async Task<HttpResponseData> InternalError(HttpRequestData req, string message)
-    {
-        var r = req.CreateResponse(HttpStatusCode.InternalServerError);
-        await r.WriteAsJsonAsync(new { error = message });
-        return r;
-    }
+    private static Task<HttpResponseData> NotFound(HttpRequestData req, string message)
+        => WriteError(req, HttpStatusCode.NotFound, message);
+
+    private static Task<HttpResponseData> Conflict(HttpRequestData req, string message)
+        => WriteError(req, HttpStatusCode.Conflict, message);
+
+    private static Task<HttpResponseData> InternalError(HttpRequestData req, string message)
+        => WriteError(req, HttpStatusCode.InternalServerError, message);
 }

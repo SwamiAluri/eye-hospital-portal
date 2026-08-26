@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body data-screen="W-06">
+<main>
+  <p class="lede">
+    Pre-op workspace (existing S-05). New footer chip and <strong>warnings</strong> only.
+    Consent, laterality, PAC and critical labs remain hard stops. Mark Ready stays enabled when only dilation or vitals are incomplete.
+  </p>
+
+  <h2 class="sec">Dilation remaining + high blood pressure (warn)</h2>
+  <div class="frame">
+    <div class="workspace">
+      <div class="ws-head">
+        <div>
+          <div class="name">Meena Iyer</div>
+          <div class="ident">UHID UAT-002 · 54 years · Female · Phaco + IOL · Chair C-04</div>
+        </div>
+        <span class="badge inhouse">Admitted</span>
+        <div class="eye" style="margin-left:4px"><span class="eye-k">Operating eye</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+        <span class="spacer"></span>
+        <span class="muted">Close</span>
+      </div>
+      <div class="ws-body">
+        <nav class="ws-steps">
+          <div class="ws-step done"><span class="n">✓</span> Admission</div>
+          <div class="ws-step done"><span class="n">✓</span> Evaluation</div>
+          <div class="ws-step done"><span class="n">✓</span> Consent</div>
+          <div class="ws-step done"><span class="n">✓</span> Investigations</div>
+          <div class="ws-step done"><span class="n">✓</span> PAC</div>
+          <div class="ws-step active"><span class="n">6</span> Bedside &amp; vitals</div>
+          <div class="ws-step"><span class="n">7</span> Drops &amp; fasting</div>
+          <div class="ws-step"><span class="n">8</span> Coverage</div>
+        </nav>
+        <div class="ws-content">
+          <div class="row between">
+            <h3 style="margin:0;font-size:15px">Latest vitals · 09:18</h3>
+            <span class="btn sm">Add observation</span>
+          </div>
+          <table class="grid" style="margin-top:10px">
+            <thead><tr><th>Measure</th><th>Value</th><th>Note</th></tr></thead>
+            <tbody>
+              <tr><td>Blood pressure</td><td><b>192 / 114</b> mmHg</td><td><span class="badge ot no-dot">High · warning</span></td></tr>
+              <tr><td>Pulse</td><td>88 / min</td><td>Within range</td></tr>
+              <tr><td>SpO2</td><td>98%</td><td>Within range</td></tr>
+              <tr><td>Temperature</td><td>36.8 °C</td><td>Within range</td></tr>
+            </tbody>
+          </table>
+          <div class="callout warn" style="margin-top:12px">
+            <b>Blood pressure is above the usual day-care limit (over 180/110).</b>
+            Tell the surgeon. This is a warning — you can still mark ready for OT.
+          </div>
+          <p class="small muted">History: 08:50 162/94 (Priya N, nurse) · 09:18 192/114 (Priya N, nurse)</p>
+        </div>
+      </div>
+      <div class="ws-foot">
+        <span class="dilation-chip"><span>Dilation</span><span class="mm">04:12</span><span class="small">remaining · Tropicamide at 09:12</span></span>
+        <div class="small" style="color:var(--ot)"><b>2 warnings</b> · high blood pressure · dilation not ready</div>
+        <span class="spacer"></span>
+        <span class="btn">Save</span>
+        <span class="btn primary">Mark ready for OT</span>
+      </div>
+    </div>
+  </div>
+  <p class="frame-caption">Primary action stays enabled. Confirming acknowledges the warnings (existing acknowledgeWarnings).</p>
+
+  <h2 class="sec">Dilation ready</h2>
+  <div class="frame" style="padding:12px 16px">
+    <span class="dilation-chip ready">Dilation ready · drops at 09:12 · ready since 09:37</span>
+  </div>
+
+  <h2 class="sec">No dilating drop recorded</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout warn"><b>No dilating drop is recorded.</b> You can still mark ready. Open Drops &amp; fasting to record Tropicamide.</div>
+    <span class="btn sm">Open drops</span>
+  </div>
+
+  <h2 class="sec">Vitals not recorded</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout warn"><b>No bedside vitals on this visit.</b> Add an observation. This does not stop Mark Ready.</div>
+  </div>
+
+  <h2 class="sec">Hard stops unchanged (cannot Mark Ready)</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout danger">
+      <b>Hard stops before Mark Ready</b>
+      <ul class="blockers" style="margin-top:8px">
+        <li class="hard"><span class="icon">⛔</span><span class="body">Surgical consent is not signed</span></li>
+        <li class="hard"><span class="icon">⛔</span><span class="body">Operating eye is not attested on the consent</span></li>
+      </ul>
+    </div>
+    <span class="btn primary disabled" style="margin-top:8px">Mark ready for OT</span>
+  </div>
+
+  <table class="map" style="margin-top:16px">
+    <thead><tr><th>Element</th><th>API</th><th>BE</th><th>DB</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>Warnings</td><td>GET .../transition-gates?newState=ReadyForSurgery</td><td>ChecklistGateService warn codes</td><td>pre_op_medication_log, vital_sign, ip_vital_threshold</td><td class="owner o-ip">IP</td></tr>
+      <tr><td>Mark Ready</td><td>POST .../clinical-transition</td><td>TransitionClinicalAsync + acknowledgeWarnings</td><td>patient_journey</td><td class="owner o-ip">IP</td></tr>
+    </tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

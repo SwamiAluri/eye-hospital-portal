@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body data-screen="W-01">
+<main>
+  <p class="lede">
+    Counsellor desk after OPD. Planned IOL power and operating eye must land on
+    <code>patient_journey</code> here, because OT later compares the scanned lens to this value at 0.00 D.
+  </p>
+  <div class="callout info"><b>Reuse</b> <code>/dashboard/counsellors-desk/[id]</code>. Do not add a pre-admission page.</div>
+
+  <h2 class="sec">Happy path — carry-forward onto the journey</h2>
+  <div class="frame">
+    <div class="app-header">
+      <h1>Counsellor desk</h1>
+      <span class="scope">Meena Iyer · UAT-002</span>
+      <span class="spacer"></span>
+      <span class="badge ok">Session complete</span>
+    </div>
+    <div class="pib">
+      <div class="pib-main">
+        <div class="pib-id">
+          <div class="pib-name">Meena Iyer</div>
+          <div class="pib-nums"><span>UHID <b>UAT-002</b></span><span>54 years · Female</span><span>DOB <b>12 Mar 1972</b></span></div>
+        </div>
+        <div class="eye"><span class="eye-k">Operating eye</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+      </div>
+    </div>
+    <div style="padding:16px" class="cols-2">
+      <div class="panel">
+        <p class="panel-h">From OPD / Doctors Desk</p>
+        <div class="rail-line"><span class="k">Diagnosis</span><span class="v">Immature cataract</span></div>
+        <div class="rail-line"><span class="k">Procedure</span><span class="v">Phaco + IOL</span></div>
+        <div class="rail-line"><span class="k">Eye</span><span class="v">RIGHT (OD)</span></div>
+        <div class="rail-line"><span class="k">Biometry IOL</span><span class="v">+21.00 D · SN60WF</span></div>
+      </div>
+      <div class="panel">
+        <p class="panel-h">On the IP journey <span class="mark new">2</span></p>
+        <div class="rail-line"><span class="k">Procedure</span><span class="v">Phaco + IOL</span></div>
+        <div class="rail-line"><span class="k">Operating eye</span><span class="v">RIGHT (OD)</span></div>
+        <div class="rail-line"><span class="k">Planned IOL</span><span class="v">+21.00 D</span></div>
+        <div class="callout ok" style="margin-top:8px">Copied when counselling is finalized. OT compares the scanned lens to +21.00 D.</div>
+        <span class="btn sm" style="margin-top:8px">Refresh from OPD</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Empty biometry</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout warn"><b>No biometry on file for the right eye.</b> Package can still be selected. Planned IOL power stays empty — OT will warn, not block, if a lens is scanned later.</div>
+  </div>
+
+  <h2 class="sec">No permission</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout"><b>You cannot finalize surgery.</b> Ask a counsellor with finalize rights.</div>
+  </div>
+
+  <table class="map" style="margin-top:16px">
+    <thead><tr><th>Element</th><th>API</th><th>BE</th><th>DB</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>Refresh / finalize copy</td><td>existing counselling finalize</td><td>OtFinalizeService / journey onboard</td><td>patient_journey.procedure_name, eye_operated, iol_power</td><td class="owner o-ip">IP + Auth</td></tr>
+    </tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

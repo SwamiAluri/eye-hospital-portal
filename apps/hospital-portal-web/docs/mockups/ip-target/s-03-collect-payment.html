@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-03">
+<main>
+
+  <p class="lede">
+    Lets a cashier collect an advance or payment <strong>in the context of the census</strong>, against the Billing
+    ledger, with a receipt. This is the surface that makes it unnecessary to duplicate billing inside IP &mdash; and
+    the reason the projection write path can finally be removed.
+  </p>
+
+  <div class="callout danger">
+    <b>Hard rule.</b> This drawer calls <code>POST /api/OpdBills/payment</code> and nothing else for money. It must
+    never call <code>ipManagementApi.addBilling</code>, which writes the <code>ip_billing_transactions</code>
+    projection and bypasses receipt numbering, idempotency, refund and reversal rules, and the CCMS outbox.
+  </div>
+
+  <h2 class="sec">Default &mdash; bill exists</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head">
+          <span class="t">Collect payment</span>
+          <span class="spacer"></span>
+          <span class="muted">&#10005;</span>
+        </div>
+        <div class="dialog-body">
+          <div class="row between" style="margin-bottom:10px">
+            <div>
+              <div style="font-weight:650">Meena Iyer</div>
+              <div class="small muted">UAT-002 &middot; Day Care &middot; B-04 &middot; Bill IPD-2026-00841</div>
+            </div>
+            <span class="badge ot no-dot">Partially paid</span>
+          </div>
+          <div class="panel">
+            <div class="rail-line"><span class="k">Billed</span><span class="v num">&#8377;1,20,000</span></div>
+            <div class="rail-line"><span class="k">Payer share &middot; Star Health</span><span class="v num">&#8377;80,000</span></div>
+            <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+            <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;10,000</span></div>
+          </div>
+        </div>
+        <div class="dialog-body">
+          <div class="field">
+            <label>Type</label>
+            <div class="radio-row">
+              <label><input type="radio" name="t" checked> Advance</label>
+              <label><input type="radio" name="t"> Payment</label>
+            </div>
+          </div>
+          <div class="cols-2">
+            <div class="field"><label>Mode</label><input class="input" value="Cash" readonly></div>
+            <div class="field"><label>Amount</label><input class="input lg num" value="&#8377; 10,000" readonly></div>
+          </div>
+          <div class="field"><label>Reference</label><input class="input placeholder" value="UPI / card / cheque reference" readonly></div>
+          <div class="field"><label>Notes</label><input class="input placeholder" value="Optional" readonly></div>
+          <div class="callout info"><b>After this payment</b> &middot; Patient due <b>&#8377;0</b> &middot; Bill status becomes <b>Paid</b></div>
+        </div>
+        <div class="dialog-foot">
+          <span class="btn">Cancel</span>
+          <span class="btn primary">Collect &#8377;10,000</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker">1</span><span><b>Context recap before the form.</b> The cashier must see payer share before taking money from the patient &mdash; collecting the payer&rsquo;s portion from the patient is the most common and most damaging counter error.</span></li>
+    <li><span class="marker">1</span><span><b>Consequence preview.</b> The resulting due and bill status are stated before submit, not discovered after.</span></li>
+    <li><span class="marker">1</span><span>The client generates <code>idempotencyKey = payment:{billId}:{uuid}</code> <b>before</b> submit and reuses it on retry. That is what makes a double-click or a flaky counter network safe.</span></li>
+    <li><span class="marker">1</span><span>Amounts above the patient due are <b>warned, not blocked</b> &mdash; advances legitimately exceed current dues in day-care flow.</span></li>
+  </ul>
+
+  <h2 class="sec">No bill yet &mdash; <code>financialState = NotCreated</code></h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Collect payment</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div style="font-weight:650">Tara Nair</div>
+          <div class="small muted">UAT-033 &middot; Expected &middot; Cataract package &middot; OD</div>
+          <div class="callout warn" style="margin-top:10px">
+            <b>No bill exists for this admission.</b> Creating it will explode the counselling package into its
+            component lines so the patient sees an itemised bill, then open the collection form.
+          </div>
+          <div class="panel">
+            <p class="panel-h">Package to be created</p>
+            <div class="rail-line"><span class="k">Cataract standard package</span><span class="v num">&#8377;1,00,000</span></div>
+            <div class="small muted" style="margin-top:4px">Phaco surgery &middot; IOL allowance &middot; OT charges &middot; day-care bed</div>
+          </div>
+        </div>
+        <div class="dialog-foot">
+          <span class="btn">Cancel</span>
+          <span class="btn primary">Create bill &amp; collect</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker new">2</span><span>Requires <b>TASK BILL-033</b> &mdash; a JWT-authorised IP bill creation endpoint. The existing <code>InternalIpBillingController</code> is guarded by <code>X-Internal-Key</code> with no per-user permission check, so it cannot be called from a browser.</span></li>
+    <li><span class="marker new">2</span><span>Package explosion is <b>TASK BILL-031</b>, following decision D1: fully exploded component lines plus an explicit package discount line, so the patient sees what they are paying for.</span></li>
+  </ul>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th><th>Event</th></tr></thead>
+    <tbody>
+      <tr><td>Context recap</td><td>cached <code>getFinancialSummary</code></td><td><code>GET /journeys/{id}/financial-summary</code></td><td><code>BillingService</code> &rarr; Auth internal summary</td><td><code>opd_bills</code>, <code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td><b>Create bill</b> <span class="badge ok no-dot">exists</span></td><td><code>opdBillingApi.ensureIpBill</code></td><td><code>POST /api/OpdBills/ip-ensure</code> · <b>live</b> (JWT). Internal twin: <code>POST /api/internal/ip-billing/ensure-bill</code></td><td><code>OpdBillService.EnsureInpatientBillAsync</code> + package explosion</td><td><code>opd_bills</code>, <code>opd_bill_items</code></td><td class="owner o-billing">Billing</td><td><code>bill.create</code></td><td><code>BillCreated</code></td></tr>
+      <tr><td><b>Collect</b></td><td><code>opdBillingApi.addPayment</code></td><td><code>POST /api/OpdBills/payment</code></td><td><code>OpdBillsController.AddPayment</code> &rarr; <code>OpdBillService.AddPaymentAsync</code></td><td><code>opd_bill_payments</code> <span class="cell-sub">append-only</span></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td><code>PaymentReceived</code> &rarr; <code>billing_ccms_outbox</code> + hub</td></tr>
+      <tr><td>Advance rather than payment</td><td>mode selector</td><td>same route, <code>PaymentKind: "Advance"</code></td><td><code>AddPaymentAsync</code></td><td><code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td>same</td></tr>
+      <tr><td>Duplicate protection</td><td><code>idempotencyKey</code> on the request</td><td>same route</td><td>unique per <code>(tenant_id, idempotency_key)</code>; a replay returns the original bill</td><td><code>opd_bill_payments.idempotency_key</code></td><td class="owner o-billing">Billing</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>Receipt number</td><td>response <code>receiptNumber</code></td><td>&mdash;</td><td>sequence <code>opd_receipt_number_seq</code>, format <code>RCP-{yyyyMMdd}-{seq:D8}</code></td><td><code>opd_bill_payments.receipt_number</code> <span class="cell-sub">unique per tenant</span></td><td class="owner o-billing">Billing</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>Receipt history for this patient</td><td><code>useJourneyBillingQuery</code></td><td><code>GET /api/ip-management/journeys/{id}/billing</code> &middot; one receipt at <code>&hellip;/billing/{txnId}/receipt</code></td><td><code>BillingService.ListAsync</code> &rarr; Auth</td><td><code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>Print receipt</td><td>client print view</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td class="owner o-fe">FE</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>Census / rail refresh</td><td>react-query invalidation</td><td>journeys + financial summary</td><td>&mdash;</td><td>&mdash;</td><td class="owner o-fe">FE</td><td>&mdash;</td><td>consumes <code>PaymentReceived</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Every state, rendered</h2>
+  <div class="variants c3">
+
+    <div class="variant">
+      <div class="vh"><span class="n ok">1</span><span class="t">Success &mdash; receipt issued</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Payment collected</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout ok"><b>&#8377;10,000 collected.</b> Receipt <b class="mono">RCP-20260824-00001204</b></div>
+            <div class="rail-line" style="margin-top:8px"><span class="k">Mode</span><span class="v">Cash</span></div>
+            <div class="rail-line"><span class="k">Collected by</span><span class="v">R. Kumar</span></div>
+            <div class="rail-line total"><span class="k">Patient due now</span><span class="v num">&#8377;0</span></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Close</span><span class="btn primary">Print receipt</span></div>
+        </div>
+      </div>
+      <p class="vc">The receipt number is the artefact the patient leaves with, so it is the largest thing on the
+      screen. S-01 and S-02 refresh behind the drawer.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n ok">2</span><span class="t">Duplicate submit</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Already collected</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout ok"><b>This payment was already recorded.</b> Showing the original receipt
+            <b class="mono">RCP-20260824-00001204</b> &mdash; no second charge was made.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Close</span><span class="btn primary">Print receipt</span></div>
+        </div>
+      </div>
+      <p class="vc">A replayed idempotency key is treated as <b>success</b>, not as an error. A retry must never produce
+      a second receipt, and it must never look like a failure either.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Bill finalized</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Collect payment</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger">
+              <b>Bill IPD-2026-00778 is finalized.</b> Collection is closed. Any further money movement goes through
+              an adjustment or refund with authorisation.
+            </div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Close</span><a class="btn primary" href="s-12-bill-detail.html">Open bill</a></div>
+        </div>
+      </div>
+      <p class="vc">The form is <b>replaced</b>, not disabled. A greyed form invites the user to keep trying.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">4</span><span class="t">Another cashier got there first</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Amounts changed</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout warn">
+              <b>This bill changed while you were typing.</b> Another payment of &#8377;10,000 was recorded at
+              02:14&nbsp;pm. Patient due is now <b>&#8377;0</b>.
+            </div>
+            <div class="rail-line" style="margin-top:8px"><span class="k">You entered</span><span class="v num">&#8377;10,000</span></div>
+            <div class="rail-line total"><span class="k">Current due</span><span class="v num">&#8377;0</span></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Review updated amounts</span></div>
+        </div>
+      </div>
+      <p class="vc">Two cashiers on one bill is a real counter scenario. The refreshed figure is shown alongside what
+      the user typed, so they can see exactly what changed. <b>No concurrency token exists on billing rows today</b>
+      &mdash; detecting this reliably is gap 6 in <a href="conventions.html">conventions</a>.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">5</span><span class="t">Billing service down</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Collect payment</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger">
+              <b>Payments are temporarily unavailable.</b> Nothing was charged and no receipt was issued. Please
+              don&rsquo;t write a manual receipt &mdash; try again in a moment.
+              <div class="small muted" style="margin-top:6px">Details for IT &middot; <span class="mono">c-77af21</span></div>
+            </div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Retry</span></div>
+        </div>
+      </div>
+      <p class="vc">There is <b>no offline money path</b>. The copy explicitly warns against the workaround staff would
+      otherwise invent.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">6</span><span class="t">No permission</span></div>
+      <div class="frame">
+        <aside class="rail" style="min-height:180px">
+          <div class="rail-head"><div class="name" style="font-size:14px">Meena Iyer</div><div class="ident">UAT-002</div></div>
+          <div class="rail-sec">
+            <p class="rail-h">Payments</p>
+            <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;10,000</span></div>
+            <div style="margin-top:8px"><a class="btn sm" href="s-12-bill-detail.html">Open billing</a></div>
+          </div>
+        </aside>
+      </div>
+      <p class="vc">Without <code>bill.update</code> the drawer <b>never opens</b> &mdash; the Collect action is not
+      rendered in S-02 at all. There is no disabled button to click at. A narrower <code>ip.billing.collect</code>
+      code would be better for a ward-based cashier, but it does not exist yet
+      <span class="mark new">2</span>.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">State reference</h2>
+  <table class="map">
+    <thead><tr><th>State</th><th>Presentation</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Success</td><td>Inline receipt number, Print action, S-01 and S-02 refresh behind the drawer</td><td>The receipt number is the artefact the patient leaves with</td></tr>
+      <tr><td>Duplicate idempotency key</td><td>Treated as success, showing the <b>original</b> receipt</td><td>A retry must never produce a second receipt for one payment</td></tr>
+      <tr><td>Bill finalized or locked</td><td>Form replaced by an explanation and a link to S-12</td><td>Post-finalize money moves through refund/adjustment rules, not collection</td></tr>
+      <tr><td>Concurrent collection</td><td>Refresh the summary, ask the user to re-confirm the amount</td><td>Two cashiers on one bill is a real counter scenario &mdash; though nothing detects it today, gap 6</td></tr>
+      <tr><td>Missing permission</td><td>The Collect action is not rendered at all in S-02</td><td>A disabled button with no explanation trains users to click blindly</td></tr>
+      <tr><td>Billing service down</td><td>Error with retry; no local write of any kind</td><td>There is no acceptable offline money path</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

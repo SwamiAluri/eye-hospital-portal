@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-09">
+<main>
+
+  <p class="lede">
+    The last gate before the bed is released, shown in full &mdash; shell plus all five steps. Its single most
+    important property is <strong>which money blocks discharge and which does not</strong>: the patient&rsquo;s own
+    obligation gates, the payer&rsquo;s pending settlement never does.
+  </p>
+
+  <div class="callout info">
+    <b>Rule preserved from the ownership SoT.</b> Discharge is gated on <b>patient obligation only</b>. A TPA
+    settlement that has not yet arrived must never hold a bed, and the screen says so in words rather than leaving
+    staff to infer it from a green tick.
+  </div>
+
+  <h2 class="sec">The shell</h2>
+  <div class="frame">
+    <div class="workspace">
+      <div class="ws-head">
+        <div>
+          <div class="name">Rekha Menon</div>
+          <div class="ident">UAT-009 &middot; 70F &middot; Cataract &middot; OS &middot; Day Care &middot; B-02</div>
+        </div>
+        <span class="badge inhouse">Ready for discharge</span>
+        <span class="spacer"></span>
+        <span class="muted">&#10005; Close</span>
+      </div>
+      <div class="ws-body" style="min-height:150px">
+        <nav class="ws-steps">
+          <div class="ws-step active blocked"><span class="n">1</span> Clearance</div>
+          <div class="ws-step done"><span class="n">&#10003;</span> Discharge summary</div>
+          <div class="ws-step done"><span class="n">&#10003;</span> Medications</div>
+          <div class="ws-step done"><span class="n">&#10003;</span> Follow-up</div>
+          <div class="ws-step"><span class="n">5</span> Confirm &amp; discharge</div>
+        </nav>
+        <div class="ws-content">
+          <p class="muted small" style="margin-top:0">All five steps are rendered below.</p>
+          <div class="callout warn">Only step 1 can block. Steps 2&ndash;4 are content the patient leaves with; step 5
+          is the commit.</div>
+        </div>
+      </div>
+      <div class="ws-foot">
+        <div class="small" style="color:var(--danger)"><b>1 hard stop</b> &middot; patient due &#8377;10,000</div>
+        <span class="spacer"></span>
+        <span class="btn sm ghost">Override with reason (admin)</span>
+        <span class="btn">Save</span>
+        <span class="btn primary disabled">Discharge patient</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 1 &mdash; Clearance <span class="badge danger no-dot">gate</span></h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Clearance</h3>
+        <span class="badge danger">1 hard stop</span>
+      </div>
+      <div class="cols-3">
+        <div class="panel">
+          <p class="panel-h">Clinical</p>
+          <ul class="blockers">
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Post-op checklist complete</span></li>
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Surgeon sign-off recorded</span></li>
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Discharge summary drafted</span></li>
+            <li class="done"><span class="icon">&#10003;</span><span class="body">No unresolved complication</span></li>
+          </ul>
+          <div class="callout ok" style="margin-top:8px">Cleared.</div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Patient obligation <span style="color:var(--danger)">&mdash; blocks</span></p>
+          <ul class="blockers">
+            <li class="hard"><span class="icon">&#9940;</span><span class="body">Patient due <b>&#8377;10,000</b><a class="fix" href="s-03-collect-payment.html">Collect now &rarr;</a></span></li>
+          </ul>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Billed</span><span class="v num">&#8377;1,20,000</span></div>
+          <div class="rail-line"><span class="k">Collected</span><span class="v num">&#8377;30,000</span></div>
+          <div class="rail-line"><span class="k">Payer share</span><span class="v num">&#8377;80,000</span></div>
+          <div class="rail-line total"><span class="k">Patient due</span><span class="v num">&#8377;10,000</span></div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Coverage <span class="faint">&mdash; informational</span></p>
+          <ul class="blockers">
+            <li class="done"><span class="icon">&#10003;</span><span class="body">Pre-authorisation approved &middot; Star Health</span></li>
+            <li class="soft"><span class="icon">&#8987;</span><span class="body">TPA settlement pending &mdash; <b>does not block discharge</b></span></li>
+          </ul>
+          <div class="callout" style="margin-top:8px">The claim continues after the patient goes home. Holding the bed
+          would cost more than the receivable.</div>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="panel-h">Administrative</p>
+        <ul class="checklist">
+          <li><span class="bx on">&#10003;</span> Case file complete</li>
+          <li><span class="bx on">&#10003;</span> Implant stickers filed and confirmed</li>
+          <li><span class="bx on">&#10003;</span> Consent forms scanned</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 2 &mdash; Discharge summary</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Discharge summary</h3>
+        <span class="badge ok">Drafted &middot; editable</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Episode</p>
+          <dl class="kv">
+            <dt>Admitted</dt><dd>24 Aug 2026, 07:10 am</dd>
+            <dt>Procedure</dt><dd>Phacoemulsification with IOL, OS</dd>
+            <dt>Surgeon</dt><dd>Dr. S. Iyer</dd>
+            <dt>Anaesthesia</dt><dd>Topical</dd>
+            <dt>Implant</dt><dd>Alcon SN60WF +19.5 D &middot; serial 88117</dd>
+            <dt>Complications</dt><dd>None</dd>
+            <dt>Discharge type</dt><dd>Routine</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Narrative</p>
+          <div class="field"><label>Diagnosis</label><input class="input" value="Senile immature cataract, left eye" readonly></div>
+          <div class="field"><label>Course in hospital</label><input class="input" value="Uneventful day-care procedure; stable recovery observations" readonly></div>
+          <div class="field"><label>Condition at discharge</label><input class="input" value="Stable, ambulant, vision improving" readonly></div>
+          <div class="field"><label>Advice</label><input class="input" value="As per post-op instruction sheet" readonly></div>
+          <div class="row"><span class="btn sm">Save draft</span><span class="btn sm ghost">Preview PDF</span><span class="btn sm primary">Finalize summary</span></div>
+        </div>
+      </div>
+      <div class="callout info">
+        <b>Auto-drafted from structured data</b> &mdash; procedure, implant serial and complications come from the
+        journey and implant registry, not from retyping. The clinician edits narrative, not facts.
+      </div>
+
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Summary history</p>
+          <ul class="timeline">
+            <li><b>Draft saved</b> &middot; 24 Aug 02:05 pm &middot; Dr. S. Iyer</li>
+            <li><b>Auto-drafted</b> &middot; 24 Aug 01:40 pm &middot; <span class="faint">generated from the journey and post-op records</span></li>
+          </ul>
+          <p class="hint">
+            <code>POST /api/ip-management/journeys/{id}/discharge-summary</code> upserts the single
+            <code>discharge_summary</code> row; <code>&hellip;/finalize</code> locks it and
+            <code>&hellip;/preview</code> renders it before signing. One record per journey, so the events worth
+            keeping are draft, edit and finalize rather than every keystroke.
+          </p>
+        </div>
+        <div class="panel">
+          <div class="row between" style="margin-bottom:8px">
+            <p class="panel-h" style="margin:0">Note templates</p>
+            <span class="btn sm">Add template</span>
+          </div>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> Day-care cataract, uneventful</li>
+            <li><span class="bx off"></span> Cataract with posterior capsule rupture</li>
+            <li><span class="bx off"></span> Vitreoretinal, overnight stay</li>
+          </ul>
+          <p class="hint">
+            <code>GET</code> / <code>POST /api/ip-management/surgery-note-templates</code> against
+            <code>surgery_note_templates</code>; removal is a soft delete so summaries written from a retired
+            template still resolve. A surgeon can add a house style without a developer.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 3 &mdash; Medications</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Discharge medications</h3>
+        <div class="row">
+          <span class="badge ok">Dispensed</span>
+          <span class="btn sm primary">Add medication</span>
+        </div>
+      </div>
+      <table class="grid">
+        <thead><tr><th>Drug</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Dispensed</th><th>Charged</th></tr></thead>
+        <tbody>
+          <tr><td>Moxifloxacin 0.5% eye drops</td><td>1 drop</td><td>4&times; daily</td><td>2 weeks</td><td><span class="badge ok">Yes</span></td><td class="num">&#8377;180</td></tr>
+          <tr><td>Prednisolone 1% eye drops</td><td>1 drop</td><td>6&times; daily, tapering</td><td>4 weeks</td><td><span class="badge ok">Yes</span></td><td class="num">&#8377;240</td></tr>
+          <tr><td>Carboxymethylcellulose 0.5%</td><td>1 drop</td><td>4&times; daily</td><td>4 weeks</td><td><span class="badge ok">Yes</span></td><td class="num">&#8377;150</td></tr>
+          <tr><td>Paracetamol 500 mg</td><td>1 tab</td><td>SOS</td><td>3 days</td><td><span class="badge ok">Yes</span></td><td class="num">&#8377;30</td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 0 0">
+        <div class="row"><span class="btn sm primary">Add medication</span><span class="btn sm ghost">Copy from template</span></div>
+        <div class="callout warn" style="margin-top:10px">
+          <b>Pharmacy charges post to the same bill.</b> Anything dispensed at discharge must be on the bill before
+          finalisation, or it becomes leakage in exactly the same way an uncharged implant does.
+        </div>
+        <p class="hint">
+          The prescription is part of the single <code>post_op_instructions</code> record
+          (<code>POST /api/ip-management/journeys/{id}/post-op-instructions</code>), and the drug names come from the
+          <code>ophth_medication</code> master via <code>GET /api/ip-management/master/medications</code>. The charge
+          column is a <b>read from Auth</b> &mdash; adding a medication here does not create a charge line, which is
+          why the completeness warning above exists.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 4 &mdash; Follow-up</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Follow-up</h3>
+        <span class="badge ok">2 appointments booked</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Appointments</p>
+          <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden">
+            <thead><tr><th>When</th><th>With</th><th>Clinic</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td>25 Aug 10:00</td><td>Dr. S. Iyer</td><td>Downtown OPD</td><td>Day-1 review</td></tr>
+              <tr><td>31 Aug 11:30</td><td>Dr. S. Iyer</td><td>Downtown OPD</td><td>Week-1 review</td></tr>
+            </tbody>
+          </table>
+          <div class="row" style="margin-top:8px"><span class="btn sm">+ Add appointment</span><span class="btn sm ghost">Print card</span></div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">Communication</p>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> SMS reminder scheduled for 24 Aug 8:00 pm</li>
+            <li><span class="bx on">&#10003;</span> Appointment card printed</li>
+            <li><span class="bx on">&#10003;</span> Emergency contact number given</li>
+          </ul>
+          <p class="hint">Booked into the OPD schedule rather than written as free text. An unbooked &ldquo;review in
+          one week&rdquo; is how day-care follow-up is lost.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Step 5 &mdash; Confirm &amp; discharge</h2>
+  <div class="frame">
+    <div style="padding:16px">
+      <div class="row between" style="margin-bottom:12px">
+        <h3 style="margin:0;font-size:15px">Confirm &amp; discharge</h3>
+        <span class="badge danger">Blocked</span>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <p class="panel-h">Discharge details</p>
+          <div class="cols-2">
+            <div class="field"><label>Discharge type</label><input class="input" value="Routine" readonly></div>
+            <div class="field"><label>Date &amp; time</label><input class="input" value="24 Aug 2026, 04:30 pm" readonly></div>
+            <div class="field"><label>Discharged by</label><input class="input" value="S. Nair (staff nurse)" readonly></div>
+            <div class="field"><label>Mode of transport</label><input class="input" value="Own vehicle with attendant" readonly></div>
+          </div>
+        </div>
+        <div class="panel">
+          <p class="panel-h">What happens on confirm</p>
+          <ul class="checklist">
+            <li><span class="bx on">&#10003;</span> Journey moves to <code>Discharged</code></li>
+            <li><span class="bx on">&#10003;</span> Bed B-02 released to Auth bed inventory</li>
+            <li><span class="bx on">&#10003;</span> <code>PatientClinicallyDischarged</code> published</li>
+            <li><span class="bx on">&#10003;</span> Bill remains open until finalised by Billing</li>
+          </ul>
+          <div class="callout warn" style="margin-top:8px">
+            Discharge does <b>not</b> finalise the bill. Late charges and the claim continue afterwards.
+          </div>
+        </div>
+      </div>
+      <div class="callout danger">
+        <b>Blocked by patient due &#8377;10,000.</b> Either collect through
+        <a href="s-03-collect-payment.html">S-03</a>, or an admin may override with a reason through
+        <a href="s-17-reason-confirm.html">S-17</a>. The override is reported to finance.
+      </div>
+      <div class="row" style="margin-top:10px">
+        <span class="btn sm ghost">Cancel discharge</span>
+        <span class="spacer" style="flex:1"></span>
+        <a class="btn sm" href="s-17-reason-confirm.html">Override with reason</a>
+        <span class="btn primary disabled">Discharge patient</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Clearance variants</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n ok">1</span><span class="t">All clear</span></div>
+      <div class="frame"><div style="padding:12px">
+        <ul class="blockers">
+          <li class="done"><span class="icon">&#10003;</span><span class="body">Clinical cleared</span></li>
+          <li class="done"><span class="icon">&#10003;</span><span class="body">Patient due &#8377;0</span></li>
+          <li class="soft"><span class="icon">&#8987;</span><span class="body">TPA settlement pending &mdash; non-blocking</span></li>
+        </ul>
+        <span class="btn primary block" style="margin-top:10px">Discharge patient</span>
+      </div></div>
+      <p class="vc">The common case for an insured day-care patient. Settlement pending does not delay them.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n bad">2</span><span class="t">Clinical block</span></div>
+      <div class="frame"><div style="padding:12px">
+        <ul class="blockers">
+          <li class="hard"><span class="icon">&#9940;</span><span class="body">Complication under doctor review</span></li>
+          <li class="done"><span class="icon">&#10003;</span><span class="body">Patient due &#8377;0</span></li>
+        </ul>
+        <div class="callout danger" style="margin-top:10px">Clinical blocks are <b>not overridable</b> by an
+        administrator. Only the reviewing doctor can clear this.</div>
+      </div></div>
+      <p class="vc">The distinction matters: financial blocks have an override path, clinical ones do not.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">3</span><span class="t">Against medical advice</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="field"><label>Discharge type</label><input class="input" value="Against medical advice (AMA)" readonly></div>
+        <div class="callout warn" style="margin-top:8px">AMA bypasses clinical clearance but requires a signed patient
+        declaration and a recorded reason. The bed is still released and the bill still stands.</div>
+        <span class="btn danger block" style="margin-top:10px">Record AMA discharge</span>
+      </div></div>
+      <p class="vc">A real path that must exist in the product, not an edge case to be forced through an override.</p>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker fix">3</span><span><b>Blockers are grouped by category</b> &mdash; clinical, patient obligation, coverage, administrative &mdash; so the nurse can see instantly whether the hold is hers to clear or the cashier&rsquo;s.</span></li>
+    <li><span class="marker">1</span><span>The financial blocker links straight to <a href="s-03-collect-payment.html">S-03</a>, so the hold can be cleared without leaving the workflow.</span></li>
+    <li><span class="marker">1</span><span>The coverage row is present but <b>explicitly labelled non-blocking</b>. Silence here is what causes wards to hold beds unnecessarily.</span></li>
+    <li><span class="marker">1</span><span>Override is admin-only, reason-required through <a href="s-17-reason-confirm.html">S-17</a>, audited, and applies only to financial blocks.</span></li>
+  </ul>
+
+  <h2 class="sec">Step map</h2>
+  <table class="map">
+    <thead><tr><th>Step</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th><th>Event</th></tr></thead>
+    <tbody>
+      <tr><td>1 &middot; Blockers by category <span class="mark fix">3</span></td><td><code>discharge-blocker-categories</code></td><td><code>GET /journeys/{id}/transition-gates?newState=Discharged</code></td><td><code>ChecklistGateService</code></td><td>mixed clinical + financial</td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>1 &middot; Patient due</td><td><code>getFinancialSummary</code></td><td><code>GET /journeys/{id}/financial-summary</code></td><td><code>PatientObligationCalculator</code></td><td><code>opd_bills</code>, <code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>1 &middot; Coverage status</td><td><code>getPreauthStatus</code></td><td><code>GET /journeys/{id}/financial/preauth-status</code></td><td><code>CcmsAdmissionClient</code></td><td><code>ccms_coverage_cases</code></td><td class="owner o-ccms">CCMS</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+      <tr><td>1 &middot; Collect now</td><td><a href="s-03-collect-payment.html">S-03</a></td><td><code>POST /api/OpdBills/payment</code></td><td><code>AddPaymentAsync</code></td><td><code>opd_bill_payments</code></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td><td><code>PaymentReceived</code></td></tr>
+      <tr><td>2 &middot; Discharge summary</td><td><code>saveDischargeSummary</code></td><td><code>POST /api/ip-management/journeys/{id}/discharge-summary</code> &middot; <code>/finalize</code> &middot; <code>GET /preview</code></td><td><code>PostOpWorkflowService.SaveSummaryAsync</code></td><td><code>discharge_summary</code> <span class="cell-sub">upsert, one per journey</span></td><td class="owner o-ip">IP</td><td><code>ward.checklist.edit</code></td><td>&mdash;</td></tr>
+      <tr><td>2 &middot; Add note template</td><td><code>addTemplate</code></td><td><code>POST /api/ip-management/surgery-note-templates</code></td><td><code>PostOpWorkflowService.AddTemplateAsync</code></td><td><code>surgery_note_templates</code> <span class="cell-sub">append, soft delete</span></td><td class="owner o-ip">IP</td><td><code>ward.checklist.edit</code></td><td>&mdash;</td></tr>
+      <tr><td>3 &middot; Prescribe medications</td><td><code>savePostOpInstructions</code></td><td><code>POST /api/ip-management/journeys/{id}/post-op-instructions</code></td><td><code>PostOpWorkflowService.SaveInstructionsAsync</code></td><td><code>post_op_instructions</code> <span class="cell-sub">upsert</span></td><td class="owner o-ip">IP</td><td><code>ward.checklist.edit</code></td><td>&mdash;</td></tr>
+      <tr><td>3 &middot; Charge what was dispensed</td><td><code>addBillItem</code></td><td><code>POST /api/BillItems</code> + pharmacy issue</td><td><code>BillItemService.AddBillItemAsync</code>, <code>StockService</code></td><td><code>opd_bill_items</code>, <code>inv_stock_ledger</code></td><td class="owner o-billing">Billing + <span class="o-inv">Inventory</span></td><td><code>bill.update</code></td><td><code>PatientObligationChanged</code></td></tr>
+      <tr><td>4 &middot; Follow-up</td><td><code>bookFollowUp</code></td><td><code>POST /api/Appointments</code></td><td>OPD scheduling service</td><td>appointment tables</td><td class="owner o-auth">Auth / OPD</td><td><code>appointment.create</code></td><td>&mdash;</td></tr>
+      <tr><td>5 &middot; <b>Discharge</b></td><td><code>dischargeWithType</code></td><td><code>POST /api/ip-management/journeys/{id}/discharge</code></td><td><code>PatientJourneyService.DischargeWithTypeAsync</code> &rarr; bed vacate via <code>AuthBedLifecycleClient</code></td><td><code>patient_journey</code>, <code>journey_bed_assignment</code>, <code>bed_inventory</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP + <span class="o-auth">Auth</span></td><td><code>ip.discharge</code></td><td><code>PatientClinicallyDischarged</code></td></tr>
+      <tr><td>5 &middot; Discharge planning</td><td><code>setDischargePlanning</code></td><td><code>POST /api/ip-management/journeys/{id}/discharge-planning</code></td><td><code>SetDischargePlanningAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ward.checklist.edit</code></td><td>&mdash;</td></tr>
+      <tr><td>5 &middot; Override</td><td><a href="s-17-reason-confirm.html">S-17</a></td><td><code>POST /api/ip-management/journeys/{id}/discharge-override</code></td><td><code>ApplyDischargeOverrideAsync</code></td><td><code>patient_journey</code>, <code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ip.discharge.override</code></td><td>&mdash;</td></tr>
+      <tr><td>5 &middot; Cancel discharge</td><td><code>cancelDischarge</code></td><td><code>POST /api/ip-management/journeys/{id}/cancel-discharge</code></td><td><code>CancelDischargeAsync</code></td><td><code>patient_journey</code>, bed re-occupy</td><td class="owner o-ip">IP + <span class="o-auth">Auth</span></td><td><code>ip.discharge.cancel</code></td><td>&mdash;</td></tr>
+      <tr><td>History of the whole episode</td><td><code>useJourneyAuditQuery</code></td><td><code>GET /api/ip-management/journeys/{id}/audit</code></td><td><code>PatientJourneyService.GetAuditLogsAsync</code></td><td><code>journey_audit_log</code></td><td class="owner o-ip">IP</td><td><code>ip.view</code></td><td>&mdash;</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout ok">
+    <b>Discharge is one of the well-audited paths.</b> Discharge, cancel-discharge, override and planning all write
+    <code>journey_audit_log</code>, and discharge publishes <code>PatientClinicallyDischarged</code> to
+    <code>integration_outbox_event</code>. The clinical forms feeding into it mostly do not &mdash; see
+    <a href="conventions.html">conventions &sect;5</a>.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Money outstanding</td><td><b>&#8377;12,400 is still due.</b> Collect it or get an administrator to authorise discharge without payment.</td></tr>
+      <tr><td>Summary not finalized</td><td><b>The discharge summary hasn&rsquo;t been signed yet.</b> <a href="#">Open the summary</a></td></tr>
+      <tr><td>Dispensed but not charged</td><td><b>Four medications were dispensed and only three are on the bill.</b> Add the missing charge before discharging.</td></tr>
+      <tr><td>Discharged successfully</td><td><b>Rekha Menon has been discharged.</b> Bed B-02 is now being cleaned and will be available shortly.</td></tr>
+      <tr><td>Bed release fails</td><td><b>Discharged, but the bed hasn&rsquo;t been released.</b> B-02 still shows as occupied &mdash; tell the ward clerk before the next admission.</td></tr>
+      <tr><td>Discharge cancelled</td><td><b>Discharge reversed.</b> The patient is admitted again in bed B-02.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

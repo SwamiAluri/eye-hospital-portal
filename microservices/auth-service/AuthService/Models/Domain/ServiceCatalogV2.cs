@@ -329,6 +329,10 @@ public class VariantPrice
     [Column("branch_id")]
     public Guid? BranchId { get; set; }
 
+    /// <summary>NULL = catalog tariff; non-null = insurer/corporate overlay (ccms_insurance_providers.id)</summary>
+    [Column("payer_id")]
+    public Guid? PayerId { get; set; }
+
     [Column("amount")]
     public decimal Amount { get; set; } = 0;
 

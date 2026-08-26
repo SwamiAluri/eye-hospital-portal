@@ -1,0 +1,36 @@
+---
+description: Cashier and payment collection UX — idempotent payments, receipts, refunds, and no fake success.
+globs:
+  - apps/hospital-portal-web/src/components/billing/PaymentDialog.tsx
+  - apps/hospital-portal-web/src/components/billing/ItemizedBillingDialog.tsx
+  - apps/hospital-portal-web/src/components/ip-management/CollectPaymentDrawer.tsx
+  - apps/hospital-portal-web/src/app/dashboard/billing/**
+  - apps/hospital-portal-web/src/lib/billing/**
+  - apps/hospital-portal-web/src/lib/ip-management/collect-payment.ts
+alwaysApply: false
+---
+
+# Cashier / payment UX
+
+Cashier workflows: collect payment (cash, card, UPI, cheque), advances, refunds, receipt generation, payment status, reconciliation, financial clearance.
+
+Applies to OPD cashier, IP collect-payment, pharmacy/optical payment UIs when those screens collect money, and CCMS settlement **recording** when it posts financial events through Billing.
+
+## Non-negotiable
+
+- Frontend is not authoritative.
+- Backend validation is mandatory; never bypass it.
+- Operations must be **idempotent**. Prevent double-submit (disable submit, ignore repeat clicks, respect existing idempotency keys/APIs).
+- Never allow duplicate payment submission from the UI.
+- Never fake a successful payment, receipt, or clearance.
+- Failed gateway/integration must show failure/pending — not paid.
+- Refunds require backend authorization and audit.
+- Receipts come from server-issued identifiers, not client-generated fakes.
+
+## UX
+
+Clear tender type, amount, outstanding vs tendered, change, and error recovery. Loading/submitting states must block duplicate posts. Permission-gate collect/refund actions. Preserve patient + bill/encounter identity on the payment surface.
+
+Do not add a new payment dialog family. Extend `PaymentDialog` / `CollectPaymentDrawer` / existing domain payment UI.
+
+Do not treat IP census “dues” chips as a license to post charges locally.

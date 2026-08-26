@@ -2,6 +2,7 @@ import type { CounselorLabOrderItem } from '@/lib/api/lab-orders.api';
 import type { BiometryRecord } from '@/lib/api/biometry.api';
 import type { PatientConsent } from '@/lib/api/patient-consents.api';
 import type { CounsellorOutpatientItemDto } from '@/lib/api/ip-management.api';
+import { isCoveragePaymentTypeValue } from '@/lib/counsellors-desk/session-utils';
 
 export type IntegrationSource = 'lab' | 'optometry' | 'consent' | 'ccms' | 'payment' | 'doctors_desk';
 
@@ -94,8 +95,7 @@ function hasSurgeryConsent(consents: PatientConsent[]): boolean {
 }
 
 function isInsurancePayment(paymentType?: string): boolean {
-  if (!paymentType) return false;
-  return ['Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme'].includes(paymentType);
+  return isCoveragePaymentTypeValue(paymentType);
 }
 
 function isPreAuthDone(ctx: OutpatientIntegrationContext): boolean {

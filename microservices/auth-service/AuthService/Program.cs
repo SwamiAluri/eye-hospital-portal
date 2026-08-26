@@ -792,8 +792,13 @@ try
     builder.Services.AddScoped<IReportService, ReportService>();
     
     // OPD Visit & Billing Services (Phase 1 OPD Workflow - Jan 2026)
-    builder.Services.AddScoped<IOpdBillService, OpdBillService>();
-    builder.Services.AddHttpClient<ICcmsBillFinalizedClient, CcmsBillFinalizedClient>();
+    builder.Services.AddScoped<OpdBillService>();
+    builder.Services.AddScoped<IOpdBillService>(sp => sp.GetRequiredService<OpdBillService>());
+    builder.Services.AddHttpClient<CcmsBillFinalizedClient>();
+    builder.Services.AddScoped<ICcmsBillFinalizedClient>(sp => sp.GetRequiredService<CcmsBillFinalizedClient>());
+    builder.Services.AddScoped<ICcmsPatientShareLookup>(sp => sp.GetRequiredService<CcmsBillFinalizedClient>());
+    builder.Services.AddScoped<IBillingCcmsOutboxService, BillingCcmsOutboxService>();
+    builder.Services.AddHostedService<BillingCcmsOutboxProcessor>();
     builder.Services.AddScoped<IOptometryQueueService, OptometryQueueService>();
     builder.Services.AddScoped<IOptometrySegmentExamService, OptometrySegmentExamService>();
     builder.Services.AddScoped<IOptometryPatientHistoryService, OptometryPatientHistoryService>();
@@ -805,6 +810,9 @@ try
     builder.Services.AddScoped<IServiceCatalogAdminService, ServiceCatalogAdminService>();
     builder.Services.AddScoped<IServiceCatalogMasterSyncService, ServiceCatalogMasterSyncService>();
     builder.Services.AddScoped<IBillItemService, BillItemService>();
+    builder.Services.AddScoped<IChargeCatalogResolver, ChargeCatalogResolver>();
+    builder.Services.AddScoped<IChargeMappingAdminService, ChargeMappingAdminService>();
+    builder.Services.AddScoped<IChargeReconciliationService, ChargeReconciliationService>();
     
     // Module 3: Counseling & Surgery Package Management Services (Feb 15, 2026)
     builder.Services.AddScoped<IPackageManagementService, PackageManagementService>();

@@ -84,23 +84,17 @@ export async function getEventStream(caseId: string): Promise<ApprovalEvent[]> {
   return Array.isArray(data) ? data.map((r: any) => mapApprovalEventFromApi(r)) : [];
 }
 
-// Snapshot derived from latest event in frontend — backend snapshot endpoint not yet implemented
 export async function getApprovalSnapshot(caseId: string): Promise<ApprovalSnapshot | null> {
-  try {
-    const events = await getEventStream(caseId);
-    if (!events.length) return null;
-    const latest = events[events.length - 1];
-    return {
-      caseId,
-      currentState:  latest.approvalStatus,
-      totalEvents:   events.length,
-      lastEventAt:   latest.recordedAt,
-      approvedAmount: latest.approvedAmount || undefined,
-      approvedBy:    latest.recordedBy,
-    };
-  } catch {
-    return null;
-  }
+  const { data } = await getCcmsApi().get(`/ccms/coverage-cases/${caseId}/approval-snapshot`);
+  if (!data) return null;
+  return {
+    caseId: data.caseId ?? caseId,
+    currentState: data.currentState ?? '',
+    totalEvents: Number(data.totalEvents ?? 0),
+    lastEventAt: data.lastEventAt ?? undefined,
+    approvedAmount: data.approvedAmount != null ? Number(data.approvedAmount) : undefined,
+    approvedBy: data.approvedBy ?? undefined,
+  };
 }
 
 export async function getApprovalQueue(): Promise<ApprovalQueueItem[]> {

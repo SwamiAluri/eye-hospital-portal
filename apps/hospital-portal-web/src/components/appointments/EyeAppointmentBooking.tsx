@@ -38,7 +38,7 @@ import {
   FileText,
   Package
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { eyeAppointmentTypes, type EyeAppointmentType } from './SpecialtySlotManager';
 import {
   appointmentsApi,

@@ -3,8 +3,8 @@ using Microsoft.Azure.Functions.Worker.Http;
 namespace CcmsApi.Services;
 
 /// <summary>
-/// Shared CCMS permission gate (Phase 2 RBAC). Empty permission arrays remain
-/// allowed for legacy tokens; when permissions are present, at least one must match.
+/// Shared CCMS permission gate. Empty permission arrays deny privileged actions
+/// (Wave 1 D3 — users must re-login after permission seed).
 /// Accepts Phase-2 aliases and legacy authorization.* codes.
 /// </summary>
 public static class CcmsAuthz
@@ -31,8 +31,8 @@ public static class CcmsAuthz
     public static bool HasAny(JwtClaims claims, params string[] required)
     {
         var perms = claims.SafePermissions;
-        if (perms.Length == 0) return true; // legacy JWT without permission claims
         if (perms.Contains("*")) return true;
+        if (perms.Length == 0) return false;
 
         foreach (var r in required)
         {

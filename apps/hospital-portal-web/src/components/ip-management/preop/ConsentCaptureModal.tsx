@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { FileText, Loader2, RotateCcw, Upload, X } from 'lucide-react';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
 import {
   ipManagementApi,
   type PreOpClearanceDetailDto,
@@ -104,14 +104,7 @@ export function ConsentCaptureModal({
     setSignedAt(toDateTimeLocal(reconsent ? null : detail?.signedAt));
     setFile(null);
     setErr(null);
-  }, [open, reconsent, detail, completion.notes]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, reconsent, detail, completion.notes, completion.resultValue]);
 
   // A fresh document is required for surgical re-consent (prior PDF no longer counts).
   const docSatisfied = !!file || (!!existingDoc && !reconsent);
@@ -128,7 +121,7 @@ export function ConsentCaptureModal({
     return true;
   }, [submitting, needsDoc, meta.signLabel, meta.site, patientSigned, markedBy, lateralityAttested]);
 
-  if (!open || typeof document === 'undefined') return null;
+  if (!open) return null;
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -195,19 +188,17 @@ export function ConsentCaptureModal({
 
   const title = reconsent ? `Re-consent — ${meta.label}` : meta.label;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Capture ${meta.label}`}
-      onClick={onClose}
+  return (
+    <IpOverlayDialog
+      open={open}
+      onClose={onClose}
+      size="lg"
+      title={title}
+      testId={WARD_PREOP_TEST_IDS.consentCaptureModal}
+      dismissOnOverlay
+      className="max-h-[90vh]"
     >
-      <div
-        data-testid={WARD_PREOP_TEST_IDS.consentCaptureModal}
-        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="flex max-h-[90vh] flex-col overflow-hidden">
         <header className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
           <button
@@ -423,8 +414,7 @@ export function ConsentCaptureModal({
           </button>
         </footer>
       </div>
-    </div>,
-    document.body,
+    </IpOverlayDialog>
   );
 }
 

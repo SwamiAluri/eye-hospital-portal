@@ -6,6 +6,8 @@ import { FileText, X } from 'lucide-react';
 import { DocumentChecklist, type DocumentSlot } from './DocumentChecklist';
 import { uploadCaseDocument, deleteCaseDocument, type CaseDocument } from '@/lib/api/ccms/ccms-documents.api';
 import { ccmsKeys, useCcmsCaseDocuments } from '@/hooks/use-ccms-case';
+import { formatMissingDocumentsMessage, withBiometrySlot } from '@/lib/ccms/ccms-document-slots';
+import { AttachOpdBiometryButton } from './AttachOpdBiometryButton';
 
 interface PreviewState {
   url: string;
@@ -15,6 +17,7 @@ interface PreviewState {
 
 interface Props {
   caseId: string;
+  patientId?: string | null;
   slots: Omit<DocumentSlot, 'uploadedUrl' | 'uploadedAt' | 'docId'>[];
   readOnly?: boolean;
   showScanButton?: boolean;
@@ -39,6 +42,7 @@ function mergeSlotsWithDocs(
 
 export function CaseDocumentsWorkspace({
   caseId,
+  patientId,
   slots,
   readOnly = false,
   showScanButton = true,
@@ -53,12 +57,12 @@ export function CaseDocumentsWorkspace({
     ? (externalLoading ?? false)
     : ownQuery.isLoading;
 
-  const [liveSlots, setLiveSlots] = useState<DocumentSlot[]>(() => mergeSlotsWithDocs(slots, documents));
+  const [liveSlots, setLiveSlots] = useState<DocumentSlot[]>(() => mergeSlotsWithDocs(withBiometrySlot(slots), documents));
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
 
   useEffect(() => {
-    setLiveSlots(mergeSlotsWithDocs(slots, documents));
+    setLiveSlots(mergeSlotsWithDocs(withBiometrySlot(slots), documents));
   }, [slots, documents]);
 
   const invalidateDocuments = useCallback(async () => {
@@ -121,9 +125,23 @@ export function CaseDocumentsWorkspace({
   const requiredDone    = liveSlots.filter(s => s.required && s.uploadedUrl).length;
   const allRequiredDone = requiredCount === 0 || requiredDone === requiredCount;
   const requiredPct     = requiredCount > 0 ? Math.round((requiredDone / requiredCount) * 100) : 100;
+  const missingLabels   = liveSlots.filter(s => s.required && !s.uploadedUrl).map(s => s.label);
 
   return (
     <>
+      {requiredCount === 0 ? (
+        <div className="mb-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800" data-testid="ccms-docs-empty-master">
+          No required documents are configured for this payer. Submit is allowed. Optional uploads still appear.
+        </div>
+      ) : allRequiredDone ? (
+        <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="ccms-docs-ready">
+          All required documents are on file. Submit sends the packet. The TPA may still raise a query later.
+        </div>
+      ) : (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="ccms-docs-blocked">
+          {formatMissingDocumentsMessage(missingLabels)}
+        </div>
+      )}
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-1">
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -144,6 +162,12 @@ export function CaseDocumentsWorkspace({
         )}
       </div>
 
+      <AttachOpdBiometryButton
+        caseId={caseId}
+        patientId={patientId}
+        readOnly={readOnly}
+        onAttached={() => { void invalidateDocuments(); }}
+      />
       <DocumentChecklist
         slots={liveSlots}
         caseId={caseId}
@@ -163,14 +187,16 @@ export function CaseDocumentsWorkspace({
                 <p className="text-sm font-semibold text-gray-800 truncate">{preview.fileName}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                <a
-                  href={preview.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] font-semibold text-indigo-600 hover:underline"
-                >
-                  Open in new tab ↗
-                </a>
+                {preview.url.startsWith('http') && (
+                  <a
+                    href={preview.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-semibold text-indigo-600 hover:underline"
+                  >
+                    Open in new tab ↗
+                  </a>
+                )}
                 <button
                   onClick={() => setPreview(null)}
                   className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
@@ -180,11 +206,18 @@ export function CaseDocumentsWorkspace({
               </div>
             </div>
             <div className="flex-1 overflow-hidden bg-gray-100">
-              <iframe
-                src={preview.url}
-                title={preview.fileName}
-                className="w-full h-full min-h-[60vh] border-0"
-              />
+              {preview.url.startsWith('http') ? (
+                <iframe
+                  src={preview.url}
+                  title={preview.fileName}
+                  className="w-full h-full min-h-[60vh] border-0"
+                />
+              ) : (
+                <p className="p-6 text-sm text-gray-700">
+                  This is the OPD biometry record on file. Open Diagnostics → Biometry to view measurements.
+                  Auth remains the source of truth; this case only stores a pointer.
+                </p>
+              )}
             </div>
           </div>
         </div>

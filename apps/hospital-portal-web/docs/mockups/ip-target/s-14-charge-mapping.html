@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-14">
+<main>
+
+  <p class="lede">
+    Decisions D1 and D4 &mdash; itemised package components and itemised consumables &mdash; make
+    <strong>item-to-billable-variant mapping mandatory</strong>. There is currently no such mapping table, so an
+    inventory item consumed in theatre has no price to post. This screen is where those gaps get closed before they
+    become permanently lost revenue.
+  </p>
+
+  <div class="callout info">
+    <b>Why exceptions rather than blocking.</b> An unmapped item never stops a surgeon, a discharge or a bill. Usage is
+    always recorded, the charge is parked as an exception, and it replays automatically the moment the mapping exists.
+    Clinical flow is never held hostage to a pricing gap.
+  </div>
+
+  <div class="frame">
+    <div class="app-header">
+      <h1>Charge mapping</h1>
+      <span class="scope">Downtown Hospital &middot; last 90 days</span>
+      <span class="spacer"></span>
+      <span class="btn sm">Only blocking</span>
+      <span class="btn sm">Export</span>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi is-alert"><div class="label">Unmapped items in use</div><div class="value num">14</div></div>
+      <div class="kpi is-alert"><div class="label">Blocked charge value</div><div class="value num">&#8377;86,400</div></div>
+      <div class="kpi"><div class="label">Bills affected</div><div class="value num">11</div></div>
+      <div class="kpi is-inhouse"><div class="label">Mapped this week</div><div class="value num">23</div></div>
+    </div>
+
+    <table class="grid">
+      <thead>
+        <tr><th>Item</th><th>Type</th><th>Uses</th><th>Last used</th><th>Est. value</th><th>Map to billable variant</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div class="cell-primary">Trypan Blue 0.06%</div><div class="cell-sub mono">INV-8841</div></td>
+          <td>Consumable</td><td class="num">142</td><td>24 Aug</td><td class="num">&#8377;36,000</td>
+          <td><input class="input placeholder" value="Search service variant…" readonly></td>
+          <td><span class="btn sm primary">Map</span></td>
+        </tr>
+        <tr>
+          <td><div class="cell-primary">Phaco cassette &mdash; Centurion</div><div class="cell-sub mono">INV-5510</div></td>
+          <td>Consumable</td><td class="num">138</td><td>24 Aug</td><td class="num">&#8377;30,400</td>
+          <td><input class="input" value="Consumable &middot; Phaco pack" readonly></td>
+          <td><span class="btn sm primary">Map</span></td>
+        </tr>
+        <tr>
+          <td><div class="cell-primary">Premium IOL &mdash; PanOptix</div><div class="cell-sub mono">INV-2044</div></td>
+          <td>IOL</td><td class="num">12</td><td>23 Aug</td><td class="num">&#8377;18,000</td>
+          <td><input class="input placeholder" value="Search service variant…" readonly></td>
+          <td><span class="btn sm primary">Map</span></td>
+        </tr>
+        <tr>
+          <td><div class="cell-primary">Ophthalmic viscoelastic &mdash; generic</div><div class="cell-sub mono">INV-7712</div></td>
+          <td>Consumable</td><td class="num">9</td><td>21 Aug</td><td class="num">&#8377;2,000</td>
+          <td><input class="input placeholder" value="Search service variant…" readonly></td>
+          <td><span class="btn sm primary">Map</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="padding:12px 16px;border-top:1px solid var(--line);background:var(--surface-alt)">
+      <div class="row between">
+        <div class="small">
+          <b>14 blocked charges awaiting mapping &middot; &#8377;86,400 estimated.</b>
+          Mapping an item replays every parked charge for it.
+        </div>
+        <span class="btn primary">Replay all resolved</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Package component mapping</h2>
+  <div class="frame">
+    <div class="app-header"><h1 style="font-size:14px">Cataract standard package &rarr; component lines</h1></div>
+    <table class="grid">
+      <thead><tr><th>Component</th><th>Billable variant</th><th>Allocation</th><th>Amount</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Phaco surgery</td><td class="mono">SV-PROC-0021</td><td>Fixed</td><td class="num">&#8377;62,000</td><td><span class="badge ok">Mapped</span></td></tr>
+        <tr><td>IOL allowance</td><td class="mono">SV-IMPL-0004</td><td>Fixed</td><td class="num">&#8377;18,000</td><td><span class="badge ok">Mapped</span></td></tr>
+        <tr><td>OT charges</td><td class="mono">SV-FAC-0009</td><td>Fixed</td><td class="num">&#8377;12,000</td><td><span class="badge ok">Mapped</span></td></tr>
+        <tr><td>Day-care bed</td><td class="mono">SV-ACC-0002</td><td>Per day</td><td class="num">&#8377;8,000</td><td><span class="badge ok">Mapped</span></td></tr>
+        <tr><td>Consumables allowance</td><td class="muted">not mapped</td><td>&mdash;</td><td class="num">&mdash;</td><td><span class="badge danger">Overlap risk</span></td></tr>
+      </tbody>
+    </table>
+    <div style="padding:12px 16px;border-top:1px solid var(--line)">
+      <div class="callout warn">
+        <b>Overlap risk.</b> If a package includes a consumables allowance and consumables are also charged
+        individually, the patient is billed twice. The double-charge guard suppresses the itemised line when the
+        package already covers it &mdash; but only when the mapping declares the overlap.
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker new">2</span><span>Ordered by <b>usage frequency</b>, not alphabetically. Mapping the item used 142 times recovers far more than the one used nine times, and the list should say so.</span></li>
+    <li><span class="marker new">2</span><span>Mapping is retroactive: <b>parked charges replay</b> against their original bills, subject to those bills not being finalized. Finalized bills route to an adjustment instead.</span></li>
+    <li><span class="marker new">2</span><span>Package overlap declaration is what makes the <b>double-charge guard</b> in TASK INV-050 possible. Without it, D1 and D4 together would over-bill.</span></li>
+  </ul>
+
+  <h2 class="sec">Mapping actions</h2>
+  <p class="lede" style="margin-bottom:14px">An unmapped item is silent revenue leakage: the device leaves the shelf,
+  the charge never posts, and nobody notices until the margin report. These are the four ways a mapping is created or
+  changed, plus what happens to the items that were missed while it was absent.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Create a mapping</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Map item to charge</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="field"><label>Inventory item</label><input class="input" value="Capsular tension ring &middot; SKU CTR-001" readonly></div>
+            <div class="field"><label>Billing service</label><input class="input" value="CTR &mdash; capsular tension ring (SRV-2210)" readonly></div>
+            <div class="cols-2">
+              <div class="field"><label>Default rate</label><input class="input" value="3,200" readonly></div>
+              <div class="field"><label>Chargeable</label><input class="input" value="Yes &mdash; out of package" readonly></div>
+            </div>
+            <div class="callout info">14 recorded uses in the last 30 days are unmapped and therefore uncharged, worth
+            <b>&#8377;44,800</b>.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Save mapping</span></div>
+        </div>
+      </div>
+      <p class="vc">The value of what was missed is shown at the moment of mapping, which is what turns this from
+      configuration housekeeping into a revenue task.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Backfill missed charges</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Backfill 14 uses</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout warn"><b>Only open bills can be backfilled.</b> 9 are open and will be charged;
+            5 are finalized and need a credit-note path instead.</div>
+            <table class="grid" style="border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:8px">
+              <thead><tr><th>Bill</th><th>Patient</th><th>Status</th><th>Amount</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">IPD-...0841</td><td>Meena Iyer</td><td><span class="badge ot no-dot">Open</span></td><td class="num">&#8377;3,200</td></tr>
+                <tr><td class="mono">IPD-...0839</td><td>Priya Das</td><td><span class="badge ot no-dot">Open</span></td><td class="num">&#8377;3,200</td></tr>
+                <tr><td class="mono">IPD-...0778</td><td>Nisha Rao</td><td><span class="badge ok no-dot">Finalized</span></td><td class="muted">Skipped</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Backfill 9 open bills</span></div>
+        </div>
+      </div>
+      <p class="vc">Backfilling never reopens a finalized bill. Those are listed separately so somebody decides
+      deliberately whether to chase them.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Change a rate</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Change rate &mdash; IOL SN60WF</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="cols-2">
+              <div class="field"><label>Current rate</label><input class="input" value="14,000" readonly></div>
+              <div class="field"><label>New rate</label><input class="input" value="15,500" readonly></div>
+            </div>
+            <div class="field"><label>Effective from <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="01 Sep 2026" readonly></div>
+            <div class="callout danger"><b>Rate changes are never retrospective.</b> Bills already raised keep the
+            rate that applied on their date. The mapping is versioned, not overwritten.</div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Schedule change</span></div>
+        </div>
+      </div>
+      <p class="vc">Effective-dated versions are the only way a bill from three months ago can still be explained.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n">4</span><span class="t">Mark as non-chargeable</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Non-chargeable &mdash; viscoelastic</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="field"><label>Reason</label><input class="input" value="Always included in the cataract package" readonly></div>
+            <div class="callout info"><b>Still tracked, never charged.</b> Stock movement and cost are recorded so
+            package margin stays accurate; no bill line is produced.</div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Deducted from stock on use</li>
+              <li><span class="bx on">&#10003;</span> Counted in package cost</li>
+              <li><span class="bx no">&#10005;</span> Not charged to the patient</li>
+              <li><span class="bx no">&#10005;</span> Not shown as unmapped leakage</li>
+            </ul>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Mark non-chargeable</span></div>
+        </div>
+      </div>
+      <p class="vc">The distinction between <b>unmapped</b> and <b>deliberately non-chargeable</b> is what keeps the
+      leakage list short enough to act on.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">States</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n ok">1</span><span class="t">Everything mapped</span></div>
+      <div class="frame"><div class="empty">
+        <div class="big">All items are mapped</div>
+        142 inventory items, 138 chargeable and 4 marked non-chargeable. No leakage from missing mappings.
+      </div></div>
+      <p class="vc">The goal state, stated as an achievement with the numbers behind it.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">New items detected</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout warn" style="margin:0"><b>3 new inventory items</b> appeared this week with no mapping.
+        First use recorded 2 days ago.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm primary">Map now</span><span class="btn sm ghost">Dismiss for 7 days</span></div>
+      </div></div>
+      <p class="vc">New SKUs arrive continuously. Detection has to be automatic or the list is always stale.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Inventory unreachable</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout danger" style="margin:0"><b>We can&rsquo;t reach the item catalogue right now.</b> You can
+        see the mappings you already have, but new ones can&rsquo;t be created until it&rsquo;s back.
+        <a href="#">Try again</a>
+        <div class="small muted" style="margin-top:6px">Details for IT &middot; <span class="mono">c-91e30b</span></div></div>
+      </div></div>
+      <p class="vc">Read from cache, refuse to write. A mapping created against a stale catalogue is worse than none.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <div class="callout danger">
+    <b>The whole charge-mapping surface is new.</b> No <code>ChargeMapping</code> controller, no
+    <code>charge_exception</code> table and no <code>service_variant_item_map</code> exist in auth-service today, and
+    <b><code>bill.admin</code> is not a real permission code</b> &mdash; nothing in the codebase defines or seeds it.
+    Until it is created, these screens would have to fall back to <code>bill.update</code>, which is far too broad
+    for editing price mappings.
+  </div>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr><td>Unmapped list <span class="mark new">2</span></td><td><code>useChargeExceptionsQuery</code></td><td><code>GET /api/ChargeMapping/exceptions</code> &mdash; to build</td><td>charge mapping admin service</td><td><code>charge_exception</code>, new <span class="cell-sub">append; one row per blocked charge</span></td><td class="owner o-billing">Billing</td><td><code>bill.admin</code> <span class="cell-sub">to create</span></td></tr>
+      <tr><td>Variant search <span class="mark new">2</span></td><td><code>searchServiceVariants</code></td><td><code>GET /api/ServiceVariants?q=</code> &mdash; today only <code>GET /api/ServiceCatalog</code>, which is <b><code>[AllowAnonymous]</code></b></td><td>catalog service</td><td><code>service_variants</code>, <code>variant_prices</code></td><td class="owner o-billing">Billing</td><td><code>bill.admin</code></td></tr>
+      <tr><td>Create mapping <span class="mark new">2</span></td><td><code>createItemMapping</code></td><td><code>POST /api/ChargeMapping</code> &mdash; to build</td><td>MD-055 resolver admin</td><td><code>service_variant_item_map</code> (live)</td><td class="owner o-billing">Billing</td><td><code>bill.admin</code></td></tr>
+      <tr><td>Mapping history <span class="mark new">2</span></td><td><code>useMappingHistoryQuery</code></td><td><code>GET /api/ChargeMapping/{id}/history</code> &mdash; to build</td><td>same service</td><td><code>service_variant_item_map</code> <span class="cell-sub">versioned rows with effective dates, never edited in place</span></td><td class="owner o-billing">Billing</td><td><code>bill.admin</code></td></tr>
+      <tr><td>Package component map <span class="mark new">2</span></td><td><code>savePackageComponents</code></td><td><code>PUT /api/ChargeMapping/package/{id}</code> &mdash; to build</td><td>package explosion config</td><td><code>package_component_map</code> (live)</td><td class="owner o-billing">Billing</td><td><code>bill.admin</code></td></tr>
+      <tr><td>Replay blocked charges <span class="mark new">2</span></td><td><code>replayExceptions</code></td><td><code>POST /api/ChargeMapping/replay</code> &mdash; to build</td><td>charge poster</td><td><code>opd_bill_items</code>, <code>charge_exception</code></td><td class="owner o-billing">Billing</td><td><code>bill.admin</code></td></tr>
+      <tr><td>Add a charge line manually <span class="badge ok no-dot">exists</span></td><td><code>addBillItem</code></td><td><code>POST /api/BillItems</code></td><td><code>BillItemService.AddBillItemAsync</code></td><td><code>opd_bill_items</code></td><td class="owner o-billing">Billing</td><td><code>bill.update</code></td></tr>
+      <tr><td>Billing rules <span class="badge danger no-dot">defect</span></td><td>rules editor</td><td><code>GET</code> / <code>POST</code> / <code>PUT</code> / <code>DELETE /api/OpdBills/rules</code></td><td><code>OpdBillService</code> rules methods</td><td><code>billing_rules</code></td><td class="owner o-billing">Billing</td><td><b>none</b> &mdash; <code>[Authorize]</code> only, so any signed-in user can change billing rules</td></tr>
+      <tr><td>Item source</td><td>&mdash;</td><td><code>GET /api/Items</code></td><td><code>ItemMasterService</code></td><td><code>inv_item_master</code></td><td class="owner o-inv">Inventory</td><td>tenant header</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>Rate changes must version, not overwrite.</b> A mapping edited in place silently re-prices history and makes
+    last month&rsquo;s bills unexplainable. Each change writes a new row with an effective date, and the history
+    panel is how an auditor answers &ldquo;what did this cost in August?&rdquo;.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Unmapped item found</td><td><b>3 items were used but couldn&rsquo;t be charged</b> because they have no price set up. That&rsquo;s &#8377;27,400 of activity.</td></tr>
+      <tr><td>Mapping created</td><td><b>Pricing set up.</b> The 3 blocked charges have been posted to their bills.</td></tr>
+      <tr><td>Rate changed</td><td><b>New rate applies from today.</b> Bills raised before now keep the old rate.</td></tr>
+      <tr><td>Marked non-chargeable</td><td><b>This item won&rsquo;t be charged to patients.</b> It will still be tracked for stock and costing.</td></tr>
+      <tr><td>Backfill would touch closed bills</td><td><b>2 of these bills are already closed.</b> Those need a credit note rather than a new charge line.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

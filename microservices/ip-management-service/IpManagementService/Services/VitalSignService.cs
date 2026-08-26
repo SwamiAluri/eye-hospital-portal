@@ -63,6 +63,10 @@ public class VitalSignService
             Status                  = "active",
         };
         _db.VitalSigns.Add(vital);
+        _db.JourneyAuditLogs.Add(JourneyClinicalAudit.Entry(
+            tenantId, journeyId, userId, "VitalRecorded", "Vitals",
+            null, $"{vital.BloodPressureSystolic}/{vital.BloodPressureDiastolic}",
+            notes: vital.Notes, correlationId: vital.Id));
         await _db.SaveChangesAsync();
 
         await _wardSync.SyncVitalsCheckedAsync(journeyId, tenantId, userId);

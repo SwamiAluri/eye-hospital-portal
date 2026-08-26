@@ -34,7 +34,7 @@ $perms = @()
 if ($login.permissions) { $perms = @($login.permissions | ForEach-Object { "$_" }) }
 $isWildcard = $perms -contains '*'
 $hasEnh = $isWildcard -or ($perms -contains 'ccms.enhancement.write') -or ($perms -contains 'ccms.enhancement.create') -or ($perms -contains 'ccms.preauth.process') -or ($perms -contains 'ccms.workflow.admin')
-$hasFc = $isWildcard -or ($perms -contains 'ip.emergency_fc.apply') -or ($perms -contains 'ward.checklist.edit')
+$hasFc = $isWildcard -or ($perms -contains 'ip.emergency_fc.apply')
 Add-Result 'JWT has enhancement permission' $hasEnh ("wildcard=$isWildcard; perms=$($perms -join ',')")
 Add-Result 'JWT has Emergency FC permission' $hasFc ("wildcard=$isWildcard")
 

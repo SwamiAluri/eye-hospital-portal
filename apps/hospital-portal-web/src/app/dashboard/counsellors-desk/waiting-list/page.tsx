@@ -18,6 +18,7 @@ import { WaitingListRow } from '@/components/counsellors-desk/WaitingListRow';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useWaitingListQuery, useInvalidateCounsellorsDesk } from '@/hooks/use-counsellors-desk-queries';
 import { useDeferredCcmsBadges } from '@/hooks/use-deferred-ccms-badges';
+import { isCoveragePaymentTypeValue } from '@/lib/counsellors-desk/session-utils';
 import type { WaitingListPatient, WaitingListFilters, AddPatientFormData } from '@/types/counsellors-desk';
 
 const AddPatientModal = dynamic(
@@ -228,7 +229,7 @@ export default function CounsellorWaitingListPage() {
   const filtered = useMemo(() => {
     let list = patients;
     if (activeTab === 'PreAuthQueue') {
-      list = list.filter(p => (['Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme'] as string[]).includes(p.paymentType as string));
+      list = list.filter(p => isCoveragePaymentTypeValue(p.paymentType as string));
     } else if (activeTab !== 'All') {
       list = list.filter(p => p.status === activeTab);
     }

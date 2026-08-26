@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import PhotoCapture from '@/components/shared/PhotoCapture';
 import { Activity as Upload, X, FileText, Activity as Camera, CheckCircle, AlertCircle, Activity as ImageIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { getApi } from '@/lib/api';
 
 interface UploadedDocumentResult {

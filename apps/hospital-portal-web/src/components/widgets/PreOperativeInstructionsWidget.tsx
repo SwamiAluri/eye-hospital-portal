@@ -32,7 +32,7 @@ import {
   Trash2,
   Clock,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { getApi } from '@/lib/api';

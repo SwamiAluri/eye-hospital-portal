@@ -102,12 +102,14 @@ export function ClinicalEvaluationForm({
   const [patientGender, setPatientGender] = useState<string | null>(null);
   const [opSource, setOpSource] = useState(outpatientDiagnosisFromJourney(journeyDiagnosis));
   const [biometryPowerSuggestion, setBiometryPowerSuggestion] = useState<string | null>(null);
+  const [biometryChecked, setBiometryChecked] = useState(false);
   const [journeyIolPower, setJourneyIolPower] = useState<string | null>(null);
+  const [refreshingOpd, setRefreshingOpd] = useState(false);
   const prevIolStatus = useRef<string | null>(null);
   const prevDiagnosisStatus = useRef<string | null>(null);
   const prefillDone = useRef(false);
 
-  const completions = detail?.completions ?? [];
+  const completions = useMemo(() => detail?.completions ?? [], [detail?.completions]);
   const signedOff = isEvaluationSignedOff(completions);
   const showIolPlan = isIolCataractProcedure(procedureName);
   const amendGate = canAmendClinicalEvaluation({
@@ -160,6 +162,7 @@ export function ClinicalEvaluationForm({
       if (cancelled) return;
       prefillDone.current = true;
       if (bioPower) setBiometryPowerSuggestion(bioPower);
+      setBiometryChecked(true);
       if (examSource) setOpSource(prev => prev ?? examSource);
       setFields(f => {
         const next = { ...f };
@@ -327,6 +330,27 @@ export function ClinicalEvaluationForm({
       queueSave(next);
       return next;
     });
+  }
+
+  async function handleRefreshFromOpd() {
+    setRefreshingOpd(true);
+    try {
+      const result = await ipManagementApi.refreshFromOpd(journeyId);
+      const nextPower = result.iolPower ?? result.journey.iolPower ?? null;
+      setJourneyIolPower(nextPower);
+      if (nextPower) {
+        setFields(f => ({ ...f, iol: { ...f.iol, power: nextPower } }));
+      }
+      if (result.biometryMissing) {
+        toast.error(`No biometry on file for the ${result.eyePhrase ?? 'selected eye'}.`);
+      } else {
+        toast.success('Planned IOL refreshed from OPD.');
+      }
+    } catch {
+      toast.error('Could not refresh from OPD.');
+    } finally {
+      setRefreshingOpd(false);
+    }
   }
 
   async function handleAmendConfirm(input: { reason: string; category: string }) {
@@ -500,8 +524,12 @@ export function ClinicalEvaluationForm({
                 iolOptions={iolOptions}
                 biometryPowerSuggestion={biometryPowerSuggestion}
                 journeyIolPower={journeyIolPower}
+                eyeOperated={eyeOperated}
+                emptyBiometry={biometryChecked && !biometryPowerSuggestion}
                 disabled={editLocked}
+                refreshingFromOpd={refreshingOpd}
                 onChange={iol => updateFields({ iol })}
+                onRefreshFromOpd={handleRefreshFromOpd}
               />
             )}
 

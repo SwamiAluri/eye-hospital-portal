@@ -2,6 +2,7 @@ import type { PreOpReadinessApiDto, StepReadinessApiDto } from '@/lib/api/ip-man
 import type { PreOpReadiness, StepReadiness } from '@/lib/ip-management/preop-readiness';
 import type { PreOpStatus } from '@/lib/ip-management/preop-status';
 import type { PreOpStepKey } from '@/lib/ip-management/preop-steps';
+import type { DilationSlice, DilationStatus } from '@/lib/ip-management/dilation-readiness';
 
 function asStepKey(key: string): PreOpStepKey {
   return key as PreOpStepKey;
@@ -32,8 +33,25 @@ function normalizeStepApiDto(raw: unknown): StepReadinessApiDto | null {
   };
 }
 
+function normalizeDilation(raw: unknown): DilationSlice | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  const status = String(readField<string>(s, 'status', 'Status') ?? '');
+  if (status !== 'not_recorded' && status !== 'not_ready' && status !== 'ready') return null;
+  const started = readField<string>(s, 'startedAt', 'StartedAt') ?? null;
+  const ready = readField<string>(s, 'readyAt', 'ReadyAt') ?? null;
+  const remaining = readField<number>(s, 'remainingSeconds', 'RemainingSeconds');
+  return {
+    startedAt: started,
+    readyAt: ready,
+    remainingSeconds: remaining == null ? null : Number(remaining),
+    status: status as DilationStatus,
+    medicineName: readField<string>(s, 'medicineName', 'MedicineName') ?? null,
+  };
+}
+
 /** Accept camelCase or PascalCase payloads from GET …/pre-op/readiness. */
-export function parsePreOpReadinessApiDto(dto: unknown): PreOpReadinessApiDto | null {
+export function parsePreOpReadinessApiDto(dto: unknown): (PreOpReadinessApiDto & { dilation?: DilationSlice | null }) | null {
   if (!dto || typeof dto !== 'object') return null;
   const raw = dto as Record<string, unknown>;
   const stepsRaw = readField<unknown[]>(raw, 'steps', 'Steps');
@@ -49,6 +67,7 @@ export function parsePreOpReadinessApiDto(dto: unknown): PreOpReadinessApiDto | 
     readySteps: Number(readField<number>(raw, 'readySteps', 'ReadySteps') ?? 0),
     countableSteps: Number(readField<number>(raw, 'countableSteps', 'CountableSteps') ?? 0),
     blockers: Number(readField<number>(raw, 'blockers', 'Blockers') ?? 0),
+    dilation: normalizeDilation(readField(raw, 'dilation', 'Dilation')),
   };
 }
 

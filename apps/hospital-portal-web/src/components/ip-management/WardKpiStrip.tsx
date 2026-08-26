@@ -1,42 +1,58 @@
 'use client';
 
 import type { WardDashboardSummaryDto } from '@/lib/api/ip-management.api';
+import type { IpPersona } from '@/lib/ip-management/ip-persona';
 import { WARD_PREOP_TEST_IDS } from '@/lib/ip-management/ward-preop-test-ids';
 
-type MetricKey = keyof Pick<
-  WardDashboardSummaryDto,
-  'otLoadToday' | 'pacPending' | 'criticalLabs' | 'financialPending' | 'delayed' | 'rebookRequired'
->;
+type MetricKey = 'pacPending' | 'criticalLabs' | 'delayed' | 'returnedFromOt' | 'financialPending' | 'rebookRequired';
 
-const METRICS: { key: MetricKey; label: string; attention?: boolean }[] = [
-  { key: 'otLoadToday', label: 'OT Today' },
-  { key: 'pacPending', label: 'PAC Pending' },
-  { key: 'criticalLabs', label: 'Critical Labs', attention: true },
-  { key: 'financialPending', label: 'Financial' },
-  { key: 'delayed', label: 'Delayed', attention: true },
-  { key: 'rebookRequired', label: 'Rebook', attention: true },
+const ALWAYS: { key: MetricKey; label: string; tone: 'warn' | 'bad' }[] = [
+  { key: 'pacPending', label: 'PAC incomplete', tone: 'warn' },
+  { key: 'criticalLabs', label: 'Critical lab', tone: 'bad' },
+  { key: 'delayed', label: 'Delayed for OT', tone: 'warn' },
+  { key: 'returnedFromOt', label: 'Returned from OT', tone: 'bad' },
 ];
 
-/** One compact row of at-a-glance ward counts; each tile toggles a list filter. */
+const COORD_ONLY: { key: MetricKey; label: string; tone: 'quiet' }[] = [
+  { key: 'financialPending', label: 'Financial hold', tone: 'quiet' },
+  { key: 'rebookRequired', label: 'Rebook', tone: 'quiet' },
+];
+
+function isCoordinator(persona: IpPersona | undefined): boolean {
+  return persona === 'coordinator' || persona === 'admin';
+}
+
+/** This-ward exception chips. Values come from the existing board/summary APIs. */
 export function WardKpiStrip({
   summary,
+  returnedFromOt = 0,
+  persona = 'ward',
   activeKey,
   onSelect,
 }: {
   summary: WardDashboardSummaryDto | null;
+  returnedFromOt?: number;
+  persona?: IpPersona;
   activeKey?: string;
   onSelect?: (key: string) => void;
 }) {
   if (!summary) return null;
 
+  const coord = isCoordinator(persona);
+  const values: Record<MetricKey, number> = {
+    pacPending: summary.pacPending ?? 0,
+    criticalLabs: summary.criticalLabs ?? 0,
+    delayed: summary.delayed ?? 0,
+    returnedFromOt,
+    financialPending: summary.financialPending ?? 0,
+    rebookRequired: summary.rebookRequired ?? 0,
+  };
+
   return (
-    <div
-      data-testid={WARD_PREOP_TEST_IDS.kpiStrip}
-      className="bg-white rounded-xl shadow-sm border border-gray-100 grid grid-cols-3 sm:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-gray-100 overflow-hidden"
-    >
-      {METRICS.map(({ key, label, attention }) => {
-        const value = summary[key] ?? 0;
-        const alert = !!attention && value > 0;
+    <div data-testid={WARD_PREOP_TEST_IDS.kpiStrip} className="attn" role="toolbar" aria-label="This ward exceptions">
+      <span className="k">This ward</span>
+      {ALWAYS.map(({ key, label, tone }) => {
+        const value = values[key];
         const active = activeKey === key;
         return (
           <button
@@ -45,15 +61,33 @@ export function WardKpiStrip({
             data-testid={WARD_PREOP_TEST_IDS.kpiTile(key)}
             onClick={() => onSelect?.(key)}
             aria-pressed={active}
-            className={`px-4 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
-              active ? 'bg-blue-50' : 'hover:bg-gray-50'
-            }`}
+            className={`chip ${tone} ${active ? 'on' : ''}`.trim()}
           >
-            <p className={`text-2xl font-bold leading-none ${alert ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
-            <p className={`text-[11px] font-medium mt-1.5 whitespace-nowrap ${active ? 'text-blue-700' : 'text-gray-500'}`}>{label}</p>
+            <span className="n">{value}</span> {label}
           </button>
         );
       })}
+      {coord && (
+        <>
+          <span className="k" style={{ marginLeft: 8 }}>Ops</span>
+          {COORD_ONLY.map(({ key, label, tone }) => {
+            const value = values[key];
+            const active = activeKey === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                data-testid={WARD_PREOP_TEST_IDS.kpiTile(key)}
+                onClick={() => onSelect?.(key)}
+                aria-pressed={active}
+                className={`chip ${tone} ${active ? 'on' : ''}`.trim()}
+              >
+                <span className="n">{value}</span> {label}
+              </button>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

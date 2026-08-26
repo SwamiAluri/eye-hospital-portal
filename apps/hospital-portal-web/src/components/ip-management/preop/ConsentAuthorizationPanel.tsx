@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useMemo, useState } from 'react';
 import { FileText, Loader2, Pencil, RotateCcw, ShieldX } from 'lucide-react';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
 import {
   ipManagementApi,
   type PreOpClearanceDetailDto,
@@ -322,14 +322,6 @@ function RevokeConsentModal({
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  if (typeof document === 'undefined') return null;
-
   async function handleSubmit() {
     if (!reason.trim() || submitting) return;
     setSubmitting(true);
@@ -348,19 +340,15 @@ function RevokeConsentModal({
     }
   }
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Revoke ${itemLabel}`}
-      onClick={onClose}
+  return (
+    <IpOverlayDialog
+      onClose={onClose}
+      size="md"
+      title={`Revoke — ${itemLabel}`}
+      testId={WARD_PREOP_TEST_IDS.consentRevokeModal}
+      dismissOnOverlay
     >
-      <div
-        data-testid={WARD_PREOP_TEST_IDS.consentRevokeModal}
-        className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
+      <div>
         <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
           <ShieldX className="h-4 w-4 shrink-0 text-red-600" aria-hidden="true" />
           <h3 className="text-sm font-semibold text-gray-900">Revoke — {itemLabel}</h3>
@@ -400,7 +388,6 @@ function RevokeConsentModal({
           </button>
         </footer>
       </div>
-    </div>,
-    document.body,
+    </IpOverlayDialog>
   );
 }

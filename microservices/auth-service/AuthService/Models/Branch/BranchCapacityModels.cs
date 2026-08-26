@@ -32,7 +32,7 @@ namespace AuthService.Models.Branch
         [Required]
         [Column("bed_type")]
         [MaxLength(50)]
-        public string BedType { get; set; } = "General"; // General, ICU, Emergency
+        public string BedType { get; set; } = "General"; // General, ICU, Emergency, Recliner, DayCareChair
 
         [Required]
         [Column("bed_status")]
@@ -50,6 +50,10 @@ namespace AuthService.Models.Branch
         [MaxLength(100)]
         public string? WardName { get; set; }
 
+        /// <summary>DB-004. FK to ward.id. Nullable for unmatched legacy rows; ward_name stays.</summary>
+        [Column("ward_id")]
+        public Guid? WardId { get; set; }
+
         [Column("patient_id")]
         public Guid? PatientId { get; set; }
 
@@ -65,6 +69,10 @@ namespace AuthService.Models.Branch
 
         [Column("is_isolation_bed")]
         public bool IsIsolationBed { get; set; } = false;
+
+        /// <summary>Denormalized occupancy flag used by the branch capacity trigger.</summary>
+        [Column("is_occupied")]
+        public bool IsOccupied { get; set; }
 
         [Column("created_at")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -264,6 +272,8 @@ namespace AuthService.Models.Branch
         public BedTypeCapacity GeneralBeds { get; set; } = new();
         public BedTypeCapacity IcuBeds { get; set; } = new();
         public BedTypeCapacity EmergencyBeds { get; set; } = new();
+        public BedTypeCapacity ReclinerBeds { get; set; } = new();
+        public BedTypeCapacity DayCareChairBeds { get; set; } = new();
         
         public DateTime LastUpdated { get; set; }
     }
@@ -289,6 +299,7 @@ namespace AuthService.Models.Branch
         public int? FloorNumber { get; set; }
         public string? RoomNumber { get; set; }
         public string? WardName { get; set; }
+        public Guid? WardId { get; set; }
         public Guid? PatientId { get; set; }
         public string? PatientName { get; set; }
         public DateTime? AssignedAt { get; set; }

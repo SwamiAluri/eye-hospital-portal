@@ -82,6 +82,12 @@ public class PreOpNotificationClient : IPreOpNotificationClient
         string Message,
         string Details);
 
+    private record PushTenantRequest(
+        Guid   TenantId,
+        string Type,
+        string Message,
+        string Details);
+
     public PreOpNotificationClient(HttpClient http, ILogger<PreOpNotificationClient> logger)
     {
         _http   = http;
@@ -190,15 +196,34 @@ public class PreOpNotificationClient : IPreOpNotificationClient
 
     public async Task NotifyWardChangedAsync(Guid tenantId, Guid? branchId, Guid journeyId, string newState)
     {
-        // Reuses the proven push-dept broadcast → SignalR ReceiveNotification('WardJourneyChanged', …).
-        // The ward board listens for this type and triggers a quiet refresh.
+        var details = $"{{\"journeyId\":\"{journeyId}\",\"state\":\"{newState}\"}}";
+        // Ward board: department group (existing).
         await NotifyDepartmentAsync(
             tenantId,
             branchId,
             "IPD_NURSING",
             "WardJourneyChanged",
             "Ward board updated",
-            $"{{\"journeyId\":\"{journeyId}\",\"state\":\"{newState}\"}}");
+            details);
+
+        // IP / Billing / OT dashboards: tenant group on the same NotificationHub.
+        var hubType = IpRealtimeEventMapper.ToHubType(newState);
+        await NotifyTenantAsync(tenantId, hubType, "IP operational update", details);
+    }
+
+    private async Task NotifyTenantAsync(Guid tenantId, string type, string message, string details)
+    {
+        try
+        {
+            var payload = new PushTenantRequest(tenantId, type, message, details);
+            var resp = await _http.PostAsJsonAsync("api/notifications/internal/push-tenant", payload);
+            if (!resp.IsSuccessStatusCode)
+                _logger.LogWarning("Tenant notification returned {Status} for type={Type}", resp.StatusCode, type);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send tenant notification type={Type}", type);
+        }
     }
 
     public async Task NotifyPreOpMarkReadyAsync(

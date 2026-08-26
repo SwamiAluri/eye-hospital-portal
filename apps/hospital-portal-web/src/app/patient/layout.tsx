@@ -92,14 +92,14 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   );
 
   const SidebarContent = ({ onItemClick }: { onItemClick?: () => void }) => (
-    <div className="flex flex-col h-full w-60" style={{ backgroundColor: '#0f1e3c' }}>
+    <div className="flex flex-col h-full w-60 bg-navy-900">
       <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10 flex-shrink-0">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#10b981' }}>
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-primary-500">
           <Building2 className="h-5 w-5 text-white" />
         </div>
         <div>
           <p className="text-white font-semibold text-sm leading-tight">Hospital Portal</p>
-          <p className="text-xs leading-tight" style={{ color: '#6ee7b7' }}>Patient Portal</p>
+          <p className="text-xs leading-tight text-primary-300">Patient Portal</p>
         </div>
       </div>
 
@@ -108,11 +108,11 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       <div className="mx-3 mb-2 p-3 rounded-lg border border-white/10" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
         <h4 className="text-xs font-semibold text-white mb-1.5">Need Help?</h4>
         <div className="space-y-1.5">
-          <a href="tel:+911234567890" className="flex items-center gap-2 text-xs transition-colors" style={{ color: '#6ee7b7' }}>
+          <a href="tel:+911234567890" className="flex items-center gap-2 text-xs transition-colors text-primary-300">
             <Phone className="h-3 w-3 flex-shrink-0" />
             +91 1234 567 890
           </a>
-          <a href="mailto:support@hospital.com" className="flex items-center gap-2 text-xs transition-colors" style={{ color: '#6ee7b7' }}>
+          <a href="mailto:support@hospital.com" className="flex items-center gap-2 text-xs transition-colors text-primary-300">
             <Mail className="h-3 w-3 flex-shrink-0" />
             support@hospital.com
           </a>
@@ -157,7 +157,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       )}
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0 gap-3">
-        <div className="rounded-2xl overflow-hidden shadow-md flex-shrink-0" style={{ backgroundColor: '#0f1e3c' }}>
+        <div className="rounded-2xl overflow-hidden shadow-md flex-shrink-0 bg-navy-900">
           <div className="flex items-center justify-between h-14 px-4">
             <div className="flex items-center gap-3">
               <button
@@ -167,7 +167,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
                 <Menu className="h-5 w-5" />
               </button>
               <div className="flex items-center gap-2">
-                <Heart className="h-5 w-5 hidden lg:block" style={{ color: '#10b981' }} />
+                <Heart className="h-5 w-5 hidden lg:block text-primary-500" />
                 <span className="text-white font-semibold text-sm">Patient Portal</span>
               </div>
             </div>
@@ -191,7 +191,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
                   className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/10 transition-colors"
                 >
-                  <div className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold text-white" style={{ backgroundColor: '#10b981' }}>
+                  <div className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold text-white bg-primary-500">
                     {patient.name.split(' ').map(function(n) { return n[0]; }).join('')}
                   </div>
                   <div className="hidden sm:block text-left">

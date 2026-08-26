@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-17">
+<main>
+
+  <p class="lede">
+    One shared dialog for every action that reverses a clinical state, overrides a gate, releases a bed or moves money
+    backwards. It replaces <strong>six bespoke inline forms</strong> that each ask for a reason slightly differently,
+    and it guarantees that no such action reaches the server without an audited reason.
+  </p>
+
+  <div class="callout info">
+    <b>Contract.</b> Props: title &middot; consequence sentence &middot; minimum reason length &middot; destructive flag
+    &middot; confirm label. Every consumer writes a <code>journey_audit_log</code> row carrying the reason, the actor
+    and a correlation id. The confirm button stays disabled until the reason meets the minimum length.
+  </div>
+
+  <h2 class="sec">Reverse a clinical state</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Revert &ldquo;Ready for OT&rdquo;?</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div style="font-weight:650">Meena Iyer</div>
+          <div class="small muted">UAT-002 &middot; Day Care &middot; B-04 &middot; Slot AM-2</div>
+          <div class="callout warn" style="margin-top:10px">
+            The OT team will be notified and the patient returns to <b>Admitted</b>. The slot stays reserved.
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label>Reason <span class="faint">(required, minimum 10 characters)</span></label>
+            <input class="input" value="BP 180/100, deferred pending physician review" readonly>
+          </div>
+          <p class="hint">Recorded against your user and visible in the journey audit trail.</p>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Revert to Admitted</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Destructive variant &mdash; releases a bed</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Cancel admission?</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div style="font-weight:650">Tara Nair</div>
+          <div class="small muted">UAT-033 &middot; Day Care &middot; B-11</div>
+          <div class="callout danger" style="margin-top:10px">
+            <b>Bed B-11 will be released</b> and the slot freed. Any collected advance stays on the bill and must be
+            refunded separately through Billing if the patient is not rebooked.
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label>Reason <span class="faint">(required)</span></label>
+            <input class="input" value="Patient withdrew consent, will rebook next week" readonly>
+          </div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Keep admission</span><span class="btn danger">Cancel admission</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Override variant &mdash; admin only</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Override discharge block?</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div style="font-weight:650">Rekha Menon</div>
+          <div class="small muted">UAT-009 &middot; patient due &#8377;10,000</div>
+          <div class="callout danger" style="margin-top:10px">
+            You are discharging a patient with an <b>outstanding patient obligation of &#8377;10,000</b>. The bill stays
+            open and the amount remains recoverable. This override is reported to finance.
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label>Reason <span class="faint">(required, minimum 20 characters)</span></label>
+            <input class="input" value="Attendant to settle tomorrow, approved by Dr. Menon and finance lead" readonly>
+          </div>
+          <div class="field">
+            <label>Authorised by</label>
+            <input class="input" value="A. Krishnan (Finance Lead)" readonly>
+          </div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn danger">Override and discharge</span></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker">1</span><span><b>The consequence sentence is mandatory, not decorative.</b> Each variant states what will physically happen &mdash; a bed released, a team notified, money left outstanding &mdash; because that is the information the user lacks at the moment of clicking.</span></li>
+    <li><span class="marker">1</span><span>Minimum reason length scales with severity: 10 characters for a reversible clinical revert, 20 for a financial override. It is a nudge against &ldquo;ok&rdquo; and &ldquo;asdf&rdquo;, not a barrier.</span></li>
+    <li><span class="marker">1</span><span>Destructive variants use an <b>outline red confirm</b> and an explicit safe default (&ldquo;Keep admission&rdquo;), never a red-versus-grey pair where the destructive action is the visually dominant one.</span></li>
+    <li><span class="marker">1</span><span>Radix <code>AlertDialog</code>: focus starts on the reason field, Escape cancels, focus returns to the trigger. Consistent everywhere it appears.</span></li>
+  </ul>
+
+  <h2 class="sec">The remaining consumers, rendered</h2>
+  <p class="lede" style="margin-bottom:14px">Same component, same three obligations every time: <b>name the
+  consequences</b>, <b>require a reason</b>, <b>keep confirm disabled until the reason is valid</b>. Only the copy and
+  the consequence list change.</p>
+
+  <div class="variants c2">
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">1</span><span class="t">Emergency financial clearance</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Apply emergency financial clearance</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>This bypasses the financial gate for this journey.</b> The patient
+            proceeds with &#8377;90,000 outstanding.</div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Financial blockers suppressed for this admission</li>
+              <li><span class="bx on">&#10003;</span> The debt remains and stays visible on the bill</li>
+              <li><span class="bx on">&#10003;</span> Reported to finance daily</li>
+              <li><span class="bx no">&#10005;</span> Clinical blockers are <b>not</b> affected</li>
+            </ul>
+            <div class="field" style="margin-top:8px"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Emergency retinal detachment; sight-threatening delay" readonly></div>
+            <div class="field"><label>Authorised by</label><input class="input" value="Dr. M. Krishnan (Medical Director)" readonly></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn danger">Apply clearance</span></div>
+        </div>
+      </div>
+      <p class="vc">The most sensitive action in the system. It must exist &mdash; sight-threatening emergencies do not
+      wait for a cashier &mdash; but it is quarantined, reason-bound and reported.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n bad">2</span><span class="t">Reverse a charged implant</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Reverse implant record</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>Serial 88117 is recorded as implanted and charged &#8377;14,000.</b>
+            Reversal appends a credit line; it does not delete anything.</div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Credit &minus;&#8377;14,000 on IPD-2026-00841</li>
+              <li><span class="bx on">&#10003;</span> Stock returned to OT store</li>
+              <li><span class="bx on">&#10003;</span> Original entry retained, marked <b>Reversed</b></li>
+              <li><span class="bx on">&#10003;</span> CCMS notified through the billing outbox</li>
+            </ul>
+            <div class="field" style="margin-top:8px"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input placeholder" value="Minimum 10 characters" readonly></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn danger disabled">Reverse</span></div>
+        </div>
+      </div>
+      <p class="vc">Touches traceability, stock, the bill and the claim at once. Listing all four is the only way the
+      user can judge whether to proceed.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">3</span><span class="t">Refund request</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Request refund &mdash; &#8377;30,000</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout warn"><b>This does not move money yet.</b> It creates an approval request; a second
+            person with <code>bill.refund.approve</code> must authorise it.</div>
+            <div class="field" style="margin-top:8px"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Admission cancelled; patient withdrew consent" readonly></div>
+            <div class="rail-line" style="margin-top:8px"><span class="k">Refundable cap</span><span class="v num">&#8377;30,000</span></div>
+            <div class="rail-line"><span class="k">Mode</span><span class="v">Original mode &mdash; cash</span></div>
+          </div>
+          <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Submit request</span></div>
+        </div>
+      </div>
+      <p class="vc">The copy is explicit that nothing has moved yet, because &ldquo;I clicked refund&rdquo; and
+      &ldquo;the patient got their money&rdquo; being different things is a frequent counter dispute.</p>
+    </div>
+
+    <div class="variant">
+      <div class="vh"><span class="n warn">4</span><span class="t">Cancel admission</span></div>
+      <div class="frame">
+        <div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+          <div class="dialog-head"><span class="t">Cancel admission</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+          <div class="dialog-body">
+            <div class="callout danger"><b>Releases bed B-04 and ends the journey.</b> Cannot be undone.</div>
+            <ul class="checklist" style="margin-top:8px">
+              <li><span class="bx on">&#10003;</span> Bed released to Auth inventory</li>
+              <li><span class="bx on">&#10003;</span> Slot AM-3 released</li>
+              <li><span class="bx no">&#10005;</span> Advance &#8377;30,000 not refunded automatically</li>
+            </ul>
+            <div class="field" style="margin-top:8px"><label>Reason <span style="color:var(--danger)">*</span></label>
+              <input class="input" value="Patient withdrew consent" readonly></div>
+            <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:8px">
+              <input type="checkbox"> I understand the advance must be refunded separately</label>
+          </div>
+          <div class="dialog-foot"><span class="btn">Keep admission</span><span class="btn danger disabled">Cancel admission</span></div>
+        </div>
+      </div>
+      <p class="vc">An explicit acknowledgement is added only where a consequence is both surprising and financial.
+      Used sparingly, or it becomes a reflex click.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Component states</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Reason too short</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="field"><label>Reason <span style="color:var(--danger)">*</span></label>
+          <input class="input" value="wrong" readonly></div>
+        <p class="hint" style="color:var(--danger)">5 of 10 characters minimum. A reason has to be readable by
+        somebody who was not there.</p>
+        <div class="row" style="margin-top:8px"><span class="btn sm">Cancel</span><span class="btn sm danger disabled">Confirm</span></div>
+      </div></div>
+      <p class="vc">Validated live and again on the server. A one-word reason is the same as no reason.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n">2</span><span class="t">Submitting</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="row"><span class="btn sm disabled">Cancel</span><span class="btn sm danger disabled">Confirming&hellip;</span></div>
+        <p class="hint" style="margin-top:8px">Both buttons lock during submission and the dialog cannot be dismissed,
+        so a double-press cannot produce two transitions.</p>
+      </div></div>
+      <p class="vc">Escape is suppressed only while a request is in flight, then restored.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n bad">3</span><span class="t">Server rejected</span></div>
+      <div class="frame"><div style="padding:12px">
+        <div class="callout danger" style="margin:0"><b>Rejected.</b> The journey moved to <code>SentToOT</code> while
+        this dialog was open, so it can no longer be reverted from <code>ReadyForSurgery</code>.</div>
+        <div class="row" style="margin-top:10px"><span class="btn sm">Close</span><span class="btn sm primary">Refresh</span></div>
+      </div></div>
+      <p class="vc">The server is the authority. The reason it gives is shown verbatim rather than replaced by a
+      generic failure message.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Consumers</h2>
+  <table class="map">
+    <thead><tr><th>Action</th><th>Screen</th><th>API</th><th>Backend</th><th>Audit record</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr><td>Un-mark ready</td><td>S-02, S-04</td><td><code>POST /api/ip-management/journeys/{id}/clinical-transition</code></td><td><code>TransitionClinicalAsync</code> + revert guard</td><td><code>journey_audit_log</code> <span class="cell-sub">ClinicalStateChanged</span></td><td><code>ip.ot.unmark_ready</code></td></tr>
+      <tr><td>Cancel today&rsquo;s surgery</td><td>S-04, S-06</td><td><code>POST /api/ip-management/journeys/{id}/cancel-today-surgery</code></td><td><code>CancelTodaySurgeryAsync</code></td><td><code>journey_audit_log</code> <span class="cell-sub">CancelTodaySurgery</span></td><td><code>ward.checklist.edit</code></td></tr>
+      <tr><td>Cancel admission</td><td>S-04</td><td><code>POST /api/ip-management/journeys/{id}/cancel-admission</code></td><td><code>CancelAdmissionAsync</code> + bed release</td><td><code>journey_audit_log</code> <span class="cell-sub">CancelAdmission</span>, bed lifecycle</td><td><code>ward.checklist.edit</code></td></tr>
+      <tr><td>Rebook a cancelled surgery</td><td>S-04</td><td><code>POST /api/ip-management/journeys/{id}/rebook</code></td><td><code>RebookCancelledSurgeryAsync</code></td><td><code>journey_audit_log</code> <span class="cell-sub">RebookCancelledSurgery</span></td><td><code>ward.checklist.edit</code></td></tr>
+      <tr><td>Emergency FC</td><td>S-02</td><td><code>POST /api/ip-management/journeys/{id}/emergency-fc</code></td><td><code>ApplyEmergencyFcAsync</code></td><td><code>journey_audit_log</code> <span class="cell-sub">EmergencyFcApplied</span> + outbox event</td><td><code>ip.emergency_fc.apply</code> <span class="cell-sub">seeded, real</span></td></tr>
+      <tr><td>Discharge override</td><td>S-09</td><td><code>POST /api/ip-management/journeys/{id}/discharge-override</code> <span class="cell-sub">POST, not PUT</span></td><td><code>ApplyDischargeOverrideAsync</code></td><td><code>journey_audit_log</code> <span class="cell-sub">DischargeOverrideApplied</span></td><td><code>ip.discharge.override</code></td></tr>
+      <tr><td>WHO supervisor override</td><td>S-06</td><td><code>POST /api/ip-management/journeys/{id}/who-supervisor-override</code></td><td><code>ApplyWhoSupervisorOverrideAsync</code></td><td><code>journey_audit_log</code> <span class="cell-sub">WhoSupervisorOverrideApplied</span></td><td><code>ot.safety.sign</code></td></tr>
+      <tr><td>Revoke consent</td><td>S-05</td><td><code>POST /api/ip-management/journeys/{id}/pre-op/consent/{itemId}/revoke</code></td><td><code>PreOpClearanceService.RevokeConsentAsync</code></td><td><code>pre_op_consent_details</code> &mdash; <b>no audit row</b> <span class="badge danger no-dot">gap 1</span></td><td><code>ward.checklist.edit</code></td></tr>
+      <tr><td>Reject a department clearance</td><td>S-05</td><td><code>POST &hellip;/pre-op/sections/{category}/reject</code></td><td><code>RejectSectionAsync</code></td><td><code>preop_section_clearance</code> &mdash; <b>no audit row</b></td><td><code>ward.checklist.edit</code></td></tr>
+      <tr><td>Implant reversal <span class="mark new">2</span></td><td>S-07</td><td><code>PATCH /journeys/{id}/implants/{usageId}</code> &mdash; to build</td><td>implant usage service, new</td><td><code>journey_implant_usage</code> correction row, new</td><td><code>ot.safety.sign</code></td></tr>
+      <tr><td>Refund request</td><td>S-12</td><td><code>POST /api/Refunds/request</code></td><td><code>RefundService.RequestRefundAsync</code></td><td><code>refunds</code>; approval is a separate permission</td><td><code>opd_bill.refund</code></td></tr>
+      <tr><td>Abandon an outbox event <span class="mark new">2</span></td><td>S-16</td><td><code>POST &hellip;/outbox/abandon</code> &mdash; to build</td><td>outbox services</td><td>outbox tables + audit</td><td><code>integration.admin</code> <span class="cell-sub">to create</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>Two consumers of this dialog write no audit row at all.</b> Revoking a consent and rejecting a department
+    clearance are exactly the kind of decisions a reason box exists to capture, yet the reason currently lands only
+    on the record itself and never in <code>journey_audit_log</code>. Collecting a justification and then not
+    storing it where anyone would look is worse than not asking.
+  </div>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

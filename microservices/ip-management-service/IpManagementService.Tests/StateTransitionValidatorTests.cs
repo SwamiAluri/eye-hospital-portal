@@ -62,6 +62,23 @@ public class StateTransitionValidatorTests
     }
 
     [Fact]
+    public void ValidateClinical_allows_ready_for_surgery_back_to_admitted()
+    {
+        var ex = Record.Exception(() =>
+            StateTransitionValidator.ValidateClinical(
+                ClinicalState.ReadyForSurgery, ClinicalState.Admitted));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void ValidateClinical_still_blocks_ready_for_surgery_skip_to_post_op()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            StateTransitionValidator.ValidateClinical(
+                ClinicalState.ReadyForSurgery, ClinicalState.PostOp));
+    }
+
+    [Fact]
     public void ValidateClinical_allows_rebook_cancelled_surgery_to_expected()
     {
         var ex = Record.Exception(
@@ -88,5 +105,63 @@ public class StateTransitionValidatorTests
         Assert.Throws<InvalidOperationException>(
             () => StateTransitionValidator.ValidateClinical(
                 ClinicalState.Admitted, ClinicalState.CancelledSurgery));
+    }
+
+    [Fact]
+    public void ValidateCancelAdmission_allows_expected()
+    {
+        var ex = Record.Exception(
+            () => StateTransitionValidator.ValidateCancelAdmission(ClinicalState.Expected));
+        Assert.Null(ex);
+    }
+
+    [Theory]
+    [InlineData(ClinicalState.Admitted)]
+    [InlineData(ClinicalState.ReadyForSurgery)]
+    [InlineData(ClinicalState.InOT)]
+    [InlineData(ClinicalState.CancelledSurgery)]
+    public void ValidateCancelAdmission_blocks_after_expected(string clinical)
+    {
+        Assert.Throws<InvalidOperationException>(
+            () => StateTransitionValidator.ValidateCancelAdmission(clinical));
+    }
+
+    [Fact]
+    public void ValidateTypedDischarge_AllowsLamaAndDeath_FromAdmitted()
+    {
+        var lama = Record.Exception(() =>
+            StateTransitionValidator.ValidateTypedDischarge(ClinicalState.Admitted, DischargeType.Lama));
+        var death = Record.Exception(() =>
+            StateTransitionValidator.ValidateTypedDischarge(ClinicalState.Admitted, DischargeType.Death));
+        Assert.Null(lama);
+        Assert.Null(death);
+    }
+
+    [Fact]
+    public void ValidateTypedDischarge_DuplicateFromDischarged_IsBlocked()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            StateTransitionValidator.ValidateTypedDischarge(ClinicalState.Discharged, DischargeType.Routine));
+    }
+
+    [Fact]
+    public void ValidateClinical_DuplicateSurgeryComplete_IsBlocked()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            StateTransitionValidator.ValidateClinical(ClinicalState.SurgeryCompleted, ClinicalState.SurgeryCompleted));
+    }
+
+    [Fact]
+    public void ValidateFinancial_blocks_paid_and_settled_from_ip()
+    {
+        Assert.Throws<ArgumentException>(
+            () => StateTransitionValidator.ValidateFinancial(
+                FinancialState.Confirmed, FinancialState.Paid));
+        Assert.Throws<ArgumentException>(
+            () => StateTransitionValidator.ValidateFinancial(
+                FinancialState.PartiallyPaid, FinancialState.Paid));
+        Assert.Throws<ArgumentException>(
+            () => StateTransitionValidator.ValidateFinancial(
+                FinancialState.Paid, FinancialState.Settled));
     }
 }

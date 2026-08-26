@@ -173,12 +173,19 @@ export interface CasesListResponse {
 
 export interface AdmissionValidation {
   allowed: boolean;
-  warningLevel: 'None' | 'Info' | 'Warning' | 'Block';
+  warningLevel?: string;
   warningMessage?: string;
   blockReason?: string;
   caseId?: string;
   approvedAmount?: number;
   preAuthNumber?: string;
+  decision?: string;
+  coverageState?: string;
+  isEmergencyFinancialClearance?: boolean;
+  paymentType?: string;
+  lastUpdatedAt?: string;
+  payerShareAmount?: number;
+  patientShareAmount?: number;
 }
 
 export async function listCoverageCases(params?: {
@@ -219,10 +226,10 @@ export async function getCasesBySessionIds(sessionIds: string[]): Promise<Covera
 }
 
 export async function validateAdmission(params: {
-  journeyId: string;
-  sessionId: string;
-  tenantId: string;
-  isEmergency?: boolean;
+  journeyId?: string;
+  sessionId?: string;
+  tenantId?: string;
+  emergencyFcApplied?: boolean;
 }): Promise<AdmissionValidation> {
   const { data } = await getCcmsApi().get('/ccms/integration/validate-admission', { params });
   return data;

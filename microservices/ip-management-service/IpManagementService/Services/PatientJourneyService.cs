@@ -12,7 +12,7 @@ namespace IpManagementService.Services;
 /// All state transitions go through StateTransitionValidator.
 /// All changes are logged to journey_audit_log.
 /// </summary>
-public class PatientJourneyService
+public partial class PatientJourneyService
 {
     private readonly IpManagementDbContext      _db;
     private readonly IPreOpNotificationClient   _notifications;
@@ -25,6 +25,9 @@ public class PatientJourneyService
     private readonly JourneyMutationGuardService  _mutationGuard;
     private readonly JourneySchedulingGuardService _schedulingGuard;
     private readonly IIntegrationOutboxService     _outbox;
+    private readonly IAuthBedLifecycleClient       _beds;
+    private readonly JourneyCommandAuthContext     _commandAuth;
+    private readonly IAuthOpdClinicalClient        _opdClinical;
 
     public PatientJourneyService(
         IpManagementDbContext db,
@@ -37,7 +40,10 @@ public class PatientJourneyService
         WardChecklistAutoSyncService wardSync,
         JourneyMutationGuardService mutationGuard,
         JourneySchedulingGuardService schedulingGuard,
-        IIntegrationOutboxService outbox)
+        IIntegrationOutboxService outbox,
+        IAuthBedLifecycleClient? beds = null,
+        JourneyCommandAuthContext? commandAuth = null,
+        IAuthOpdClinicalClient? opdClinical = null)
     {
         _db              = db;
         _notifications   = notifications;
@@ -50,6 +56,9 @@ public class PatientJourneyService
         _mutationGuard   = mutationGuard;
         _schedulingGuard = schedulingGuard;
         _outbox          = outbox;
+        _beds            = beds ?? new NoOpAuthBedLifecycleClient();
+        _commandAuth     = commandAuth ?? new JourneyCommandAuthContext();
+        _opdClinical     = opdClinical ?? new NoOpAuthOpdClinicalClient();
     }
 
     // ── List ───────────────────────────────────────────────────────────────────
@@ -94,14 +103,12 @@ public class PatientJourneyService
         // Total before paging — lets callers render "showing N of total".
         var total = await query.CountAsync();
 
-        // Optional server-side paging (opt-in). When both are null the full filtered set is
-        // returned, preserving the FE's instant client-side filtering model.
-        if (offset is > 0 || limit is > 0)
-        {
-            query = query.OrderBy(j => j.SurgeryScheduledAt);
-            if (offset is > 0) query = query.Skip(offset.Value);
-            if (limit is > 0)  query = query.Take(limit.Value);
-        }
+        // Always page. Unbounded lists can OOM a ward board; FE still gets Total.
+        const int defaultPage = 500;
+        const int maxPage = 2000;
+        var take = limit is > 0 ? Math.Min(limit.Value, maxPage) : defaultPage;
+        var skip = offset is > 0 ? offset.Value : 0;
+        query = query.OrderBy(j => j.SurgeryScheduledAt).Skip(skip).Take(take);
 
         // Step 1: UUID join only — guarantees 1 row per journey, no Cartesian product
         var rows = await (
@@ -170,6 +177,17 @@ public class PatientJourneyService
                 .Select(u => new { u.Id, u.FirstName, u.LastName })
                 .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
 
+        var slotIds = rows
+            .Where(r => r.Journey.SlotId != null)
+            .Select(r => r.Journey.SlotId!.Value)
+            .Distinct()
+            .ToList();
+        var slotsById = slotIds.Count == 0
+            ? new Dictionary<Guid, JourneySlot>()
+            : await _db.JourneySlots.AsNoTracking()
+                .Where(s => slotIds.Contains(s.Id) && s.ReleasedAt == null)
+                .ToDictionaryAsync(s => s.Id);
+
         var mapped = rows.Select(r =>
         {
             var pt   = r.Patient ?? (r.Journey.Uhid != null && uhidMap.TryGetValue(r.Journey.Uhid, out var up) ? up : null);
@@ -203,6 +221,10 @@ public class PatientJourneyService
             var surgeonName = r.Journey.PrimarySurgeonId is { } sid
                 && surgeonNames.TryGetValue(sid, out var sn) && !string.IsNullOrWhiteSpace(sn)
                 ? sn : null;
+
+            JourneySlot? slot = null;
+            if (r.Journey.SlotId is { } currentSlotId)
+                slotsById.TryGetValue(currentSlotId, out slot);
 
             return new PatientJourneyRowDto(
                 r.Journey.Id,
@@ -244,11 +266,44 @@ public class PatientJourneyService
                 pacCompleted,
                 readyDone,
                 readyTotal,
-                surgeonName
+                surgeonName,
+                slot?.Id,
+                slot == null ? null : SlotPolicy.FormatLabel(slot.Session, slot.SequenceNo),
+                slot?.Session,
+                slot?.SequenceNo,
+                slot?.PlannedArrivalAt,
+                slot?.TheatreId,
+                r.Journey.PatientId,
+                r.Journey.DischargeOverrideApplied
             );
         }).ToList();
 
         return (mapped, total);
+    }
+
+    /// <summary>B13. Census tab badges from clinical state, not a client-side recount.</summary>
+    public async Task<CensusTabCountsDto> GetCensusTabCountsAsync(Guid tenantId, Guid branchId)
+    {
+        var states = await _db.PatientJourneys.AsNoTracking()
+            .Where(j => j.TenantId == tenantId && j.BranchId == branchId && j.DeletedAt == null)
+            .GroupBy(j => j.ClinicalState)
+            .Select(g => new { State = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        int Count(params string[] names)
+            => states.Where(s => names.Contains(s.State)).Sum(s => s.Count);
+
+        return new CensusTabCountsDto(
+            All: states.Sum(s => s.Count),
+            InHouse: Count(ClinicalState.Admitted),
+            ReadyForOt: Count(ClinicalState.ReadyForSurgery),
+            SentToOt: Count(ClinicalState.SentToOT),
+            InOt: Count(ClinicalState.InOT),
+            PostOp: Count(ClinicalState.SurgeryCompleted, ClinicalState.PostOp),
+            ReadyForDischarge: Count(ClinicalState.ReadyForDischarge),
+            Discharged: Count(ClinicalState.Discharged),
+            Cancelled: Count(ClinicalState.CancelledSurgery, ClinicalState.AdmissionCancelled)
+        );
     }
 
     // ── Dashboard summary (Phase 2) ──────────────────────────────────────────────
@@ -337,7 +392,10 @@ public class PatientJourneyService
             .ToListAsync();
 
         foreach (var journeyId in expectedIds)
+        {
             await _preOp.EnsureJourneyOnboardedAsync(journeyId, tenantId, userId);
+            await LinkPriorJourneyIfNeededAsync(journeyId, tenantId);
+        }
     }
 
     public async Task EnsureJourneyOnboardedAsync(Guid id, Guid tenantId, Guid userId)
@@ -362,6 +420,20 @@ public class PatientJourneyService
         var patient = await _db.Patients.FirstOrDefaultAsync(p => p.Id == j.PatientId);
         var merge   = await _mutationGuard.ResolveMergeInfoAsync(patient);
         return MapDetail(j, patient, merge);
+    }
+
+    public async Task<List<JourneyAuditLogDto>> GetAuditLogsAsync(Guid id, Guid tenantId)
+    {
+        _commandAuth.RequireView();
+        await RequireJourneyAsync(id, tenantId);
+        return await _db.JourneyAuditLogs.AsNoTracking()
+            .Where(a => a.PatientJourneyId == id && a.TenantId == tenantId && a.DeletedAt == null)
+            .OrderByDescending(a => a.PerformedAt)
+            .Select(a => new JourneyAuditLogDto(
+                a.Id, a.Action, a.StateType, a.OldValue, a.NewValue,
+                a.PerformedByUserId, a.PerformedAt, a.Notes, a.CorrelationId,
+                a.PreviousState, a.NewState))
+            .ToListAsync();
     }
 
     // ── Financial: live coverage & payment status ──────────────────────────────
@@ -419,15 +491,25 @@ public class PatientJourneyService
             isEmergencyFc,
             (v.RequiresOverride || missingCoverageCase) && !isEmergencyFc,
             v.LastUpdatedAt,
-            v.CcmsUnavailable);
+            v.CcmsUnavailable,
+            v.PayerShareAmount,
+            v.PatientShareAmount,
+            v.CoverageStatus,
+            v.CollectedAmount,
+            v.PatientObligationAmount);
     }
 
     // ── Admit ──────────────────────────────────────────────────────────────────
 
     public async Task<PatientJourneyDetailDto> AdmitAsync(Guid id, Guid tenantId, Guid userId, AdmitPatientRequest req)
     {
+        _commandAuth.RequireAdmit();
         var j = await RequireJourneyAsync(id, tenantId);
         await _mutationGuard.EnsureMutableAsync(j);
+        EnsureExpectedVersion(j, req.ExpectedUpdatedAt);
+
+        if (j.ClinicalState == ClinicalState.Admitted)
+            return MapDetail(j);
 
         var coverageBased = PaymentModeCoveragePolicy.IsCoverageBased(j.PaymentMode);
         var emergencyFc = j.EmergencyFcApplied;
@@ -471,6 +553,14 @@ public class PatientJourneyService
         var previousSnapshot = SnapshotStates(j);
 
         j.ClinicalState            = ClinicalState.Admitted;
+        // Clear any leftover discharge lock residue (e.g. incomplete Expected recycle).
+        j.IsDischarged             = false;
+        j.IsLocked                 = false;
+        j.DischargedAt             = null;
+        j.DischargeType            = null;
+        j.DischargeTypeReason      = null;
+        j.ClinicalStateBeforeDischarge = null;
+        j.WardCheckoutAt           = null;
         j.WardId                   = req.WardId;
         j.AdmissionType            = req.AdmissionType;
         // Admitting doctor is optional on the form; fall back to the primary surgeon
@@ -480,6 +570,28 @@ public class PatientJourneyService
             : req.PrimarySurgeonId;
         j.BedNumber                = req.BedNumber;
         j.RoomNumber               = req.RoomNumber;
+        Guid? occupiedBedId = null;
+        if (req.AssignedBedId is { } occupyId && occupyId != Guid.Empty)
+        {
+            try
+            {
+                var snap = await _beds.ApplyAsync(tenantId, occupyId, userId, j.PatientId, "occupy");
+                occupiedBedId = occupyId;
+                j.AssignedBedId = occupyId;
+                if (snap is not null)
+                {
+                    j.BedNumber = snap.BedNumber;
+                    if (!string.IsNullOrWhiteSpace(snap.RoomNumber))
+                        j.RoomNumber = snap.RoomNumber;
+                }
+                await OpenBedAssignmentAsync(j, userId, BedAssignmentType.Initial, occupyId, fromBedId: null, "Initial assignment on admit");
+            }
+            catch
+            {
+                j.AssignedBedId = null;
+                throw;
+            }
+        }
         j.AttendantName            = req.AttendantName;
         j.AttendantPhone           = req.AttendantPhone;
         j.AttendantRelationship    = req.AttendantRelationship;
@@ -504,12 +616,26 @@ public class PatientJourneyService
             idempotencyKey: $"{IntegrationEventTypes.JourneyAdmitted}:{id:N}");
 
         // Admission, outbox, and audit must commit atomically.
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        await _db.SaveChangesAsync();
-        await LogAsync(j, userId, auditAction, "ClinicalState",
-                       ClinicalState.Expected, ClinicalState.Admitted,
-                       previousSnapshot, SnapshotStates(j));
-        await tx.CommitAsync();
+        try
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            await _db.SaveChangesAsync();
+            await LogAsync(j, userId, auditAction, "ClinicalState",
+                           ClinicalState.Expected, ClinicalState.Admitted,
+                           previousSnapshot, SnapshotStates(j),
+                           reason: req.OverrideReason ?? j.EmergencyFcReason,
+                           correlationId: j.Id);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            if (occupiedBedId is { } bedToRelease)
+            {
+                try { await _beds.ApplyAsync(tenantId, bedToRelease, userId, j.PatientId, "vacate"); }
+                catch { /* compensate is best-effort; outbox/retry remains the durable path */ }
+            }
+            throw;
+        }
 
         _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, ClinicalState.Admitted);
 
@@ -530,6 +656,10 @@ public class PatientJourneyService
         if (req.WardId.HasValue)          j.WardId                  = req.WardId;
         if (req.BedNumber      != null)   j.BedNumber                = req.BedNumber;
         if (req.RoomNumber     != null)   j.RoomNumber               = req.RoomNumber;
+        if (req.AssignedBedId is { } nextBed && nextBed != Guid.Empty && nextBed != j.AssignedBedId)
+        {
+            await TransferBedCoreAsync(j, tenantId, userId, nextBed, req.WardId, reason: "Ward assignment update");
+        }
         if (req.AdmittingDoctorId.HasValue) j.AdmittingDoctorId     = req.AdmittingDoctorId;
         if (req.PrimaryNurseId.HasValue)  j.PrimaryNurseId           = req.PrimaryNurseId;
         if (req.AdmissionType  != null)   j.AdmissionType            = req.AdmissionType;
@@ -542,6 +672,7 @@ public class PatientJourneyService
 
         await _db.SaveChangesAsync();
         await LogAsync(j, userId, "WardAssignmentUpdated", null, null, null, null, null);
+        _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, IpRealtimeEventMapper.BedChanged);
         return MapDetail(j);
     }
 
@@ -559,8 +690,7 @@ public class PatientJourneyService
         if (req.AnaesthesiaType       != null) j.AnaesthesiaType        = req.AnaesthesiaType;
         if (req.IolPower              != null) j.IolPower               = req.IolPower;
         if (req.IolIssuedFromIp.HasValue)      j.IolIssuedFromIp        = req.IolIssuedFromIp.Value;
-        if (req.IolBarcodeVerified.HasValue)   j.IolBarcodeVerified     = req.IolBarcodeVerified.Value;
-        if (req.IolBarcode            != null) j.IolBarcode             = req.IolBarcode;
+        // E4: IolBarcode / IolBarcodeVerified are compatibility only. Usage is journey_implant_usage.
         if (req.PrimarySurgeonId.HasValue)     j.PrimarySurgeonId       = req.PrimarySurgeonId.Value;
 
         j.UpdatedAt       = DateTime.UtcNow;
@@ -579,8 +709,14 @@ public class PatientJourneyService
         IReadOnlyList<string>? callerRoles = null)
     {
         var j = await RequireJourneyAsync(id, tenantId);
+        _commandAuth.RequireClinicalTo(j.ClinicalState, req.NewState);
         await _mutationGuard.EnsureMutableAsync(j);
+        EnsureExpectedVersion(j, req.ExpectedUpdatedAt);
         StateTransitionValidator.ValidateClinical(j.ClinicalState, req.NewState);
+
+        var isUnmarkReady = UnmarkReadyRules.IsUnmarkReady(j.ClinicalState, req.NewState);
+        if (isUnmarkReady)
+            UnmarkReadyRules.Validate(j.OtState, req.Reason);
 
         // OT return requires authorized role
         if (req.NewState == ClinicalState.ReadyForSurgery
@@ -594,8 +730,14 @@ public class PatientJourneyService
 
         var gateResult = await _gates.EvaluateTransitionAsync(j, req.NewState, tenantId);
         if (!gateResult.CanProceed)
-            throw new InvalidOperationException(
-                string.Join(" ", gateResult.Warnings.Select(w => w.Message)));
+        {
+            var moneyOverride = req.NewState == ClinicalState.Discharged
+                && DischargeOverridePolicy.ClearsHardBlocks(
+                    gateResult.Warnings, j.DischargeOverrideApplied);
+            if (!moneyOverride)
+                throw new InvalidOperationException(
+                    string.Join(" ", gateResult.Warnings.Where(w => w.Severity == "block").Select(w => w.Message)));
+        }
 
         if (gateResult.Warnings.Count > 0 && !req.AcknowledgeWarnings && !j.DischargeOverrideApplied)
         {
@@ -603,6 +745,8 @@ public class PatientJourneyService
         }
 
         var prev = j.ClinicalState;
+        var previousSnapshot = SnapshotStates(j);
+        var revertCorrelationId = isUnmarkReady ? Guid.NewGuid() : (Guid?)null;
         j.ClinicalState   = req.NewState;
         j.UpdatedAt       = DateTime.UtcNow;
         j.UpdatedByUserId = userId;
@@ -625,11 +769,47 @@ public class PatientJourneyService
         }
         else if (req.NewState == ClinicalState.ReadyForSurgery)
         {
-            // OT returning patient — reset OT state and release billing lock so details can be re-saved
-            j.OtState         = OtState.NotSent;
-            j.IsBillingLocked = false;
-            if (!string.IsNullOrWhiteSpace(req.Reason))
-                j.OtReturnReason = req.Reason;
+            var isOtReturn = prev == ClinicalState.SentToOT || prev == ClinicalState.InOT;
+            if (isOtReturn)
+            {
+                j.OtState         = OtState.NotSent;
+                j.IsBillingLocked = false;
+                if (!string.IsNullOrWhiteSpace(req.Reason))
+                    j.OtReturnReason = req.Reason;
+            }
+
+            // IP-012 — mark-ready only (Admitted → ReadyForSurgery). OT return must not emit this.
+            if (prev == ClinicalState.Admitted)
+            {
+                var readyAt = j.UpdatedAt;
+                _outbox.Enqueue(
+                    tenantId,
+                    IntegrationEventTypes.JourneyReadyForOt,
+                    id,
+                    payload: LifecycleEventPayload.Build(
+                        tenantId, id, j.CounselingSessionId, j.PatientId, userId,
+                        extra: new { slotId = (Guid?)null, readyAt, actorUserId = userId }),
+                    correlationId: id,
+                    idempotencyKey: $"{IntegrationEventTypes.JourneyReadyForOt}:{id:N}:{readyAt.Ticks}");
+            }
+        }
+        else if (isUnmarkReady)
+        {
+            var trimmed = req.Reason!.Trim();
+            j.UnmarkReadyReason = trimmed;
+            j.UnmarkedReadyAt = DateTime.UtcNow;
+            j.UnmarkedReadyByUserId = userId;
+            j.InformedOtTeamAt = null;
+            _outbox.Enqueue(
+                tenantId,
+                IntegrationEventTypes.JourneyReadyReverted,
+                id,
+                payload: LifecycleEventPayload.Build(
+                    tenantId, id, j.CounselingSessionId, j.PatientId, userId,
+                    correlationId: revertCorrelationId,
+                    extra: new { reason = trimmed }),
+                correlationId: revertCorrelationId,
+                idempotencyKey: $"{IntegrationEventTypes.JourneyReadyReverted}:{id:N}:{j.UnmarkedReadyAt:yyyyMMddHHmmssfff}");
         }
         else if (req.NewState == ClinicalState.SurgeryCompleted)
         {
@@ -659,6 +839,14 @@ public class PatientJourneyService
             j.IsDischarged    = true;
             j.IsLocked        = true;
 
+            j.DischargeType ??= DischargeType.Routine;
+            j.ClinicalStateBeforeDischarge ??= prev;
+            if (j.AssignedBedId is { } vacateId && vacateId != Guid.Empty)
+            {
+                await CloseOpenBedAssignmentAsync(j, userId, BedAssignmentType.Discharge, "Clinical discharge");
+                await ReleaseAssignedBedAsync(j, tenantId, userId, ClinicalState.Discharged);
+            }
+
             _outbox.Enqueue(
                 tenantId,
                 IntegrationEventTypes.PatientClinicallyDischarged,
@@ -669,10 +857,42 @@ public class PatientJourneyService
                 idempotencyKey: $"{IntegrationEventTypes.PatientClinicallyDischarged}:{id:N}");
         }
 
-        await _db.SaveChangesAsync();
+        await SaveJourneyAsync();
         await _wardSync.SyncMarkReadyOptionalAsync(id, tenantId, userId, prev, req.NewState);
-        await LogAsync(j, userId, "ClinicalStateChanged", "ClinicalState",
-                       prev, req.NewState, null, null);
+        await _wardSync.ReverseMarkReadyOptionalAsync(id, tenantId, userId, prev, req.NewState);
+
+        var auditAction = isUnmarkReady ? "ClinicalStateReverted" : "ClinicalStateChanged";
+        await LogAsync(j, userId, auditAction, "ClinicalState",
+                       prev, req.NewState, previousSnapshot, SnapshotStates(j),
+                       reason: req.Reason, correlationId: revertCorrelationId ?? j.Id);
+
+        if (prev == ClinicalState.Admitted
+            && req.NewState == ClinicalState.ReadyForSurgery
+            && req.AcknowledgeWarnings
+            && gateResult.Warnings.Any(w => w.Code == "vitals_out_of_range"))
+        {
+            await LogAsync(j, userId, JourneyClinicalAudit.VitalsWarningAcknowledged, "Vitals",
+                null, "out_of_range", null, null,
+                reason: "vitals_out_of_range",
+                correlationId: j.Id);
+        }
+
+        if (isUnmarkReady)
+        {
+            var revertedPatient = await _db.Patients.FirstOrDefaultAsync(
+                p => p.Id == j.PatientId && p.DeletedAt == null);
+            var revertedName = revertedPatient != null
+                ? (revertedPatient.FirstName + " " + revertedPatient.LastName).Trim()
+                : j.Uhid ?? "Patient";
+            var details = $"{{\"journeyId\":\"{id}\"}}";
+            _ = _notifications.NotifyDepartmentAsync(
+                tenantId, j.BranchId, "OPERATION_THEATRE",
+                IpRealtimeEventMapper.JourneyReadyReverted,
+                $"Ready for OT reverted: {revertedName}",
+                details);
+            _ = _notifications.NotifyWardChangedAsync(
+                tenantId, j.BranchId, id, IpRealtimeEventMapper.JourneyReadyReverted);
+        }
 
         if (req.NewState == ClinicalState.PostOp && prev != ClinicalState.PostOp)
         {
@@ -696,7 +916,8 @@ public class PatientJourneyService
                 tenantId, j.BranchId, id, patientName, j.ProcedureName);
         }
 
-        _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, req.NewState);
+        if (!isUnmarkReady)
+            _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, req.NewState);
 
         return MapDetail(j, transitionWarnings: gateResult.Warnings.Count > 0 ? gateResult.Warnings : null);
     }
@@ -709,6 +930,7 @@ public class PatientJourneyService
     public async Task<PatientJourneyDetailDto> CancelTodaySurgeryAsync(
         Guid id, Guid tenantId, Guid userId, CancelTodaySurgeryRequest req)
     {
+        _commandAuth.RequireCancelClinical();
         if (string.IsNullOrWhiteSpace(req.Reason))
             throw new ArgumentException("Cancel reason is required.");
 
@@ -719,9 +941,14 @@ public class PatientJourneyService
             throw new InvalidOperationException("Cannot cancel a locked or discharged journey.");
 
         StateTransitionValidator.ValidateCancelToday(j.ClinicalState, j.OtState);
+        EnsureExpectedVersion(j, req.ExpectedUpdatedAt);
 
         var prevClinical = j.ClinicalState;
         var previousSnapshot = SnapshotStates(j);
+
+        // Close IP assignment history then vacate Auth occupancy SoT.
+        await CloseOpenBedAssignmentAsync(j, userId, BedAssignmentType.Cancellation, req.Reason.Trim());
+        await ReleaseAssignedBedAsync(j, tenantId, userId, prevClinical);
 
         j.SurgeryCancelledAt   = DateTime.UtcNow;
         j.SurgeryCancelReason  = req.Reason.Trim();
@@ -748,7 +975,7 @@ public class PatientJourneyService
         j.UpdatedAt       = DateTime.UtcNow;
         j.UpdatedByUserId = userId;
 
-        await _db.SaveChangesAsync();
+        await SaveJourneyAsync();
 
         if (j.OtFinalizeScheduleId.HasValue)
         {
@@ -767,9 +994,76 @@ public class PatientJourneyService
 
         await LogAsync(j, userId, "CancelTodaySurgery", "ClinicalState",
                        prevClinical, ClinicalState.CancelledSurgery,
-                       previousSnapshot, SnapshotStates(j));
+                       previousSnapshot, SnapshotStates(j),
+                       reason: req.Reason, correlationId: j.Id);
 
         _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, ClinicalState.CancelledSurgery);
+
+        return MapDetail(j, patient);
+    }
+
+    /// <summary>
+    /// Cancel admission before irreversible clinical activity (Expected only).
+    /// Releases any reserved bed via Auth, audits, and notifies counselling/ward.
+    /// </summary>
+    public async Task<PatientJourneyDetailDto> CancelAdmissionAsync(
+        Guid id, Guid tenantId, Guid userId, CancelAdmissionRequest req)
+    {
+        _commandAuth.RequireCancelClinical();
+        if (string.IsNullOrWhiteSpace(req.Reason))
+            throw new ArgumentException("Cancel reason is required.");
+
+        var j = await RequireJourneyAsync(id, tenantId);
+        await _mutationGuard.EnsureMutableAsync(j);
+        EnsureExpectedVersion(j, req.ExpectedUpdatedAt);
+
+        if (j.IsLocked || j.IsDischarged)
+            throw new InvalidOperationException("Cannot cancel a locked or discharged journey.");
+
+        StateTransitionValidator.ValidateCancelAdmission(j.ClinicalState);
+
+        var prevClinical = j.ClinicalState;
+        var previousSnapshot = SnapshotStates(j);
+
+        await CloseOpenBedAssignmentAsync(j, userId, BedAssignmentType.Cancellation, req.Reason.Trim());
+        await ReleaseAssignedBedAsync(j, tenantId, userId, prevClinical);
+
+        j.ClinicalState        = ClinicalState.AdmissionCancelled;
+        j.OtState              = OtState.NotSent;
+        j.WardId               = null;
+        j.BedNumber            = null;
+        j.RoomNumber           = null;
+        j.AdmittedAt           = null;
+        j.AdmissionType        = null;
+        j.AdmittingDoctorId    = null;
+        j.PrimaryNurseId       = null;
+        j.PendingRebook        = false;
+        j.CancelledFromState   = prevClinical;
+        j.SurgeryCancelReason  = req.Reason.Trim();
+        j.SurgeryCancelledAt   = DateTime.UtcNow;
+        j.UpdatedAt            = DateTime.UtcNow;
+        j.UpdatedByUserId      = userId;
+
+        await SaveJourneyAsync();
+
+        var patient = await _db.Patients.FirstOrDefaultAsync(
+            p => p.Id == j.PatientId && p.DeletedAt == null);
+        var patientName = patient != null
+            ? (patient.FirstName + " " + patient.LastName).Trim()
+            : j.Uhid ?? "Patient";
+
+        await _notifications.NotifyDepartmentAsync(
+            tenantId, j.BranchId, "STD_COUNSELLING",
+            "AdmissionCancelled",
+            $"Admission cancelled — {patientName}",
+            req.Reason.Trim());
+
+        await LogAsync(j, userId, "CancelAdmission", "ClinicalState",
+                       prevClinical, ClinicalState.AdmissionCancelled,
+                       previousSnapshot, SnapshotStates(j),
+                       reason: req.Reason, correlationId: j.Id);
+
+        _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, ClinicalState.AdmissionCancelled);
 
         return MapDetail(j, patient);
     }
@@ -809,6 +1103,91 @@ public class PatientJourneyService
         _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, ClinicalState.Expected);
 
         return MapDetail(j, patient);
+    }
+
+    /// <summary>W-01 — fill journey procedure / eye / IOL from OPD when fields are null (or force refresh).</summary>
+    public async Task<PatientJourneyDetailDto?> ApplyOpdClinicalCopyAsync(ApplyOpdClinicalCopyRequest req)
+    {
+        var j = await _db.PatientJourneys.FirstOrDefaultAsync(x =>
+            x.OtFinalizeScheduleId == req.OtScheduleId
+            && x.TenantId == req.TenantId
+            && x.DeletedAt == null);
+
+        if (j is null) return null;
+
+        var actorId = Guid.TryParse(req.ActorUserId, out var parsed) ? parsed : Guid.Empty;
+        var oldIol = j.IolPower;
+        var changed = ApplyOpdFields(j, req.ProcedureName, req.EyeOperated, req.IolPower, req.ForceRefresh, actorId);
+        if (!changed)
+            return MapDetail(j);
+
+        await LogAsync(j, actorId, req.ForceRefresh ? "OpdClinicalRefreshed" : "OpdClinicalCopied",
+            "IolPower", oldIol, j.IolPower, j.ProcedureName, j.EyeOperated);
+
+        var patient = await _db.Patients.FirstOrDefaultAsync(
+            p => p.Id == j.PatientId && p.DeletedAt == null);
+        return MapDetail(j, patient);
+    }
+
+    public async Task<RefreshOpdClinicalResponse> RefreshFromOpdAsync(Guid id, Guid tenantId, Guid userId)
+    {
+        var j = await RequireJourneyAsync(id, tenantId);
+        var snap = await _opdClinical.GetSnapshotAsync(
+            tenantId, j.PatientId, j.CounselingSessionId, j.EyeOperated, preferBiometry: true)
+            ?? throw new InvalidOperationException("OPD clinical snapshot is unavailable. Retry, or ask a counsellor to refresh from OPD.");
+
+        var oldIol = j.IolPower;
+        var changed = ApplyOpdFields(j, snap.ProcedureName, snap.EyeOperated, snap.IolPower, forceRefresh: true, userId);
+        if (changed)
+        {
+            await LogAsync(j, userId, "OpdClinicalRefreshed",
+                "IolPower", oldIol, j.IolPower, j.ProcedureName, j.EyeOperated);
+        }
+
+        var patient = await _db.Patients.FirstOrDefaultAsync(
+            p => p.Id == j.PatientId && p.DeletedAt == null);
+        return new RefreshOpdClinicalResponse(
+            MapDetail(j, patient),
+            snap.BiometryMissing,
+            snap.EyePhrase,
+            j.IolPower);
+    }
+
+    private static bool ApplyOpdFields(
+        PatientJourney j,
+        string? procedureName,
+        string? eyeOperated,
+        string? iolPower,
+        bool forceRefresh,
+        Guid userId)
+    {
+        var changed = false;
+
+        if (OpdJourneyCopy.ShouldWrite(j.ProcedureName, procedureName, forceRefresh))
+        {
+            j.ProcedureName = procedureName!.Trim();
+            changed = true;
+        }
+
+        var mappedEye = OpdJourneyCopy.MapEye(eyeOperated);
+        if (OpdJourneyCopy.ShouldWrite(j.EyeOperated, mappedEye, forceRefresh))
+        {
+            j.EyeOperated = mappedEye;
+            changed = true;
+        }
+
+        if (OpdJourneyCopy.ShouldWrite(j.IolPower, iolPower, forceRefresh))
+        {
+            j.IolPower = iolPower!.Trim();
+            changed = true;
+        }
+
+        if (!changed) return false;
+
+        j.UpdatedAt = DateTime.UtcNow;
+        if (userId != Guid.Empty)
+            j.UpdatedByUserId = userId;
+        return true;
     }
 
     /// <summary>Clear pending-rebook when counselling sets a new surgery date (G1 / Phase 3.4).</summary>
@@ -894,6 +1273,7 @@ public class PatientJourneyService
     public async Task<PatientJourneyDetailDto> AcceptInOtAsync(
         Guid id, Guid tenantId, Guid userId, bool acknowledgeWarnings = false)
     {
+        _commandAuth.RequireAcceptInOt();
         var j = await RequireJourneyAsync(id, tenantId);
 
         if (j.ClinicalState != ClinicalState.SentToOT)
@@ -917,14 +1297,14 @@ public class PatientJourneyService
 
         await _db.SaveChangesAsync();
         await LogAsync(j, userId, "OtPatientAccepted", "OtState", prevOt, j.OtState, null, null);
+        _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, IpRealtimeEventMapper.PatientAcceptedInOT);
         return MapDetail(j, transitionWarnings: acceptGate.Warnings.Count > 0 ? acceptGate.Warnings : null);
     }
-
-    // ── Start surgery (OtState.Accepted → InProgress, clinicalState → InOT) ──
 
     public async Task<PatientJourneyDetailDto> StartSurgeryAsync(
         Guid id, Guid tenantId, Guid userId, bool acknowledgeWhoWarning = false)
     {
+        _commandAuth.RequireStartSurgery();
         var j = await RequireJourneyAsync(id, tenantId);
 
         if (j.OtState != OtState.Accepted)
@@ -949,6 +1329,7 @@ public class PatientJourneyService
         await _db.SaveChangesAsync();
         await LogAsync(j, userId, "SurgeryStarted", "ClinicalState", prevClinical, j.ClinicalState, null, null);
         await LogAsync(j, userId, "SurgeryStarted", "OtState", prevOt, j.OtState, null, null);
+        _ = _notifications.NotifyWardChangedAsync(tenantId, j.BranchId, id, IpRealtimeEventMapper.SurgeryStarted);
         return MapDetail(j);
     }
 
@@ -957,38 +1338,8 @@ public class PatientJourneyService
     public async Task<PatientJourneyDetailDto> TransitionFinancialAsync(
         Guid id, Guid tenantId, Guid userId, TransitionRequest req)
     {
-        var j = await RequireJourneyAsync(id, tenantId);
-        StateTransitionValidator.ValidateFinancial(j.FinancialState, req.NewState);
-
-        var prev = j.FinancialState;
-        j.FinancialState  = req.NewState;
-        j.UpdatedAt       = DateTime.UtcNow;
-        j.UpdatedByUserId = userId;
-
-        // Phase 2 residual: Billing (OpdBill finalize) is the canonical BillFinalized producer.
-        // IP FinancialState.Settled is a secondary bridge for IP journeys that never hit OPD finalize.
-        if (req.NewState == FinancialState.Settled && prev != FinancialState.Settled)
-        {
-            _outbox.Enqueue(
-                tenantId,
-                IntegrationEventTypes.BillFinalized,
-                id,
-                payload: LifecycleEventPayload.Build(
-                    tenantId, id, j.CounselingSessionId, j.PatientId, userId,
-                    extra: new
-                    {
-                        financialState = req.NewState,
-                        totalPaid = j.TotalPaid,
-                        source = "ip.financial_state.settled_bridge",
-                    }),
-                correlationId: id,
-                idempotencyKey: $"{IntegrationEventTypes.BillFinalized}:ip-bridge:{id:N}");
-        }
-
-        await _db.SaveChangesAsync();
-        await LogAsync(j, userId, "FinancialStateChanged", "FinancialState",
-                       prev, req.NewState, null, null);
-        return MapDetail(j);
+        throw new InvalidOperationException(
+            "Financial lifecycle is owned by Billing (OpdBill). Use GET /ip-management/journeys/{id}/financial-summary. IP cannot set Paid or Settled.");
     }
 
     // ── Emergency FC ───────────────────────────────────────────────────────────
@@ -996,12 +1347,16 @@ public class PatientJourneyService
     public async Task<PatientJourneyDetailDto> ApplyEmergencyFcAsync(
         Guid id, Guid tenantId, Guid userId, EmergencyFcRequest req)
     {
+        _commandAuth.RequireEmergencyFc();
         if (string.IsNullOrWhiteSpace(req.Reason))
             throw new ArgumentException("Emergency Financial Clearance requires a reason.");
 
         var j = await RequireJourneyAsync(id, tenantId);
         await _mutationGuard.EnsureMutableAsync(j);
+        if (j.EmergencyFcApplied)
+            return MapDetail(j);
 
+        var previousSnapshot = SnapshotStates(j);
         var reason = req.Reason.Trim();
         var approvedAt = DateTime.UtcNow;
 
@@ -1045,31 +1400,72 @@ public class PatientJourneyService
                 CoverageCaseId = coverageCaseId,
                 PaymentMode = j.PaymentMode,
             }),
-            previousState: null,
-            newState: null);
+            previousState: previousSnapshot,
+            newState: SnapshotStates(j),
+            reason: reason,
+            correlationId: j.Id);
 
-        // Mirror onto CCMS coverage case so validate-admission sees EmergencyFcApplied.
+        _outbox.Enqueue(
+            j.TenantId,
+            IntegrationEventTypes.EmergencyFcApplied,
+            j.Id,
+            payload: new
+            {
+                tenantId = j.TenantId,
+                journeyId = j.Id,
+                sessionId = j.CounselingSessionId,
+                actorUserId = userId,
+                reason,
+            },
+            correlationId: j.Id,
+            idempotencyKey: $"{IntegrationEventTypes.EmergencyFcApplied}:{j.Id:N}");
+        await _db.SaveChangesAsync();
+
+        // Direct mirror retained as a best-effort supplement to outbox delivery.
         await _ccms.NotifyEmergencyFcAppliedAsync(
             id, j.CounselingSessionId, tenantId, userId, reason);
 
         return MapDetail(j);
     }
 
-    // ── Discharge override ─────────────────────────────────────────────────────
-
     public async Task<PatientJourneyDetailDto> ApplyDischargeOverrideAsync(
         Guid id, Guid tenantId, Guid userId, DischargeOverrideRequest req)
     {
+        _commandAuth.RequireDischargeOverride();
+        if (string.IsNullOrWhiteSpace(req.Reason))
+            throw new ArgumentException("Discharge override requires a reason.");
         var j = await RequireJourneyAsync(id, tenantId);
+        var previousSnapshot = SnapshotStates(j);
 
         j.DischargeOverrideApplied = true;
-        j.DischargeOverrideReason  = req.Reason;
+        j.DischargeOverrideReason  = req.Reason.Trim();
         j.DischargeOverrideBy      = userId;
         j.UpdatedAt                = DateTime.UtcNow;
         j.UpdatedByUserId          = userId;
 
         await _db.SaveChangesAsync();
-        await LogAsync(j, userId, "DischargeOverrideApplied", null, null, null, null, null);
+        await LogAsync(
+            j, userId, "DischargeOverrideApplied",
+            "DischargeOverride",
+            oldValue: "false",
+            newValue: "true",
+            previousState: previousSnapshot,
+            newState: SnapshotStates(j),
+            reason: req.Reason.Trim(),
+            correlationId: j.Id);
+        return MapDetail(j);
+    }
+
+    public async Task<PatientJourneyDetailDto> SetDischargePlanningAsync(
+        Guid id, Guid tenantId, Guid userId, bool ready)
+    {
+        var j = await RequireJourneyAsync(id, tenantId);
+        j.DischargePlanningReady = ready;
+        j.UpdatedAt = DateTime.UtcNow;
+        j.UpdatedByUserId = userId;
+        await _db.SaveChangesAsync();
+        await LogAsync(j, userId, "DischargePlanningUpdated", "DischargePlanning",
+            (!ready).ToString(), ready.ToString(), null, null);
         return MapDetail(j);
     }
 
@@ -1080,24 +1476,28 @@ public class PatientJourneyService
     {
         var j = await RequireJourneyAsync(id, tenantId);
 
-        // Basic validation — accept non-empty alphanumeric barcodes (≥5 chars)
-        var isValid = barcode.Length >= 5
-                      && barcode.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_');
+        var parsed = Gs1BarcodeParser.Parse(barcode);
+        var isValid = parsed.Parsed || Gs1BarcodeParser.IsManualSerial(barcode);
+        var symbology = parsed.Parsed ? parsed.Symbology : "raw";
+        var message = parsed.Unreadable || !isValid
+            ? Gs1BarcodeParser.UnreadableMessage
+            : parsed.Parsed
+                ? "Barcode parsed."
+                : "Barcode format valid. Confirm catalog on Record implant.";
 
+        // E4: parse/resolve only. Do not persist IolBarcode / IolBarcodeVerified (registry is usage SoT).
         if (isValid)
-        {
-            j.IolBarcode         = barcode;
-            j.IolBarcodeVerified = true;
-            j.UpdatedAt          = DateTime.UtcNow;
-            j.UpdatedByUserId    = userId;
-            await _db.SaveChangesAsync();
-            await LogAsync(j, userId, "IolBarcodeVerified", null, null, barcode, null, null);
-        }
+            await LogAsync(j, userId, "IolBarcodeVerified", null, null, barcode.Trim(), null, null);
 
         return new VerifyIolBarcodeResponse(
             IsValid:      isValid,
-            CatalogEntry: isValid ? barcode : null,
-            Message:      isValid ? "Barcode verified and saved." : "Barcode format invalid — must be at least 5 alphanumeric characters."
+            CatalogEntry: isValid ? (parsed.Gtin ?? barcode.Trim()) : null,
+            Message:      message,
+            Gtin:         parsed.Gtin,
+            Serial:       parsed.Serial,
+            Lot:          parsed.Lot,
+            Expiry:       parsed.ExpiryIso,
+            Symbology:    isValid ? symbology : parsed.Symbology
         );
     }
 
@@ -1120,7 +1520,7 @@ public class PatientJourneyService
         return MapDetail(j, patient, merge, transitionWarnings);
     }
 
-    private static PatientJourneyDetailDto MapDetail(
+    private PatientJourneyDetailDto MapDetail(
         PatientJourney j,
         IpPatient? patient = null,
         PatientMergeInfo? merge = null,
@@ -1132,6 +1532,13 @@ public class PatientJourneyService
             m = JourneyMutationGuardService.IsPatientMerged(patient)
                 ? new PatientMergeInfo(true, null, null)
                 : PatientMergeInfo.NotMerged;
+        }
+
+        JourneySlot? slot = null;
+        if (j.SlotId is { } slotId)
+        {
+            slot = _db.JourneySlots.Local.FirstOrDefault(s => s.Id == slotId && s.ReleasedAt == null)
+                ?? _db.JourneySlots.AsNoTracking().FirstOrDefault(s => s.Id == slotId && s.ReleasedAt == null);
         }
 
         return new PatientJourneyDetailDto(
@@ -1170,14 +1577,72 @@ public class PatientJourneyService
         m.IsMerged,
         m.CanonicalPatientId,
         m.CanonicalUhid,
-        j.PaymentMode);
+        j.PaymentMode,
+        j.AssignedBedId,
+        j.DischargePlanningReady,
+        j.UpdatedAt,
+        j.DischargeType,
+        j.DischargeTypeReason,
+        j.PriorJourneyId,
+        slot?.Id,
+        slot == null ? null : SlotPolicy.FormatLabel(slot.Session, slot.SequenceNo),
+        slot?.Session,
+        slot?.SequenceNo,
+        slot?.PlannedArrivalAt,
+        slot?.TheatreId);
+    }
+
+    private const string ConcurrencyConflictMessage =
+        "This journey was updated by another user. Reload and try again.";
+
+    private static void EnsureExpectedVersion(PatientJourney j, DateTime? expectedUpdatedAt)
+    {
+        if (expectedUpdatedAt is null) return;
+        var actual = DateTime.SpecifyKind(j.UpdatedAt, DateTimeKind.Utc);
+        var expected = DateTime.SpecifyKind(expectedUpdatedAt.Value, DateTimeKind.Utc);
+        if (Math.Abs((actual - expected).TotalMilliseconds) > 50)
+            throw new InvalidOperationException(ConcurrencyConflictMessage);
+    }
+
+    /// <summary>
+    /// Auth bed inventory is occupancy SoT. Expected (no admit) → release reservation;
+    /// otherwise vacate occupied bed to Cleaning. Local pointer is cleared only after Auth succeeds.
+    /// </summary>
+    private async Task ReleaseAssignedBedAsync(
+        PatientJourney j, Guid tenantId, Guid userId, string clinicalForAction)
+    {
+        if (j.AssignedBedId is not { } bedId || bedId == Guid.Empty)
+            return;
+
+        var action = clinicalForAction == ClinicalState.Expected && j.AdmittedAt is null
+            ? "release"
+            : "vacate";
+
+        await _beds.ApplyAsync(tenantId, bedId, userId, j.PatientId, action);
+        j.AssignedBedId = null;
+        j.BedNumber = null;
+        j.RoomNumber = null;
+    }
+
+    private async Task SaveJourneyAsync()
+    {
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new InvalidOperationException(ConcurrencyConflictMessage);
+        }
     }
 
     private async Task LogAsync(
         PatientJourney j, Guid userId,
         string action, string? stateType,
         string? oldValue, string? newValue,
-        string? previousState, string? newState)
+        string? previousState, string? newState,
+        string? reason = null,
+        Guid? correlationId = null)
     {
         _db.JourneyAuditLogs.Add(new JourneyAuditLog
         {
@@ -1185,10 +1650,12 @@ public class PatientJourneyService
             PatientJourneyId  = j.Id,
             Action            = action,
             StateType         = stateType,
-            OldValue          = oldValue,
-            NewValue          = newValue,
+            OldValue          = TruncateAuditScalar(oldValue),
+            NewValue          = TruncateAuditScalar(newValue),
             PreviousState     = previousState,
             NewState          = newState,
+            Notes             = reason,
+            CorrelationId     = correlationId ?? j.Id,
             PerformedByUserId = userId,
             PerformedAt       = DateTime.UtcNow,
             CreatedAt         = DateTime.UtcNow,
@@ -1196,6 +1663,12 @@ public class PatientJourneyService
         });
         await _db.SaveChangesAsync();
     }
+
+    /// <summary>
+    /// <c>journey_audit_log.old_value</c> / <c>new_value</c> are VARCHAR(50). Full snapshots belong in JSONB columns.
+    /// </summary>
+    private static string? TruncateAuditScalar(string? value)
+        => value is null || value.Length <= 50 ? value : value[..50];
 
     private static string SnapshotStates(PatientJourney j)
         => JsonSerializer.Serialize(new

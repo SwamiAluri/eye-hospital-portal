@@ -23,6 +23,12 @@ namespace AuthService.Models.Domain
         [Column("patient_id")]
         public Guid PatientId { get; set; }
 
+        [Column("counseling_session_id")]
+        public Guid? CounselingSessionId { get; set; }
+
+        [Column("package_amount")]
+        public decimal? PackageAmount { get; set; }
+
         [Column("branch_id")]
         public Guid? BranchId { get; set; }
 
@@ -36,6 +42,9 @@ namespace AuthService.Models.Domain
 
         [Column("is_discharged")]
         public bool IsDischarged { get; set; }
+
+        [Column("admitted_at")]
+        public DateTime? AdmittedAt { get; set; }
 
         [Column("discharged_at")]
         public DateTime? DischargedAt { get; set; }

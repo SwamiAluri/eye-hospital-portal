@@ -1,0 +1,48 @@
+---
+description: Testing and visual validation — Vitest, Playwright e2e/, browser checks, Figma mapping, and no false “done”.
+globs:
+  - apps/hospital-portal-web/src/**
+  - apps/hospital-portal-web/e2e/**
+  - apps/hospital-portal-web/playwright.config.ts
+  - apps/hospital-portal-web/vitest.config.ts
+  - tests/**
+  - microservices/**/*Tests.cs
+  - microservices/**/*Test.cs
+alwaysApply: false
+---
+
+# Testing and validation
+
+Do not claim completion because the app compiles. `ignoreBuildErrors` / `ignoreDuringBuilds` in Next config do not waive validation.
+
+## What to run (as applicable)
+
+- TypeScript and ESLint on files you touched (do not “fix the world”)
+- Vitest: `apps/hospital-portal-web/src/**/*.test.ts(x)` — colocate new unit tests with the lib/component
+- Existing integration tests / backend tests when APIs or schema are in scope (schema/API changes themselves need explicit approval)
+- Playwright: **active suite is `apps/hospital-portal-web/e2e/`** (`playwright.config.ts` `testDir: ./e2e`)
+- Do **not** treat `apps/hospital-portal-web/tests/e2e/` or repo-root `tests/` as the live suite (legacy paths)
+- Accessibility checks (keyboard, focus, dialogs, labels)
+- Browser verification of the real workflow, not a single screenshot
+
+Keep `ip-overlays-consolidated.test.ts` green for IP overlays.
+
+## Playwright / browser
+
+For UI changes verify: route load, authz, patient/encounter context, primary workflow, keyboard, dialogs/drawers, forms, validation, errors, loading, responsive, a11y.
+
+Use safe UAT/seed data. Do not perform destructive production actions. Preserve existing ward-journey / census / CCMS / counselling / patient-hub projects and storageState setup.
+
+## Figma / visual
+
+When a Figma URL exists, follow `.cursor/rules/figma-mcp.mdc`: remote MCP only; `figma-design-to-code` then `get_design_context`; map to existing portal components/tokens; **do not** paste generated Tailwind as a new design system; **do not** recreate mockup HTML as production.
+
+Then: inspect existing screen → implement with canonical components → run the app → Playwright/browser → compare → fix → check responsive states. Mockups under `apps/hospital-portal-web/docs/mockups/` are reference, not a second app.
+
+## Reports and analytics
+
+Reporting UIs must not mutate transactional data. Tests should not require writing production bills/claims to “see a chart.”
+
+## Cross-module
+
+If you change shared `ui/*`, patient context, billing payment, or SignalR helpers, search consumers and re-validate affected modules (queue, ward, OT, cashier, CCMS, exam, portal as relevant).

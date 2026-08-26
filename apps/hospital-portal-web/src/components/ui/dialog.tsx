@@ -29,7 +29,7 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
-    size?: 'sm' | 'md' | 'lg' | 'xl'
+    size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl' | '6xl' | 'full'
     hideCloseButton?: boolean
   }
 >(({ className, children, size = 'md', hideCloseButton = false, ...props }, ref) => {
@@ -38,6 +38,10 @@ const DialogContent = React.forwardRef<
     md: 'max-w-md',
     lg: 'max-w-lg',
     xl: 'max-w-xl',
+    '2xl': 'max-w-2xl',
+    '4xl': 'max-w-4xl',
+    '6xl': 'max-w-6xl',
+    full: 'max-w-[min(96rem,calc(100vw-2rem))] w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)]',
   }
   
   return (

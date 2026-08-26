@@ -9,4 +9,10 @@ export const OT_TEST_IDS = {
   moveToPostOpBtn: (journeyId: string) => `ot-move-postop-btn-${journeyId}`,
   confirmDialog: 'ot-confirm-dialog',
   confirmYes: 'ot-confirm-yes',
+  liveState: 'ot-live-state',
+  loadError: 'ot-load-error',
+  loadRetry: 'ot-load-retry',
+  emptyBoard: 'ot-empty',
+  emptyFilter: 'ot-empty-filter',
+  search: 'ot-search',
 } as const;

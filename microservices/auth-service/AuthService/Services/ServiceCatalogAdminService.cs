@@ -379,6 +379,7 @@ public class ServiceCatalogAdminService : IServiceCatalogAdminService
         return (await _context.VariantPrices
             .Where(p => ids.Contains(p.VariantId)
                      && p.BranchId == null
+                     && p.PayerId == null
                      && p.EffectiveTo == null
                      && p.IsActive
                      && p.DeletedAt == null)
@@ -401,6 +402,7 @@ public class ServiceCatalogAdminService : IServiceCatalogAdminService
         var active = await _context.VariantPrices
             .Where(p => p.VariantId == variantId
                      && p.BranchId == null
+                     && p.PayerId == null
                      && p.EffectiveTo == null
                      && p.IsActive
                      && p.DeletedAt == null)
@@ -712,6 +714,7 @@ public class ServiceCatalogAdminService : IServiceCatalogAdminService
 
         var branchMap = (await _context.VariantPrices
             .Where(p => p.BranchId == branchId
+                     && p.PayerId == null
                      && variantIds.Contains(p.VariantId)
                      && p.EffectiveTo == null
                      && p.IsActive
@@ -742,6 +745,7 @@ public class ServiceCatalogAdminService : IServiceCatalogAdminService
         var active = await _context.VariantPrices
             .Where(p => p.VariantId == request.VariantId
                      && p.BranchId == branchId
+                     && p.PayerId == null
                      && p.EffectiveTo == null
                      && p.IsActive
                      && p.DeletedAt == null)
@@ -801,6 +805,7 @@ public class ServiceCatalogAdminService : IServiceCatalogAdminService
         var active = await _context.VariantPrices
             .Where(p => p.VariantId == variantId
                      && p.BranchId == branchId
+                     && p.PayerId == null
                      && p.EffectiveTo == null
                      && p.IsActive
                      && p.DeletedAt == null)
@@ -808,6 +813,135 @@ public class ServiceCatalogAdminService : IServiceCatalogAdminService
 
         if (active.Count == 0)
             throw new KeyNotFoundException("Branch price override not found.");
+
+        foreach (var row in active)
+        {
+            row.EffectiveTo = DateOnly.FromDateTime(now);
+            row.UpdatedAt = now;
+            row.UpdatedByUserId = userId == Guid.Empty ? null : userId;
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<List<PayerPricingRowDto>> GetPayerPricingRowsAsync(Guid payerId)
+    {
+        var categories = await _context.ServiceCategories
+            .Where(c => c.DeletedAt == null && c.IsActive)
+            .Include(c => c.Services.Where(s => s.DeletedAt == null && s.IsActive))
+                .ThenInclude(s => s.Variants.Where(v => v.DeletedAt == null && v.IsActive))
+            .OrderBy(c => c.DisplayOrder)
+            .ToListAsync();
+
+        var variants = categories
+            .SelectMany(c => c.Services.SelectMany(s => s.Variants.Select(v => (c.Code, v))))
+            .ToList();
+
+        var variantIds = variants.Select(x => x.v.Id).ToList();
+        var globalMap = await LoadGlobalPriceMapAsync(variantIds);
+
+        var payerMap = (await _context.VariantPrices
+            .Where(p => p.PayerId == payerId
+                     && p.BranchId == null
+                     && variantIds.Contains(p.VariantId)
+                     && p.EffectiveTo == null
+                     && p.IsActive
+                     && p.DeletedAt == null)
+            .ToListAsync())
+            .GroupBy(p => p.VariantId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.EffectiveFrom).First().Amount);
+
+        return variants.Select(x => new PayerPricingRowDto
+        {
+            VariantId = x.v.Id,
+            VariantCode = x.v.VariantCode ?? string.Empty,
+            VariantName = x.v.VariantName,
+            CategoryCode = x.Code,
+            GlobalAmount = globalMap.GetValueOrDefault(x.v.Id, 0),
+            PayerAmount = payerMap.TryGetValue(x.v.Id, out var amt) ? amt : null,
+        }).ToList();
+    }
+
+    public async Task<BranchVariantPricingDto> UpsertPayerVariantPriceAsync(
+        Guid payerId,
+        UpsertBranchVariantPriceRequest request,
+        Guid userId)
+    {
+        _ = await FindVariantAsync(request.VariantId);
+        var now = DateTime.UtcNow;
+
+        var active = await _context.VariantPrices
+            .Where(p => p.VariantId == request.VariantId
+                     && p.PayerId == payerId
+                     && p.BranchId == null
+                     && p.EffectiveTo == null
+                     && p.IsActive
+                     && p.DeletedAt == null)
+            .OrderByDescending(p => p.EffectiveFrom)
+            .FirstOrDefaultAsync();
+
+        if (active != null && active.Amount == request.Amount)
+        {
+            return new BranchVariantPricingDto
+            {
+                VariantId = request.VariantId,
+                Amount = active.Amount,
+                EffectiveFrom = active.EffectiveFrom,
+                EffectiveTo = active.EffectiveTo,
+                IsActive = active.IsActive,
+            };
+        }
+
+        if (active != null)
+        {
+            active.EffectiveTo = DateOnly.FromDateTime(now);
+            active.UpdatedAt = now;
+            active.UpdatedByUserId = userId == Guid.Empty ? null : userId;
+        }
+
+        var created = new VariantPrice
+        {
+            Id = Guid.NewGuid(),
+            VariantId = request.VariantId,
+            BranchId = null,
+            PayerId = payerId,
+            Amount = request.Amount,
+            EffectiveFrom = DateOnly.FromDateTime(now),
+            EffectiveTo = null,
+            IsActive = true,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CreatedByUserId = userId == Guid.Empty ? null : userId,
+            UpdatedByUserId = userId == Guid.Empty ? null : userId,
+            Status = "active",
+        };
+        _context.VariantPrices.Add(created);
+        await _context.SaveChangesAsync();
+
+        return new BranchVariantPricingDto
+        {
+            VariantId = request.VariantId,
+            Amount = created.Amount,
+            EffectiveFrom = created.EffectiveFrom,
+            EffectiveTo = created.EffectiveTo,
+            IsActive = created.IsActive,
+        };
+    }
+
+    public async Task RemovePayerVariantPriceAsync(Guid payerId, Guid variantId, Guid userId)
+    {
+        var now = DateTime.UtcNow;
+        var active = await _context.VariantPrices
+            .Where(p => p.VariantId == variantId
+                     && p.PayerId == payerId
+                     && p.BranchId == null
+                     && p.EffectiveTo == null
+                     && p.IsActive
+                     && p.DeletedAt == null)
+            .ToListAsync();
+
+        if (active.Count == 0)
+            throw new KeyNotFoundException("Payer tariff override not found.");
 
         foreach (var row in active)
         {

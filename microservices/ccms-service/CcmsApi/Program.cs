@@ -65,6 +65,7 @@ var host = new HostBuilder()
 
         // Phase 4: Pre-authorization
         services.AddScoped<PreAuthorizationService>();
+        services.AddScoped<PreAuthOpsQueueService>();
 
         // Phase 5: Approval events
         services.AddScoped<ApprovalEventService>();
@@ -78,9 +79,11 @@ var host = new HostBuilder()
 
         // Phase 8: Claims
         services.AddScoped<ClaimPacketGeneratorService>();
+        services.AddScoped<JourneyAnalyticsService>();
 
         // Phase 9: Settlement
         services.AddScoped<SettlementReconciliationService>();
+        services.AddScoped<ICollectionSettlementService, CollectionSettlementService>();
 
         // Phase 10: Documents
         services.AddScoped<DocumentEngineService>();

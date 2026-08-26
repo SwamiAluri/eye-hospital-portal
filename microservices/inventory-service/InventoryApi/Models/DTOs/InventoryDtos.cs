@@ -38,7 +38,8 @@ public record VendorDto(
     string    BankAccountType,
     decimal   CreditDays,
     decimal   OutstandingBalance,
-    string    Status
+    string    Status,
+    bool      IsConsignmentVendor = false
 );
 
 public record CreateVendorRequest(
@@ -73,7 +74,8 @@ public record CreateVendorRequest(
     string?   BankAccountHolderName,
     string    BankAccountType,
     decimal   CreditDays = 30,
-    string?   Status = null
+    string?   Status = null,
+    bool      IsConsignmentVendor = false
 );
 
 // ── Item ──────────────────────────────────────────────────────────────────────
@@ -481,7 +483,8 @@ public record IssueSurgeryConsumableRequest(
     string   IolBillingMode,
     string?  PatientName,
     string?  PatientIpNo,
-    List<IssueConsumableItemRequest> Items
+    List<IssueConsumableItemRequest> Items,
+    Guid?    JourneyId = null
 );
 
 public record IssueConsumableItemRequest(
@@ -498,7 +501,8 @@ public record PlanConsumableRequest(
     string   IolBillingMode,
     string?  PatientName,
     string?  PatientIpNo,
-    List<PlanConsumableItemRequest> Items
+    List<PlanConsumableItemRequest> Items,
+    Guid?    JourneyId = null
 );
 
 public record PlanConsumableItemRequest(

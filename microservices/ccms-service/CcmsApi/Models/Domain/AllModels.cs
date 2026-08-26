@@ -347,6 +347,8 @@ public class CcmsApprovalEvent
     public string?  TpaReferenceNumber      { get; set; }
     public Guid?    RecordedByUserId        { get; set; }
     public DateTime RecordedAt              { get; set; } = DateTime.UtcNow;
+    public string?  PreviousState           { get; set; }
+    public Guid?    CorrelationId           { get; set; }
     // Standard (but no updated_at — append only)
     public DateTime CreatedAt               { get; set; } = DateTime.UtcNow;
     public Guid?    CreatedByUserId         { get; set; }
@@ -429,6 +431,8 @@ public class CcmsClaimPacket : StandardEntity
     public string?  TpaClaimNumber         { get; set; }
     public DateTime? ExpectedSettlementDate{ get; set; }
     public string?  ClaimPacketJson        { get; set; }
+    /// <summary>Claim-desk query overlay (not a duplicate of pre-auth clarification FSM).</summary>
+    public string   QueryStatus            { get; set; } = "none";
 }
 
 public class CcmsClaimDocument : StandardEntity
@@ -470,6 +474,28 @@ public class CcmsSettlementLineItem : StandardEntity
     public decimal SettledAmount    { get; set; }
     public decimal DisallowedAmount { get; set; }
     public string? DisallowedReason { get; set; }
+}
+
+/// <summary>CCMS-060. Net patient collections vs obligation. Not a TPA settlement row.</summary>
+public class CcmsCollectionProjection : StandardEntity
+{
+    public Guid     CoverageCaseId           { get; set; }
+    public Guid?    BillId                   { get; set; }
+    public decimal  NetCollected             { get; set; }
+    public decimal  PatientObligationAmount  { get; set; }
+    public DateTime? LastOccurredAt          { get; set; }
+}
+
+/// <summary>CCMS-060. Append-only billing ledger events applied to the projection.</summary>
+public class CcmsCollectionEvent : StandardEntity
+{
+    public Guid     CoverageCaseId  { get; set; }
+    public string   EventType       { get; set; } = string.Empty;
+    public Guid?    SourceRefId     { get; set; }
+    public Guid?    BillId          { get; set; }
+    public decimal  Amount          { get; set; }
+    public string?  IdempotencyKey  { get; set; }
+    public DateTime OccurredAt      { get; set; } = DateTime.UtcNow;
 }
 
 // ── Phase 10: Documents ───────────────────────────────────────────────────────

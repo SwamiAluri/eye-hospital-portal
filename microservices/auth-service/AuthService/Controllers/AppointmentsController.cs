@@ -194,6 +194,8 @@ public class AppointmentsController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
+            if (ex.Message.Contains("not available", StringComparison.OrdinalIgnoreCase))
+                return Conflict(new { message = ex.Message });
             return BadRequest(new { message = ex.Message });
         }
     }

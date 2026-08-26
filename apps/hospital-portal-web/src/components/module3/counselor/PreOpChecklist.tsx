@@ -16,7 +16,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useGeneratePreOpChecklist, useSessionChecklist } from '@/hooks/use-surgery-scheduling';
 import { useQueryClient } from '@tanstack/react-query';
 import type { OTScheduleDto, PreOpChecklistDto } from '@/types/surgery-scheduling';

@@ -44,7 +44,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Plus, Trash2, Search, IndianRupee, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useBillItemTypes } from '@/hooks/use-billing-masters';
 
 export interface BillItem {

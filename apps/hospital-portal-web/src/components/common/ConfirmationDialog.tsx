@@ -1,5 +1,8 @@
+'use client';
+
 import React, { ReactNode } from 'react';
 import { AlertTriangle, Info, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 export type ConfirmationVariant = 'danger' | 'warning' | 'info' | 'success';
 
@@ -88,27 +91,16 @@ export function ConfirmationDialog({
   const Icon = cfg.icon;
   const busy = isProcessing || isLoading;
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-dialog-title"
-      data-testid={dataTestId}
-    >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleCancel}
-      />
-
-      {/* Card */}
-      <div
-        className="relative z-10 w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open={isOpen} onOpenChange={(next) => { if (!next && !busy) onClose(); }}>
+      <DialogContent
+        size="sm"
+        hideCloseButton
+        data-testid={dataTestId}
+        aria-describedby={undefined}
+        className="p-0 gap-0 overflow-hidden"
       >
+        <DialogTitle className="sr-only">{title}</DialogTitle>
         {/* Accent bar */}
         <div className={`h-1 w-full ${cfg.bar}`} />
 
@@ -167,8 +159,8 @@ export function ConfirmationDialog({
             {confirmText}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

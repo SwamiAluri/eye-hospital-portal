@@ -34,6 +34,7 @@ namespace AuthService.Middleware
                 context.Request.Path.StartsWithSegments("/hubs") || // Skip SignalR hubs - tenant resolved from JWT
                 context.Request.Path.StartsWithSegments("/notificationHub") || // Skip NotificationHub - tenant from JWT claim
                 context.Request.Path.StartsWithSegments("/api/servicecatalog") || // Global catalog - no tenant context needed
+                context.Request.Path.StartsWithSegments("/api/internal") || // service-to-service; tenant is in body/query + X-Internal-Key
                 (context.Request.Path.StartsWithSegments("/api/tenants") && context.Request.Method == "GET"))
             {
                 await _next(context);

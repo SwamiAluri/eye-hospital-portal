@@ -13,7 +13,13 @@ namespace AuthService.Services
         /// <summary>
         /// Request a refund for an OPD bill
         /// </summary>
-        Task<Refund> RequestRefundAsync(Guid billId, decimal amount, string reason, Guid requestedBy);
+        Task<Refund> RequestRefundAsync(
+            Guid billId,
+            decimal amount,
+            string reason,
+            Guid requestedBy,
+            string? refundMode = null,
+            string? notes = null);
 
         /// <summary>
         /// Get refund by ID

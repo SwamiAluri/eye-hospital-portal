@@ -81,6 +81,11 @@ public class BillItemDto
     public DateTime? PerformedAt { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? Notes { get; set; }
+    public string ServiceCode { get; set; } = string.Empty;
+    public string ServiceName { get; set; } = string.Empty;
+    public string SourceType { get; set; } = "Manual";
+    public Guid? SourceRefId { get; set; }
+    public string? IdempotencyKey { get; set; }
 }
 
 public class AddBillItemRequest
@@ -93,6 +98,10 @@ public class AddBillItemRequest
     public decimal DiscountPercentage { get; set; } = 0;
     public string? DiscountReason { get; set; }
     public string? Notes { get; set; }
+    public string? ServiceName { get; set; }
+    public string? SourceType { get; set; }
+    public Guid? SourceRefId { get; set; }
+    public string? IdempotencyKey { get; set; }
 }
 
 public class UpdateBillItemRequest

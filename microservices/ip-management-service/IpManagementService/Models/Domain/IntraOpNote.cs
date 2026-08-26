@@ -23,7 +23,7 @@ public class IntraOpNote
     public string?  Findings             { get; set; }
     public string?  Complications        { get; set; }
 
-    // IOL implant
+    // IOL implant — E4 compatibility only. Save ignores client writes; GET overlays registry.
     public string?  ImplantUsed          { get; set; }
     public string?  ImplantPower         { get; set; }
 

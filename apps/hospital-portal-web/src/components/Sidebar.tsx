@@ -116,12 +116,12 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
     <>
     {/* Desktop sidebar � hidden below lg (1024px) */}
     {!drawerOnly && (
-    <nav className={`hidden lg:flex ${isCollapsed ? 'lg:w-16' : 'lg:w-60'} flex-col h-full font-sans transition-all duration-300 overflow-hidden`} style={{backgroundColor:'#0f1e3c'}} aria-label="Main navigation">
+    <nav className={`hidden lg:flex ${isCollapsed ? 'lg:w-16' : 'lg:w-60'} flex-col h-full font-sans transition-all duration-300 overflow-hidden bg-navy-900`} aria-label="Main navigation">
       {/* Header */}
       <div className={`${isCollapsed ? 'p-3' : 'px-4 py-4'} border-b flex-shrink-0`} style={{borderColor:'rgba(255,255,255,0.1)'}}>
         {isCollapsed ? (
           <div className="flex flex-col items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{backgroundColor:'#10b981'}}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500">
               <Building2 className="h-5 w-5 text-white" />
             </div>
             <button
@@ -138,7 +138,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
         ) : (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{backgroundColor:'#10b981'}}>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500">
                 <Building2 className="h-5 w-5 text-white" />
               </div>
               <div className="min-w-0">
@@ -520,14 +520,13 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
         />
         {/* Drawer panel */}
         <nav
-          className="fixed inset-y-0 left-0 z-50 w-64 shadow-2xl flex flex-col h-full font-sans overflow-y-auto lg:hidden"
-          style={{backgroundColor:'#0f1e3c'}}
+          className="fixed inset-y-0 left-0 z-50 w-64 shadow-2xl flex flex-col h-full font-sans overflow-y-auto lg:hidden bg-navy-900"
           aria-label="Mobile navigation"
         >
           {/* Drawer header */}
           <div className="px-4 py-4 flex items-center justify-between flex-shrink-0" style={{borderBottom:'1px solid rgba(255,255,255,0.1)'}}>
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{backgroundColor:'#10b981'}}>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500">
                 <Building2 className="h-5 w-5 text-white" />
               </div>
               <div>

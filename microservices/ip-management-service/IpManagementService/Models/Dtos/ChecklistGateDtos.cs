@@ -1,10 +1,13 @@
+using IpManagementService.Models.Domain;
+
 namespace IpManagementService.Models.Dtos;
 
 public record ChecklistGateWarningDto(
     string   Code,
     string   Message,
     string   Severity,   // warn | block
-    bool     CanOverride
+    bool     CanOverride,
+    string   Category = DischargeBlockerCategory.Clinical
 );
 
 public record ChecklistGateResultDto(

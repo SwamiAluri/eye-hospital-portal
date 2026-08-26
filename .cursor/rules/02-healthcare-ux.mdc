@@ -1,0 +1,68 @@
+---
+description: Platform-wide healthcare UX — personas, workflow states, clinical/financial safety, realtime, privacy, forms, worklists, and mock-data policy.
+alwaysApply: true
+---
+
+# Healthcare UX (all modules)
+
+Applies to every staff, patient-portal, kiosk, admin, clinical, operational, and financial workflow — including future modules.
+
+## Before changing a workflow, identify
+
+1. Primary persona  2. Secondary persona  3. Patient context  4. Encounter context  5. Workflow state  6. Available actions  7. Required permissions  8. Preconditions  9. Validation  10. Downstream effects  11. Integration effects  12. Audit  13. Error states  14. Recovery path
+
+## Desktop-first hospital workstations
+
+Optimize for nurses, ward, doctors, optometrists, OT, billing clerks, cashiers, counsellors, reception, pharmacy, lab, inventory, admin **on desktop**. Do not force mobile-first patterns that slow high-frequency work. Responsive behavior is still required: do not merely shrink; use priority columns, horizontal scroll, drawers, and detail panels without dropping critical fields.
+
+Patient-portal UX may be more consumer-like. Kiosk/TV displays are immersive. Do not merge those patterns into staff worklists.
+
+## Workflow state
+
+Statuses are controlled domain states, not free-form strings. Before a transition: current state, allowed next state, permission, validation, side effects, audit, notifications, integrations. Never silently change state from the UI.
+
+Distinguish **draft vs finalized** clinical/counselling/exam data. Destructive actions must be explicit (confirm + reason when the domain already does).
+
+## Clinical safety
+
+Never silently discard clinical information. Never fabricate findings, vitals, diagnoses, or orders. Preserve patient + encounter context. Surface validation errors. Do not replace production clinical APIs with mock payloads unless the user explicitly asked for UAT/demo, and then isolate that data.
+
+## Financial safety (OPD, IP, cashier, pharmacy, optical, finance, CCMS settlement)
+
+Frontend is not authoritative. Backend validation is mandatory. Mutations must be idempotent. Prevent double-submit of payments. Refunds need backend authorization. Totals must not rely on client math as SoT. Failed integrations must not look successful. Reconciliation states must be explicit. All financial actions must be auditable.
+
+## Realtime
+
+Where SignalR already exists (queues, ward/census, doctor desk, OT, operational dashboards, notifications): preserve it. Do not replace with polling without approval. Handle disconnect, stale data, duplicate events, and cleanup subscriptions. Do not add a second hub/bus (`socket.io` is unused — do not start it).
+
+## Permissions
+
+UI visibility uses existing permission codes (patterns vary: `ward.checklist.edit`, `CLINICAL:EXAMINATION:VIEW`, `ccms.claim.read`). Prefer permissions over hard-coded roles. Hidden UI is not security. Backend authorization is authoritative. `ProtectedRoute` + `PermissionGate` + `use-permissions.ts` / `permission-cache.ts` are canonical; do not expand the uncached `usePermissions.ts` fork.
+
+## Privacy
+
+Never put PHI, clinical, financial, insurance, tokens, or credentials in logs, console, URLs, screenshots, or commits. Do not dump sensitive API bodies in the client.
+
+## Forms
+
+Labels, required indication, validation, errors, loading, submitting, disabled, success/failure, keyboard, accessible associations. Never hide validation failures.
+
+## Worklists / tables
+
+Search, filter, sort, pagination or virtualization when needed, loading, empty, error, selection, bulk actions only if justified, keyboard, status visualization. Tune density to the persona. Do not add decorative clutter.
+
+## Loading / empty / error
+
+Every production workflow needs: initial/partial loading, empty, no results, permission denied, validation failure, network/backend/integration failure, stale, timeout, retry. Do not ship happy-path-only.
+
+## Mock / demo data
+
+Never introduce mock data to make a production screen “look complete.” Inspect APIs, hooks, backends, and UAT seeders first. If mock/UAT is required, isolate it (`/dashboard/dev/uat`, explicit mock flags). Never silently ship demo rows as production.
+
+## Notifications
+
+Canonical toast: `react-hot-toast`. Canonical realtime: existing `NotificationHub`. Do not add another toast library. Do not migrate sonner → hot-toast (or reverse) without approval. Prefer `hooks/useNotifications.ts` (JWT + hub), not `use-notifications.ts` (next-auth + sonner).
+
+## Cross-module impact
+
+Patient → Appointment → Front desk → Clinical → Diagnostics → Counselling → IP → Ward → OT → Billing → Coverage → Discharge → Reporting. Also pharmacy, inventory, procurement, finance, admin, quality, documents, notifications, integrations. A change in one folder is not isolated until consumers are searched.

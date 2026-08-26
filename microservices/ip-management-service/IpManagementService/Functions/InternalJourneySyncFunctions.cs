@@ -61,13 +61,54 @@ public class InternalJourneySyncFunctions
         catch (ArgumentException ex)
         {
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteAsJsonAsync(new { error = ex.Message });
+            await bad.WriteStringAsync(JsonSerializer.Serialize(new { error = ex.Message }, Json));
             return bad;
         }
         catch (Exception ex)
         {
             var err = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await err.WriteAsJsonAsync(new { error = ex.Message });
+            await err.WriteStringAsync(JsonSerializer.Serialize(new { error = ex.Message }, Json));
+            return err;
+        }
+    }
+
+    [Function("ApplyOpdClinicalCopy")]
+    public async Task<HttpResponseData> ApplyOpdClinicalCopy(
+        [HttpTrigger(AuthorizationLevel.Function, "post",
+             Route = "ip-management/internal/journey-sync/copy-opd")]
+        HttpRequestData req)
+    {
+        if (!ValidateInternalKey(req))
+        {
+            var unauthorized = req.CreateResponse(HttpStatusCode.Unauthorized);
+            await unauthorized.WriteStringAsync("""{"error":"Invalid internal API key."}""");
+            return unauthorized;
+        }
+
+        try
+        {
+            var body = await JsonSerializer.DeserializeAsync<ApplyOpdClinicalCopyRequest>(req.Body, Json)
+                       ?? throw new ArgumentException("Body required.");
+            if (body.OtScheduleId == Guid.Empty || body.TenantId == Guid.Empty)
+                throw new ArgumentException("otScheduleId and tenantId are required.");
+
+            var result = await _journeySvc.ApplyOpdClinicalCopyAsync(body);
+            var response = req.CreateResponse(result is null ? HttpStatusCode.NotFound : HttpStatusCode.OK);
+            response.Headers.Add("Content-Type", "application/json; charset=utf-8");
+            await response.WriteStringAsync(JsonSerializer.Serialize(
+                result ?? (object)new { message = "No journey linked to schedule." }, Json));
+            return response;
+        }
+        catch (ArgumentException ex)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync(JsonSerializer.Serialize(new { error = ex.Message }, Json));
+            return bad;
+        }
+        catch (Exception ex)
+        {
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteStringAsync(JsonSerializer.Serialize(new { error = ex.Message }, Json));
             return err;
         }
     }

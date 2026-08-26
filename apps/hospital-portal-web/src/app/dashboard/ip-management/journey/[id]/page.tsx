@@ -1,11 +1,11 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft, User, Stethoscope, CreditCard, ClipboardList,
   FileText, Activity, Clock, Building2, Lock, AlertTriangle,
-  Plus, CheckCircle2, X, IndianRupee,
+  CheckCircle2, X, IndianRupee, Shield, ScanLine,
 } from 'lucide-react';
 import {
   ipManagementApi,
@@ -14,54 +14,44 @@ import {
   IntraOpNoteDto,
   JourneyAuditLogDto,
   PostOpInstructionDto,
-  AddBillingTransactionRequest,
   DischargeSummaryDto,
   SaveDischargeSummaryRequest,
   UpdateWardAssignmentRequest,
 } from '@/lib/api/ip-management.api';
 import { JourneyPreOpSummary } from '@/components/ip-management/JourneyPreOpSummary';
 import { ChecklistPhaseStatusChips } from '@/components/ip-management/ChecklistPhaseStatusChips';
+import { ImplantScanPanel } from '@/components/ip-management/ImplantScanPanel';
+import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type JourneyTab = 'overview' | 'ward' | 'preop' | 'billing' | 'ot' | 'postop' | 'discharge' | 'audit';
+type JourneyTab = 'overview' | 'ward' | 'preop' | 'billing' | 'ot' | 'implants' | 'postop' | 'discharge' | 'audit';
 
 // ─── Stepper Config ───────────────────────────────────────────────────────────
 
 const CLINICAL_STEPS: { key: string; label: string }[] = [
   { key: 'Expected',          label: 'Expected' },
-  { key: 'PreOpInProgress',   label: 'Pre-Op' },
   { key: 'Admitted',          label: 'Admitted' },
   { key: 'ReadyForSurgery',   label: 'Ready for OT' },
   { key: 'SentToOT',          label: 'Sent to OT' },
   { key: 'InOT',              label: 'In OT' },
   { key: 'SurgeryCompleted',  label: 'Surgery Done' },
-  { key: 'PostOpInProgress',  label: 'Post-Op' },
+  { key: 'PostOp',            label: 'Post-Op' },
   { key: 'ReadyForDischarge', label: 'Ready D/C' },
   { key: 'Discharged',        label: 'Discharged' },
 ];
 
 const STEP_COLORS: Record<string, { dot: string; line: string; text: string; bg: string }> = {
   Expected:          { dot: 'bg-blue-500   border-blue-500',   line: 'bg-blue-200',   text: 'text-blue-700',    bg: 'bg-blue-50' },
-  PreOpInProgress:   { dot: 'bg-indigo-500 border-indigo-500', line: 'bg-indigo-200', text: 'text-indigo-700',  bg: 'bg-indigo-50' },
   Admitted:          { dot: 'bg-teal-500   border-teal-500',   line: 'bg-teal-200',   text: 'text-teal-700',    bg: 'bg-teal-50' },
   ReadyForSurgery:   { dot: 'bg-violet-500 border-violet-500', line: 'bg-violet-200', text: 'text-violet-700',  bg: 'bg-violet-50' },
   SentToOT:          { dot: 'bg-purple-500 border-purple-500', line: 'bg-purple-200', text: 'text-purple-700',  bg: 'bg-purple-50' },
   InOT:              { dot: 'bg-amber-500  border-amber-500',  line: 'bg-amber-200',  text: 'text-amber-700',   bg: 'bg-amber-50' },
   SurgeryCompleted:  { dot: 'bg-green-500  border-green-500',  line: 'bg-green-200',  text: 'text-green-700',   bg: 'bg-green-50' },
-  PostOpInProgress:  { dot: 'bg-cyan-500   border-cyan-500',   line: 'bg-cyan-200',   text: 'text-cyan-700',    bg: 'bg-cyan-50' },
+  PostOp:            { dot: 'bg-cyan-500   border-cyan-500',   line: 'bg-cyan-200',   text: 'text-cyan-700',    bg: 'bg-cyan-50' },
   ReadyForDischarge: { dot: 'bg-emerald-500 border-emerald-500', line: 'bg-emerald-200', text: 'text-emerald-700', bg: 'bg-emerald-50' },
   Discharged:        { dot: 'bg-gray-400   border-gray-400',   line: 'bg-gray-200',   text: 'text-gray-600',    bg: 'bg-gray-100' },
-};
-
-const FINANCIAL_TRANSITIONS: Record<string, string[]> = {
-  NotCreated:    ['Draft'],
-  Draft:         ['Estimated', 'Confirmed'],
-  Estimated:     ['Confirmed'],
-  Confirmed:     ['PartiallyPaid'],
-  PartiallyPaid: ['Paid'],
-  Paid:          ['Settled'],
-  Settled:       [],
+  CancelledSurgery:  { dot: 'bg-rose-500   border-rose-500',   line: 'bg-rose-200',   text: 'text-rose-700',    bg: 'bg-rose-50' },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -149,72 +139,6 @@ function FsBadge({ state }: { state: string }) {
 
 // ─── Add Transaction (inline) ─────────────────────────────────────────────────
 
-function AddTransactionForm({
-  onClose, onSave,
-}: {
-  onClose: () => void;
-  onSave: (req: AddBillingTransactionRequest) => Promise<void>;
-}) {
-  const [form, setForm] = useState<AddBillingTransactionRequest>({
-    transactionType: 'Advance', amount: 0, paymentMode: 'Cash', referenceNumber: '', notes: '',
-  });
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    if (form.amount <= 0) return;
-    setSaving(true);
-    try { await onSave(form); onClose(); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3 mb-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-blue-800">New Transaction</p>
-        <button onClick={onClose} className="p-1 text-blue-400 hover:text-blue-700">
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-          <select value={form.transactionType} onChange={e => setForm(f => ({ ...f, transactionType: e.target.value }))}
-            className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
-            {['Advance', 'Payment', 'Refund', 'Package', 'Charge'].map(t => <option key={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Mode</label>
-          <select value={form.paymentMode ?? ''} onChange={e => setForm(f => ({ ...f, paymentMode: e.target.value }))}
-            className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
-            {['Cash', 'Card', 'UPI', 'Cheque', 'NEFT', 'RTGS'].map(m => <option key={m}>{m}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₹) *</label>
-          <input type="number" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: +e.target.value }))}
-            className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Reference #</label>
-          <input type="text" value={form.referenceNumber ?? ''} onChange={e => setForm(f => ({ ...f, referenceNumber: e.target.value }))}
-            placeholder="UTR / Cheque"
-            className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-        </div>
-      </div>
-      <input type="text" placeholder="Notes (optional)" value={form.notes ?? ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-        className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-      <div className="flex justify-end gap-2">
-        <button onClick={onClose} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-white">Cancel</button>
-        <button onClick={handleSave} disabled={saving || form.amount <= 0}
-          className="px-4 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
-          {saving ? 'Saving…' : 'Add'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ─── Audit Section (Bug #8 fix — calls real API) ─────────────────────────────
 
 function AuditLogSection({ journeyId }: { journeyId: string }) {
@@ -248,7 +172,7 @@ function AuditLogSection({ journeyId }: { journeyId: string }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-gray-100">
-            {['Field', 'Old Value', 'New Value', 'Changed At'].map(h => (
+            {['Action', 'Old Value', 'New Value', 'When'].map(h => (
               <th key={h} className="px-4 py-3 text-left text-gray-500 font-semibold uppercase tracking-wide">{h}</th>
             ))}
           </tr>
@@ -256,10 +180,10 @@ function AuditLogSection({ journeyId }: { journeyId: string }) {
         <tbody className="divide-y divide-gray-50">
           {logs.map(l => (
             <tr key={l.id} className="hover:bg-gray-50">
-              <td className="px-4 py-2.5 font-medium text-gray-700">{l.fieldChanged}</td>
+              <td className="px-4 py-2.5 font-medium text-gray-700">{l.action || l.fieldChanged}</td>
               <td className="px-4 py-2.5 text-gray-500">{l.oldValue ?? '—'}</td>
               <td className="px-4 py-2.5 text-gray-700">{l.newValue ?? '—'}</td>
-              <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">{fmt(l.changedAt)}</td>
+              <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">{fmt(l.performedAt || l.changedAt)}</td>
             </tr>
           ))}
         </tbody>
@@ -275,6 +199,7 @@ export default function JourneyDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = params?.id as string;
+  const { canRecordImplant } = useIpChecklistPermissions();
 
   const [journey, setJourney] = useState<PatientJourneyDetailDto | null>(null);
   const [billing, setBilling] = useState<BillingTransactionDto[]>([]);
@@ -287,8 +212,7 @@ export default function JourneyDetailPage() {
     const t = searchParams?.get('tab');
     return (t as JourneyTab) ?? 'overview';
   });
-  const [showAddTx, setShowAddTx] = useState(() => searchParams?.get('action') === 'advance');
-  const [transitioningTo, setTransitioningTo] = useState<string | null>(null);
+  const [finSummary, setFinSummary] = useState<Awaited<ReturnType<typeof ipManagementApi.getFinancialSummary>>>(null);
   const [isEditingDischarge, setIsEditingDischarge] = useState(false);
   // Bug #6 fix: correct field names aligned with SaveDischargeSummaryRequest
   const [dsForm, setDsForm] = useState<SaveDischargeSummaryRequest>({ formatType: 'Short' });
@@ -305,19 +229,32 @@ export default function JourneyDetailPage() {
     (async () => {
       setIsLoading(true);
       try {
-        const [journeyData, billingData, intraOpData] = await Promise.all([
+        const [journeyData, billingData, intraOpData, summaryData] = await Promise.all([
           ipManagementApi.getJourneyDetail(id),
           ipManagementApi.listBilling(id),
           ipManagementApi.getIntraOpNote(id),
+          ipManagementApi.getFinancialSummary(id),
         ]);
         setJourney(journeyData);
         setBilling(billingData);
         setIntraOp(intraOpData);
+        setFinSummary(summaryData);
       } finally {
         setIsLoading(false);
       }
     })();
   }, [id]);
+
+  // Legacy ?action=advance used to open the projection write form. Money lives
+  // in Billing now — send the cashier there instead of collecting inline.
+  useEffect(() => {
+    if (isLoading || !id) return;
+    if (searchParams?.get('action') !== 'advance') return;
+    const billId = finSummary?.opdBillId;
+    router.replace(billId
+      ? `/dashboard/billing/opd?billId=${encodeURIComponent(billId)}`
+      : `/dashboard/billing/opd?patientId=${encodeURIComponent(journey?.patientId ?? '')}&journeyId=${encodeURIComponent(id)}`);
+  }, [isLoading, id, searchParams, finSummary?.opdBillId, journey?.patientId, router]);
 
   // Lazy-load tab-specific data
   useEffect(() => {
@@ -330,19 +267,6 @@ export default function JourneyDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, id]);
-
-  const handleAddTransaction = useCallback(async (req: AddBillingTransactionRequest) => {
-    const added = await ipManagementApi.addBilling(id, req);
-    if (added) setBilling(prev => [added, ...prev]);
-  }, [id]);
-
-  async function handleFinancialTransition(toState: string) {
-    setTransitioningTo(toState);
-    try {
-      const updated = await ipManagementApi.transitionFinancial(id, { newState: toState });
-      if (updated) setJourney(updated);
-    } finally { setTransitioningTo(null); }
-  }
 
   async function handleSaveWardEdit() {
     setSavingWardEdit(true);
@@ -413,10 +337,10 @@ export default function JourneyDetailPage() {
   }
 
   const currentStepIdx = CLINICAL_STEPS.findIndex(s => s.key === journey.clinicalState);
-  const allowedFinancial = FINANCIAL_TRANSITIONS[journey.financialState] ?? [];
-  const totalPaid = billing
-    .filter(t => ['Payment', 'Advance'].includes(t.transactionType))
-    .reduce((s, t) => s + t.amount, 0);
+  const billed = finSummary?.billedAmount ?? journey.totalBilled;
+  const collected = finSummary?.totalCollected ?? 0;
+  const balance = finSummary?.balanceDue ?? journey.balanceDue;
+  const finStatus = finSummary?.financialStatus ?? journey.financialState;
 
   const TABS: { id: JourneyTab; label: string; icon: React.ReactNode }[] = [
     { id: 'overview',  label: 'Overview',  icon: <User className="h-3.5 w-3.5" /> },
@@ -424,6 +348,7 @@ export default function JourneyDetailPage() {
     { id: 'preop',     label: 'Pre-Op',    icon: <ClipboardList className="h-3.5 w-3.5" /> },
     { id: 'billing',   label: 'Billing',   icon: <CreditCard className="h-3.5 w-3.5" /> },
     { id: 'ot',        label: 'Theatre',   icon: <Stethoscope className="h-3.5 w-3.5" /> },
+    { id: 'implants',  label: 'Implants',  icon: <ScanLine className="h-3.5 w-3.5" /> },
     { id: 'postop',    label: 'Post-Op',   icon: <Activity className="h-3.5 w-3.5" /> },
     { id: 'discharge', label: 'Discharge', icon: <ClipboardList className="h-3.5 w-3.5" /> },
     { id: 'audit',     label: 'Audit Log', icon: <FileText className="h-3.5 w-3.5" /> },
@@ -431,7 +356,7 @@ export default function JourneyDetailPage() {
 
   // ── Layout ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-0 min-h-screen -mx-4 -my-4">
+    <div className="ip-target flex gap-0 min-h-screen -mx-4 -my-4">
 
       {/* ── Left Sidebar: Patient card + Vertical stepper ── */}
       <aside className="w-64 shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-y-auto">
@@ -494,18 +419,18 @@ export default function JourneyDetailPage() {
             </div>
             <div className="bg-green-50 rounded-lg py-2">
               <p className="text-[10px] text-gray-400">Paid</p>
-              <p className="text-xs font-bold text-green-700">{fmtINR(totalPaid)}</p>
+              <p className="text-xs font-bold text-green-700">{fmtINR(collected)}</p>
             </div>
-            <div className={`rounded-lg py-2 ${journey.balanceDue > 0 ? 'bg-red-50' : 'bg-teal-50'}`}>
+            <div className={`rounded-lg py-2 ${balance > 0 ? 'bg-red-50' : 'bg-teal-50'}`}>
               <p className="text-[10px] text-gray-400">Balance</p>
-              <p className={`text-xs font-bold ${journey.balanceDue > 0 ? 'text-red-600' : 'text-teal-600'}`}>
-                {journey.balanceDue > 0 ? fmtINR(journey.balanceDue) : 'Nil'}
+              <p className={`text-xs font-bold ${balance > 0 ? 'text-red-600' : 'text-teal-600'}`}>
+                {balance > 0 ? fmtINR(balance) : 'Nil'}
               </p>
             </div>
           </div>
           <div className="mt-2.5 flex items-center gap-1.5">
             <IndianRupee className="h-3 w-3 text-gray-400" />
-            <FsBadge state={journey.financialState} />
+            <FsBadge state={finStatus} />
           </div>
         </div>
 
@@ -514,6 +439,11 @@ export default function JourneyDetailPage() {
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-3">
             Clinical Journey
           </p>
+          {journey.clinicalState === 'CancelledSurgery' && (
+            <p className="mb-3 text-[11px] font-medium text-rose-700 bg-rose-50 border border-rose-100 rounded-md px-2 py-1">
+              Cancelled — off-ramp (rebook returns to Expected)
+            </p>
+          )}
           <div className="relative pl-3">
             {CLINICAL_STEPS.map((step, idx) => {
               const isDone = idx < currentStepIdx;
@@ -586,17 +516,15 @@ export default function JourneyDetailPage() {
             <h2 className="text-sm font-semibold text-gray-800">
               {TABS.find(t => t.id === activeTab)?.label}
             </h2>
-            {activeTab === 'billing' && !journey.isLocked && (
+            {activeTab === 'billing' && (
               <button
-                onClick={() => setShowAddTx(v => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  showAddTx
-                    ? 'bg-gray-100 text-gray-600'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
+                type="button"
+                onClick={() => router.push(finSummary?.opdBillId
+                  ? `/dashboard/billing/opd?billId=${finSummary.opdBillId}`
+                  : `/dashboard/billing/opd?patientId=${journey.patientId}&journeyId=${id}`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
               >
-                <Plus className="h-3.5 w-3.5" />
-                {showAddTx ? 'Cancel' : 'Add Transaction'}
+                Open Billing
               </button>
             )}
           </div>
@@ -610,7 +538,8 @@ export default function JourneyDetailPage() {
           {/* ── OVERVIEW ───────────────────────────────────────── */}
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <SectionCard title="Clinical Details" icon={<Stethoscope className="h-4 w-4" />}>
+              <SectionCard title="Clinical Journey" icon={<Stethoscope className="h-4 w-4" />}>
+                <p className="text-[11px] text-gray-400 mb-2">Clinical location is independent of billing status.</p>
                 <InfoRow label="Eye Operated" value={journey.eyeOperated} />
                 <InfoRow label="Procedure" value={journey.procedureName} />
                 <InfoRow label="Clinical State" value={journey.clinicalState} />
@@ -633,14 +562,22 @@ export default function JourneyDetailPage() {
               </SectionCard>
 
               <SectionCard title="Financial Summary" icon={<CreditCard className="h-4 w-4" />}>
-                <InfoRow label="Financial State" value={journey.financialState} />
+                <p className="text-[11px] text-gray-400 mb-2">Billing projection (OpdBill). Not a clinical gate.</p>
+                <InfoRow label="Financial State" value={finStatus} />
                 <InfoRow label="Package Amount" value={fmtINR(journey.packageAmount)} />
-                <InfoRow label="Total Billed" value={fmtINR(journey.totalBilled)} />
-                <InfoRow label="Total Paid" value={fmtINR(totalPaid)} />
-                <InfoRow label="Balance Due" value={fmtINR(journey.balanceDue)} />
+                <InfoRow label="Total Billed" value={fmtINR(billed)} />
+                <InfoRow label="Total Paid" value={fmtINR(collected)} />
+                <InfoRow label="Balance Due" value={fmtINR(balance)} />
                 {journey.emergencyFcReason && (
                   <InfoRow label="Emergency FC Reason" value={journey.emergencyFcReason} />
                 )}
+              </SectionCard>
+
+              <SectionCard title="Coverage Summary" icon={<Shield className="h-4 w-4" />}>
+                <p className="text-[11px] text-gray-400 mb-2">Payer responsibility from CCMS. Does not move clinical state.</p>
+                <InfoRow label="Patient responsibility" value={fmtINR(finSummary?.patientResponsibility ?? 0)} />
+                <InfoRow label="Insurance / TPA" value={fmtINR(finSummary?.insuranceResponsibility ?? 0)} />
+                <InfoRow label="Payment mode" value={journey.paymentMode ?? '—'} />
               </SectionCard>
             </div>
           )}
@@ -761,14 +698,10 @@ export default function JourneyDetailPage() {
           {/* ── BILLING ───────────────────────────────────────── */}
           {activeTab === 'billing' && (
             <>
-              {showAddTx && (
-                <AddTransactionForm
-                  onClose={() => setShowAddTx(false)}
-                  onSave={handleAddTransaction}
-                />
-              )}
-
               <SectionCard title="Financial State" icon={<CreditCard className="h-4 w-4" />}>
+                <p className="text-xs text-gray-500">
+                  Amounts here are a clinical view of Billing. Collect, refund or adjust on the bill itself.
+                </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <FsBadge state={journey.financialState} />
                   {journey.isBillingLocked && (
@@ -790,30 +723,20 @@ export default function JourneyDetailPage() {
                   </div>
                   <div className="text-center p-3 bg-green-50 rounded-lg">
                     <p className="text-xs text-gray-500 mb-0.5">Total Paid</p>
-                    <p className="text-base font-bold text-green-700">{fmtINR(totalPaid)}</p>
+                    <p className="text-base font-bold text-green-700">{fmtINR(collected)}</p>
                   </div>
                   <div className={`text-center p-3 rounded-lg ${journey.balanceDue > 0 ? 'bg-red-50' : 'bg-teal-50'}`}>
                     <p className="text-xs text-gray-500 mb-0.5">Balance Due</p>
                     <p className={`text-base font-bold ${journey.balanceDue > 0 ? 'text-red-600' : 'text-teal-600'}`}>
-                      {journey.balanceDue > 0 ? fmtINR(journey.balanceDue) : 'Nil'}
+                      {balance > 0 ? fmtINR(balance) : 'Nil'}
                     </p>
                   </div>
                 </div>
 
-                {allowedFinancial.length > 0 && !journey.isLocked && (
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
-                    <span className="text-xs text-gray-400">Advance to:</span>
-                    {allowedFinancial.map(state => (
-                      <button
-                        key={state}
-                        onClick={() => handleFinancialTransition(state)}
-                        disabled={!!transitioningTo}
-                        className="px-3 py-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium disabled:opacity-50"
-                      >
-                        {transitioningTo === state ? 'Saving…' : state}
-                      </button>
-                    ))}
-                  </div>
+                {(finSummary?.financialBlockers?.length ?? 0) > 0 && (
+                  <ul className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 space-y-1">
+                    {finSummary!.financialBlockers!.map(b => <li key={b}>{b}</li>)}
+                  </ul>
                 )}
               </SectionCard>
 
@@ -913,6 +836,19 @@ export default function JourneyDetailPage() {
             </div>
           )}
 
+          {activeTab === 'implants' && (
+            <ImplantScanPanel
+              journeyId={journey.id}
+              patientName={journey.patientName}
+              eyeOperated={journey.eyeOperated}
+              procedureName={journey.procedureName}
+              clinicalState={journey.clinicalState}
+              canRecord={canRecordImplant}
+              readOnly={journey.clinicalState === 'PostOp' || journey.clinicalState === 'Discharged' || journey.clinicalState === 'ReadyForDischarge'}
+              plannedIolPower={journey.iolPower}
+            />
+          )}
+
           {/* ── POST-OP (Bug #7 fix) ───────────────────────────── */}
           {activeTab === 'postop' && (
             <div className="space-y-4">
@@ -943,7 +879,10 @@ export default function JourneyDetailPage() {
                       <InfoRow label="Warning Signs" value={postOpInstruction.warningSigns} />
                     )}
                     {postOpInstruction.followupDate && (
-                      <InfoRow label="Follow-up Date" value={fmtDate(postOpInstruction.followupDate)} />
+                      <InfoRow
+                        label={postOpInstruction.followupAppointmentId ? 'Follow-up appointment' : 'Follow-up Date'}
+                        value={fmtDate(postOpInstruction.followupDate)}
+                      />
                     )}
                     {postOpInstruction.isSaved && (
                       <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 px-3 py-1.5 rounded-lg mt-2">

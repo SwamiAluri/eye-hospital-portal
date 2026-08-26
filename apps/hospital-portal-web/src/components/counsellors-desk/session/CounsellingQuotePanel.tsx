@@ -85,7 +85,7 @@ export function CounsellingQuotePanel({
 
   return (
     <>
-      <aside className="hidden min-h-0 lg:flex lg:min-h-0 lg:min-w-0 lg:flex-[1_1_45%] lg:shrink-0 lg:flex-col lg:overflow-hidden">
+      <aside className="hidden min-h-0 min-w-0 lg:flex lg:min-h-0 lg:min-w-0 lg:flex-[1_1_45%] lg:flex-col lg:overflow-hidden">
         <CounsellingCard
           data-testid={counsellingTestIds.quotePanel}
           className={`${counsellingSessionTokens.card} flex min-h-0 w-full flex-1 flex-col overflow-hidden`}

@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-screen="S-15">
+<main>
+
+  <p class="lede">
+    The safety net that makes asynchronous charge capture trustworthy. Because implants and consumables post charges
+    through an outbox rather than synchronously, <strong>something has to prove daily that clinical use, stock movement
+    and billed charges agree</strong>. This is that proof, plus the wastage visibility decision D2 requires.
+  </p>
+
+  <div class="frame">
+    <div class="app-header">
+      <h1>Charge reconciliation</h1>
+      <span class="scope">24 Aug 2026 &middot; run 06:00 &middot; on-demand refresh available</span>
+      <span class="spacer"></span>
+      <span class="btn sm">Date range</span>
+      <span class="btn sm">Export</span>
+      <span class="btn sm">&#8635; Re-run now</span>
+    </div>
+
+    <table class="grid">
+      <thead>
+        <tr><th>#</th><th>Exception bucket</th><th>Cases</th><th class="right">Value</th><th>Meaning</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">1</td>
+          <td><div class="cell-primary">Implanted, not charged</div></td>
+          <td class="num">3</td><td class="num right" style="color:var(--danger)">&#8377;42,000</td>
+          <td class="cell-sub">A device is in a patient and the bill does not show it. Direct revenue leakage.</td>
+          <td><span class="btn sm primary">Review</span></td>
+        </tr>
+        <tr>
+          <td class="num">2</td>
+          <td><div class="cell-primary">Charged, not implanted</div></td>
+          <td class="num">0</td><td class="num right">&#8377;0</td>
+          <td class="cell-sub">A patient is billed for a device with no usage record. Over-billing and a refund risk.</td>
+          <td><span class="btn sm" style="opacity:.5">Review</span></td>
+        </tr>
+        <tr>
+          <td class="num">3</td>
+          <td><div class="cell-primary">Stock out, no usage recorded</div></td>
+          <td class="num">2</td><td class="num right">&mdash;</td>
+          <td class="cell-sub">Inventory left the store with no clinical record. Shrinkage or a missed scan.</td>
+          <td><span class="btn sm">Review</span></td>
+        </tr>
+        <tr>
+          <td class="num">4</td>
+          <td><div class="cell-primary">Package / consumable overlap</div></td>
+          <td class="num">1</td><td class="num right">&#8377;1,200</td>
+          <td class="cell-sub">An item charged individually that the package already covers. Double-charge.</td>
+          <td><span class="btn sm">Review</span></td>
+        </tr>
+        <tr>
+          <td class="num">5</td>
+          <td><div class="cell-primary">Unmapped items</div></td>
+          <td class="num">14</td><td class="num right" style="color:var(--danger)">&#8377;86,400</td>
+          <td class="cell-sub">Used, recorded, but no billable variant exists to price it.</td>
+          <td><a class="btn sm" href="s-14-charge-mapping.html">Charge mapping</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="group-h" style="margin-top:0">
+      <span>Bucket 1 detail &mdash; implanted, not charged</span>
+      <span class="amt">&#8377;42,000</span>
+    </div>
+    <table class="grid">
+      <thead><tr><th>Patient</th><th>Surgery</th><th>Implant</th><th>Serial</th><th>Recorded</th><th>Reason not charged</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Amit Verma <span class="cell-sub">UAT-021</span></td><td>24 Aug</td>
+          <td>Alcon SN60WF +21.0&nbsp;D</td><td class="mono">88213</td><td>08:41</td>
+          <td><span class="badge ot no-dot">Outbox retry 3 of 8</span></td>
+          <td><span class="btn sm">Requeue</span></td>
+        </tr>
+        <tr>
+          <td>Kavya Reddy <span class="cell-sub">UAT-052</span></td><td>23 Aug</td>
+          <td>PanOptix +20.0&nbsp;D</td><td class="mono">77120</td><td>14:02</td>
+          <td><span class="badge danger no-dot">No variant mapping</span></td>
+          <td><a class="btn sm" href="s-14-charge-mapping.html">Map item</a></td>
+        </tr>
+        <tr>
+          <td>Suresh Babu <span class="cell-sub">UAT-040</span></td><td>22 Aug</td>
+          <td>Alcon SN60WF +19.0&nbsp;D</td><td class="mono">88044</td><td>09:55</td>
+          <td><span class="badge danger no-dot">Bill finalized before charge arrived</span></td>
+          <td><span class="btn sm">Raise adjustment</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="sec">Bucket 2 &mdash; charged, not implanted</h2>
+  <div class="frame">
+    <div class="group-h" style="margin-top:0"><span>Over-billing and refund risk</span><span class="amt">&#8377;0 today</span></div>
+    <table class="grid">
+      <thead><tr><th>Patient</th><th>Bill</th><th>Charged item</th><th>Amount</th><th>Usage record</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Ramesh P. <span class="cell-sub">UAT-018</span></td><td class="mono">IPD-...0712</td>
+          <td>Alcon SN60WF +18.5 D</td><td class="num">&#8377;14,000</td>
+          <td><span class="badge danger no-dot">None found</span></td>
+          <td><span class="btn sm danger">Raise credit note</span></td>
+        </tr>
+        <tr>
+          <td>Devi K. <span class="cell-sub">UAT-033</span></td><td class="mono">IPD-...0690</td>
+          <td>Capsular tension ring</td><td class="num">&#8377;3,200</td>
+          <td><span class="badge ot no-dot">Scan on a different journey</span></td>
+          <td><span class="btn sm">Move charge</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="listfoot">
+      Shown here with historical rows so the resolution paths are visible; today&rsquo;s run has zero cases.
+      <b>This bucket is the most urgent one when it is non-zero</b> &mdash; a patient or payer has been charged for a
+      device that no clinical record supports, which is a refund and a compliance issue rather than a margin one.
+    </div>
+  </div>
+
+  <h2 class="sec">Bucket 3 &mdash; stock out, no usage recorded</h2>
+  <div class="frame">
+    <div class="group-h" style="margin-top:0"><span>Shrinkage or a missed scan</span><span class="amt">2 cases</span></div>
+    <table class="grid">
+      <thead><tr><th>Item</th><th>Serial / batch</th><th>Issued from</th><th>Issued to</th><th>When</th><th>Likely cause</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Alcon SN60WF +22.0 D</td><td class="mono">88301</td><td>Main store</td><td>OT store</td><td>24 Aug 06:40</td>
+          <td><span class="badge ot no-dot">Transfer, not yet used</span></td><td><span class="btn sm ghost">Ignore</span></td>
+        </tr>
+        <tr>
+          <td>Trypan blue</td><td class="mono">TB-1180</td><td>OT store</td><td>Theatre 2</td><td>23 Aug 11:20</td>
+          <td><span class="badge danger no-dot">Used but never scanned</span></td><td><span class="btn sm primary">Attach to journey</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="listfoot">
+      A store-to-store transfer is a benign explanation and can be dismissed; an item issued to a theatre with no
+      corresponding scan is not. Separating the two keeps the list credible &mdash; a reconciliation report full of
+      benign noise gets ignored, and then the real cases get ignored with it.
+    </div>
+  </div>
+
+  <h2 class="sec">Bucket 4 &mdash; package / consumable overlap</h2>
+  <div class="frame">
+    <div class="group-h" style="margin-top:0"><span>Double-charge risk</span><span class="amt">&#8377;1,200</span></div>
+    <table class="grid">
+      <thead><tr><th>Patient</th><th>Bill</th><th>Package</th><th>Item charged separately</th><th>Amount</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Priya Das <span class="cell-sub">UAT-027</span></td><td class="mono">IPD-...0839</td>
+          <td>Cataract standard</td><td>Viscoelastic (OVD) <span class="cell-sub">already in package</span></td>
+          <td class="num">&#8377;1,200</td><td><span class="btn sm primary">Remove line</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="listfoot">
+      Detected by comparing exploded package components (decision <b>D1</b>) against separately posted lines. Because
+      packages are exploded into component lines at bill creation, the overlap is computable rather than a matter of
+      someone remembering what the package includes.
+    </div>
+  </div>
+
+  <h2 class="sec">Bucket 5 &mdash; unmapped items</h2>
+  <div class="frame">
+    <div class="group-h" style="margin-top:0"><span>Used and recorded, but not priceable</span><span class="amt">&#8377;86,400</span></div>
+    <table class="grid">
+      <thead><tr><th>Item</th><th>Uses (30 d)</th><th>Est. value</th><th>First seen</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>PanOptix trifocal IOL</td><td class="num">6</td><td class="num" style="color:var(--danger)">&#8377;54,000</td><td>28 Jul</td><td><span class="badge danger no-dot">No mapping</span></td><td><a class="btn sm primary" href="s-14-charge-mapping.html">Map</a></td></tr>
+        <tr><td>Capsular tension ring</td><td class="num">14</td><td class="num" style="color:var(--danger)">&#8377;44,800</td><td>02 Aug</td><td><span class="badge danger no-dot">No mapping</span></td><td><a class="btn sm primary" href="s-14-charge-mapping.html">Map</a></td></tr>
+        <tr><td>Viscoelastic (OVD)</td><td class="num">142</td><td class="muted">&mdash;</td><td>&mdash;</td><td><span class="badge ok no-dot">Non-chargeable by design</span></td><td><span class="btn sm ghost">Review</span></td></tr>
+      </tbody>
+    </table>
+    <div class="listfoot">
+      The largest bucket by value and the easiest to fix, which is why it links straight to
+      <a href="s-14-charge-mapping.html">S-14</a>. Deliberately non-chargeable items are listed but excluded from the
+      total.
+    </div>
+  </div>
+
+  <h2 class="sec">Resolution actions</h2>
+  <div class="variants c3">
+    <div class="variant">
+      <div class="vh"><span class="n">1</span><span class="t">Requeue a failed charge</span></div>
+      <div class="frame"><div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+        <div class="dialog-head"><span class="t">Requeue charge</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div class="callout info"><b>This charge has failed to post 3 times</b> since 08:44, because billing was
+          unavailable.
+          <div class="small muted" style="margin-top:6px">Details for IT &middot; event
+          <span class="mono">evt-8841a</span> &middot; last response 503</div></div>
+          <div class="rail-line" style="margin-top:8px"><span class="k">Effect</span><span class="v">Posts &#8377;14,000 to IPD-2026-00841</span></div>
+          <p class="hint">Idempotent &mdash; if the charge did land, the replay is a no-op rather than a duplicate.</p>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Requeue</span></div>
+      </div></div>
+      <p class="vc">Safe to press twice. That property is what makes an operator willing to press it at all.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n warn">2</span><span class="t">Adjustment on a finalized bill</span></div>
+      <div class="frame"><div class="dialog" style="max-width:100%;border:none;box-shadow:none">
+        <div class="dialog-head"><span class="t">Raise adjustment</span><span class="spacer"></span><span class="muted">&#10005;</span></div>
+        <div class="dialog-body">
+          <div class="callout warn"><b>IPD-2026-00744 is finalized and the claim is submitted.</b> The adjustment
+          becomes a supplementary charge, not an edit.</div>
+          <div class="field" style="margin-top:8px"><label>Recover from</label>
+            <div class="radio-row"><label><input type="radio" name="rec" checked> Hospital write-off</label><label><input type="radio" name="rec"> Bill to patient</label><label><input type="radio" name="rec"> Supplementary claim</label></div>
+          </div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Raise</span></div>
+      </div></div>
+      <p class="vc">Somebody has to absorb a late charge. Making that an explicit choice is better than defaulting it
+      silently.</p>
+    </div>
+    <div class="variant">
+      <div class="vh"><span class="n ok">3</span><span class="t">Clean run</span></div>
+      <div class="frame"><div class="empty">
+        <div class="big">No exceptions</div>
+        Usage, stock and charges agree for 24 Aug across 14 cases and 21 devices.
+        <div class="small faint" style="margin-top:8px">Run completed 06:00 &middot; next 25 Aug 06:00</div>
+      </div></div>
+      <p class="vc">A clean run is a meaningful daily result and should read as one, with the scope it covered.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">Wastage &mdash; write-offs, never charged to a patient</h2>
+  <div class="frame">
+    <div class="app-header">
+      <h1 style="font-size:14px">Implant wastage</h1>
+      <span class="scope">August 2026</span>
+      <span class="spacer"></span>
+      <span class="btn sm">By surgeon</span><span class="btn sm">By item</span><span class="btn sm">By month</span>
+      <span class="btn sm">Export</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="label">Wrong power</div><div class="value num">2</div></div>
+      <div class="kpi"><div class="label">Capsule rupture</div><div class="value num">1</div></div>
+      <div class="kpi"><div class="label">Damaged / dropped</div><div class="value num">1</div></div>
+      <div class="kpi is-alert"><div class="label">Write-off cost</div><div class="value num">&#8377;38,000</div></div>
+    </div>
+    <table class="grid">
+      <thead><tr><th>Date</th><th>Patient</th><th>Surgeon</th><th>Item</th><th>Serial</th><th>Status</th><th>Reason</th><th class="right">Cost</th></tr></thead>
+      <tbody>
+        <tr><td>24 Aug</td><td>Amit Verma</td><td>Dr. Rao</td><td>SN60WF +22.5 D</td><td class="mono">88214</td><td><span class="badge cancel">Opened, not used</span></td><td>Wrong power selected</td><td class="num right">&#8377;14,000</td></tr>
+        <tr><td>23 Aug</td><td>Kavya Reddy</td><td>Dr. Iyer</td><td>PanOptix +20.0 D</td><td class="mono">77121</td><td><span class="badge cancel">Wasted</span></td><td>Posterior capsule rupture</td><td class="num right">&#8377;18,000</td></tr>
+        <tr><td>19 Aug</td><td>Nisha Rao</td><td>Dr. Rao</td><td>SN60WF +18.5 D</td><td class="mono">87990</td><td><span class="badge cancel">Damaged</span></td><td>Dropped during loading</td><td class="num right">&#8377;6,000</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <ul class="annots">
+    <li><span class="marker new">2</span><span><b>Bucket 1 is the number that matters.</b> Devices implanted but never charged is the leakage the whole OT-to-billing chain exists to prevent, and it feeds the unbilled-activity tile on <a href="s-11-ip-billing-dashboard.html">S-11</a>.</span></li>
+    <li><span class="marker new">2</span><span>Each row names <b>why</b> the charge did not post &mdash; outbox retry, missing mapping, bill already finalized &mdash; and offers the matching remedy. A reconciliation report without a remedy is just a complaint.</span></li>
+    <li><span class="marker new">2</span><span><b>Wastage is reported, not billed.</b> Decision D2 makes unimplanted IOLs a hospital write-off. Reporting by surgeon and by reason is what turns that cost into something manageable rather than merely absorbed.</span></li>
+    <li><span class="marker">1</span><span>The job runs daily and on demand. Nightly-only reconciliation means a same-day discharge can complete before anyone knows a charge is missing.</span></li>
+  </ul>
+
+  <h2 class="sec">Data &amp; action map</h2>
+  <table class="map">
+    <thead><tr><th>Element</th><th>Frontend</th><th>API</th><th>Backend</th><th>Database</th><th>Owner</th><th>Permission</th></tr></thead>
+    <tbody>
+      <tr><td>Buckets 1&ndash;4 <span class="mark new">2</span></td><td><code>useReconciliationQuery</code></td><td><code>GET /api/ChargeReconciliation</code> &mdash; to build</td><td>daily job + on-demand query, neither exists</td><td><code>journey_implant_usage</code> (new), <code>inv_stock_ledger</code>, <code>opd_bill_items</code></td><td class="owner o-billing">Billing</td><td><code>bill.view</code></td></tr>
+      <tr><td>Bucket 5 <span class="mark new">2</span></td><td>link to <a href="s-14-charge-mapping.html">S-14</a></td><td><code>GET /api/ChargeMapping/exceptions</code> &mdash; to build</td><td>charge mapping service</td><td><code>charge_exception</code> (live)</td><td class="owner o-billing">Billing</td><td><code>bill.admin</code> <span class="cell-sub">to create</span></td></tr>
+      <tr><td>Requeue a charge <span class="mark new">2</span></td><td><code>requeueCharge</code></td><td><code>POST /api/internal/billing-outbox/requeue</code> &mdash; to build; today the processor drains <code>billing_ccms_outbox</code> automatically every 5 s with no manual requeue</td><td><code>BillingCcmsOutboxService</code>, <code>BillingCcmsOutboxProcessor</code></td><td><code>billing_ccms_outbox</code> <span class="cell-sub">Pending &rarr; Processing &rarr; Processed / Failed / Dead</span></td><td class="owner o-billing">Billing</td><td><code>integration.admin</code> <span class="cell-sub">to create</span></td></tr>
+      <tr><td>Raise adjustment <span class="mark new">2</span></td><td><code>createAdjustment</code></td><td><code>POST /api/OpdBills/{id}/adjustment</code> &mdash; <b>no such route</b>. Today a concession is <code>POST /api/OpdBills/discount</code> and a reversal is internal-key only</td><td><code>OpdBillService</code></td><td><code>opd_bill_payments</code> <span class="cell-sub">kind = Discount or Reversal</span></td><td class="owner o-billing">Billing</td><td><code>bill.update</code> + authoriser</td></tr>
+      <tr><td>Wastage report <span class="mark new">2</span></td><td><code>useWastageQuery</code></td><td><code>GET /api/ChargeReconciliation/wastage</code> &mdash; to build. The closest source today is <code>GET /api/ip-management/journeys/{id}/iol-returns</code>, per journey only</td><td>reconciliation service</td><td><code>iol_returns</code> today; <code>journey_implant_usage</code> proposed</td><td class="owner o-ip">IP + <span class="o-inv">Inventory</span></td><td><code>bill.view</code></td></tr>
+      <tr><td>Outbox health input <span class="badge ok no-dot">exists</span></td><td>&mdash;</td><td><code>GET /api/ip-management/integration/outbox/stats</code></td><td><code>IntegrationOutboxService.GetStatsAsync</code></td><td><code>integration_outbox_event</code></td><td class="owner o-ip">IP</td><td>function key</td></tr>
+      <tr><td>Export</td><td>CSV download</td><td>same endpoints, <code>format=csv</code></td><td>&mdash;</td><td>&mdash;</td><td class="owner o-billing">Billing</td><td><code>bill.view</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout danger">
+    <b>None of this screen is backed by anything today.</b> There is no reconciliation service, no
+    <code>journey_implant_usage</code> to reconcile against, and no manual requeue. The buckets are the
+    specification for what needs building, and the honest current answer to &ldquo;how many implants went
+    uncharged yesterday?&rdquo; is that nobody can tell. Gaps 5 and 8.
+  </div>
+
+  <h2 class="sec">Messages on this screen</h2>
+  <p class="lede" style="margin-bottom:14px">
+    The reader here is finance or stores, not a nurse, so numbers and event references are the content. The rule that
+    still applies is that <b>the headline states the money or the patient impact</b>, and the diagnostics sit
+    underneath it.
+  </p>
+  <table class="map">
+    <thead><tr><th>Situation</th><th>What the screen says</th></tr></thead>
+    <tbody>
+      <tr><td>Leakage found</td><td><b>&#8377;42,000 of implants were used but never charged</b> across 3 patients yesterday.</td></tr>
+      <tr><td>Charge stuck</td><td><b>This charge has failed to post 3 times</b> since 08:44, because billing was unavailable. <span class="cell-sub">Details for IT &middot; evt-8841a &middot; 503</span></td></tr>
+      <tr><td>Requeue succeeded</td><td><b>&#8377;14,000 posted to IPD-2026-00841.</b> The patient&rsquo;s balance has been updated.</td></tr>
+      <tr><td>Bill already closed</td><td><b>That bill is closed</b>, so this needs a credit note rather than a new charge line.</td></tr>
+      <tr><td>Clean run</td><td><b>Nothing to reconcile.</b> Every item used yesterday is either charged or accounted for as wastage.</td></tr>
+    </tbody>
+  </table>
+
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

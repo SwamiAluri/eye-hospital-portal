@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body data-screen="W-04">
+<main>
+  <p class="lede">
+    Patient dues on the census must come from the billing ledger aggregate, the same figure as the IP billing dashboard.
+    If that call fails, show that dues are unavailable. Never fall back to <code>journey.balanceDue</code>.
+  </p>
+
+  <h2 class="sec">Dues from the ledger</h2>
+  <div class="frame">
+    <div class="app-header"><h1>IP Management</h1><span class="scope">Downtown · 25 Aug 2026</span></div>
+    <div class="kpis">
+      <div class="kpi is-inhouse"><div class="l">In-house</div><div class="v">155</div></div>
+      <div class="kpi is-ot"><div class="l">In OT</div><div class="v">6</div></div>
+      <div class="kpi"><div class="l">Ready for OT</div><div class="v">12</div></div>
+      <div class="kpi danger"><div class="l">Patient dues</div><div class="v">₹1.62 Cr</div><div class="src">From billing ledger</div></div>
+    </div>
+  </div>
+
+  <h2 class="sec">Ledger unavailable</h2>
+  <div class="frame">
+    <div class="app-header"><h1>IP Management</h1></div>
+    <div class="kpis">
+      <div class="kpi is-inhouse"><div class="l">In-house</div><div class="v">155</div></div>
+      <div class="kpi is-ot"><div class="l">In OT</div><div class="v">6</div></div>
+      <div class="kpi"><div class="l">Ready for OT</div><div class="v">12</div></div>
+      <div class="kpi err"><div class="l">Patient dues</div><div class="v">—</div><div class="src">Dues unavailable · retry</div></div>
+    </div>
+    <div class="callout warn" style="margin:12px 16px">Outstanding amounts cannot be shown right now. Open a patient to collect using Billing. Do not use a substitute total.</div>
+  </div>
+
+  <table class="map" style="margin-top:16px">
+    <thead><tr><th>Element</th><th>API</th><th>BE</th><th>DB</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>Dues KPI</td><td>GET /opdbills/ip-dashboard</td><td>OpdBillService.GetIpBillingDashboardAsync</td><td>opd_bills</td><td class="owner o-billing">Billing</td></tr>
+    </tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@ using AuthService.Models.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using AuthService.Hubs;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,9 +19,13 @@ namespace AuthService.Services
         Task<List<BranchCapacitySummaryDto>> GetAllBranchesCapacitySummaryAsync(Guid tenantId);
         
         // Bed Inventory
-        Task<List<BedInventoryDto>> GetBedInventoryAsync(Guid branchId, Guid tenantId, string? bedType = null, string? bedStatus = null);
-        Task<List<BedInventoryDto>> GetAvailableBedsAsync(Guid branchId, Guid tenantId, string? bedType = null);
+        Task<List<BedInventoryDto>> GetBedInventoryAsync(
+            Guid branchId, Guid tenantId, string? bedType = null, string? bedStatus = null,
+            Guid? wardId = null, string? wardName = null);
+        Task<List<BedInventoryDto>> GetAvailableBedsAsync(
+            Guid branchId, Guid tenantId, string? bedType = null, Guid? wardId = null, string? wardName = null);
         Task<BedInventory> UpdateBedStatusAsync(Guid bedId, string bedStatus, Guid? patientId, DateTime? expectedDischarge, Guid tenantId, Guid updatedByUserId);
+        Task<BedInventory> ApplyJourneyBedActionAsync(Guid bedId, string action, Guid? patientId, Guid tenantId, Guid actorUserId);
         Task<BedInventory> CreateBedAsync(BedInventory bed, Guid currentUserId);
         
         // Transfer Requests
@@ -40,11 +45,16 @@ namespace AuthService.Services
     {
         private readonly AppDbContext _context;
         private readonly IHubContext<CapacityHub> _hubContext;
+        private readonly ILogger<BranchCapacityService> _log;
 
-        public BranchCapacityService(AppDbContext context, IHubContext<CapacityHub> hubContext)
+        public BranchCapacityService(
+            AppDbContext context,
+            IHubContext<CapacityHub> hubContext,
+            ILogger<BranchCapacityService> log)
         {
             _context = context;
             _hubContext = hubContext;
+            _log = log;
         }
 
         #region Capacity Summary
@@ -81,9 +91,11 @@ namespace AuthService.Services
                 OccupiedBeds = occupiedBeds,
                 OccupancyPercentage = occupancyPercentage,
                 CapacityAlertLevel = alertLevel,
-                GeneralBeds = GetBedTypeCapacity(beds, "General"),
-                IcuBeds = GetBedTypeCapacity(beds, "ICU"),
-                EmergencyBeds = GetBedTypeCapacity(beds, "Emergency"),
+                GeneralBeds = GetBedTypeCapacity(beds, BedInventoryTypes.General),
+                IcuBeds = GetBedTypeCapacity(beds, BedInventoryTypes.Icu),
+                EmergencyBeds = GetBedTypeCapacity(beds, BedInventoryTypes.Emergency),
+                ReclinerBeds = GetBedTypeCapacity(beds, BedInventoryTypes.Recliner),
+                DayCareChairBeds = GetBedTypeCapacity(beds, BedInventoryTypes.DayCareChair),
                 LastUpdated = DateTime.UtcNow
             };
         }
@@ -131,7 +143,9 @@ namespace AuthService.Services
 
         #region Bed Inventory
 
-        public async Task<List<BedInventoryDto>> GetBedInventoryAsync(Guid branchId, Guid tenantId, string? bedType = null, string? bedStatus = null)
+        public async Task<List<BedInventoryDto>> GetBedInventoryAsync(
+            Guid branchId, Guid tenantId, string? bedType = null, string? bedStatus = null,
+            Guid? wardId = null, string? wardName = null)
         {
             var query = _context.Set<BedInventory>()
                 .Where(b => b.BranchId == branchId && b.TenantId == tenantId && b.DeletedAt == null);
@@ -147,6 +161,13 @@ namespace AuthService.Services
                 .OrderBy(b => b.BedNumber)
                 .ToListAsync();
 
+            if (wardId.HasValue || !string.IsNullOrWhiteSpace(wardName))
+            {
+                beds = beds
+                    .Where(b => BedWardMatcher.Matches(b.WardId, b.WardName, wardId, wardName))
+                    .ToList();
+            }
+
             return beds.Select(b => new BedInventoryDto
             {
                 Id = b.Id,
@@ -156,6 +177,7 @@ namespace AuthService.Services
                 FloorNumber = b.FloorNumber,
                 RoomNumber = b.RoomNumber,
                 WardName = b.WardName,
+                WardId = b.WardId,
                 PatientId = b.PatientId,
                 PatientName = b.Patient != null ? $"{b.Patient.FirstName} {b.Patient.LastName}" : null,
                 AssignedAt = b.AssignedAt,
@@ -165,9 +187,10 @@ namespace AuthService.Services
             }).ToList();
         }
 
-        public async Task<List<BedInventoryDto>> GetAvailableBedsAsync(Guid branchId, Guid tenantId, string? bedType = null)
+        public async Task<List<BedInventoryDto>> GetAvailableBedsAsync(
+            Guid branchId, Guid tenantId, string? bedType = null, Guid? wardId = null, string? wardName = null)
         {
-            return await GetBedInventoryAsync(branchId, tenantId, bedType, "Available");
+            return await GetBedInventoryAsync(branchId, tenantId, bedType, "Available", wardId, wardName);
         }
 
         public async Task<BedInventory> UpdateBedStatusAsync(Guid bedId, string bedStatus, Guid? patientId, DateTime? expectedDischarge, Guid tenantId, Guid updatedByUserId)
@@ -179,64 +202,84 @@ namespace AuthService.Services
             if (bed == null)
                 throw new KeyNotFoundException($"Bed with ID {bedId} not found");
 
+            var held = bedStatus is BedLifecyclePolicy.Occupied or BedLifecyclePolicy.Reserved;
             bed.BedStatus = bedStatus;
-            bed.PatientId = patientId;
-            bed.ExpectedDischargeAt = expectedDischarge;
+            bed.IsOccupied = held;
+            bed.PatientId = held ? patientId : null;
+            bed.ExpectedDischargeAt = held ? expectedDischarge : null;
             bed.UpdatedAt = DateTime.UtcNow;
             bed.UpdatedByUserId = updatedByUserId;
 
-            if (bedStatus == "Occupied" && patientId.HasValue)
-            {
+            if (held && patientId.HasValue)
                 bed.AssignedAt = DateTime.UtcNow;
-            }
-            else if (bedStatus == "Available")
-            {
-                bed.PatientId = null;
+            else
                 bed.AssignedAt = null;
-                bed.ExpectedDischargeAt = null;
-            }
 
             await _context.SaveChangesAsync();
 
-            // Trigger capacity recalculation (database trigger will handle this)
-            await CreateCapacitySnapshotAsync(bed.BranchId, tenantId);
-
-            // Broadcast bed status change via SignalR to all clients monitoring this branch
-            await _hubContext.Clients.Group($"Branch_{bed.BranchId}").SendAsync("BedStatusChanged", new
+            // Snapshot/SignalR must not roll occupy/vacate back. Live
+            // branch_capacity_history columns do not match the EF model.
+            try
             {
-                branchId = bed.BranchId,
-                bedId = bed.Id,
-                bedNumber = bed.BedNumber,
-                bedType = bed.BedType,
-                newStatus = bedStatus,
-                patientId,
-                timestamp = DateTime.UtcNow
-            });
-
-            // Broadcast updated capacity summary
-            var summary = await GetCapacitySummaryAsync(bed.BranchId, tenantId);
-            await _hubContext.Clients.Group($"Branch_{bed.BranchId}").SendAsync("CapacityUpdated", new
+                await CreateCapacitySnapshotAsync(bed.BranchId, tenantId);
+            }
+            catch (Exception ex)
             {
-                branchId = bed.BranchId,
-                summary,
-                timestamp = DateTime.UtcNow
-            });
+                _log.LogWarning(ex, "Capacity snapshot skipped after bed {BedId} → {Status}", bed.Id, bedStatus);
+            }
 
-            // Send alert if capacity reaches warning/critical thresholds
-            if (summary.CapacityAlertLevel == "critical" || summary.CapacityAlertLevel == "warning")
+            try
             {
-                await _hubContext.Clients.Group($"Branch_{bed.BranchId}").SendAsync("CapacityAlert", new
+                await _hubContext.Clients.Group($"Branch_{bed.BranchId}").SendAsync("BedStatusChanged", new
                 {
                     branchId = bed.BranchId,
-                    alertLevel = summary.CapacityAlertLevel,
-                    occupancyPercentage = summary.OccupancyPercentage,
-                    availableBeds = summary.AvailableBeds,
-                    totalBeds = summary.TotalBeds,
+                    bedId = bed.Id,
+                    bedNumber = bed.BedNumber,
+                    bedType = bed.BedType,
+                    newStatus = bedStatus,
+                    patientId = bed.PatientId,
                     timestamp = DateTime.UtcNow
                 });
+
+                var summary = await GetCapacitySummaryAsync(bed.BranchId, tenantId);
+                await _hubContext.Clients.Group($"Branch_{bed.BranchId}").SendAsync("CapacityUpdated", new
+                {
+                    branchId = bed.BranchId,
+                    summary,
+                    timestamp = DateTime.UtcNow
+                });
+
+                if (summary.CapacityAlertLevel == "critical" || summary.CapacityAlertLevel == "warning")
+                {
+                    await _hubContext.Clients.Group($"Branch_{bed.BranchId}").SendAsync("CapacityAlert", new
+                    {
+                        branchId = bed.BranchId,
+                        alertLevel = summary.CapacityAlertLevel,
+                        occupancyPercentage = summary.OccupancyPercentage,
+                        availableBeds = summary.AvailableBeds,
+                        totalBeds = summary.TotalBeds,
+                        timestamp = DateTime.UtcNow
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Capacity SignalR skipped after bed {BedId} → {Status}", bed.Id, bedStatus);
             }
 
             return bed;
+        }
+
+        public async Task<BedInventory> ApplyJourneyBedActionAsync(
+            Guid bedId, string action, Guid? patientId, Guid tenantId, Guid actorUserId)
+        {
+            var bed = await _context.Set<BedInventory>()
+                .Where(b => b.Id == bedId && b.TenantId == tenantId && b.DeletedAt == null)
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException($"Bed {bedId} not found");
+
+            var next = BedLifecyclePolicy.Next(bed.BedStatus, action);
+            return await UpdateBedStatusAsync(bedId, next, patientId, bed.ExpectedDischargeAt, tenantId, actorUserId);
         }
 
         public async Task<BedInventory> CreateBedAsync(BedInventory bed, Guid currentUserId)
@@ -245,6 +288,7 @@ namespace AuthService.Services
             bed.CreatedAt = DateTime.UtcNow;
             bed.CreatedByUserId = currentUserId;
             bed.Status = "active";
+            await AttachWardAsync(bed);
 
             _context.Set<BedInventory>().Add(bed);
             await _context.SaveChangesAsync();
@@ -253,6 +297,35 @@ namespace AuthService.Services
             await CreateCapacitySnapshotAsync(bed.BranchId, bed.TenantId);
 
             return bed;
+        }
+
+        internal async Task AttachWardAsync(BedInventory bed)
+        {
+            var rows = await _context.WardRefs
+                .Where(w => w.TenantId == bed.TenantId
+                            && w.BranchId == bed.BranchId
+                            && w.DeletedAt == null
+                            && w.IsActive)
+                .Select(w => new BedWardMatcher.WardNameRow(
+                    w.Id, w.TenantId, w.BranchId, w.WardName, w.WardType))
+                .ToListAsync();
+
+            if (bed.WardId is Guid wid && wid != Guid.Empty)
+            {
+                var name = BedWardMatcher.CanonicalWardName(wid, rows);
+                if (!string.IsNullOrWhiteSpace(name))
+                    bed.WardName = name;
+                return;
+            }
+
+            var resolved = BedWardMatcher.ResolveWardId(bed.TenantId, bed.BranchId, bed.WardName, rows);
+            if (resolved is not Guid id)
+                return;
+
+            bed.WardId = id;
+            var canonical = BedWardMatcher.CanonicalWardName(id, rows);
+            if (!string.IsNullOrWhiteSpace(canonical))
+                bed.WardName = canonical;
         }
 
         #endregion

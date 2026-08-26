@@ -25,7 +25,7 @@ export const IP_FINANCIAL_FIELD_CLASSIFICATION: readonly IpFinancialFieldMeta[] 
     classification: 'clinical_workflow',
     canonicalOwner: 'IP',
     notes:
-      'Ward/OT workflow compatibility only. Settled may emit BillFinalized bridge; Billing remains SoT for charges.',
+      'Ward/OT workflow projection. Paid/Settled cannot be set from IP; Billing and CCMS own those terminals.',
   },
   {
     field: 'PaymentMode',

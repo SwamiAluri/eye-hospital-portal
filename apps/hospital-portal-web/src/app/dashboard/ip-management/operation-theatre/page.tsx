@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import {
   Stethoscope, Search, X, ClipboardList, SquareCheck,
   FileText, Zap, Plus, Trash2, Pen, ChevronDown, ChevronUp,
@@ -19,20 +21,45 @@ import {
 } from '@/lib/api/ip-management.api';
 import { getSurgeons, Surgeon, getNurses, Nurse, getOtTheaters, OtTheater } from '@/lib/api/widgets.api';
 import { useAuthStore } from '@/lib/auth-store';
-import { StatusBadge } from '@/components/counsellors-desk/StatusBadge';
+import { useIpJourneysQuery } from '@/hooks/use-ip-journeys-query';
+import { StatusChip } from '@/components/ip-management/preop/primitives/StatusChip';
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog';
+import { resolveIpRoleActions, type IpRoleActions } from '@/lib/ip-management/ip-role-actions';
+import {
+  otAgeSex,
+  otClinicalChip,
+  otCoverageProjection,
+  otFinancialChip,
+  otLaterality,
+  otProcedureLine,
+  otSeqLabel,
+  otStateChip,
+  sortOtBoardRows,
+} from '@/lib/ip-management/ot-board-display';
+import {
+  describeOtNextAction,
+  effectiveOtBoardFilter,
+  OT_BOARD_CLINICAL_STATES,
+  type OtBoardFilter,
+} from '@/lib/ip-management/ot-row-situation';
+import { ipBillingHref } from '@/lib/ip-management/ip-rail-links';
 import { buildOtPresetMap, useOtIntraOpPresets } from '@/hooks/use-ot-intraop-presets';
 import { OtSurgicalSafetyChecklist } from '@/components/ip-management/OtSurgicalSafetyChecklist';
 import { AnaesthesiaMonitoringPanel } from '@/components/ip-management/AnaesthesiaMonitoringPanel';
+import { ReasonConfirmDialog } from '@/components/ip-management/ReasonConfirmDialog';
 import { SurgicalSafetyGateDto } from '@/lib/api/ip-management.api';
 import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
 import {
   acceptInOtWithGates,
   startSurgeryWithGates,
-  transitionClinicalWithGates,
 } from '@/lib/ip-checklist/transition-gates';
+import { completeSurgeryWithCurrentVersion, moveToPostOpWithCurrentVersion, returnFromOtWithCurrentVersion } from '@/lib/ip-management/ot-complete-surgery';
+import { ImplantScanPanel, implantCompletionSummary } from '@/components/ip-management/ImplantScanPanel';
+import { plannedIolModelFromCatalog } from '@/lib/ip-management/iol-diopter';
 import { OT_TEST_IDS } from '@/lib/ip-management/ot-test-ids';
 import { toast } from 'react-hot-toast';
+import { IpOverlayDialog } from '@/components/ip-management/IpOverlayDialog';
+import { IpSlotBoard } from '@/components/ip-management/IpSlotBoard';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -75,6 +102,14 @@ function ChipSelect({ label, options, selected, loading, onChange, readOnly }: {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   if (readOnly) {
     return (
       <div>
@@ -91,14 +126,6 @@ function ChipSelect({ label, options, selected, loading, onChange, readOnly }: {
       </div>
     );
   }
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   const filtered = options.filter(o =>
     o.name.toLowerCase().includes(search.toLowerCase()) && !selected.includes(o.name)
@@ -168,6 +195,14 @@ function SearchableSelect({ label, options, searchValue, onSearchChange, onSelec
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   if (readOnly) {
     return (
       <div>
@@ -178,14 +213,6 @@ function SearchableSelect({ label, options, searchValue, onSearchChange, onSelec
       </div>
     );
   }
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   const filtered = options.filter(o =>
     o.name.toLowerCase().includes(searchValue.toLowerCase())
@@ -229,6 +256,7 @@ function SearchableSelect({ label, options, searchValue, onSearchChange, onSelec
 }
 
 function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
+  const { canRecordImplant } = useIpChecklistPermissions();
   // Staff lists from API
   const [surgeons, setSurgeons] = useState<Surgeon[]>([]);
   const [nurses, setNurses] = useState<Nurse[]>([]);
@@ -251,8 +279,6 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
     anaesthesiaType: journey.anaesthesiaType ?? '',
     iolPower: journey.iolPower ?? '',
     iolIssuedFromIp: journey.iolIssuedFromIp ?? false,
-    iolBarcodeVerified: journey.iolBarcodeVerified ?? false,
-    iolBarcode: journey.iolBarcode ?? '',
   });
   const [intraOpForm, setIntraOpForm] = useState({
     implantUsed: '',
@@ -273,9 +299,6 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
   const [surgeonSearch, setSurgeonSearch] = useState('');
   const [otTheaters, setOtTheaters] = useState<OtTheater[]>([]);
   const [iolCatalog, setIolCatalog] = useState<IolCatalogItemDto[]>([]);
-
-  const [verifyingBarcode, setVerifyingBarcode] = useState(false);
-  const [barcodeMsg, setBarcodeMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Load staff lists + intra-op note
@@ -327,22 +350,6 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
     s.name.toLowerCase().includes(anaesthetistSearch.toLowerCase())
   );
 
-  async function handleVerifyBarcode() {
-    const barcode = (form.iolBarcode ?? '').trim();
-    if (!barcode) return;
-    setVerifyingBarcode(true);
-    setBarcodeMsg(null);
-    try {
-      const res = await ipManagementApi.verifyIolBarcode(journey.id, { barcode });
-      if (res) {
-        setForm(f => ({ ...f, iolBarcodeVerified: res.isValid }));
-        setBarcodeMsg({ ok: res.isValid, text: res.isValid ? (res.catalogEntry ?? 'Barcode verified ✓') : (res.message ?? 'Barcode not found') });
-      }
-    } finally {
-      setVerifyingBarcode(false);
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -355,13 +362,9 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
         anaesthesiaType: form.anaesthesiaType || undefined,
         iolPower: form.iolPower || undefined,
         iolIssuedFromIp: form.iolIssuedFromIp,
-        iolBarcodeVerified: form.iolBarcodeVerified,
-        iolBarcode: form.iolBarcode || undefined,
         primarySurgeonId: surgeonId || undefined,
       });
-      // Save IOL implant details to intra-op note if provided
       const intraOpPayload: SaveIntraOpNoteRequest = {
-        implantUsed:        intraOpForm.implantUsed || undefined,
         procedurePerformed: serializeMultiSelect(intraOpForm.procedure),
         findings:           serializeMultiSelect(intraOpForm.findings),
         complications:      serializeMultiSelect(intraOpForm.complications),
@@ -394,8 +397,8 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[92vh]">
+    <IpOverlayDialog onClose={onClose} size="2xl" title={`OT Details — ${journey.patientName}`} className="max-h-[92vh]">
+      <div className="flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-2xl">
           <div className="flex items-center gap-2">
@@ -526,45 +529,23 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
             {/* ── IOL / Implant ── */}
             <div>
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">IOL / Implant Details</p>
+              <div className="mb-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800" data-testid="iol-usage-sot-hint">
+                Recorded implant is the scan below. Charge and stock follow that scan, not this form.
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <SearchableSelect
-                  label="Implant Used (IOL Model)"
-                  options={iolCatalog.map(c => ({ id: c.id, name: c.modelName, sub: `${c.brand} · ${c.iolType}` }))}
-                  searchValue={intraOpForm.implantUsed}
-                  onSearchChange={v => setIntraOpForm(f => ({ ...f, implantUsed: v }))}
-                  onSelect={(_, name) => setIntraOpForm(f => ({ ...f, implantUsed: name }))}
-                  loading={staffLoading}
-                  placeholder="Search IOL model…"
-                />
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">IOL Power</label>
+                  <p className="text-xs font-medium text-gray-500 mb-1">Recorded implant</p>
+                  <div className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800">
+                    {intraOpForm.implantUsed || <span className="text-gray-400">Not recorded yet</span>}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Planned IOL Power</label>
                   <input type="text" value={form.iolPower ?? ''}
                     onChange={e => setForm(f => ({ ...f, iolPower: e.target.value }))}
                     placeholder="e.g. +21.0D"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-                {/* IOL Barcode */}
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">IOL Barcode</label>
-                  <div className="flex gap-2">
-                    <input type="text" value={form.iolBarcode ?? ''}
-                      onChange={e => setForm(f => ({ ...f, iolBarcode: e.target.value }))}
-                      placeholder="Scan or type barcode…"
-                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <button type="button" onClick={handleVerifyBarcode}
-                      disabled={verifyingBarcode || !form.iolBarcode}
-                      className="px-3 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50 whitespace-nowrap">
-                      {verifyingBarcode ? '…' : '✓ Verify'}
-                    </button>
-                  </div>
-                  {barcodeMsg && (
-                    <p className={`text-xs mt-1 font-medium ${barcodeMsg.ok ? 'text-green-700' : 'text-red-600'}`}>{barcodeMsg.text}</p>
-                  )}
-                  {form.iolBarcodeVerified && !barcodeMsg && (
-                    <p className="text-xs mt-1 text-green-700 font-medium">Barcode verified ✓</p>
-                  )}
-                </div>
-                {/* IOL Issued From IP Store */}
                 <div className="flex items-center gap-2 pt-5">
                   <input type="checkbox" id="iolIssuedFromIp" checked={form.iolIssuedFromIp ?? false}
                     onChange={e => setForm(f => ({ ...f, iolIssuedFromIp: e.target.checked }))}
@@ -575,6 +556,16 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
                 </div>
               </div>
             </div>
+            <ImplantScanPanel
+              journeyId={journey.id}
+              patientName={journey.patientName}
+              eyeOperated={journey.eyeOperated}
+              procedureName={journey.procedureName}
+              clinicalState={journey.clinicalState}
+              canRecord={canRecordImplant}
+              plannedIolPower={journey.iolPower}
+              plannedIolModel={plannedIolModelFromCatalog(iolCatalog, journey.iolBarcode)}
+            />
           </form>
         </div>
 
@@ -589,7 +580,7 @@ function OtDetailsModal({ journey, onClose, onSaved }: OtDetailsModalProps) {
           </button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -631,10 +622,7 @@ function ReturnPatientModal({ journey, onClose, onSaved }: {
     setError('');
     try {
       const reason = notes.trim() ? `${selected} — ${notes.trim()}` : selected;
-      const result = await transitionClinicalWithGates(journey.id, {
-        newState: 'ReadyForSurgery',
-        reason,
-      });
+      const result = await returnFromOtWithCurrentVersion(journey.id, reason);
       if (result) { onSaved(result); onClose(); }
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: string; message?: string } } })?.response?.data?.error
@@ -648,8 +636,8 @@ function ReturnPatientModal({ journey, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
+    <IpOverlayDialog onClose={onClose} size="md" title="Return Patient to Ward" className="max-h-[90vh]">
+      <div className="flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl">
           <div className="flex items-center gap-2">
@@ -724,7 +712,7 @@ function ReturnPatientModal({ journey, onClose, onSaved }: {
           </button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -783,8 +771,8 @@ function ChecklistModal({ journeyId, mode, onClose }: ChecklistModalProps) {
   const completedCount = Object.values(checks).filter(v => v.done).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 flex flex-col max-h-[90vh]">
+    <IpOverlayDialog onClose={onClose} size="lg" title={title} className="max-h-[90vh]">
+      <div className="flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-base font-semibold text-gray-900">{title}</h2>
@@ -833,7 +821,7 @@ function ChecklistModal({ journeyId, mode, onClose }: ChecklistModalProps) {
           </button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -928,6 +916,8 @@ function PostOpInstructionsModal({ journeyId, onClose }: PostOpInstructionsModal
         followupDate:          form.followupDate || undefined,
       });
       if (result) onClose();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save instructions');
     } finally {
       setSaving(false);
     }
@@ -936,8 +926,8 @@ function PostOpInstructionsModal({ journeyId, onClose }: PostOpInstructionsModal
   const selectedWarnings = form.warningSigns ? form.warningSigns.split('\n').filter(Boolean) : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl mx-4 flex flex-col max-h-[90vh]">
+    <IpOverlayDialog onClose={onClose} size="xl" title="Post-Op Instructions" className="max-h-[90vh]">
+      <div className="flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Post-Op Instructions</h2>
@@ -1065,7 +1055,7 @@ function PostOpInstructionsModal({ journeyId, onClose }: PostOpInstructionsModal
           </button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -1111,8 +1101,8 @@ function FormatHeadsModal({ onClose }: FormatHeadsModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 flex flex-col max-h-[90vh]">
+    <IpOverlayDialog onClose={onClose} size="lg" title="Format Heads — Surgery Note Templates" className="max-h-[90vh]">
+      <div className="flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Format Heads — Surgery Note Templates</h2>
@@ -1188,7 +1178,7 @@ function FormatHeadsModal({ onClose }: FormatHeadsModalProps) {
           <button onClick={onClose} className="px-5 py-2 text-sm bg-gray-800 hover:bg-gray-900 text-white rounded-lg font-medium">Done</button>
         </div>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -1219,8 +1209,8 @@ function IolReturnModal({ journeyId, onClose }: { journeyId: string; onClose: ()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+    <IpOverlayDialog onClose={onClose} size="md" title="Return IOL / Implant">
+      <div>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <RotateCcw className="h-4 w-4 text-orange-500" />
@@ -1256,7 +1246,7 @@ function IolReturnModal({ journeyId, onClose }: { journeyId: string; onClose: ()
           </div>
         </form>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -1278,8 +1268,9 @@ function CancelSurgeryModal({ journey, onClose, onSaved }: {
     setError('');
     try {
       const result = await ipManagementApi.transitionClinical(journey.id, {
-        newState: 'SentToOT',
+        newState: 'ReadyForSurgery',
         reason: reason.trim(),
+        expectedUpdatedAt: journey.updatedAt,
       });
       if (result) { onSaved(result); onClose(); }
     } catch (e: unknown) {
@@ -1294,8 +1285,8 @@ function CancelSurgeryModal({ journey, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+    <IpOverlayDialog onClose={onClose} size="md" title="Cancel Surgery">
+      <div>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-red-500" />
@@ -1306,7 +1297,7 @@ function CancelSurgeryModal({ journey, onClose, onSaved }: {
         <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
           <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
             <p className="font-semibold mb-1">Patient: {journey.patientName ?? '—'}</p>
-            <p className="text-xs">This will return the patient to <span className="font-semibold">Sent to OT</span> status for rescheduling. This action requires a documented reason.</p>
+            <p className="text-xs">This will return the patient to <span className="font-semibold">Ready for Surgery</span> so OT can reschedule. A documented reason is required.</p>
           </div>
           {error && <p className="text-red-600 text-xs bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
           <div>
@@ -1330,7 +1321,7 @@ function CancelSurgeryModal({ journey, onClose, onSaved }: {
           </div>
         </form>
       </div>
-    </div>
+    </IpOverlayDialog>
   );
 }
 
@@ -1616,13 +1607,15 @@ interface SurgeryDetailModalProps {
 
 function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenReturn }: SurgeryDetailModalProps) {
   const { clinicalState, otState } = journey;
-  const { canSignOtSafety, canEditMonitoring, canOverrideWhoTimeout } = useIpChecklistPermissions();
+  const { canSignOtSafety, canEditMonitoring, canOverrideWhoTimeout, canRecordImplant } = useIpChecklistPermissions();
   const roles = useAuthStore(s => s.roles);
   const canReturnFromOt = roles.length === 0 || roles.some(r =>
     ['OT Nurse', 'OTNurse', 'Anaesthetist', 'Anesthetist', 'Surgeon', 'Doctor', 'Admin'].includes(r));
   const [safetyGates, setSafetyGates] = useState<SurgicalSafetyGateDto | null>(null);
   const [monitoringReadingsEmpty, setMonitoringReadingsEmpty] = useState(false);
   const [whoOverrideApplying, setWhoOverrideApplying] = useState(false);
+  const [whoOverrideOpen, setWhoOverrideOpen] = useState(false);
+  const [whoOverrideError, setWhoOverrideError] = useState('');
 
   const isReadOnly = clinicalState === 'SurgeryCompleted' || clinicalState === 'PostOp';
   const safetyReadOnly = isReadOnly || !canSignOtSafety;
@@ -1655,8 +1648,6 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
     anaesthesiaType: journey.anaesthesiaType ?? '',
     iolPower: journey.iolPower ?? '',
     iolIssuedFromIp: journey.iolIssuedFromIp ?? false,
-    iolBarcodeVerified: journey.iolBarcodeVerified ?? false,
-    iolBarcode: journey.iolBarcode ?? '',
   });
   const [anaesthetistSearch, setAnaesthetistSearch] = useState(journey.anaesthetistName ?? journey.anesthesiologistName ?? '');
   const [anaDropOpen, setAnaDropOpen] = useState(false);
@@ -1677,8 +1668,7 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
   const { presets: masterPresets } = useOtIntraOpPresets(FALLBACK_PRESETS);
   const [presets, setPresets] = useState<Record<string, string[]>>(FALLBACK_PRESETS);
   const [presetsLoading, setPresetsLoading] = useState(false);
-  const [verifyingBarcode, setVerifyingBarcode] = useState(false);
-  const [barcodeMsg, setBarcodeMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [recordedImplant, setRecordedImplant] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -1699,8 +1689,9 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
       setPresets(pMap);
       setPresetsLoading(false);
 
+      const planned = plannedIolModelFromCatalog(catalog, journey.iolBarcode) ?? '';
       if (note) setIntraOpForm({
-        implantUsed: note.implantUsed ?? '',
+        implantUsed: planned,
         procedure:       deserializeMultiSelect(note.procedurePerformed, pMap['procedure'] ?? []),
         findings:        deserializeMultiSelect(note.findings,           pMap['findings'] ?? []),
         complications:   deserializeMultiSelect(note.complications,      pMap['complications'] ?? []),
@@ -1708,6 +1699,8 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
         bloodLossMl: note.bloodLossMl != null ? String(note.bloodLossMl) : '',
         ivFluidMl:   note.ivFluidMl   != null ? String(note.ivFluidMl)   : '',
       });
+      else if (planned) setIntraOpForm(f => ({ ...f, implantUsed: planned }));
+      setRecordedImplant(note?.implantUsed ?? '');
       if (journey.primarySurgeonId) {
         const found = s.find(x => x.id === journey.primarySurgeonId);
         if (found) setSurgeonSearch(found.name);
@@ -1744,22 +1737,6 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
   );
   const iolPowerOptions = useMemo(() => computeIolPowerOptions(selectedIolItem), [selectedIolItem]);
 
-  async function handleVerifyBarcode() {
-    const barcode = (form.iolBarcode ?? '').trim();
-    if (!barcode) return;
-    setVerifyingBarcode(true);
-    setBarcodeMsg(null);
-    try {
-      const res = await ipManagementApi.verifyIolBarcode(journey.id, { barcode });
-      if (res) {
-        setForm(f => ({ ...f, iolBarcodeVerified: res.isValid }));
-        setBarcodeMsg({ ok: res.isValid, text: res.isValid ? (res.catalogEntry ?? 'Barcode verified ✓') : (res.message ?? 'Barcode not found') });
-      }
-    } finally {
-      setVerifyingBarcode(false);
-    }
-  }
-
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -1772,12 +1749,9 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
         anaesthesiaType: form.anaesthesiaType || undefined,
         iolPower: form.iolPower || undefined,
         iolIssuedFromIp: form.iolIssuedFromIp,
-        iolBarcodeVerified: form.iolBarcodeVerified,
-        iolBarcode: form.iolBarcode || undefined,
         primarySurgeonId: surgeonId || undefined,
       });
       const intraOpPayload: SaveIntraOpNoteRequest = {
-        implantUsed:        intraOpForm.implantUsed || undefined,
         procedurePerformed: serializeMultiSelect(intraOpForm.procedure),
         findings:           serializeMultiSelect(intraOpForm.findings),
         complications:      serializeMultiSelect(intraOpForm.complications),
@@ -1799,8 +1773,8 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl flex flex-col max-h-[92vh]">
+    <IpOverlayDialog onClose={onClose} size="4xl" title={`Surgery Details — ${journey.patientName}`} className="max-h-[92vh]">
+      <div className="flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-2xl">
           <div className="flex items-center gap-2">
@@ -1828,12 +1802,15 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-blue-900 text-sm">{journey.patientName ?? '—'}</p>
-              <p className="text-blue-600 text-xs">{journey.uhid ?? '—'} · {journey.procedureName ?? '—'} · {journey.eyeOperated ?? '—'}</p>
+              <p className="text-blue-600 text-xs">
+                {journey.uhid ?? '—'} · {otProcedureLine(journey.procedureName)} · {otLaterality(journey.eyeOperated).text}
+              </p>
+              {journey.surgeonName && <p className="text-blue-500 text-xs mt-0.5">Surgeon: {journey.surgeonName}</p>}
               {surgeryDateStr && <p className="text-blue-500 text-xs mt-0.5">Scheduled: {surgeryDateStr}</p>}
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0">
-              <StatusBadge status={clinicalState} size="sm" />
-              <StatusBadge status={otState} size="sm" />
+              <StatusChip status={otClinicalChip(clinicalState, otState).status} label={otClinicalChip(clinicalState, otState).label} size="sm" />
+              <StatusChip status={otStateChip(otState).status} label={otStateChip(otState).label} size="sm" />
             </div>
           </div>
 
@@ -1858,22 +1835,7 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
               <button
                 type="button"
                 disabled={whoOverrideApplying}
-                onClick={async () => {
-                  const reason = window.prompt('Reason for WHO supervisor override:');
-                  if (!reason?.trim()) return;
-                  setWhoOverrideApplying(true);
-                  try {
-                    const updated = await ipManagementApi.applyWhoSupervisorOverride(journey.id, reason.trim());
-                    if (updated) {
-                      onSaved(updated);
-                      toast.success('WHO supervisor override applied.');
-                    } else {
-                      toast.error('Failed to apply WHO override.');
-                    }
-                  } finally {
-                    setWhoOverrideApplying(false);
-                  }
-                }}
+                onClick={() => { setWhoOverrideError(''); setWhoOverrideOpen(true); }}
                 className="shrink-0 px-2.5 py-1 text-xs font-medium border border-amber-400 text-amber-900 rounded-lg hover:bg-amber-100 disabled:opacity-50"
               >
                 {whoOverrideApplying ? 'Applying…' : 'Supervisor override'}
@@ -1985,9 +1947,13 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
             {/* IOL / Implant */}
             <div>
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">IOL / Implant Details</p>
+              <div className="mb-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800" data-testid="iol-usage-sot-hint">
+                Planned model here only fills the power list. Recorded implant is the scan below.
+                {recordedImplant ? ` Current record: ${recordedImplant}.` : ''}
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <SearchableSelect
-                  label="Implant Used (IOL Model)"
+                  label="Planned IOL model"
                   options={iolCatalog.map(c => ({ id: c.id, name: c.modelName, sub: `${c.brand} · ${c.iolType}` }))}
                   searchValue={intraOpForm.implantUsed}
                   onSearchChange={v => setIntraOpForm(f => ({ ...f, implantUsed: v }))}
@@ -2050,6 +2016,20 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
                 )}
               </div>
             </div>
+
+            {(clinicalState === 'InOT' || clinicalState === 'SurgeryCompleted' || clinicalState === 'PostOp') && (
+              <ImplantScanPanel
+                journeyId={journey.id}
+                patientName={journey.patientName}
+                eyeOperated={journey.eyeOperated}
+                procedureName={journey.procedureName}
+                clinicalState={clinicalState}
+                canRecord={canRecordImplant}
+                readOnly={clinicalState === 'PostOp'}
+                plannedIolPower={journey.iolPower}
+                plannedIolModel={plannedIolModelFromCatalog(iolCatalog, journey.iolBarcode)}
+              />
+            )}
 
             {/* Intra-Op Notes — shown for InOT, SurgeryCompleted, PostOp */}
             {(clinicalState === 'InOT' || clinicalState === 'SurgeryCompleted' || clinicalState === 'PostOp') && (
@@ -2204,8 +2184,8 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
                   </span>
                 )}
                 <button type="button"
-                  onClick={() => {
-                    let msg = 'Mark this surgery as completed?';
+                  onClick={async () => {
+                    let msg = await implantCompletionSummary(journey.id);
                     if (safetyGates && !safetyGates.afterSurgeryComplete) {
                       msg += '\n\nWarning: After Surgery checklist is not complete.';
                     }
@@ -2238,11 +2218,44 @@ function SurgeryDetailModal({ journey, onClose, onSaved, onOpenConfirm, onOpenRe
           </div>
         </div>
       </div>
-    </div>
+      <ReasonConfirmDialog
+        open={whoOverrideOpen}
+        onOpenChange={open => { if (!open) { setWhoOverrideOpen(false); setWhoOverrideError(''); } }}
+        title="WHO supervisor override?"
+        patientName={journey.patientName ?? undefined}
+        patientMeta={[journey.uhid, journey.operationTheatreName].filter(Boolean).join(' · ')}
+        consequence={
+          <>
+            Starting surgery without a completed WHO timeout is <b>audited</b>. Confirm only when a supervisor has verified the checklist gap is acceptable.
+          </>
+        }
+        confirmLabel="Apply override"
+        destructive
+        minReasonLength={10}
+        busy={whoOverrideApplying}
+        error={whoOverrideError || undefined}
+        onConfirm={async (reason) => {
+          setWhoOverrideApplying(true);
+          setWhoOverrideError('');
+          try {
+            const updated = await ipManagementApi.applyWhoSupervisorOverride(journey.id, reason.trim());
+            if (updated) {
+              onSaved(updated);
+              setWhoOverrideOpen(false);
+              toast.success('WHO supervisor override applied.');
+            } else {
+              setWhoOverrideError('Failed to apply WHO override.');
+            }
+          } catch {
+            setWhoOverrideError('Failed to apply WHO override.');
+          } finally {
+            setWhoOverrideApplying(false);
+          }
+        }}
+      />
+    </IpOverlayDialog>
   );
 }
-
-// ─── Row Expanded Panel (Post-Op Actions) ─────────────────────────────────────
 
 interface ExpandedPanelProps {
   journey: PatientJourneyDetailDto;
@@ -2265,8 +2278,10 @@ function ExpandedPanel({ journey, onSaved, onViewDetails }: ExpandedPanelProps) 
   async function handleMoveToPostOp() {
     setMovingToPostOp(true);
     try {
-      const result = await transitionClinicalWithGates(journey.id, { newState: 'PostOp' });
+      const result = await moveToPostOpWithCurrentVersion(journey.id);
       if (result) onSaved(result);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not move to post-op.');
     } finally {
       setMovingToPostOp(false);
     }
@@ -2301,9 +2316,21 @@ function ExpandedPanel({ journey, onSaved, onViewDetails }: ExpandedPanelProps) 
             <span>Ended: <span className="font-semibold text-gray-700">{fmt(journey.surgeryEndedAt)}</span></span>
           </div>
         )}
-        <div className="flex items-center gap-1.5 ml-auto">
-          <span className="text-gray-400">Financial:</span>
-          <StatusBadge status={journey.financialState} size="sm" />
+        <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
+          <span className="text-gray-400">Financial projection:</span>
+          <StatusChip
+            status={otFinancialChip(journey.financialState).status}
+            label={otFinancialChip(journey.financialState).label}
+            size="sm"
+          />
+          {otCoverageProjection(journey.paymentMode) && (
+            <span className="text-xs text-gray-500">Mode: {otCoverageProjection(journey.paymentMode)}</span>
+          )}
+          {(journey.balanceDue ?? 0) > 0 && (
+            <Link href={ipBillingHref(journey)} className="btn sm ghost" onClick={e => e.stopPropagation()}>
+              Open billing
+            </Link>
+          )}
         </div>
       </div>
 
@@ -2419,123 +2446,168 @@ interface OtRowProps {
   onOpenConfirm: (action: 'accept' | 'startSurgery' | 'endSurgery', message: string) => void;
   onOpenReturn: () => void;
   onRowClick: () => void;
+  actions: IpRoleActions;
 }
 
-function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpdated, onOpenConfirm, onOpenReturn, onRowClick }: OtRowProps) {
+function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpdated, onOpenConfirm, onOpenReturn, onRowClick, actions }: OtRowProps) {
   const { clinicalState, otState } = journey;
+  const next = describeOtNextAction(journey, actions);
+  const clinical = otClinicalChip(clinicalState, otState);
+  const otChip = otStateChip(otState);
+  const laterality = otLaterality(journey.eyeOperated);
+  const ageSex = otAgeSex(journey.patientDob, journey.patientAge, journey.patientGender);
+  const seq = otSeqLabel(journey);
 
-  const isDone = clinicalState === 'SurgeryCompleted';
-  const isDetailClickable = clinicalState === 'SentToOT' || clinicalState === 'InOT' || isDone;
-
-  const showAccept  = clinicalState === 'SentToOT' && otState === 'SentToOT';
-  const showStart   = clinicalState === 'SentToOT' && otState === 'Accepted' && journey.otDetailsSaved;
-  const showEnd     = clinicalState === 'InOT';
-  const showReturn  = clinicalState === 'SentToOT' || clinicalState === 'InOT';
+  const isDetailClickable = clinicalState === 'SentToOT' || clinicalState === 'InOT' || clinicalState === 'SurgeryCompleted';
+  const showReturn = (clinicalState === 'SentToOT' || clinicalState === 'InOT') && actions.canAcceptOt;
 
   const [movingToPostOp, setMovingToPostOp] = useState(false);
 
   async function handleMoveToPostOp() {
     setMovingToPostOp(true);
     try {
-      const result = await transitionClinicalWithGates(journey.id, { newState: 'PostOp' });
+      const result = await moveToPostOpWithCurrentVersion(journey.id);
       if (result) onDetailUpdated(result);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not move to post-op.');
     } finally {
       setMovingToPostOp(false);
     }
+  }
+
+  function activateRow() {
+    if (isDetailClickable) onRowClick();
+    else onExpand();
   }
 
   return (
     <>
       <tr
         data-testid={OT_TEST_IDS.journeyRow(journey.id)}
-        className={`transition-colors cursor-pointer ${
+        role="row"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-label={`${journey.patientName ?? 'Patient'}. ${next.label}. ${otChip.label}`}
+        className={`clickable transition-colors cursor-pointer ${
           clinicalState === 'InOT' ? 'bg-amber-50 hover:bg-amber-100' :
           clinicalState === 'SurgeryCompleted' ? 'bg-green-50 hover:bg-green-100' :
           'hover:bg-gray-50'
-        } ${expanded ? 'bg-blue-50' : ''}`}
-        onClick={isDetailClickable ? onRowClick : onExpand}
+        } ${expanded ? 'row-selected' : ''}`}
+        onClick={activateRow}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activateRow();
+          }
+        }}
       >
-        <td className="px-3 py-3"><StatusBadge status={clinicalState === 'SentToOT' && otState === 'Accepted' ? 'Accepted' : clinicalState} size="sm" /></td>
-        <td className="px-3 py-3 font-mono text-xs text-blue-700 font-medium">{journey.uhid ?? '—'}</td>
-        <td className="px-3 py-3 font-medium text-gray-900 whitespace-nowrap">{journey.patientName ?? '—'}</td>
-        <td className="px-3 py-3 text-gray-600 text-xs">{journey.eyeOperated ?? '—'}</td>
-        <td className="px-3 py-3 text-gray-700 text-xs whitespace-nowrap">{journey.procedureName ?? '—'}</td>
-        <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">{fmt(journey.surgeryScheduledAt)}</td>
-        <td className="px-3 py-3 text-gray-600 text-xs"><StatusBadge status={otState} size="sm" /></td>
-        <td className="px-3 py-3">
+        <td className="num">{seq}</td>
+        <td>
+          <div className="cell-primary">{journey.patientName ?? '—'}</div>
+          <div className="cell-sub">{[journey.uhid ?? '—', ageSex].filter(Boolean).join(' · ')}</div>
+        </td>
+        <td>
+          {laterality.missing ? (
+            <span className="muted">{laterality.text}</span>
+          ) : (
+            <b>{laterality.text}</b>
+          )}
+        </td>
+        <td>
+          <div className="cell-clip" title={otProcedureLine(journey.procedureName)}>{otProcedureLine(journey.procedureName)}</div>
+          {journey.operationTheatreName ? (
+            <div className="cell-sub">{journey.operationTheatreName}</div>
+          ) : null}
+        </td>
+        <td>{journey.surgeonName ?? '—'}</td>
+        <td>
+          <StatusChip status={otChip.status} label={otChip.label} size="sm" />
+          <div className="cell-sub" style={{ marginTop: 4 }}>
+            <StatusChip status={clinical.status} label={clinical.label} size="sm" />
+          </div>
+        </td>
+        <td>
           <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
-            {showAccept && (
+            {next.kind === 'accept' && next.executable && (
               <button
+                type="button"
                 data-testid={OT_TEST_IDS.acceptBtn(journey.id)}
                 onClick={() => onOpenConfirm('accept', 'Accept this patient into the Operation Theatre?')}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors"
+                className="btn sm primary"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Accept
               </button>
             )}
-            {showStart && (
+            {next.kind === 'details' && (
               <button
+                type="button"
+                onClick={() => onOtFormOpen()}
+                className="btn sm"
+                title="Surgeon, anaesthetist, OT room and anaesthesia type must be saved before start"
+              >
+                Complete OT details
+              </button>
+            )}
+            {next.kind === 'start' && next.executable && (
+              <button
+                type="button"
                 data-testid={OT_TEST_IDS.startSurgeryBtn(journey.id)}
                 onClick={() => onOpenConfirm('startSurgery', 'Start surgery for this patient now?')}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                className="btn sm primary"
               >
                 <Play className="h-3.5 w-3.5" />
                 Start Surgery
               </button>
             )}
-            {showEnd && (
+            {next.kind === 'complete' && next.executable && (
               <button
+                type="button"
                 data-testid={OT_TEST_IDS.endSurgeryBtn(journey.id)}
-                onClick={() => onOpenConfirm('endSurgery', 'Mark this surgery as completed?')}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                onClick={async () => onOpenConfirm('endSurgery', await implantCompletionSummary(journey.id))}
+                className="btn sm primary"
               >
                 <StopCircle className="h-3.5 w-3.5" />
-                End Surgery
+                Complete surgery
               </button>
             )}
             {showReturn && (
-              <button
-                onClick={onOpenReturn}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold border border-rose-300 text-rose-600 hover:bg-rose-50 bg-white rounded-lg transition-colors"
-              >
+              <button type="button" onClick={onOpenReturn} className="btn sm">
                 <UserX className="h-3.5 w-3.5" />
                 Return
               </button>
             )}
-            {isDone ? (
+            {next.kind === 'postop' && next.executable && (
               <button
+                type="button"
                 data-testid={OT_TEST_IDS.moveToPostOpBtn(journey.id)}
                 onClick={handleMoveToPostOp}
                 disabled={movingToPostOp}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-lg transition-colors whitespace-nowrap"
+                className="btn sm primary"
               >
                 <Zap className="h-3.5 w-3.5" />
                 {movingToPostOp ? 'Moving…' : 'Move to Post-Op Ward'}
               </button>
-            ) : clinicalState === 'PostOp' ? (
+            )}
+            {next.kind === 'recovery' && (
+              <button type="button" onClick={onRowClick} className="btn sm">
+                <Eye className="h-3.5 w-3.5" />
+                View Details
+              </button>
+            )}
+            {next.kind !== 'postop' && (
               <>
-                <button
-                  onClick={onRowClick}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition-colors"
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  View Details
-                </button>
-                <button onClick={onExpand} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg">
-                  {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => onOtFormOpen()}
-                  title="Edit OT Details"
-                  className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
-                >
-                  <Pen className="h-3.5 w-3.5" />
-                </button>
-                <button onClick={onExpand} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg">
+                {next.kind !== 'details' && next.kind !== 'recovery' && (
+                  <button
+                    type="button"
+                    onClick={() => onOtFormOpen()}
+                    title="Edit OT Details"
+                    className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                  >
+                    <Pen className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button type="button" onClick={onExpand} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg" aria-label={expanded ? 'Collapse row' : 'Expand row'}>
                   {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
               </>
@@ -2545,7 +2617,7 @@ function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpda
       </tr>
       {expanded && detail && (
         <tr>
-          <td colSpan={8} className="p-0">
+          <td colSpan={7} className="p-0">
             <ExpandedPanel journey={detail} onSaved={onDetailUpdated} onViewDetails={onRowClick} />
           </td>
         </tr>
@@ -2558,9 +2630,9 @@ function OtRow({ journey, onExpand, expanded, detail, onOtFormOpen, onDetailUpda
 
 function SkeletonRow() {
   return (
-    <tr className="border-b border-gray-100">
-      {Array.from({ length: 8 }).map((_, i) => (
-        <td key={i} className="px-3 py-3">
+    <tr>
+      {Array.from({ length: 7 }).map((_, i) => (
+        <td key={i}>
           <div className="h-3 bg-gray-200 rounded animate-pulse" style={{ width: `${50 + (i * 9) % 35}%` }} />
         </td>
       ))}
@@ -2570,22 +2642,41 @@ function SkeletonRow() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-type OtFilter = 'All' | 'SentToOT' | 'OTAccepted' | 'InOT' | 'SurgeryCompleted' | 'PostOp';
+type OtFilter = OtBoardFilter;
 
-const OT_STAT_CARDS: { key: OtFilter; label: string; bg: string; icon: string; color: string; activeClass: string }[] = [
-  { key: 'SentToOT',          label: 'Awaiting Acceptance', bg: 'bg-sky-50 text-sky-700',       icon: '📋', color: 'bg-sky-500',     activeClass: 'bg-sky-500 border-sky-500 text-white' },
-  { key: 'OTAccepted',        label: 'OT Accepted',         bg: 'bg-green-50 text-green-700',   icon: '✅', color: 'bg-green-500',   activeClass: 'bg-green-500 border-green-500 text-white' },
-  { key: 'InOT',              label: 'In OT',               bg: 'bg-amber-50 text-amber-700',   icon: '🔪', color: 'bg-amber-500',   activeClass: 'bg-amber-500 border-amber-500 text-white' },
-  { key: 'SurgeryCompleted',  label: 'Done',                bg: 'bg-green-50 text-green-700',   icon: '🩺', color: 'bg-lime-600',    activeClass: 'bg-lime-600 border-lime-600 text-white' },
-  { key: 'PostOp',            label: 'Post-Op',             bg: 'bg-violet-50 text-violet-700', icon: '💊', color: 'bg-violet-500',  activeClass: 'bg-violet-500 border-violet-500 text-white' },
+const OT_STAT_CARDS: { key: Exclude<OtFilter, 'All'>; label: string }[] = [
+  { key: 'SentToOT', label: 'Awaiting acceptance' },
+  { key: 'OTAccepted', label: 'Accepted' },
+  { key: 'InOT', label: 'In OT' },
+  { key: 'SurgeryCompleted', label: 'Completed' },
+  { key: 'PostOp', label: 'Recovery' },
 ];
 
 export default function OperationTheatrePage() {
-  const { user } = useAuthStore();
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-gray-500">Loading OT…</div>}>
+      <OperationTheatrePageInner />
+    </Suspense>
+  );
+}
+
+function OperationTheatrePageInner() {
+  const { user, permissions } = useAuthStore();
+  const actions = useMemo(() => resolveIpRoleActions(permissions), [permissions]);
   const branchId = user?.branchId;
-  const [journeys, setJourneys] = useState<PatientJourneyRowDto[]>([]);
+  const otJourneysQuery = useIpJourneysQuery(
+    branchId,
+    { fromDate: '', toDate: '', uhid: '', search: '' },
+    Boolean(branchId),
+  );
+  const journeys = useMemo(() => otJourneysQuery.data ?? [], [otJourneysQuery.data]);
+  const showSkeleton = otJourneysQuery.isPending && journeys.length === 0;
+  const loadFailed = otJourneysQuery.isError && journeys.length === 0;
+  const refreshFailed = otJourneysQuery.isError && journeys.length > 0;
+  const isRefreshing = otJourneysQuery.isFetching && journeys.length > 0;
+  const liveLabel = loadFailed || refreshFailed ? 'Error' : isRefreshing ? 'Updating' : 'Live';
+  const liveTone = loadFailed || refreshFailed ? 'danger' : isRefreshing ? '' : 'ok';
   const [details, setDetails] = useState<Record<string, PatientJourneyDetailDto>>({});
-  const [isLoading, setIsLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<OtFilter>('All');
   const [searchName, setSearchName] = useState('');
   const [surgeryDate, setSurgeryDate] = useState('');
@@ -2597,19 +2688,23 @@ export default function OperationTheatrePage() {
   const [confirmModal, setConfirmModal] = useState<{ journeyId: string; action: 'accept' | 'startSurgery' | 'endSurgery'; message: string } | null>(null);
   const [returnJourney, setReturnJourney] = useState<PatientJourneyRowDto | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const searchParams = useSearchParams();
+  const otDeepLinkConsumed = useRef(false);
 
   useEffect(() => {
-    (async () => {
-      if (!branchId) return;
-      setIsLoading(true);
-      try {
-        const jList = await ipManagementApi.listJourneys({ branchId });
-        setJourneys(Array.isArray(jList) ? jList : []);
-      } finally {
-        setIsLoading(false);
-      }
+    if (otDeepLinkConsumed.current) return;
+    const patient = searchParams.get('patient');
+    if (!patient) {
+      otDeepLinkConsumed.current = true;
+      return;
+    }
+    otDeepLinkConsumed.current = true;
+    void (async () => {
+      const d = await ipManagementApi.getJourneyDetail(patient);
+      if (d) setDetails(prev => ({ ...prev, [patient]: d }));
+      setDetailModalId(patient);
     })();
-  }, [branchId]);
+  }, [searchParams]);
 
   async function handleRowClick(id: string) {
     // Always re-fetch so modal sees fresh otDetailsSaved / patientName after any save
@@ -2629,7 +2724,7 @@ export default function OperationTheatrePage() {
 
   function handleDetailUpdated(updated: PatientJourneyDetailDto) {
     setDetails(prev => ({ ...prev, [updated.id]: updated }));
-    setJourneys(prev => prev.map(j => j.id === updated.id ? { ...j, clinicalState: updated.clinicalState, otState: updated.otState, financialState: updated.financialState } : j));
+    void otJourneysQuery.refetch();
   }
 
   async function handleConfirmAction() {
@@ -2642,7 +2737,7 @@ export default function OperationTheatrePage() {
       } else if (confirmModal.action === 'startSurgery') {
         result = await startSurgeryWithGates(confirmModal.journeyId);
       } else if (confirmModal.action === 'endSurgery') {
-        result = await transitionClinicalWithGates(confirmModal.journeyId, { newState: 'SurgeryCompleted' });
+        result = await completeSurgeryWithCurrentVersion(confirmModal.journeyId);
       }
       if (result) handleDetailUpdated(result);
       setConfirmModal(null);
@@ -2655,31 +2750,26 @@ export default function OperationTheatrePage() {
     }
   }
 
-  const OT_CLINICAL_STATES = ['SentToOT', 'InOT', 'SurgeryCompleted', 'PostOp'];
-
-  // Returns 'OTAccepted' when clinical=SentToOT but ot=Accepted (post-accept, pre-surgery)
-  const effectiveOtFilter = (j: { clinicalState: string; otState: string }): OtFilter => {
-    if (j.clinicalState === 'SentToOT' && j.otState === 'Accepted') return 'OTAccepted';
-    return j.clinicalState as OtFilter;
-  };
-
   const displayJourneys = useMemo(() => {
-    let list = journeys.filter(j => (OT_CLINICAL_STATES as string[]).includes(j.clinicalState));
-    if (activeFilter !== 'All') list = list.filter(j => effectiveOtFilter(j) === activeFilter);
+    let list = journeys.filter(j => (OT_BOARD_CLINICAL_STATES as readonly string[]).includes(j.clinicalState));
+    if (activeFilter !== 'All') list = list.filter(j => effectiveOtBoardFilter(j) === activeFilter);
     if (searchName.trim()) list = list.filter(j => (j.patientName ?? '').toLowerCase().includes(searchName.toLowerCase()));
     if (surgeryDate) list = list.filter(j => j.surgeryScheduledAt?.startsWith(surgeryDate));
-    return list;
+    return sortOtBoardRows(list);
   }, [journeys, activeFilter, searchName, surgeryDate]);
 
+  const hasActiveFilters = searchName.trim() !== '' || surgeryDate !== '' || activeFilter !== 'All';
+  const otBoardEmpty = journeys.filter(j => (OT_BOARD_CLINICAL_STATES as readonly string[]).includes(j.clinicalState)).length === 0;
+
   const counts = useMemo(() => {
-    const base = journeys.filter(j => (OT_CLINICAL_STATES as string[]).includes(j.clinicalState));
+    const base = journeys.filter(j => (OT_BOARD_CLINICAL_STATES as readonly string[]).includes(j.clinicalState));
     const map: Record<string, number> = { All: base.length };
-    OT_STAT_CARDS.forEach(({ key }) => { map[key] = base.filter(j => effectiveOtFilter(j) === key).length; });
+    OT_STAT_CARDS.forEach(({ key }) => { map[key] = base.filter(j => effectiveOtBoardFilter(j) === key).length; });
     return map;
   }, [journeys]);
 
   return (
-    <div className="space-y-4" data-testid={OT_TEST_IDS.page}>
+    <div className="ip-target pb-4" data-testid={OT_TEST_IDS.page}>
       {formatHeads && <FormatHeadsModal onClose={() => setFormatHeads(false)} />}
       <ConfirmationDialog
         isOpen={!!confirmModal}
@@ -2717,141 +2807,144 @@ export default function OperationTheatrePage() {
         />
       )}
 
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <Stethoscope className="h-5 w-5 text-blue-600" />
-            Operation Theatre
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manage surgical workflow from prep to discharge</p>
-        </div>
-        <button
-          onClick={() => setFormatHeads(true)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white border border-gray-200 rounded-xl shadow-sm hover:bg-gray-50 text-gray-700"
+      <div className="frame">
+      <div className="app-header">
+        <h1>Operation Theatre</h1>
+        <span className="scope">Slot-ordered theatre list · implants recorded at the point of use</span>
+        <span className="spacer" />
+        <span
+          data-testid={OT_TEST_IDS.liveState}
+          className={`badge ${liveTone}`.trim()}
+          title={refreshFailed ? 'Last refresh failed. Showing last loaded OT list.' : undefined}
         >
-          <Zap className="h-4 w-4 text-amber-500" />
-          Format Heads
+          {liveLabel}
+        </span>
+        <button type="button" className="btn sm" onClick={() => void otJourneysQuery.refetch()} disabled={showSkeleton || isRefreshing}>↻ Refresh</button>
+        <Link href="/dashboard/ip-management/slots" className="btn sm">Slot board</Link>
+        <button type="button" className="btn sm" onClick={() => setFormatHeads(true)}>
+          Format heads
         </button>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {OT_STAT_CARDS.map(({ key, label, bg, icon }) => (
-          <button
-            key={key}
-            data-testid={OT_TEST_IDS.statusTab(key)}
-            onClick={() => setActiveFilter(activeFilter === key ? 'All' : key)}
-            className={`rounded-xl p-4 text-left border transition-all ${activeFilter === key ? `${bg} border-current shadow-sm` : 'bg-white border-gray-100 hover:border-gray-200 hover:shadow-sm'}`}
-          >
-            <div className="text-2xl mb-1">{icon}</div>
-            <p className="text-2xl font-bold">{counts[key] ?? 0}</p>
-            <p className="text-xs font-medium mt-0.5 text-gray-600">{label}</p>
-          </button>
-        ))}
+      <div className="kpis">
+        <button
+          type="button"
+          className={`kpi ${activeFilter === 'All' ? 'is-active' : ''}`}
+          onClick={() => setActiveFilter('All')}
+        >
+          <div className="label">All</div>
+          <div className="value num">{counts.All ?? 0}</div>
+        </button>
+        {OT_STAT_CARDS.map(({ key, label }) => {
+          const active = activeFilter === key;
+          const tone = key === 'InOT' ? 'is-ot' : key === 'SurgeryCompleted' || key === 'OTAccepted' ? 'is-inhouse' : '';
+          return (
+            <button
+              key={key}
+              type="button"
+              data-testid={OT_TEST_IDS.statusTab(key)}
+              onClick={() => setActiveFilter(activeFilter === key ? 'All' : key)}
+              className={`kpi ${tone} ${active ? 'is-active' : ''}`.trim()}
+            >
+              <div className="label">{label}</div>
+              <div className="value num">{counts[key] ?? 0}</div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[160px]">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Patient Name</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by name…"
-                value={searchName}
-                onChange={e => setSearchName(e.target.value)}
-                className="pl-8 border border-gray-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Surgery Date</label>
-            <input
-              type="date"
-              value={surgeryDate}
-              onChange={e => setSurgeryDate(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          {(searchName || surgeryDate) && (
-            <button onClick={() => { setSearchName(''); setSurgeryDate(''); }} className="px-3 py-2 text-sm text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50">
+      <div className="filters">
+        <label className="filter-field grow">
+          <span>Patient</span>
+          <input
+            data-testid={OT_TEST_IDS.search}
+            type="text"
+            placeholder="Search by name…"
+            value={searchName}
+            onChange={e => setSearchName(e.target.value)}
+            className="input"
+            aria-label="Patient name"
+          />
+        </label>
+        <label className="filter-field">
+          <span>Surgery date</span>
+          <input
+            type="date"
+            value={surgeryDate}
+            onChange={e => setSurgeryDate(e.target.value)}
+            className="input"
+            aria-label="Surgery date"
+          />
+        </label>
+        {(searchName || surgeryDate) && (
+          <div className="filter-actions">
+            <button type="button" onClick={() => { setSearchName(''); setSurgeryDate(''); }} className="btn sm ghost">
               Clear
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div className="flex gap-1.5 flex-wrap">
-            <button
-              onClick={() => setActiveFilter('All')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
-                activeFilter === 'All' ? 'bg-slate-600 border-slate-600 text-white shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${activeFilter === 'All' ? 'bg-white/80' : 'bg-slate-500'}`} />
-              All
-              <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md ${activeFilter === 'All' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                {counts.All ?? 0}
-              </span>
-            </button>
-            {OT_STAT_CARDS.map(({ key, label, color, activeClass }) => (
-              <button
-                key={key}
-                onClick={() => setActiveFilter(activeFilter === key ? 'All' : key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
-                  activeFilter === key ? `${activeClass} shadow-sm` : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${activeFilter === key ? 'bg-white/80' : color}`} />
-                {label}
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md ${activeFilter === key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                  {counts[key] ?? 0}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+      {otFormId && details[otFormId] && (
+        <OtDetailsModal
+          journey={details[otFormId]}
+          onClose={() => setOtFormId(null)}
+          onSaved={updated => {
+            handleDetailUpdated(updated);
+            setOtFormId(null);
+          }}
+        />
+      )}
 
-        {/* OT Form for editing */}
-        {otFormId && details[otFormId] && (
-          <OtDetailsModal
-            journey={details[otFormId]}
-            onClose={() => setOtFormId(null)}
-            onSaved={updated => {
-              handleDetailUpdated(updated);
-              setOtFormId(null);
-            }}
-          />
-        )}
+      {(loadFailed || refreshFailed) && (
+        <div className="callout danger mx-4 my-3" data-testid={OT_TEST_IDS.loadError}>
+          {loadFailed ? 'Failed to load the OT board.' : 'Could not refresh. Showing last loaded patients.'}
+          {' '}
+          <button
+            type="button"
+            className="underline font-semibold"
+            data-testid={OT_TEST_IDS.loadRetry}
+            onClick={() => void otJourneysQuery.refetch()}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="grid" role="table" aria-label="Operation theatre board">
             <thead>
-              <tr className="bg-gray-50 border-y border-gray-100">
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">MR No</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Patient</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Diagnosis</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Surgeon</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Surgery Date</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">OT State</th>
-                <th className="px-3 py-3"></th>
+              <tr>
+                <th>Seq</th>
+                <th>Patient</th>
+                <th>Eye</th>
+                <th>Procedure</th>
+                <th>Surgeon</th>
+                <th>OT state</th>
+                <th>Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
-              {isLoading
+            <tbody>
+              {showSkeleton
                 ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
+                : loadFailed
+                ? null
                 : displayJourneys.length === 0
                 ? (
                   <tr>
-                    <td colSpan={8} className="py-14 text-center text-gray-400">
+                    <td colSpan={7} className="py-14 text-center text-gray-400">
                       <Stethoscope className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">No OT patients found</p>
+                      {otBoardEmpty && !hasActiveFilters ? (
+                        <div data-testid={OT_TEST_IDS.emptyBoard}>
+                          <p className="text-sm font-medium text-gray-600">No patients on the OT board</p>
+                          <p className="text-xs mt-1">Patients appear here after they are sent to OT from the ward.</p>
+                        </div>
+                      ) : (
+                        <div data-testid={OT_TEST_IDS.emptyFilter}>
+                          <p className="text-sm font-medium text-gray-600">No patients match these filters</p>
+                          <p className="text-xs mt-1">Try adjusting the queue, name, or surgery date.</p>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
@@ -2861,6 +2954,7 @@ export default function OperationTheatrePage() {
                     journey={j}
                     expanded={expandedId === j.id}
                     detail={details[j.id] ?? null}
+                    actions={actions}
                     onExpand={() => handleExpand(j.id)}
                     onRowClick={() => handleRowClick(j.id)}
                     onOtFormOpen={async () => {
@@ -2880,13 +2974,14 @@ export default function OperationTheatrePage() {
           </table>
         </div>
 
-        {!isLoading && displayJourneys.length > 0 && (
-          <div className="px-4 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500">
-              Showing <span className="font-medium">{displayJourneys.length}</span> patients
-            </p>
+        {!showSkeleton && displayJourneys.length > 0 && (
+          <div className="listfoot">
+            <p>Showing <b>{displayJourneys.length}</b> patients · click a row for surgery details · expand for implants and recovery</p>
           </div>
         )}
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <IpSlotBoard compact />
       </div>
     </div>
   );

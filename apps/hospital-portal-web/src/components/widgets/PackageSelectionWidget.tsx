@@ -21,7 +21,7 @@ import type { WidgetProps } from '@/lib/widgets/widget-types';
 import { widgetsApi, type Package as PackageType } from '@/lib/api/widgets.api';
 import { useUpdateCounselingSession } from '@/hooks/use-counseling-sessions';
 import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { RecommendedProcedureItem } from '@/lib/api/master-data.api';
 
 // ============================================================================

@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WaitingListPatient } from '@/types/counsellors-desk';
-
-const INSURANCE_PAYMENT_TYPES = new Set([
-  'Insurance', 'TPA', 'CoPay', 'CGHS', 'SGHS', 'GovernmentScheme',
-]);
+import { isCoveragePaymentTypeValue } from '@/lib/counsellors-desk/session-utils';
 
 const MAX_BATCH = 40;
 
@@ -16,7 +13,7 @@ export function useDeferredCcmsBadges(visiblePatients: WaitingListPatient[]) {
 
   const pendingIdsKey = useMemo(() => {
     const ids = visiblePatients
-      .filter(p => INSURANCE_PAYMENT_TYPES.has(p.paymentType as string) && p.id)
+      .filter(p => isCoveragePaymentTypeValue(p.paymentType as string) && p.id)
       .map(p => p.id)
       .filter(id => !loadedIdsRef.current.has(id))
       .slice(0, MAX_BATCH)

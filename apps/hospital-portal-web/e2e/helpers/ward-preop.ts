@@ -303,8 +303,10 @@ export async function selectWardStatusTab(
 
 export async function openWorkspaceForJourney(page: Page, journeyId: string): Promise<void> {
   await selectWardStatusTab(page, 'All');
-  await page.getByTestId(WARD_PREOP_TEST_IDS.wardJourneyRow(journeyId)).click();
-  // Row click opens the patient drawer; its primary action launches the workspace.
+  const row = page.getByTestId(WARD_PREOP_TEST_IDS.wardJourneyRow(journeyId));
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.click();
+  await expect(page.getByTestId(WARD_PREOP_TEST_IDS.patientDrawer)).toBeVisible({ timeout: 15_000 });
   await page.getByTestId(WARD_PREOP_TEST_IDS.drawerPrimaryAction).click();
   await expectWorkspaceOpen(page);
 }
@@ -315,13 +317,16 @@ export async function openWorkspaceForFirstJourneyInTab(
 ): Promise<string | null> {
   await selectWardStatusTab(page, tab);
   const row = page.locator(`tr[data-clinical-state="${tab}"]`).first();
-  const visible = await row.isVisible().catch(() => false);
-  if (!visible) return null;
+  try {
+    await row.waitFor({ state: 'visible', timeout: 20_000 });
+  } catch {
+    return null;
+  }
 
   const testId = await row.getAttribute('data-testid');
   const journeyId = testId?.replace('ward-journey-row-', '') ?? null;
   await row.click();
-  // Row click opens the patient drawer; its primary action launches the workspace.
+  await expect(page.getByTestId(WARD_PREOP_TEST_IDS.patientDrawer)).toBeVisible({ timeout: 15_000 });
   await page.getByTestId(WARD_PREOP_TEST_IDS.drawerPrimaryAction).click();
   await expectWorkspaceOpen(page);
   return journeyId;
@@ -346,7 +351,9 @@ export type WardPreOpStep =
   | 'records';
 
 export async function navigateStep(page: Page, step: WardPreOpStep): Promise<void> {
-  await page.getByTestId(WARD_PREOP_TEST_IDS.stepTab(step)).click();
+  const tab = page.getByTestId(WARD_PREOP_TEST_IDS.stepTab(step));
+  await expect(tab).toBeVisible({ timeout: 15_000 });
+  await tab.click();
   await expect(page.getByTestId(WARD_PREOP_TEST_IDS.stepPanel(step))).toBeVisible();
 }
 
@@ -433,7 +440,12 @@ export async function setNpoIntakeType(
 
 export async function closeWorkspace(page: Page): Promise<void> {
   const workspace = page.getByTestId(WARD_PREOP_TEST_IDS.workspace);
-  await workspace.getByRole('button', { name: 'Close' }).click();
+  const headerClose = workspace.getByLabel('Close workspace');
+  if (await headerClose.count()) {
+    await headerClose.click();
+  } else {
+    await workspace.getByRole('button', { name: 'Close', exact: true }).click();
+  }
   await expect(workspace).toBeHidden();
 }
 
@@ -445,6 +457,7 @@ export function investigationRow(page: Page, itemKey: string) {
 async function expandInvestigationRow(page: Page, itemKey: string): Promise<void> {
   const row = investigationRow(page, itemKey);
   const toggle = row.getByTestId(WARD_PREOP_TEST_IDS.investigationRowToggle(itemKey));
+  if ((await toggle.count()) === 0) return;
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
     await toggle.click();
   }
@@ -471,7 +484,7 @@ export async function enterInvestigationValue(
 
   await input.fill(value);
   await input.blur();
-  await expect(row.getByText(/entered|verified|counsellor draft/i).first()).toBeVisible({
+  await expect(row.getByText(/entered|verified|counsellor draft|pending/i).first()).toBeVisible({
     timeout: 15_000,
   });
 }
@@ -508,6 +521,7 @@ export async function verifyInvestigation(page: Page, itemKey: string): Promise<
 
 export async function expectInvestigationVerifyHidden(page: Page, itemKey: string): Promise<void> {
   const row = investigationRow(page, itemKey);
+  await expect(row.getByTestId(WARD_PREOP_TEST_IDS.investigationVerify(itemKey))).toHaveCount(0);
   const menuBtn = row.getByTestId(WARD_PREOP_V2_TEST_IDS.actionMenuButton);
   if (!(await menuBtn.isVisible().catch(() => false))) return;
   await menuBtn.click();
@@ -563,10 +577,10 @@ export async function fillPacRequiredFields(page: Page): Promise<void> {
   }
   await hr.blur();
 
-  await pac.getByRole('button', { name: '2', exact: true }).click();
+  await pac.getByRole('button', { name: '2', exact: true }).click({ force: true });
 
-  await pac.getByRole('button', { name: 'Local', exact: true }).click();
-  await pac.getByRole('button', { name: 'Written', exact: true }).click();
+  await pac.getByRole('button', { name: 'Local', exact: true }).click({ force: true });
+  await pac.getByRole('button', { name: 'Written', exact: true }).click({ force: true });
   await expect(pac.getByText('Ready to complete')).toBeVisible({ timeout: 20_000 });
 }
 

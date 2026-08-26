@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { X, Plus, Trash2, Save, Printer, Calculator } from 'lucide-react';
 import { getApi } from '@/lib/api';
-import { PaymentDialog, PaymentData } from '@/components/billing/PaymentDialog';
 
 interface BillItem {
   id: string;
@@ -102,7 +102,6 @@ export default function OpdBillForm({ patientId, patientName, appointmentId, onC
   const [internalComments, setInternalComments] = useState('');
   
   // Payment
-  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
   const [amountPaid, setAmountPaid] = useState(0);
   
@@ -246,23 +245,6 @@ export default function OpdBillForm({ patientId, patientName, appointmentId, onC
   };
 
   const totals = calculateTotals();
-
-  const handleAddPayment = (paymentData: PaymentData) => {
-    const newPayment = {
-      id: Date.now().toString(),
-      ...paymentData,
-      timestamp: new Date().toISOString(),
-    };
-    
-    setPayments([...payments, newPayment]);
-    setAmountPaid(amountPaid + paymentData.amount);
-    setShowPaymentDialog(false);
-    
-    // If fully paid, update status
-    if (amountPaid + paymentData.amount >= totals.netTotal) {
-      setBillStatus('paid');
-    }
-  };
 
   const handleSaveDraft = async () => {
     setSaving(true);
@@ -592,13 +574,19 @@ export default function OpdBillForm({ patientId, patientName, appointmentId, onC
               </div>
               
               <button
-                onClick={() => setShowPaymentDialog(true)}
-                disabled={totals.amountRemaining <= 0}
-                className="mt-4 w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 flex items-center justify-center gap-2 text-sm font-medium"
+                type="button"
+                disabled
+                className="mt-4 w-full px-4 py-2 bg-gray-300 text-gray-700 rounded-lg flex items-center justify-center gap-2 text-sm font-medium cursor-not-allowed"
               >
-                <Plus className="w-4 h-4" />
-                Add Payment
+                Collect is not available on this form
               </button>
+              <p className="mt-2 text-xs text-gray-600">
+                After this bill exists on the OpdBill ledger, collect from{' '}
+                <Link href="/dashboard/billing/opd" className="underline font-medium text-blue-700">
+                  Billing workstation
+                </Link>
+                {' '}using Collect payment. Do not use a second payment dialog.
+              </p>
             </div>
 
             {/* Right: Bill Totals */}
@@ -731,19 +719,6 @@ export default function OpdBillForm({ patientId, patientName, appointmentId, onC
           </button>
         </div>
       </div>
-
-      {/* Payment Dialog */}
-      {showPaymentDialog && (
-        <PaymentDialog
-          isOpen={showPaymentDialog}
-          onClose={() => setShowPaymentDialog(false)}
-          onSubmit={handleAddPayment}
-          billAmount={totals.netTotal}
-          billNumber={`DRAFT-${Date.now()}`}
-          patientName={patientName}
-          balanceDue={totals.amountRemaining}
-        />
-      )}
     </div>
   );
 }

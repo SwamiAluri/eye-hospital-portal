@@ -39,6 +39,9 @@ public sealed class StockService : IStockService
             .FirstAsync(i => i.Id == grn.InvoiceId, ct);
 
         var isPatientSpecific = invoice.BillingMode == "PatientSpecific";
+        var vendor = await _db.Vendors.AsNoTracking()
+            .FirstOrDefaultAsync(v => v.Id == invoice.VendorId && v.DeletedAt == null, ct);
+        var isConsignment = vendor?.IsConsignmentVendor == true;
 
         foreach (var grnItem in grn.GrnItems.Where(gi => gi.AcceptedQuantity > 0))
         {
@@ -73,6 +76,8 @@ public sealed class StockService : IStockService
                     PurchaseRate = purchaseItem.PurchaseRate,
                     QuantityIn = grnItem.AcceptedQuantity,
                     QuantityAvailable = grnItem.AcceptedQuantity,
+                    IsConsignment = isConsignment,
+                    VendorId = isConsignment ? invoice.VendorId : null,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     CreatedByUserId = userId,
@@ -145,12 +150,14 @@ public sealed class StockService : IStockService
         Guid userId, string txType, string refId, string refNumber, CancellationToken ct)
     {
         // Get batches ordered by expiry ascending (FEFO), then by created_at for same expiry
-        var batches = await _db.StockBatches
+        var batches = (await _db.StockBatches
             .Where(b => b.TenantId == tenantId && b.StoreId == storeId && b.ItemId == itemId
                      && b.QuantityAvailable > 0 && b.DeletedAt == null && b.IsActive)
-            .OrderBy(b => b.ExpiryDate ?? DateTime.MaxValue)
+            .ToListAsync(ct))
+            .OrderByDescending(b => b.IsConsignment)
+            .ThenBy(b => b.ExpiryDate ?? DateTime.MaxValue)
             .ThenBy(b => b.CreatedAt)
-            .ToListAsync(ct);
+            .ToList();
 
         decimal remaining = quantity;
         StockBatch? primaryBatch = null;
@@ -214,6 +221,8 @@ public sealed class StockService : IStockService
                 PurchaseRate = line.UnitRate,
                 QuantityIn = line.TransferQuantity,
                 QuantityAvailable = line.TransferQuantity,
+                IsConsignment = batch.IsConsignment,
+                VendorId = batch.VendorId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 CreatedByUserId = userId

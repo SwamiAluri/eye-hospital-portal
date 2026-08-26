@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../ip-target/mockup.css">
+<link rel="stylesheet" href="remaining.css">
+</head>
+<body data-screen="W-09">
+<main>
+  <p class="lede">
+    Discharge workspace (existing S-09). Follow-up must be a booked clinic appointment, not a date typed on the form.
+    Patient dues still block money separately; this is an extra clinical lock.
+  </p>
+
+  <h2 class="sec">Not booked — discharge blocked</h2>
+  <div class="frame">
+    <div class="workspace">
+      <div class="ws-head">
+        <div>
+          <div class="name">Meena Iyer</div>
+          <div class="ident">UHID UAT-002 · 54 years · Female · Chair C-04</div>
+        </div>
+        <span class="badge inhouse">Ready for discharge</span>
+        <div class="eye"><span class="eye-k">Operating eye</span><span class="eye-v">RIGHT</span><span class="eye-abbr">OD</span></div>
+      </div>
+      <div class="ws-body">
+        <nav class="ws-steps">
+          <div class="ws-step done"><span class="n">✓</span> Clearance</div>
+          <div class="ws-step done"><span class="n">✓</span> Summary</div>
+          <div class="ws-step done"><span class="n">✓</span> Medications</div>
+          <div class="ws-step active blocked"><span class="n">4</span> Follow-up</div>
+          <div class="ws-step"><span class="n">5</span> Confirm</div>
+        </nav>
+        <div class="ws-content">
+          <div class="callout danger">
+            <b>No follow-up appointment is booked.</b> Entering a date here does not reserve a clinic slot.
+            Book a visit or link one that already exists.
+          </div>
+          <div class="field" style="margin-top:12px">
+            <label>Date on the form (not a booking)</label>
+            <input class="input placeholder" value="26 Aug 2026 — not booked" readonly>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <span class="btn primary">Book follow-up</span>
+            <span class="btn">Link existing appointment</span>
+          </div>
+        </div>
+      </div>
+      <div class="ws-foot">
+        <div class="small" style="color:var(--danger)"><b>1 hard stop</b> · follow-up not booked</div>
+        <span class="spacer"></span>
+        <span class="btn sm ghost">Override with reason (admin)</span>
+        <span class="btn primary disabled">Discharge patient</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">Book follow-up — Auth calendar</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Book follow-up</span></div>
+        <div class="dialog-body">
+          <div class="small muted">Creates a clinic appointment for Meena Iyer. Type: Follow-up · 30 minutes.</div>
+          <div class="field" style="margin-top:10px"><label>Doctor</label><input class="input" value="Dr Rao" readonly></div>
+          <div class="field"><label>Date and time</label><input class="input" value="26 Aug 2026 · 09:00" readonly></div>
+          <div class="callout info">After save, this visit appears on the appointments board. The discharge form date is filled from that visit.</div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Cancel</span><span class="btn primary">Book visit</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">That time is not available</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout danger"><b>That time is not available</b> for Dr Rao. Choose another slot.</div>
+  </div>
+
+  <h2 class="sec">Linked — discharge enabled</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout ok">
+      <b>Follow-up booked.</b> 26 Aug 2026 · 09:00 · Dr Rao · 30 minutes.
+      <div class="small muted" style="margin-top:4px">Appointment visible on the clinic board. Form date is taken from this visit.</div>
+    </div>
+    <span class="btn primary" style="margin-top:10px">Discharge patient</span>
+  </div>
+
+  <h2 class="sec">Admin override (no appointment)</h2>
+  <div class="frame">
+    <div class="dialog-stage">
+      <div class="dialog">
+        <div class="dialog-head"><span class="t">Discharge without a booked follow-up?</span></div>
+        <div class="dialog-body">
+          <div class="callout danger">The patient will leave without a reserved clinic slot. This is reported on the journey audit.</div>
+          <div class="field" style="margin-top:10px">
+            <label>Reason <span class="faint">(required)</span></label>
+            <input class="input" value="Patient lives out of station; will book from home tomorrow" readonly>
+          </div>
+        </div>
+        <div class="dialog-foot"><span class="btn">Keep waiting</span><span class="btn danger">Discharge anyway</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">No appointment.create</h2>
+  <div class="frame" style="padding:16px">
+    <div class="callout">You cannot book a clinic visit. Ask the coordinator to book, or link a visit that already exists.</div>
+    <span class="btn">Link existing appointment</span>
+  </div>
+
+  <table class="map" style="margin-top:16px">
+    <thead><tr><th>Element</th><th>API</th><th>BE</th><th>DB</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>Book</td><td>POST /api/Appointments</td><td>AppointmentService</td><td>appointment</td><td class="owner o-auth">Auth</td></tr>
+      <tr><td>Link</td><td>PUT .../post-op/instructions</td><td>PostOpWorkflowService</td><td>post_op_instructions.followup_appointment_id</td><td class="owner o-ip">IP</td></tr>
+      <tr><td>Gate</td><td>GET transition-gates · clinical-transition</td><td>ChecklistGateService block</td><td>appointment status</td><td class="owner o-ip">IP reads Auth</td></tr>
+    </tbody>
+  </table>
+</main>
+<script src="screens.js"></script>
+<script src="mockup.js"></script>
+</body>
+</html>

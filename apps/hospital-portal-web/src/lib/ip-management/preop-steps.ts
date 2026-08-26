@@ -1,13 +1,12 @@
 /**
- * Ward Pre-Op Workspace v2 — 8-step information architecture (Phase 3).
+ * Ward Pre-Op Workspace v2 — 8-step information architecture aligned to S-05 mockup.
  *
- * Single navigation model that replaces the legacy two-tier nav (phase strip +
- * "Ward Checklist" sub-tabs + care top-tabs) and removes the P0 Outpatient tab.
- * See docs/ward-preop-redesign-phase0-mapping.md §2 (8-step model) + D16.
+ * Mockup order (s-05-preop-workspace.html):
+ *   Admit → Clinical evaluation → Consent → Investigations → PAC →
+ *   Department clearance → Fasting & medication → Coverage & finance
  *
- * Each step is the *home* for a set of single-writer facts. §2 Department Clearance
- * is re-sliced by category across steps ②–⑦ (rendered via DepartmentClearancePanel's
- * `categoryFilter`); the deep per-step panel redesigns land in Phases 4–9.
+ * `records` (Nursing & Records) remains as a post-admission care surface after Coverage.
+ * Department clearance maps to the live `bedside` key (ward safety + OT Preparation).
  */
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -24,14 +23,14 @@ import {
 import { CoveragePaymentTerms } from '@/lib/ip-management/coverage-payment-terminology';
 
 export type PreOpStepKey =
-  | 'investigations'
-  | 'evaluation'
-  | 'pac'
-  | 'consent'
-  | 'financial'
-  | 'fasting'
-  | 'bedside'
   | 'admit'
+  | 'evaluation'
+  | 'consent'
+  | 'investigations'
+  | 'pac'
+  | 'bedside'
+  | 'fasting'
+  | 'financial'
   | 'records';
 
 export interface PreOpStepMeta {
@@ -48,24 +47,21 @@ export interface PreOpStepMeta {
   /** Step is locked until the patient is admitted. */
   admissionGated?: boolean;
   /**
-   * Hide the step entirely from the rail while the patient is `Expected` (it reappears
-   * at `Admitted`). Used for admission-gated clearance steps that have nothing actionable
-   * pre-admit, so we don't show a dead-end locked tab. Numerals stay stable.
+   * Hide the step entirely from the rail while the patient is `Expected`.
    */
   hideUntilAdmitted?: boolean;
   /**
-   * Show the step only while the patient is `Expected` (the inverse of
-   * `hideUntilAdmitted`). Used for the Admit step, which is the action that moves the
-   * patient out of `Expected` and therefore disappears once admitted.
+   * @deprecated Prefer always-visible admit with bed summary after admission.
+   * Retained for callers that still branch on expectedOnly.
    */
   expectedOnly?: boolean;
-  /** Renders the inline Admit Patient form. */
+  /** Renders the Admit / Admission & bed panel. */
   admitStep?: boolean;
   /** Renders the §1 Investigations panel. */
   investigations?: boolean;
   /** Renders the PAC assessment form. */
   pac?: boolean;
-  /** Renders the §3 Ward Safety checklist. */
+  /** Renders the §3 Ward Safety checklist / department clearance. */
   wardSafety?: boolean;
   /** Renders the care tabs (Vitals / Med Log / Nurse / Remark). */
   careStep?: boolean;
@@ -75,13 +71,13 @@ const NUMERALS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨',
 
 export const PREOP_STEPS: PreOpStepMeta[] = [
   {
-    key: 'investigations',
+    key: 'admit',
     index: 1,
     numeral: NUMERALS[0],
-    label: 'Investigations',
-    short: 'Labs',
-    icon: Microscope,
-    investigations: true,
+    label: 'Admission & bed',
+    short: 'Admit',
+    icon: Building2,
+    admitStep: true,
   },
   {
     key: 'evaluation',
@@ -95,9 +91,26 @@ export const PREOP_STEPS: PreOpStepMeta[] = [
     hideUntilAdmitted: true,
   },
   {
-    key: 'pac',
+    key: 'consent',
     index: 3,
     numeral: NUMERALS[2],
+    label: 'Consent',
+    short: 'Consent',
+    icon: FileSignature,
+  },
+  {
+    key: 'investigations',
+    index: 4,
+    numeral: NUMERALS[3],
+    label: 'Investigations',
+    short: 'Labs',
+    icon: Microscope,
+    investigations: true,
+  },
+  {
+    key: 'pac',
+    index: 5,
+    numeral: NUMERALS[4],
     label: 'PAC Assessment',
     short: 'PAC',
     icon: HeartPulse,
@@ -106,56 +119,33 @@ export const PREOP_STEPS: PreOpStepMeta[] = [
     hideUntilAdmitted: true,
   },
   {
-    key: 'consent',
-    index: 4,
-    numeral: NUMERALS[3],
-    label: 'Consent & Authorization',
-    short: 'Consent',
-    icon: FileSignature,
-    // §2 "Consent" category is owned by ConsentAuthorizationPanel (Phase 5 merge),
-    // not the generic DepartmentClearancePanel — see WardPreOpWorkspaceModal.
-  },
-  {
-    key: 'financial',
-    index: 5,
-    numeral: NUMERALS[4],
-    label: CoveragePaymentTerms.coverageAndPaymentStatus,
-    short: 'Coverage',
-    icon: Wallet,
-    // Owned by FinancialClearancePanel — displays CCMS coverage projection + payment signals.
-  },
-  {
-    key: 'fasting',
+    key: 'bedside',
     index: 6,
     numeral: NUMERALS[5],
-    label: 'Fasting & Medication',
-    short: 'Fasting',
-    icon: Utensils,
-    // §2 "Compliance" is owned by FastingMedicationPanel (Phase 7); "Pharmacy Preparation"
-    // stays a real departmental category rendered alongside it — see WardPreOpWorkspaceModal.
-    clearanceCategories: ['Pharmacy Preparation'],
-  },
-  {
-    key: 'bedside',
-    index: 7,
-    numeral: NUMERALS[6],
-    label: 'Pre-OT Prep',
-    short: 'Prep',
+    label: 'Department clearance',
+    short: 'Clearance',
     icon: ListChecks,
     wardSafety: true,
     clearanceCategories: ['OT Preparation'],
+    admissionGated: true,
+    hideUntilAdmitted: true,
   },
   {
-    key: 'admit',
+    key: 'fasting',
+    index: 7,
+    numeral: NUMERALS[6],
+    label: 'Fasting & Medication',
+    short: 'Fasting',
+    icon: Utensils,
+    clearanceCategories: ['Pharmacy Preparation'],
+  },
+  {
+    key: 'financial',
     index: 8,
     numeral: NUMERALS[7],
-    label: 'Admit Patient',
-    short: 'Admit',
-    icon: Building2,
-    admitStep: true,
-    // The Admit form is its own rail entry below Pre-OT Prep, visible only while the
-    // patient is Expected — admitting them removes this step and unlocks the care steps.
-    expectedOnly: true,
+    label: CoveragePaymentTerms.coverageAndPaymentStatus,
+    short: 'Coverage',
+    icon: Wallet,
   },
   {
     key: 'records',
@@ -166,8 +156,6 @@ export const PREOP_STEPS: PreOpStepMeta[] = [
     icon: Activity,
     careStep: true,
     admissionGated: true,
-    // Vitals/Med-Log/Nurse records are a post-admission care surface — hide the dead-end
-    // locked tab pre-admit (reappears at Admitted), matching Evaluation ②/Anaesthesia ③.
     hideUntilAdmitted: true,
   },
 ];
@@ -185,15 +173,15 @@ export function isStepLocked(step: PreOpStepMeta, clinicalState: string): boolea
 
 /**
  * Rail visibility per clinical state:
- *  - `expectedOnly` steps (Admit) show only while `Expected`.
- *  - `hideUntilAdmitted` steps (Evaluation/PAC/Records) hide while `Expected`.
+ *  - `hideUntilAdmitted` steps hide while `Expected`.
+ *  - Admit / Consent / Investigations / Fasting / Coverage stay visible pre-admit.
  */
 export function isStepHidden(step: PreOpStepMeta, clinicalState: string): boolean {
   if (step.expectedOnly) return clinicalState !== 'Expected';
   return !!step.hideUntilAdmitted && clinicalState === 'Expected';
 }
 
-/** Steps visible in the rail for the given clinical state (hides admission-only steps pre-admit). */
+/** Steps visible in the rail for the given clinical state. */
 export function visiblePreOpSteps(clinicalState: string): PreOpStepMeta[] {
   return PREOP_STEPS.filter(s => !isStepHidden(s, clinicalState));
 }
@@ -207,18 +195,17 @@ export interface RoleDefaultInput {
 }
 
 /**
- * Role-adaptive default step (blueprint §20): open the workspace on the step the
- * logged-in role owns — anaesthetist → PAC, billing → Financial, OT → Bedside —
- * falling back to Investigations for ward/nurse roles. Never opens an admission-locked
- * step pre-admit; such picks fall back to Investigations.
+ * Role-adaptive default step: open on the step the logged-in role owns.
+ * Expected patients land on Admission & bed.
  */
 export function defaultStepForRole(input: RoleDefaultInput): PreOpStepKey {
+  if (input.clinicalState === 'Expected') return 'admit';
+
   const dept = (input.primaryDeptCode ?? '').toUpperCase();
 
   const unlockedOr = (key: PreOpStepKey, fallback: PreOpStepKey = 'investigations'): PreOpStepKey =>
     isStepLocked(getPreOpStep(key), input.clinicalState) ? fallback : key;
 
-  // Anaesthesia: explicit dept code or a PAC-only permission profile.
   if (
     /ANAE|ANES/.test(dept)
     || (input.canEditPac && !input.canEnterInvestigation && !input.canEditWardChecklist)
@@ -232,8 +219,6 @@ export function defaultStepForRole(input: RoleDefaultInput): PreOpStepKey {
 }
 
 // ─── Legacy → v2 deep-link mapping ──────────────────────────────────────────────
-// Preserves existing callers (ward page row deep-links) that still pass the old
-// top-tab + checklist-section pair.
 
 export type LegacyTopTab = 'wardChecklist' | 'vitals' | 'medLog' | 'nurseRecords' | 'remark';
 export type LegacyChecklistSection = 'p0' | 'investigations' | 'clearance' | 'wardSafety' | 'pac';

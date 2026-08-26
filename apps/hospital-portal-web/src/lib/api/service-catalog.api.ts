@@ -324,6 +324,31 @@ export const serviceCatalogAdminApi = {
     const api = getApi();
     await api.delete(`/servicecatalog/admin/branch/${branchId}/pricing/${variantId}`);
   },
+
+  async getPayerPricingRows(payerId: string): Promise<PayerPricingRowDto[]> {
+    const api = getApi();
+    const res = await api.get<PayerPricingRowDto[]>(
+      `/servicecatalog/admin/payer/${payerId}/pricing-rows`,
+    );
+    return res.data;
+  },
+
+  async upsertPayerVariantPrice(
+    payerId: string,
+    body: UpsertBranchVariantPriceRequest,
+  ): Promise<BranchVariantPricingDto> {
+    const api = getApi();
+    const res = await api.put<BranchVariantPricingDto>(
+      `/servicecatalog/admin/payer/${payerId}/pricing`,
+      body,
+    );
+    return res.data;
+  },
+
+  async removePayerVariantPrice(payerId: string, variantId: string): Promise<void> {
+    const api = getApi();
+    await api.delete(`/servicecatalog/admin/payer/${payerId}/pricing/${variantId}`);
+  },
 };
 
 export interface IolMasterAdminDto {
@@ -386,6 +411,15 @@ export interface BranchPricingRowDto {
 export interface UpsertBranchVariantPriceRequest {
   variantId: string;
   amount: number;
+}
+
+export interface PayerPricingRowDto {
+  variantId: string;
+  variantCode: string;
+  variantName: string;
+  categoryCode: string;
+  globalAmount: number;
+  payerAmount?: number | null;
 }
 
 /** Return a human-readable price suffix based on priceType */

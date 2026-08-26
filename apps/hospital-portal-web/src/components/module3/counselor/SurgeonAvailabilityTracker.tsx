@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Clock, User, Calendar, AlertCircle, CheckCircle, Search } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useSchedulesByDateRange, useSurgeonAvailability } from '@/hooks/use-surgery-scheduling';
 import type { OTScheduleDto } from '@/types/surgery-scheduling';
 

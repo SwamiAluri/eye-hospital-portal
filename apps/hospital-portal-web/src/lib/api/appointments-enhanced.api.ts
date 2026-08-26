@@ -148,6 +148,23 @@ export const appointmentsApi = {
     return getApi().post<Appointment>('/appointments', data);
   },
 
+  /** IP discharge follow-up — Auth CreateAppointmentRequest shape (durationMinutes, not duration). */
+  createFollowUp: async (data: {
+    patientId: string;
+    doctorId: string;
+    appointmentDate: string;
+    notes?: string;
+  }) => {
+    return getApi().post<Appointment>('/appointments', {
+      patientId: data.patientId,
+      doctorId: data.doctorId,
+      appointmentDate: data.appointmentDate,
+      appointmentType: 'Follow-up',
+      durationMinutes: 30,
+      notes: data.notes,
+    });
+  },
+
   update: async (id: string, data: UpdateAppointmentDto) => {
     return getApi().put<Appointment>(`/appointments/${id}`, data);
   },

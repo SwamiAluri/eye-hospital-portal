@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="IpManagementService.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Azure Functions -->
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="1.21.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="1.17.0" />
@@ -34,6 +38,10 @@
 
     <!-- Azure Blob Storage (pre-op document uploads) -->
     <PackageReference Include="Azure.Storage.Blobs" Version="12.22.2" />
+
+    <PackageReference Include="Hangfire.Core" Version="1.8.17" />
+    <PackageReference Include="Hangfire.NetCore" Version="1.8.17" />
+    <PackageReference Include="Hangfire.PostgreSql" Version="1.20.12" />
 
     <!-- Logging -->
     <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />

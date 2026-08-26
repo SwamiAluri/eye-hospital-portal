@@ -136,6 +136,73 @@ public class DocumentFunctions
         return await req.OkJsonAsync(list.Select(MapToDto).ToList());
     }
 
+    // POST /api/ccms/coverage-cases/{id}/documents/pacs-study
+    [Function("AttachPacsStudy")]
+    public async Task<HttpResponseData> AttachPacsStudy(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post",
+            Route = "ccms/coverage-cases/{id:guid}/documents/pacs-study")]
+        HttpRequestData req, Guid id)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        try
+        {
+            var body = await JsonSerializer.DeserializeAsync<AttachPacsStudyRequest>(
+                req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts)
+                ?? throw new ArgumentException("Body required.");
+            var result = await _svc.AttachPacsStudyAsync(
+                id, claims!.UserId, body.StudyUid, body.AccessionNumber);
+            var resp = req.CreateResponse(HttpStatusCode.Created);
+            await resp.WriteAsJsonAsync(MapToDto(result));
+            return resp;
+        }
+        catch (KeyNotFoundException)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+        catch (ArgumentException ex)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = ex.Message });
+            return bad;
+        }
+    }
+
+    // POST /api/ccms/coverage-cases/{id}/documents/biometry
+    [Function("AttachBiometryRecord")]
+    public async Task<HttpResponseData> AttachBiometryRecord(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post",
+            Route = "ccms/coverage-cases/{id:guid}/documents/biometry")]
+        HttpRequestData req, Guid id)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        try
+        {
+            var body = await JsonSerializer.DeserializeAsync<AttachBiometryRecordRequest>(
+                req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts)
+                ?? throw new ArgumentException("Body required.");
+            var result = await _svc.AttachBiometryRecordAsync(
+                id, claims!.UserId, body.BiometryRecordId,
+                body.Eye, body.ExaminationDate, body.CalculatedIol, body.Device);
+            var resp = req.CreateResponse(HttpStatusCode.Created);
+            await resp.WriteAsJsonAsync(MapToDto(result));
+            return resp;
+        }
+        catch (KeyNotFoundException)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+        catch (ArgumentException ex)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = ex.Message });
+            return bad;
+        }
+    }
+
     // DELETE /api/ccms/documents/{id}
     [Function("DeleteCcmsDocument")]
     public async Task<HttpResponseData> Delete(

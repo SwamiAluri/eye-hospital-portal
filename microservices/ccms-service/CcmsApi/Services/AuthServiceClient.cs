@@ -243,5 +243,75 @@ public class AuthServiceClient
             _log.LogWarning(ex, "AuthService push-dept failed for dept {Dept}", departmentCode);
         }
     }
+
+    /// <summary>
+    /// Push CCMS payer/patient split onto the Billing OpdBill (InsuranceClaimAmount projection).
+    /// Does not write IP FinancialState. Best-effort — CCMS remains coverage SoT.
+    /// </summary>
+    public virtual async Task ApplyCoverageAllocationAsync(
+        Guid? journeyId,
+        decimal payerResponsibility,
+        decimal patientResponsibility,
+        Guid actorUserId,
+        CancellationToken ct = default)
+    {
+        if (journeyId is null || journeyId == Guid.Empty) return;
+        try
+        {
+            var payload = new
+            {
+                patientJourneyId = journeyId,
+                payerResponsibility,
+                patientResponsibility,
+                actorUserId,
+            };
+            var resp = await _http.PostAsync(
+                "/api/internal/ip-billing/apply-coverage-allocation",
+                JsonContent.Create(payload), ct);
+            if (!resp.IsSuccessStatusCode)
+                _log.LogWarning(
+                    "apply-coverage-allocation returned {Status} for journey {JourneyId}",
+                    resp.StatusCode, journeyId);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "apply-coverage-allocation failed for journey {JourneyId}", journeyId);
+        }
+    }
+
+    /// <summary>
+    /// Notify Auth/IP that CCMS claim status changed. Does not mutate billing books.
+    /// </summary>
+    public virtual async Task NotifyClaimStatusChangedAsync(
+        Guid tenantId,
+        Guid? journeyId,
+        Guid coverageCaseId,
+        string claimStatus,
+        Guid actorUserId,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var payload = new
+            {
+                tenantId,
+                patientJourneyId = journeyId,
+                coverageCaseId,
+                claimStatus,
+                actorUserId,
+            };
+            var resp = await _http.PostAsync(
+                "/api/internal/ip-billing/claim-status-changed",
+                JsonContent.Create(payload), ct);
+            if (!resp.IsSuccessStatusCode)
+                _log.LogWarning(
+                    "claim-status-changed returned {Status} for case {CaseId}",
+                    resp.StatusCode, coverageCaseId);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "claim-status-changed notify failed for case {CaseId}", coverageCaseId);
+        }
+    }
 }
 

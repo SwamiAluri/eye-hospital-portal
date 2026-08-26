@@ -5,9 +5,11 @@ import {
   getOperationalSummary,
   getCashFlowReport,
   getStateDistribution,
+  getJourneyKpis,
   type OperationalSummary,
   type CashFlowDataPoint,
   type StateDistributionItem,
+  type JourneyKpiSnapshot,
 } from '@/lib/api/ccms/ccms-dashboard.api';
 import { RefreshCw, AlertCircle, TrendingUp } from 'lucide-react';
 
@@ -15,22 +17,36 @@ export default function CcmsAnalyticsPage() {
   const [summary, setSummary] = useState<OperationalSummary | null>(null);
   const [cashFlow, setCashFlow] = useState<CashFlowDataPoint[]>([]);
   const [distribution, setDistribution] = useState<StateDistributionItem[]>([]);
+  const [kpis, setKpis] = useState<JourneyKpiSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([getOperationalSummary(), getCashFlowReport(), getStateDistribution()])
-      .then(([s, cf, dist]) => { setSummary(s); setCashFlow(cf); setDistribution(dist); })
-      .catch(e => setError(e?.message ?? 'Failed to load analytics'))
-      .finally(() => setLoading(false));
+    Promise.allSettled([
+      getOperationalSummary(),
+      getCashFlowReport(),
+      getStateDistribution(),
+      getJourneyKpis(),
+    ]).then(([s, cf, dist, k]) => {
+      if (s.status === 'fulfilled') setSummary(s.value);
+      if (cf.status === 'fulfilled' && Array.isArray(cf.value)) setCashFlow(cf.value);
+      if (dist.status === 'fulfilled' && Array.isArray(dist.value)) setDistribution(dist.value);
+      if (k.status === 'fulfilled') setKpis(k.value);
+
+      const failed = [s, cf, dist, k].filter(r => r.status === 'rejected') as PromiseRejectedResult[];
+      if (k.status === 'rejected') {
+        const reason = failed[0]?.reason as { message?: string } | undefined;
+        setError(reason?.message ?? 'Failed to load analytics');
+      }
+    }).finally(() => setLoading(false));
   }, []);
 
   useEffect(load, [load]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col h-full bg-gray-50" data-testid="ccms-operational-analytics">
       <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
         <div className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-indigo-600" />
@@ -46,6 +62,22 @@ export default function CcmsAnalyticsPage() {
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             {error}
+          </div>
+        )}
+
+        {kpis && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="ccms-operational-journey-kpis">
+            {[
+              ['Emergency FC', kpis.emergencyFcCount],
+              ['Partial approval', kpis.partialApprovalCount],
+              ['Open claim queries', kpis.claimQueryOpenCount],
+              ['Pre-auth TAT (h)', kpis.avgPreauthTurnaroundHours != null ? Math.round(kpis.avgPreauthTurnaroundHours) : '—'],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+                <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">{value}</p>
+              </div>
+            ))}
           </div>
         )}
 

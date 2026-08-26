@@ -25,9 +25,12 @@ public class OpdBill
     [Column("patient_id")]
     public Guid PatientId { get; set; }
 
-    [Required]
     [Column("appointment_id")]
-    public Guid AppointmentId { get; set; }
+    public Guid? AppointmentId { get; set; }
+
+    /// <summary>Inpatient encounter. One bill per journey. PatientId is not the IP account key.</summary>
+    [Column("patient_journey_id")]
+    public Guid? PatientJourneyId { get; set; }
 
     [Required]
     [Column("branch_id")]
@@ -208,6 +211,11 @@ public class OpdBill
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
+
+    /// <summary>BILL-030 optimistic concurrency token. Incremented on every persisted mutation.</summary>
+    [ConcurrencyCheck]
+    [Column("row_version")]
+    public int RowVersion { get; set; } = 1;
 
     // Navigation properties
     [ForeignKey("TenantId")]

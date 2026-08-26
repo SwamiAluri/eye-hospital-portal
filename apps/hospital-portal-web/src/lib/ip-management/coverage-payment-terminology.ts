@@ -47,3 +47,12 @@ export function isAmbiguousFinancialPhrase(label: string): boolean {
     (p) => p.localeCompare(label.trim(), undefined, { sensitivity: 'accent' }) === 0,
   );
 }
+
+/** Remaining patient share after collections projected by CCMS-060. Never negative. */
+export function patientDueFromCollection(
+  obligation: number | null | undefined,
+  collected: number | null | undefined,
+): number {
+  const due = Math.max(0, obligation ?? 0) - Math.max(0, collected ?? 0);
+  return Math.max(0, due);
+}
