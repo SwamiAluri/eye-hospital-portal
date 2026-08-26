@@ -1,0 +1,38 @@
+---
+description: Superpowers methodology bootstrap — check and follow project skills before acting. Hospital platform rules still win on safety, ownership, and stack freeze.
+alwaysApply: true
+---
+
+# Superpowers
+
+This repo uses [obra/superpowers](https://github.com/obra/superpowers) v6.3.0 as the agent development methodology. Skills live in `.cursor/skills/`.
+
+Hospital platform rules (`.cursor/rules/00`–`12`, IP/Billing/Ward SoT, Figma MCP) take precedence over Superpowers when they conflict. Superpowers is process; those rules are domain, safety, and architecture.
+
+## Invoke skills before acting
+
+If there is even a small chance a skill applies, read that skill's `SKILL.md` and follow it before responding, exploring, or writing code. Announce `Using [skill] to [purpose]`.
+
+| Request | Skill |
+|---|---|
+| New feature, screen, behavior, or "let's build X" | `brainstorming` first (hard gate: no implementation until approved) |
+| Bug / unexpected behavior | `systematic-debugging` |
+| Approved design / multi-step work | `writing-plans` then `subagent-driven-development` or `executing-plans` |
+| Implementation | `test-driven-development` using existing Vitest / Playwright `e2e/` / .NET tests (`12-testing-validation.mdc`) |
+| "Is it actually done?" | `verification-before-completion` |
+| Review / finish a branch | `requesting-code-review` / `finishing-a-development-branch` |
+
+Do not skip brainstorming by calling a change "too simple." Bounded work still needs a short in-chat design and explicit yes.
+
+## Project paths
+
+- Specs: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+- Plans: `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
+
+## Hospital adaptations
+
+- Default to a feature branch in this worktree. Use `using-git-worktrees` only when the user asks or parallel isolated work needs it (Windows + npm/.NET restore is expensive).
+- Do not invent a second test stack, UI kit, or architecture. TDD must extend existing tests.
+- Do not put PHI, credentials, or tokens in specs, plans, commits, or logs.
+- Brainstorming visual companion telemetry: prefer `SUPERPOWERS_DISABLE_TELEMETRY=1` in this environment.
+- Subagents must still obey domain ownership and must not touch unrelated modules.
