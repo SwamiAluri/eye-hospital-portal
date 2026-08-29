@@ -196,37 +196,42 @@ public class PostOpWorkflowService
         var existing = await _db.PostOpInstructions.FirstOrDefaultAsync(
             i => i.PatientJourneyId == journeyId && i.TenantId == tenantId && i.DeletedAt == null);
 
-        if (existing is null)
+        var isNew = existing is null;
+        if (isNew)
         {
             existing = new PostOpInstruction
             {
                 TenantId         = tenantId,
                 PatientJourneyId = journeyId,
+                Medications      = "[]",
+                WarningSigns     = "[]",
+                Status           = "active",
                 CreatedAt        = DateTime.UtcNow,
             };
             _db.PostOpInstructions.Add(existing);
         }
 
-        existing.Medications          = req.Medications;
-        existing.ActivityRestrictions = req.ActivityRestrictions;
-        existing.DietaryInstructions  = req.DietaryInstructions;
-        existing.FollowupDate         = req.FollowupDate;
-        existing.FollowupDoctorId     = req.FollowupDoctorId;
-        existing.EyeCareInstructions  = req.EyeCareInstructions;
-        existing.WarningSigns         = req.WarningSigns;
+        var row = existing!;
+        row.Medications          = req.Medications ?? (isNew ? "[]" : row.Medications);
+        row.ActivityRestrictions = req.ActivityRestrictions;
+        row.DietaryInstructions  = req.DietaryInstructions;
+        row.FollowupDate         = req.FollowupDate;
+        row.FollowupDoctorId     = req.FollowupDoctorId;
+        row.EyeCareInstructions  = req.EyeCareInstructions;
+        row.WarningSigns         = req.WarningSigns ?? (isNew ? "[]" : row.WarningSigns);
 
         if (req.FollowupAppointmentId.HasValue)
         {
             await BindFollowupAppointmentAsync(
-                existing, journeyId, tenantId, req.FollowupAppointmentId.Value);
+                row, journeyId, tenantId, req.FollowupAppointmentId.Value);
         }
-        existing.IsSaved              = true;
-        existing.SavedAt              = DateTime.UtcNow;
-        existing.SavedByUserId        = userId;
-        existing.UpdatedAt            = DateTime.UtcNow;
+        row.IsSaved              = true;
+        row.SavedAt              = DateTime.UtcNow;
+        row.SavedByUserId        = userId;
+        row.UpdatedAt            = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
-        return MapInstruction(existing);
+        return MapInstruction(row);
     }
 
     // ── Discharge Summary ──────────────────────────────────────────────────────

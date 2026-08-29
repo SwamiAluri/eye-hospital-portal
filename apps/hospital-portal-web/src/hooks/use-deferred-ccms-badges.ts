@@ -6,16 +6,28 @@ import { isCoveragePaymentTypeValue } from '@/lib/counsellors-desk/session-utils
 
 const MAX_BATCH = 40;
 
-/** Loads CCMS pre-auth badge states after idle, only for visible insurance rows not yet fetched. */
+/** Per-session CCMS badge resolution for Waiting List. */
+export type DeferredCcmsBadge =
+  | { status: 'pending' }
+  | { status: 'none' }
+  | { status: 'ready'; state: string };
+
+/**
+ * Loads CCMS pre-auth badge states after idle for coverage patientType rows.
+ * Uses Waiting List `patientType` (API contract) — not a separate paymentType field.
+ *
+ * `none` = fetch completed, no coverage case for session (not Pre-Auth Queue).
+ * `ready` = case exists with currentState.
+ */
 export function useDeferredCcmsBadges(visiblePatients: WaitingListPatient[]) {
-  const [ccmsStates, setCcmsStates] = useState<Record<string, string>>({});
+  const [badges, setBadges] = useState<Record<string, DeferredCcmsBadge>>({});
   const loadedIdsRef = useRef<Set<string>>(new Set());
 
   const pendingIdsKey = useMemo(() => {
     const ids = visiblePatients
-      .filter(p => isCoveragePaymentTypeValue(p.paymentType as string) && p.id)
-      .map(p => p.id)
-      .filter(id => !loadedIdsRef.current.has(id))
+      .filter((p) => isCoveragePaymentTypeValue(p.patientType) && p.id)
+      .map((p) => p.id)
+      .filter((id) => !loadedIdsRef.current.has(id))
       .slice(0, MAX_BATCH)
       .sort();
     return ids.join(',');
@@ -35,24 +47,32 @@ export function useDeferredCcmsBadges(visiblePatients: WaitingListPatient[]) {
         const cases = await getCasesBySessionIds(sessionIds);
         if (cancelled) return;
 
-        const map: Record<string, string> = {};
-        cases.forEach(c => {
-          const sid = (c as unknown as { sessionId?: string }).sessionId
-            ?? (c as unknown as { counselingSessionId?: string }).counselingSessionId;
-          if (sid) map[String(sid)] = c.currentState;
+        const map: Record<string, DeferredCcmsBadge> = {};
+        sessionIds.forEach((id) => {
+          map[id] = { status: 'none' };
+        });
+        cases.forEach((c) => {
+          const sid =
+            (c as unknown as { sessionId?: string }).sessionId ??
+            (c as unknown as { counselingSessionId?: string }).counselingSessionId;
+          if (sid && c.currentState) {
+            map[String(sid)] = { status: 'ready', state: c.currentState };
+          }
         });
 
-        sessionIds.forEach(id => loadedIdsRef.current.add(id));
-        setCcmsStates(prev => ({ ...prev, ...map }));
+        sessionIds.forEach((id) => loadedIdsRef.current.add(id));
+        setBadges((prev) => ({ ...prev, ...map }));
       } catch {
-        // CCMS offline — badges simply won't show
+        // CCMS offline — leave unresolved so UI does not invent Pre-Auth Queue membership
       }
     };
 
     let idleId: number | undefined;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-    const schedule = () => { void fetchBadges(); };
+    const schedule = () => {
+      void fetchBadges();
+    };
 
     if (typeof requestIdleCallback !== 'undefined') {
       idleId = requestIdleCallback(schedule, { timeout: 2000 });
@@ -69,5 +89,5 @@ export function useDeferredCcmsBadges(visiblePatients: WaitingListPatient[]) {
     };
   }, [pendingIdsKey]);
 
-  return ccmsStates;
+  return badges;
 }

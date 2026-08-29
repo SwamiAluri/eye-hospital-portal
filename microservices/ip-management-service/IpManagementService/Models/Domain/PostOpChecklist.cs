@@ -67,6 +67,7 @@ public class PostOpInstruction
     public Guid?    FollowupAppointmentId { get; set; }
     public string?  EyeCareInstructions   { get; set; }
     public string?  WarningSigns          { get; set; } // JSONB stored as string
+    public string   Status                { get; set; } = "active";
     public bool     IsSaved               { get; set; }
     public DateTime? SavedAt              { get; set; }
     public Guid?    SavedByUserId         { get; set; }

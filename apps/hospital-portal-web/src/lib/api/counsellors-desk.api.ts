@@ -589,11 +589,99 @@ export const counsellorsDeskApi = {
     }
   },
 
-  async addPatientToWaitingList(data: AddPatientFormData): Promise<void> {
+  async addPatientToWaitingList(
+    data: AddPatientFormData,
+    opts: { branchId: string },
+  ): Promise<{ patientName: string; uhid: string }> {
+    const branchId = opts.branchId?.trim();
+    if (!branchId) {
+      throw new Error('Branch is required to add a patient to the waiting list.');
+    }
+    if (!data.doctorId?.trim()) {
+      throw new Error('Please select a referring doctor.');
+    }
+
+    const {
+      requireSelectedMpiPatient,
+      buildCreateCounsellingSessionPayload,
+      findActiveWaitingListDuplicate,
+      displayIdentifierForWaitingList,
+      matchPatientForAddWaitingList,
+    } = await import('@/lib/counsellors-desk/add-patient-to-waiting-list');
+
+    let patientId = data.patientId?.trim() ?? '';
+    let displayName = data.patientName?.trim() ?? '';
+    let displayUhid = data.uhid?.trim() ?? '';
+    let mrnForDup = displayUhid;
+
+    if (patientId) {
+      const selected = requireSelectedMpiPatient({
+        id: patientId,
+        firstName: displayName.split(/\s+/)[0] ?? displayName,
+        lastName: displayName.split(/\s+/).slice(1).join(' '),
+        mrn: displayUhid || patientId,
+      });
+      if (!selected.ok) throw new Error(selected.message);
+    } else {
+      // Legacy fallback: resolve by UHID + name (kept for safety; UI passes patientId).
+      const { searchPatientsUnified } = await import('@/lib/patients/unified-patient-search');
+      const hits = await searchPatientsUnified(branchId, data.uhid.trim(), 25);
+      const match = matchPatientForAddWaitingList(hits, data.uhid, data.patientName);
+      if (!match.ok) throw new Error(match.message);
+      patientId = match.patient.id;
+      displayName = `${match.patient.firstName} ${match.patient.lastName}`.trim();
+      displayUhid = displayIdentifierForWaitingList(match.patient);
+      mrnForDup = match.patient.mrn;
+    }
+
+    if (!patientId) {
+      throw new Error('Select or register a patient before adding to the waiting list.');
+    }
+
+    const existingRows = await this.getWaitingList({ type: 'All' });
+    const duplicate =
+      findActiveWaitingListDuplicate({
+        uhid: displayUhid,
+        patientDisplayName: displayName,
+        rows: existingRows,
+      }) ??
+      (mrnForDup && mrnForDup !== displayUhid
+        ? findActiveWaitingListDuplicate({
+            uhid: mrnForDup,
+            patientDisplayName: displayName,
+            rows: existingRows,
+          })
+        : undefined);
+
+    if (duplicate) {
+      throw new Error(
+        `${displayName} is already on the waiting list (${duplicate.status}). Open their existing row instead of adding again.`,
+      );
+    }
+
+    const payload = buildCreateCounsellingSessionPayload({
+      patientId,
+      branchId,
+      doctorId: data.doctorId.trim(),
+      sessionTypeCode: data.sessionTypeCode,
+      surgeryType: data.surgeryType,
+      surgeryName: data.surgeryName,
+      eye: data.eye,
+      remarks: data.remarks,
+    });
+
     try {
-      await getApi().post('/CounsellorDesk/waiting-list', data);
-    } catch {
-      await new Promise((r) => setTimeout(r, 600));
+      const response = await getApi().post('/Counseling/sessions', payload);
+      const result = response.data as { success?: boolean; message?: string } | undefined;
+      if (result && result.success === false) {
+        throw new Error(result.message || 'Failed to create counselling session.');
+      }
+      return { patientName: displayName, uhid: displayUhid || mrnForDup };
+    } catch (err: unknown) {
+      if (err instanceof Error && !('response' in err)) throw err;
+      const axiosErr = err as { response?: { data?: { message?: string } }; message?: string };
+      const apiMessage = axiosErr.response?.data?.message ?? axiosErr.message;
+      throw new Error(apiMessage || 'Failed to add patient to waiting list.');
     }
   },
 

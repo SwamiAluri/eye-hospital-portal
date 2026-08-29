@@ -1117,7 +1117,9 @@ public partial class PatientJourneyService
 
         var actorId = Guid.TryParse(req.ActorUserId, out var parsed) ? parsed : Guid.Empty;
         var oldIol = j.IolPower;
-        var changed = ApplyOpdFields(j, req.ProcedureName, req.EyeOperated, req.IolPower, req.ForceRefresh, actorId);
+        var changed = ApplyOpdFields(
+            j, req.ProcedureName, req.EyeOperated, req.IolPower, req.ForceRefresh, actorId,
+            req.Diagnosis, req.DiagnosisJson);
         if (!changed)
             return MapDetail(j);
 
@@ -1137,7 +1139,9 @@ public partial class PatientJourneyService
             ?? throw new InvalidOperationException("OPD clinical snapshot is unavailable. Retry, or ask a counsellor to refresh from OPD.");
 
         var oldIol = j.IolPower;
-        var changed = ApplyOpdFields(j, snap.ProcedureName, snap.EyeOperated, snap.IolPower, forceRefresh: true, userId);
+        var changed = ApplyOpdFields(
+            j, snap.ProcedureName, snap.EyeOperated, snap.IolPower, forceRefresh: true, userId,
+            snap.Diagnosis, snap.DiagnosisJson);
         if (changed)
         {
             await LogAsync(j, userId, "OpdClinicalRefreshed",
@@ -1159,7 +1163,9 @@ public partial class PatientJourneyService
         string? eyeOperated,
         string? iolPower,
         bool forceRefresh,
-        Guid userId)
+        Guid userId,
+        string? diagnosis = null,
+        string? diagnosisJson = null)
     {
         var changed = false;
 
@@ -1182,12 +1188,34 @@ public partial class PatientJourneyService
             changed = true;
         }
 
+        var incomingDx = EmptyDiagnosisToNull(diagnosis);
+        if (OpdJourneyCopy.ShouldWrite(j.OpdDiagnosis, incomingDx, forceRefresh))
+        {
+            j.OpdDiagnosis = incomingDx;
+            changed = true;
+        }
+
+        var incomingDxJson = EmptyDiagnosisToNull(diagnosisJson);
+        if (OpdJourneyCopy.ShouldWrite(j.OpdDiagnosisJson, incomingDxJson, forceRefresh))
+        {
+            j.OpdDiagnosisJson = incomingDxJson;
+            changed = true;
+        }
+
         if (!changed) return false;
 
         j.UpdatedAt = DateTime.UtcNow;
         if (userId != Guid.Empty)
             j.UpdatedByUserId = userId;
         return true;
+    }
+
+    private static string? EmptyDiagnosisToNull(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        if (trimmed is "[]" or "null") return null;
+        return trimmed;
     }
 
     /// <summary>Clear pending-rebook when counselling sets a new surgery date (G1 / Phase 3.4).</summary>
@@ -1589,7 +1617,9 @@ public partial class PatientJourneyService
         slot?.Session,
         slot?.SequenceNo,
         slot?.PlannedArrivalAt,
-        slot?.TheatreId);
+        slot?.TheatreId,
+        j.OpdDiagnosis,
+        j.OpdDiagnosisJson);
     }
 
     private const string ConcurrencyConflictMessage =

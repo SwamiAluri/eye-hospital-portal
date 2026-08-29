@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   Plus, Search, Users, Scissors, RefreshCw, CheckCircle2,
   Activity, Calendar, RotateCcw, SlidersHorizontal,
-  Clock, X,
+  Clock, X, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
@@ -19,6 +19,9 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useWaitingListQuery, useInvalidateCounsellorsDesk } from '@/hooks/use-counsellors-desk-queries';
 import { useDeferredCcmsBadges } from '@/hooks/use-deferred-ccms-badges';
 import { isCoveragePaymentTypeValue } from '@/lib/counsellors-desk/session-utils';
+import { isWaitingListPreAuthQueue } from '@/lib/counsellors-desk/waiting-list-preauth';
+import { applyWaitingListClientFilters } from '@/lib/counsellors-desk/waiting-list-client-filters';
+import { resolveOtReturnedAction } from '@/lib/counsellors-desk/ot-returned-action';
 import type { WaitingListPatient, WaitingListFilters, AddPatientFormData } from '@/types/counsellors-desk';
 
 const AddPatientModal = dynamic(
@@ -173,30 +176,63 @@ export default function CounsellorWaitingListPage() {
   const [filters, setFilters] = useState<WaitingListFilters>({
     fromDate: '', toDate: '', patientName: '', mrd: '', type: 'All', status: '',
   });
-  const [appliedFilters, setAppliedFilters] = useState<WaitingListFilters>(filters);
+  /** Date / name / MRD sent to API after Apply. Type is client-side only (§6). */
+  const [appliedFilters, setAppliedFilters] = useState<WaitingListFilters>({
+    fromDate: '', toDate: '', patientName: '', mrd: '', type: 'All', status: '',
+  });
 
-  const waitingListQuery = useWaitingListQuery(appliedFilters);
+  const apiFilters = useMemo(
+    (): WaitingListFilters => ({
+      ...appliedFilters,
+      type: 'All',
+    }),
+    [appliedFilters],
+  );
+
+  const waitingListQuery = useWaitingListQuery(apiFilters);
   const patients = waitingListQuery.data ?? [];
   const isLoading = waitingListQuery.isLoading && patients.length === 0;
   const isRefreshing = waitingListQuery.isFetching && patients.length > 0;
 
-  const { user } = useAuthStore();
-  const branchId = user?.branchId;
+  const { user, selectedBranchId } = useAuthStore();
+  const branchId = selectedBranchId ?? user?.branchId;
 
-  const fetchOtReturned = async () => {
+  // §8 — fetch OT Returned only after branchId is available (auth hydrate race on mount).
+  useEffect(() => {
     if (!branchId) return;
-    setOtReturnedLoading(true);
-    try {
-      const rows = await ipManagementApi.listJourneys({ branchId, clinicalState: 'ReadyForSurgery' });
-      setOtReturnedRows(rows.filter(r => !!r.otReturnReason));
-    } catch {
-      // silent — we just show empty list
-    } finally {
-      setOtReturnedLoading(false);
-    }
-  };
 
-  useEffect(() => { fetchOtReturned(); }, []);
+    let cancelled = false;
+
+    const loadOtReturned = async () => {
+      setOtReturnedLoading(true);
+      try {
+        const rows = await ipManagementApi.listJourneys({
+          branchId,
+          clinicalState: 'ReadyForSurgery',
+        });
+        if (cancelled) return;
+        setOtReturnedRows(rows.filter((r) => !!r.otReturnReason));
+      } catch {
+        if (cancelled) return;
+        setOtReturnedRows([]);
+        toast.error('Failed to load OT-returned patients');
+      } finally {
+        if (!cancelled) setOtReturnedLoading(false);
+      }
+    };
+
+    void loadOtReturned();
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loadOtReturned();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [branchId]);
 
   const refetchWaitingList = waitingListQuery.refetch;
 
@@ -214,7 +250,11 @@ export default function CounsellorWaitingListPage() {
   }, [waitingListQuery.isError]);
 
   const handleSearch = () => {
-    setAppliedFilters(filters);
+    // Apply date / name / MRD only — type already filters immediately client-side.
+    setAppliedFilters({
+      ...filters,
+      type: 'All',
+    });
   };
 
   const handleReset = () => {
@@ -226,32 +266,39 @@ export default function CounsellorWaitingListPage() {
     setQuickSearch('');
   };
 
-  const filtered = useMemo(() => {
-    let list = patients;
-    if (activeTab === 'PreAuthQueue') {
-      list = list.filter(p => isCoveragePaymentTypeValue(p.paymentType as string));
-    } else if (activeTab !== 'All') {
-      list = list.filter(p => p.status === activeTab);
-    }
-    if (debouncedQuickSearch) {
-      const q = debouncedQuickSearch.toLowerCase();
-      list = list.filter(p =>
-        p.patientName.toLowerCase().includes(q) ||
-        p.uhid.toLowerCase().includes(q) ||
-        p.surgeryName.toLowerCase().includes(q) ||
-        p.doctor.toLowerCase().includes(q)
-      );
-    }
-    if (appliedFilters.patientName)
-      list = list.filter(p => p.patientName.toLowerCase().includes(appliedFilters.patientName.toLowerCase()));
-    if (appliedFilters.mrd)
-      list = list.filter(p => p.uhid.toLowerCase().includes(appliedFilters.mrd.toLowerCase()));
-    if (appliedFilters.type !== 'All')
-      list = list.filter(p => p.type === appliedFilters.type);
-    return list;
-  }, [patients, activeTab, debouncedQuickSearch, appliedFilters]);
+  const coveragePatients = useMemo(
+    () => patients.filter((p) => isCoveragePaymentTypeValue(p.patientType)),
+    [patients],
+  );
 
-  const ccmsStates = useDeferredCcmsBadges(filtered);
+  const ccmsBadges = useDeferredCcmsBadges(coveragePatients);
+
+  const isPreAuthQueueRow = useCallback(
+    (p: WaitingListPatient) => {
+      const badge = ccmsBadges[p.id];
+      if (!badge || badge.status !== 'ready') return false;
+      return isWaitingListPreAuthQueue({
+        patientType: p.patientType,
+        ccmsState: badge.state,
+        hasCcmsCase: true,
+      });
+    },
+    [ccmsBadges],
+  );
+
+  const filtered = useMemo(
+    () =>
+      applyWaitingListClientFilters({
+        patients,
+        type: filters.type,
+        activeTab,
+        quickSearch: debouncedQuickSearch,
+        patientName: appliedFilters.patientName,
+        mrd: appliedFilters.mrd,
+        isPreAuthQueueRow,
+      }),
+    [patients, filters.type, activeTab, debouncedQuickSearch, appliedFilters.patientName, appliedFilters.mrd, isPreAuthQueueRow],
+  );
 
   const stats = useMemo(() => ({
     total:     patients.length,
@@ -262,24 +309,41 @@ export default function CounsellorWaitingListPage() {
   }), [patients]);
 
   const tabCounts = useMemo(() => {
-    const map: Record<string, number> = { All: patients.length };
+    const typeScoped =
+      filters.type === 'All' ? patients : patients.filter((p) => p.type === filters.type);
+    const map: Record<string, number> = { All: typeScoped.length };
     STATUS_TABS.slice(1).forEach(({ key }) => {
       if (key === 'OtReturned') {
         map[key] = otReturnedRows.length;
+      } else if (key === 'PreAuthQueue') {
+        map[key] = typeScoped.filter(isPreAuthQueueRow).length;
       } else {
-        map[key] = patients.filter(p => p.status === key).length;
+        map[key] = typeScoped.filter((p) => p.status === key).length;
       }
     });
     return map;
-  }, [patients, otReturnedRows]);
+  }, [patients, otReturnedRows, isPreAuthQueueRow, filters.type]);
 
   const handleAddPatient = async (data: AddPatientFormData) => {
+    if (!branchId) {
+      toast.error('Branch is required to add a patient to the waiting list');
+      throw new Error('Branch is required');
+    }
     try {
-      await counsellorsDeskApi.addPatientToWaitingList(data);
-      toast.success('Patient added to waiting list');
-      invalidateWaitingList();
-    } catch {
-      toast.error('Failed to add patient');
+      const added = await counsellorsDeskApi.addPatientToWaitingList(data, { branchId });
+      setActiveTab('Pending');
+      setQuickSearch('');
+      setFilters((f) => ({ ...f, type: 'All', patientName: '', mrd: '' }));
+      setAppliedFilters({
+        fromDate: '', toDate: '', patientName: '', mrd: '', type: 'All', status: '',
+      });
+      await invalidateWaitingList();
+      await refetchWaitingList();
+      toast.success(`${added.patientName} scheduled for counselling — check Pending (${added.uhid})`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to schedule counselling';
+      toast.error(message);
+      throw err;
     }
   };
 
@@ -302,7 +366,7 @@ export default function CounsellorWaitingListPage() {
   const hasActiveFilters = !!(
     appliedFilters.fromDate || appliedFilters.toDate ||
     appliedFilters.patientName || appliedFilters.mrd ||
-    appliedFilters.type !== 'All'
+    filters.type !== 'All'
   );
 
   const STAT_CARDS = [
@@ -379,10 +443,12 @@ export default function CounsellorWaitingListPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1" role="group" aria-label="Filter by type">
             {(['All', 'Procedure', 'Surgery'] as const).map(t => (
               <button
                 key={t}
+                type="button"
+                aria-pressed={filters.type === t}
                 onClick={() => setFilters(f => ({ ...f, type: t }))}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
                   filters.type === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
@@ -538,8 +604,11 @@ export default function CounsellorWaitingListPage() {
                         <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center">
                           <RotateCcw className="h-5 w-5 text-rose-300" />
                         </div>
-                        <p className="text-sm font-medium">No OT-returned patients</p>
-                        <p className="text-xs opacity-60">Patients returned from OT will appear here</p>
+                        <p className="text-sm font-medium text-gray-600">No OT-returned patients</p>
+                        <p className="text-xs text-gray-400 max-w-sm leading-relaxed">
+                          Empty is normal until OT returns a patient. Path: IP journey Send to OT →
+                          Operation Theatre → Return Patient (with reason) → patient returns to Ready for Surgery.
+                        </p>
                       </div>
                     </td>
                   </tr>
@@ -551,6 +620,10 @@ export default function CounsellorWaitingListPage() {
                   const reasonParts = (row.otReturnReason ?? '').split(' — ');
                   const primaryReason = reasonParts[0];
                   const reasonNote   = reasonParts.slice(1).join(' — ');
+                  const action = resolveOtReturnedAction({
+                    journeyId: row.id,
+                    counselingSessionId: row.counselingSessionId,
+                  });
                   return (
                     <tr key={row.id} className={`border-l-4 border-l-rose-400 ${idx % 2 === 0 ? 'bg-white' : 'bg-rose-50/30'} hover:bg-rose-50/60 transition-colors`}>
                       <td className="pl-4 pr-3 py-3 text-xs text-gray-500">{idx + 1}</td>
@@ -568,17 +641,18 @@ export default function CounsellorWaitingListPage() {
                       </td>
                       <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{sched}</td>
                       <td className="px-3 pr-4 py-3">
-                        {row.counselingSessionId ? (
-                          <button
-                            onClick={() => router.push(`/dashboard/counsellors-desk/${row.counselingSessionId}`)}
-                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors"
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            Re-plan
-                          </button>
-                        ) : (
-                          <span className="text-[10px] text-gray-400 italic">No session</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => router.push(action.href)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors"
+                        >
+                          {action.kind === 'replan' ? (
+                            <RotateCcw className="h-3 w-3" aria-hidden />
+                          ) : (
+                            <ExternalLink className="h-3 w-3" aria-hidden />
+                          )}
+                          {action.label}
+                        </button>
                       </td>
                     </tr>
                   );
@@ -621,24 +695,36 @@ export default function CounsellorWaitingListPage() {
                         <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center">
                           <Users className="h-6 w-6 opacity-40" />
                         </div>
-                        <p className="text-sm font-medium">No patients found</p>
-                        <p className="text-xs opacity-60">Try adjusting your filters or search</p>
+                        <p className="text-sm font-medium text-gray-600">
+                          {activeTab === 'RepeatCounselling'
+                            ? 'No repeat counselling patients'
+                            : 'No patients found'}
+                        </p>
+                        <p className="text-xs text-gray-400 max-w-md leading-relaxed">
+                          {activeTab === 'RepeatCounselling'
+                            ? 'Create via session: open a Pending patient → Patient Decision → Not Interested or Needs Time → Save Session. Then return here. Follow-up Center Re-queue creates a new Pending row, not this tab.'
+                            : 'Try adjusting your filters or search'}
+                        </p>
                       </div>
                     </td>
                   </tr>
                 )
-                : filtered.map((patient, idx) => (
+                : filtered.map((patient, idx) => {
+                  const badge = ccmsBadges[patient.id];
+                  const ccmsState = badge?.status === 'ready' ? badge.state : undefined;
+                  return (
                   <WaitingListRow
                     key={patient.id}
                     patient={patient}
                     idx={idx}
                     isSelected={selectedId === patient.id}
-                    ccmsState={ccmsStates[patient.id]}
+                    ccmsState={ccmsState}
                     onRowClick={handleRowClick}
                     onDemographics={handleDemographics}
                     onPreAuth={handlePreAuth}
                   />
-                ))
+                  );
+                })
               }
             </tbody>
           </table>
@@ -660,13 +746,6 @@ export default function CounsellorWaitingListPage() {
                 )
               }
             </p>
-            {filtered.length > 0 && (
-              <div className="flex items-center gap-1">
-                <button disabled className="h-7 w-7 flex items-center justify-center text-xs border border-gray-200 rounded-lg text-gray-400 hover:bg-white transition-all disabled:opacity-30">‹</button>
-                <button className="h-7 w-7 flex items-center justify-center text-xs bg-blue-600 text-white rounded-lg font-bold shadow-sm">1</button>
-                <button disabled className="h-7 w-7 flex items-center justify-center text-xs border border-gray-200 rounded-lg text-gray-400 hover:bg-white transition-all disabled:opacity-30">›</button>
-              </div>
-            )}
           </div>
         )}
         </>
@@ -678,6 +757,7 @@ export default function CounsellorWaitingListPage() {
           isOpen
           onClose={() => setIsAddModalOpen(false)}
           onAdd={handleAddPatient}
+          branchId={branchId}
         />
       )}
 

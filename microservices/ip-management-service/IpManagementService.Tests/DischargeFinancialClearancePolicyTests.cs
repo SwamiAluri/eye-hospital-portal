@@ -22,6 +22,13 @@ public class DischargeFinancialClearancePolicyTests
     }
 
     [Fact]
+    public void CashLedgerDue_JourneyZero_IsNotProofOfClearance_WhenBillExists()
+    {
+        Assert.Equal(500m, DischargeFinancialClearancePolicy.CashLedgerDue(
+            billingLedgerAvailable: true, patientBalance: 500m, journeyBalanceDue: 0m));
+    }
+
+    [Fact]
     public void Cash_Blocks_When_BalanceDue()
     {
         Assert.True(DischargeFinancialClearancePolicy.IsOutstanding(

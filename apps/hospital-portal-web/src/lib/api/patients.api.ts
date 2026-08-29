@@ -152,7 +152,8 @@ export const patientApi = {
    */
   async create(data: PatientFormData) {
     const api = getApi();
-    return api.post<Patient>('/patients', data);
+    const { sanitizePatientWritePayload } = await import('@/lib/patients/patient-write-payload');
+    return api.post<Patient>('/patients', sanitizePatientWritePayload(data as unknown as Record<string, unknown>));
   },
 
   /**
@@ -160,7 +161,8 @@ export const patientApi = {
    */
   async update(id: string, data: Partial<PatientFormData>) {
     const api = getApi();
-    return api.put<Patient>(`/patients/${id}`, data);
+    const { sanitizePatientWritePayload } = await import('@/lib/patients/patient-write-payload');
+    return api.put<Patient>(`/patients/${id}`, sanitizePatientWritePayload(data as unknown as Record<string, unknown>));
   },
 
   /**

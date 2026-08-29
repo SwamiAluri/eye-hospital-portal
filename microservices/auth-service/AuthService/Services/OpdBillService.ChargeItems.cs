@@ -210,7 +210,7 @@ public partial class OpdBillService
                 SourceRefId = row.Line.SourceRefId,
                 IdempotencyKey = row.Key,
                 Notes = row.Line.Notes,
-                UnitPriceOverride = creditPrice,
+                UnitPriceOverride = creditPrice ?? row.Result.UnitPrice,
             }, request.TenantId, userId));
         }
 

@@ -309,6 +309,7 @@ export interface PatientJourneyDetailDto extends PatientJourneyRowDto {
   patientAge: number | null;
   patientGender: string | null;
   diagnosis: string | null;
+  diagnosisJson?: string | null;
   surgeonName: string | null;
   // Ward / discharge
   dischargedAt: string | null;

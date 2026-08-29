@@ -454,3 +454,51 @@ export function outpatientDiagnosisFromJourney(diagnosis?: string | null): Outpa
   if (!text) return null;
   return { description: text };
 }
+
+export function parseJourneyOpdDiagnoses(json?: string | null): WardDiagnosisEntry[] {
+  if (!json?.trim()) return [];
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) return [];
+    const rows = parsed
+      .map(item => {
+        const row = (item ?? {}) as Record<string, unknown>;
+        const lateralityRaw = String(row.laterality ?? '').toUpperCase();
+        const laterality: DiagnosisLaterality | undefined =
+          lateralityRaw === 'OD' || lateralityRaw === 'OS' || lateralityRaw === 'OU'
+            ? lateralityRaw
+            : undefined;
+        const type = String(row.diagnosisType ?? row.diagnosis_type ?? '').toLowerCase();
+        return {
+          icd10: String(row.icd10 ?? row.code ?? '').trim(),
+          description: String(row.description ?? row.name ?? '').trim(),
+          laterality,
+          isPrimary: row.isPrimary === true || type === 'primary',
+        } satisfies WardDiagnosisEntry;
+      })
+      .filter(d => d.icd10 || d.description);
+
+    if (rows.length > 0 && !rows.some(d => d.isPrimary)) {
+      rows[0] = { ...rows[0], isPrimary: true };
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+export function outpatientDiagnosisFromOpdSnapshot(
+  summary?: string | null,
+  json?: string | null,
+): OutpatientDiagnosisSource | null {
+  const rows = parseJourneyOpdDiagnoses(json);
+  const primary = rows.find(r => r.isPrimary) ?? rows[0];
+  if (primary) {
+    return {
+      description: primary.description || summary?.trim() || primary.icd10,
+      icd10: primary.icd10 || undefined,
+      laterality: primary.laterality,
+    };
+  }
+  return outpatientDiagnosisFromJourney(summary);
+}

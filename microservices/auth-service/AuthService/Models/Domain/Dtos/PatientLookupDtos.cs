@@ -60,6 +60,8 @@ public class PatientSuggestRowDto
     public string FirstName { get; set; } = "";
     public string LastName { get; set; } = "";
     public string Mrn { get; set; } = "";
+    /// <summary>UHID / Health ID when distinct from MRN — Waiting List displays this preferentially.</summary>
+    public string? HealthId { get; set; }
     public DateTime DateOfBirth { get; set; }
     public string Gender { get; set; } = "";
     public string? Phone { get; set; }

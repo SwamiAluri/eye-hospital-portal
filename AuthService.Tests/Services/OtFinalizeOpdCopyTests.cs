@@ -123,6 +123,124 @@ public class OtFinalizeOpdCopyTests
     }
 
     [Fact]
+    public async Task Snapshot_DoesNotTreatRecommendedSurgeryAsDiagnosis()
+    {
+        await using var db = TestDbContextFactory.CreateInMemory();
+        var tenantId = Guid.NewGuid();
+        var patientId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        SeedSession(db, tenantId, patientId, sessionId, iol: "+21.00 D", eye: "RE", surgery: "Phaco + IOL",
+            clinicalSummary: """{"diagnosis":"Immature cataract OD"}""");
+        await db.SaveChangesAsync();
+
+        var snap = await CreateService(db).GetOpdClinicalSnapshotAsync(
+            tenantId, patientId, sessionId, "RE", preferBiometry: false);
+
+        Assert.Equal("Immature cataract OD", snap.Diagnosis);
+        Assert.NotEqual("Phaco + IOL", snap.Diagnosis);
+        Assert.Equal("Phaco + IOL", snap.ProcedureName);
+    }
+
+    [Fact]
+    public async Task Snapshot_CopiesPrimaryThenSecondaryPatientDiagnoses()
+    {
+        await using var db = TestDbContextFactory.CreateInMemory();
+        var tenantId = Guid.NewGuid();
+        var patientId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var actorId = Guid.NewGuid();
+        SeedSession(db, tenantId, patientId, sessionId, iol: null, eye: "RE", surgery: "Phaco + IOL");
+
+        var cataract = new DiagnosisCode
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Code = "H25.1",
+            Description = "Age-related cataract",
+            Category = "Lens",
+            Status = "active",
+        };
+        var glaucoma = new DiagnosisCode
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Code = "H40.1",
+            Description = "Open-angle glaucoma",
+            Category = "Glaucoma",
+            Status = "active",
+        };
+        db.DiagnosisCodes.AddRange(cataract, glaucoma);
+        db.PatientDiagnoses.AddRange(
+            new PatientDiagnosis
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                PatientId = patientId,
+                DiagnosisCodeId = glaucoma.Id,
+                DiagnosisCode = glaucoma,
+                DiagnosisType = "secondary",
+                EyeSpecificity = "OS",
+                DiagnosedByUserId = actorId,
+                Status = "active",
+                DiagnosedAt = DateTime.UtcNow.AddDays(-2),
+            },
+            new PatientDiagnosis
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                PatientId = patientId,
+                DiagnosisCodeId = cataract.Id,
+                DiagnosisCode = cataract,
+                DiagnosisType = "primary",
+                EyeSpecificity = "OD",
+                DiagnosedByUserId = actorId,
+                Status = "active",
+                DiagnosedAt = DateTime.UtcNow.AddDays(-1),
+            });
+        await db.SaveChangesAsync();
+
+        var snap = await CreateService(db).GetOpdClinicalSnapshotAsync(
+            tenantId, patientId, sessionId, "RE", preferBiometry: false);
+
+        Assert.Contains("H25.1", snap.Diagnosis);
+        Assert.Contains("H40.1", snap.Diagnosis);
+        Assert.StartsWith("H25.1", snap.Diagnosis);
+        Assert.DoesNotContain("Phaco", snap.Diagnosis);
+        Assert.Contains("H25.1", snap.DiagnosisJson);
+        Assert.Contains("H40.1", snap.DiagnosisJson);
+    }
+
+    [Fact]
+    public async Task GetById_DiagnosisIsNotRecommendedSurgery()
+    {
+        await using var db = TestDbContextFactory.CreateInMemory();
+        var tenantId = Guid.NewGuid();
+        var patientId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        SeedSession(db, tenantId, patientId, sessionId, iol: null, eye: "RE", surgery: "Phaco + IOL",
+            clinicalSummary: """{"diagnosis":"Immature cataract OD"}""");
+        var schedule = new OtFinalizeSchedule
+        {
+            TenantId = tenantId,
+            PatientId = patientId,
+            PatientName = "Meena Iyer",
+            Uhid = "UAT-002",
+            SurgeryName = "Phaco + IOL",
+            Eye = "RE",
+            Status = OtFinalizeStatus.NotConfirmed,
+            CounsellingSessionId = sessionId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.OtFinalizeSchedules.Add(schedule);
+        await db.SaveChangesAsync();
+
+        var detail = await CreateService(db).GetByIdAsync(schedule.Id, tenantId);
+        Assert.Equal("Immature cataract OD", detail.Diagnosis);
+        Assert.NotEqual("Phaco + IOL", detail.Diagnosis);
+    }
+
+    [Fact]
     public async Task GetById_SetsBiometryMissingWhenNoRecordForEye()
     {
         await using var db = TestDbContextFactory.CreateInMemory();
@@ -153,7 +271,7 @@ public class OtFinalizeOpdCopyTests
 
     private static void SeedSession(
         AppDbContext db, Guid tenantId, Guid patientId, Guid sessionId,
-        string? iol, string eye, string surgery)
+        string? iol, string eye, string surgery, string? clinicalSummary = null)
     {
         db.CounselingSession.Add(new CounselingSession
         {
@@ -166,6 +284,7 @@ public class OtFinalizeOpdCopyTests
             IolPower = iol,
             SurgeryTentativeEye = eye,
             RecommendedSurgery = surgery,
+            ClinicalSummary = clinicalSummary,
         });
     }
 

@@ -73,7 +73,7 @@ function WaitingListRowComponent({
   onPreAuth,
 }: WaitingListRowProps) {
   const borderColor = STATUS_BORDER[patient.status] ?? 'border-l-gray-200';
-  const isInsurance = isCoveragePaymentTypeValue(patient.paymentType as string);
+  const isInsurance = isCoveragePaymentTypeValue(patient.patientType);
 
   return (
     <tr
@@ -171,7 +171,7 @@ function WaitingListRowComponent({
         {isInsurance ? (
           <div className="space-y-1">
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
-              {patient.paymentType}
+              {patient.patientType}
             </span>
             {ccmsState && <PreAuthStateBadge state={ccmsState} />}
           </div>

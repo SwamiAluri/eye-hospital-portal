@@ -14,6 +14,8 @@ import {
   readClinicalEvaluationFields,
   serializeStructuredPayload,
   buildStructuredPayload,
+  parseJourneyOpdDiagnoses,
+  outpatientDiagnosisFromOpdSnapshot,
 } from './clinical-evaluation';
 import { buildSurgicalPlanCompletionPatch } from './clinical-evaluation-persist';
 
@@ -40,6 +42,29 @@ function completion(key: string, patch: Partial<PreOpCompletionDto> = {}): PreOp
 }
 
 describe('clinical-evaluation helpers', () => {
+  it('parses journey OPD snapshot without collapsing diagnoses', () => {
+    const rows = parseJourneyOpdDiagnoses(
+      JSON.stringify([
+        { icd10: 'H25.1', description: 'Age-related cataract', laterality: 'OD', diagnosisType: 'primary', isPrimary: true },
+        { icd10: 'H40.1', description: 'Open-angle glaucoma', laterality: 'OS', diagnosisType: 'secondary', isPrimary: false },
+      ]),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ icd10: 'H25.1', isPrimary: true, laterality: 'OD' });
+    expect(rows[1]).toMatchObject({ icd10: 'H40.1', isPrimary: false, laterality: 'OS' });
+    const source = outpatientDiagnosisFromOpdSnapshot(
+      'H25.1 — Age-related cataract (OD); H40.1 — Open-angle glaucoma (OS)',
+      JSON.stringify(rows),
+    );
+    expect(source?.icd10).toBe('H25.1');
+    expect(source?.description).toBe('Age-related cataract');
+  });
+
+  it('treats missing journey diagnosis snapshot as empty', () => {
+    expect(parseJourneyOpdDiagnoses(null)).toEqual([]);
+    expect(outpatientDiagnosisFromOpdSnapshot(null, null)).toBeNull();
+  });
+
   it('reads pre-op diagnosis from surgical_plan_confirmed notes JSON', () => {
     const payload = buildStructuredPayload({
       diagnoses: [{ icd10: 'H25.1', description: 'Immature cataract', isPrimary: true, laterality: 'OD' }],

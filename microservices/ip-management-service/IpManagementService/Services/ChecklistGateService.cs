@@ -534,6 +534,7 @@ public class ChecklistGateService
         decimal collected = 0;
         var billingLedgerAvailable = false;
         decimal patientBalance = 0;
+        var billingSummaryUnavailable = _billing is null;
         if (_ccms is not null && coverageBased)
         {
             var v = await _ccms.ValidateAdmissionAsync(
@@ -554,22 +555,38 @@ public class ChecklistGateService
                 }
             }
         }
-        catch { /* billing overlay is optional for the gate */ }
-
-        var cashDue = DischargeFinancialClearancePolicy.CashLedgerDue(
-            billingLedgerAvailable, patientBalance, journey.BalanceDue);
-        if (DischargeFinancialClearancePolicy.IsOutstanding(
-                coverageBased, cashDue, patientShare, ccmsUnavailable, collected))
+        catch
         {
-            var due = DischargeFinancialClearancePolicy.PatientObligationDue(
-                coverageBased, cashDue, patientShare, ccmsUnavailable, collected);
-            var dueLabel = due == decimal.MaxValue ? "unknown (CCMS unavailable)" : $"₹{due:N0}";
+            // Auth summary is the discharge money SoT. Do not fall back to journey.BalanceDue.
+            billingSummaryUnavailable = true;
+        }
+
+        if (billingSummaryUnavailable)
+        {
             warnings.Add(new ChecklistGateWarningDto(
                 "patient_obligation_outstanding",
-                $"Clinical discharge blocked until patient share / cash due is collected ({dueLabel}). CCMS payer settlement does not hold the bed. Apply discharge override with a reason to proceed.",
+                "Clinical discharge blocked: billing information could not be verified. Journey balance is not used as patient due. Apply discharge override with a reason to proceed.",
                 "block",
                 true,
                 DischargeBlockerCategory.Financial));
+        }
+        else
+        {
+            var cashDue = DischargeFinancialClearancePolicy.CashLedgerDue(
+                billingLedgerAvailable, patientBalance, journey.BalanceDue);
+            if (DischargeFinancialClearancePolicy.IsOutstanding(
+                    coverageBased, cashDue, patientShare, ccmsUnavailable, collected))
+            {
+                var due = DischargeFinancialClearancePolicy.PatientObligationDue(
+                    coverageBased, cashDue, patientShare, ccmsUnavailable, collected);
+                var dueLabel = due == decimal.MaxValue ? "unknown (CCMS unavailable)" : $"₹{due:N0}";
+                warnings.Add(new ChecklistGateWarningDto(
+                    "patient_obligation_outstanding",
+                    $"Clinical discharge blocked until patient share / cash due is collected ({dueLabel}). CCMS payer settlement does not hold the bed. Apply discharge override with a reason to proceed.",
+                    "block",
+                    true,
+                    DischargeBlockerCategory.Financial));
+            }
         }
 
         var followupId = await _db.PostOpInstructions

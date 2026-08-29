@@ -271,6 +271,7 @@ public class BillItemService : IBillItemService
             var globalPrice = await _context.VariantPrices
                 .Where(p => p.VariantId == variant.Id
                          && p.BranchId == null
+                         && p.PayerId == null
                          && p.EffectiveTo == null
                          && p.IsActive)
                 .OrderByDescending(p => p.EffectiveFrom)

@@ -82,6 +82,26 @@ public class DischargeWithTypeGateTests : IDisposable
         Assert.Contains(result.TransitionWarnings ?? [], w => w.Code == "patient_obligation_outstanding");
     }
 
+    [Fact]
+    public async Task Death_And_Transfer_Proceed_WithFinancialWarnings_WithoutRedesign()
+    {
+        var death = Seed(ClinicalState.Admitted);
+        var deathResult = await _svc.DischargeWithTypeAsync(
+            death.Id, _tenantId, _actorId,
+            new DischargeWithTypeRequest(DischargeType.Death, "Died in ward", true, false));
+        Assert.Equal(ClinicalState.Discharged, deathResult.ClinicalState);
+        Assert.Equal(DischargeType.Death, deathResult.DischargeType);
+        Assert.Contains(deathResult.TransitionWarnings ?? [], w => w.Code == "patient_obligation_outstanding");
+
+        var transfer = Seed(ClinicalState.Admitted);
+        var transferResult = await _svc.DischargeWithTypeAsync(
+            transfer.Id, _tenantId, _actorId,
+            new DischargeWithTypeRequest(DischargeType.Transfer, "Transferred to higher centre", true, false));
+        Assert.Equal(ClinicalState.Discharged, transferResult.ClinicalState);
+        Assert.Equal(DischargeType.Transfer, transferResult.DischargeType);
+        Assert.Contains(transferResult.TransitionWarnings ?? [], w => w.Code == "patient_obligation_outstanding");
+    }
+
     private PatientJourney Seed(string clinical, bool overrideApplied = false)
     {
         var journey = new PatientJourney

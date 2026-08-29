@@ -507,6 +507,8 @@ namespace AuthService.Controllers
                         s.AdditionalNotes,
                         s.PackageAddonsJson,
                         s.PackageAmount,
+                        s.DecisionDate,
+                        s.ReasonsForDelay,
                         p.FirstName,
                         p.LastName,
                         p.HealthId,
@@ -571,6 +573,14 @@ namespace AuthService.Controllers
                             Time        = item.AddedToQueueAt.ToLocalTime().ToString("hh:mm tt"),
                             Remarks     = remarks,
                             Status      = status,
+                            // Repeat Counselling follow-up — same SoT as session UI:
+                            // DecisionDate → FollowUpDate, ReasonsForDelay → FollowUpReason.
+                            FollowUpDate = status == "RepeatCounselling" && item.DecisionDate.HasValue
+                                ? item.DecisionDate.Value.ToString("yyyy-MM-dd")
+                                : null,
+                            FollowUpReason = status == "RepeatCounselling" && !string.IsNullOrWhiteSpace(item.ReasonsForDelay)
+                                ? item.ReasonsForDelay
+                                : null,
                             // ── AddOnSurgery upgrade info ──────────────────────────────
                             // Parse PackageAddonsJson blob written by handleSave() on the
                             // session page when a Done session's package is upgraded.

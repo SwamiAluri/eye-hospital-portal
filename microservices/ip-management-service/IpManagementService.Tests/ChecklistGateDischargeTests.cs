@@ -82,6 +82,79 @@ public class ChecklistGateDischargeTests : IDisposable
         Assert.Contains(result.Warnings, w => w.Code == "patient_obligation_outstanding");
     }
 
+    [Fact]
+    public async Task AuthSummaryUnavailable_StaleHighJourneyDue_BlocksWithoutUsingJourneyAmount()
+    {
+        var journey = Seed(ClinicalState.ReadyForDischarge, paymentMode: "Cash", journeyBalanceDue: 80_000m);
+        _billing.ThrowOnSummary = true;
+
+        var result = await _gates.EvaluateTransitionAsync(journey, ClinicalState.Discharged, _tenantId);
+
+        var money = Assert.Single(result.Warnings, w => w.Code == "patient_obligation_outstanding");
+        Assert.Equal("block", money.Severity);
+        Assert.Equal(DischargeBlockerCategory.Financial, money.Category);
+        Assert.Contains("could not be verified", money.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("80,000", money.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("80000", money.Message, StringComparison.Ordinal);
+        Assert.False(result.CanProceed);
+    }
+
+    [Fact]
+    public async Task AuthSummaryUnavailable_StaleZeroJourneyDue_DoesNotClearDischarge()
+    {
+        var journey = Seed(ClinicalState.ReadyForDischarge, paymentMode: "Cash", journeyBalanceDue: 0m);
+        _billing.ThrowOnSummary = true;
+
+        var result = await _gates.EvaluateTransitionAsync(journey, ClinicalState.Discharged, _tenantId);
+
+        var money = Assert.Single(result.Warnings, w => w.Code == "patient_obligation_outstanding");
+        Assert.Equal("block", money.Severity);
+        Assert.Contains("could not be verified", money.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(result.CanProceed);
+    }
+
+    [Fact]
+    public async Task Coverage_CcmsUnavailable_Blocks_WithoutAuthFallback()
+    {
+        var journey = Seed(ClinicalState.ReadyForDischarge, paymentMode: "Insurance", journeyBalanceDue: 0m);
+        _ccms.Unavailable = true;
+        _billing.Summary = Summary(billId: Guid.NewGuid(), patientBalance: 0m, balanceDue: 80_000m, patientPaid: 0m);
+
+        var result = await _gates.EvaluateTransitionAsync(journey, ClinicalState.Discharged, _tenantId);
+
+        var money = Assert.Single(result.Warnings, w => w.Code == "patient_obligation_outstanding");
+        Assert.Contains("CCMS unavailable", money.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(result.CanProceed);
+        Assert.Equal(1, _ccms.ValidateCalls);
+    }
+
+    [Fact]
+    public async Task AuthSummaryUnavailable_DoesNotDropFollowupBlocker()
+    {
+        var journey = Seed(ClinicalState.ReadyForDischarge, paymentMode: "Cash", journeyBalanceDue: 0m);
+        _billing.ThrowOnSummary = true;
+
+        var result = await _gates.EvaluateTransitionAsync(journey, ClinicalState.Discharged, _tenantId);
+
+        Assert.Contains(result.Warnings, w => w.Code == "patient_obligation_outstanding");
+        Assert.Contains(result.Warnings, w => w.Code == FollowupAppointmentLock.MissingCode);
+        Assert.False(result.CanProceed);
+    }
+
+    [Fact]
+    public async Task NoBill_AuthSummarySucceeds_UsesExistingJourneySemantics()
+    {
+        var due = Seed(ClinicalState.ReadyForDischarge, paymentMode: "Cash", journeyBalanceDue: 1_200m);
+        _billing.Summary = Summary(billId: Guid.Empty, patientBalance: 0m, balanceDue: 0m, patientPaid: 0m);
+
+        var dueResult = await _gates.EvaluateTransitionAsync(due, ClinicalState.Discharged, _tenantId);
+        Assert.Contains(dueResult.Warnings, w => w.Code == "patient_obligation_outstanding" && w.Message.Contains("1,200"));
+
+        var zero = Seed(ClinicalState.ReadyForDischarge, paymentMode: "Cash", journeyBalanceDue: 0m);
+        var zeroResult = await _gates.EvaluateTransitionAsync(zero, ClinicalState.Discharged, _tenantId);
+        Assert.DoesNotContain(zeroResult.Warnings, w => w.Code == "patient_obligation_outstanding");
+    }
+
     private PatientJourney Seed(string clinical, string paymentMode, decimal journeyBalanceDue)
     {
         var journey = new PatientJourney
@@ -127,10 +200,14 @@ public class ChecklistGateDischargeTests : IDisposable
     {
         public AuthIpFinancialSummary Summary { get; set; } = new(
             null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, "not_created", false, false, [], []);
+        public bool ThrowOnSummary { get; set; }
 
         public Task<Guid> EnsureBillAsync(Guid tenantId, Guid branchId, Guid patientId, Guid journeyId, decimal packageAmount, Guid actorUserId)
             => Task.FromResult(Guid.Empty);
-        public Task<AuthIpFinancialSummary> GetSummaryAsync(Guid journeyId) => Task.FromResult(Summary);
+        public Task<AuthIpFinancialSummary> GetSummaryAsync(Guid journeyId)
+            => ThrowOnSummary
+                ? throw new InvalidOperationException("Billing summary unavailable")
+                : Task.FromResult(Summary);
         public Task RecordPaymentAsync(Guid opdBillId, Guid actorUserId, string kind, string paymentMode, decimal amount, string? reference, string? notes, string? idempotencyKey)
             => Task.CompletedTask;
         public Task ReversePaymentAsync(Guid opdBillId, Guid originalPaymentId, Guid actorUserId, string reason)
@@ -151,12 +228,19 @@ public class ChecklistGateDischargeTests : IDisposable
     private sealed class StubCcms : ICcmsAdmissionClient
     {
         public decimal? PatientShare { get; set; }
+        public bool Unavailable { get; set; }
+        public int ValidateCalls { get; private set; }
 
         public Task<CcmsAdmissionValidation> ValidateAdmissionAsync(
             Guid journeyId, Guid? sessionId, Guid tenantId, bool coverageBased, bool emergencyFcApplied = false)
-            => Task.FromResult(new CcmsAdmissionValidation(
-                true, "none", null, null, null, null, null,
-                CcmsUnavailable: false, PatientShareAmount: PatientShare));
+        {
+            ValidateCalls++;
+            return Task.FromResult(Unavailable
+                ? CcmsAdmissionValidation.ForCcmsUnavailable(coverageBased)
+                : new CcmsAdmissionValidation(
+                    true, "none", null, null, null, null, null,
+                    CcmsUnavailable: false, PatientShareAmount: PatientShare));
+        }
 
         public Task NotifyEmergencyFcAppliedAsync(Guid journeyId, Guid? sessionId, Guid tenantId, Guid actorUserId, string reason)
             => Task.CompletedTask;

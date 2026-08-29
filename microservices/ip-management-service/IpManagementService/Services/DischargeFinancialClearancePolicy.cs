@@ -10,8 +10,9 @@ namespace IpManagementService.Services;
 public static class DischargeFinancialClearancePolicy
 {
     /// <summary>
-    /// Cash remaining that may hold the bed. Use Auth patient remaining when a bill exists;
-    /// otherwise fall back to the journey projection. Do not pass TPA <c>BalanceDue</c>.
+    /// Cash remaining that may hold the bed. Use Auth patient remaining when a bill exists.
+    /// Journey <c>BalanceDue</c> is only the no-bill path after a <em>successful</em> Auth summary
+    /// with no OpdBill. Never call this after an Auth summary failure.
     /// </summary>
     public static decimal CashLedgerDue(
         bool billingLedgerAvailable,

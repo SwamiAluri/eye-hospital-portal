@@ -7,6 +7,7 @@ export interface UnifiedPatientSearchHit {
   firstName: string;
   lastName: string;
   mrn: string;
+  healthId?: string | null;
   phone?: string | null;
   dateOfBirth?: string | null;
   gender?: string | null;
@@ -27,6 +28,7 @@ export async function searchPatientsUnified(
     firstName: row.firstName,
     lastName: row.lastName,
     mrn: row.mrn,
+    healthId: row.healthId ?? null,
     phone: row.phone,
     dateOfBirth: row.dateOfBirth,
     gender: row.gender,

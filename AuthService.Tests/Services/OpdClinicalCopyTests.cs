@@ -51,4 +51,76 @@ public class OpdClinicalCopyTests
         Assert.Equal("OD", OpdClinicalCopy.MapEyeToBiometry("RIGHT"));
         Assert.Null(OpdClinicalCopy.MapEyeToBiometry("BE"));
     }
+
+    [Fact]
+    public void ResolveDiagnosis_NeverUsesRecommendedSurgery()
+    {
+        var snap = OpdClinicalCopy.ResolveDiagnosis(
+            patientDiagnoses: Array.Empty<OpdDiagnosisLine>(),
+            clinicalSummaryJson: null,
+            examDiagnosis: null,
+            recommendedSurgery: "Phaco + IOL");
+
+        Assert.Null(snap.Summary);
+        Assert.Null(snap.Json);
+    }
+
+    [Fact]
+    public void ResolveDiagnosis_PrefersStructuredPatientDiagnosesOverExamAndSummary()
+    {
+        var snap = OpdClinicalCopy.ResolveDiagnosis(
+            patientDiagnoses: new[]
+            {
+                new OpdDiagnosisLine
+                {
+                    Icd10 = "H40.1",
+                    Description = "Open-angle glaucoma",
+                    Laterality = "OS",
+                    DiagnosisType = "secondary",
+                    IsPrimary = false,
+                },
+                new OpdDiagnosisLine
+                {
+                    Icd10 = "H25.1",
+                    Description = "Age-related cataract",
+                    Laterality = "OD",
+                    DiagnosisType = "primary",
+                    IsPrimary = true,
+                },
+            },
+            clinicalSummaryJson: """{"diagnosis":"session text"}""",
+            examDiagnosis: "exam text",
+            recommendedSurgery: "Phaco + IOL");
+
+        Assert.Contains("H25.1", snap.Summary, StringComparison.Ordinal);
+        Assert.Contains("H40.1", snap.Summary, StringComparison.Ordinal);
+        Assert.StartsWith("H25.1", snap.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("Phaco", snap.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("session text", snap.Summary, StringComparison.Ordinal);
+        Assert.Contains("\"icd10\":\"H25.1\"", snap.Json, StringComparison.Ordinal);
+        Assert.Contains("\"icd10\":\"H40.1\"", snap.Json, StringComparison.Ordinal);
+        Assert.Contains("\"isPrimary\":true", snap.Json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveDiagnosis_FallsBackToClinicalSummaryThenExam()
+    {
+        var fromSummary = OpdClinicalCopy.ResolveDiagnosis(
+            Array.Empty<OpdDiagnosisLine>(),
+            """{"diagnosis":"Immature cataract OD"}""",
+            "exam text",
+            "Phaco + IOL");
+        Assert.Equal("Immature cataract OD", fromSummary.Summary);
+
+        var fromExam = OpdClinicalCopy.ResolveDiagnosis(
+            Array.Empty<OpdDiagnosisLine>(),
+            """{"chiefComplaint":"blur"}""",
+            "Nuclear cataract",
+            "Phaco + IOL");
+        Assert.Equal("Nuclear cataract", fromExam.Summary);
+
+        var missing = OpdClinicalCopy.ResolveDiagnosis(
+            Array.Empty<OpdDiagnosisLine>(), null, "  ", "Phaco + IOL");
+        Assert.Null(missing.Summary);
+    }
 }

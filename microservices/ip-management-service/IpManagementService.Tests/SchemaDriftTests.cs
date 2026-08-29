@@ -206,6 +206,24 @@ public class SchemaDriftTests
     }
 
     [Fact]
+    public void Migration180_CopiesOpdDiagnosisOnJourneyCreate()
+    {
+        var root = SchemaDrift.FindRepoRoot();
+        var sql = File.ReadAllText(Path.Combine(root, "consolidated", "migrations", "180_opd_diagnosis_copy.sql"));
+        Assert.Contains("opd_diagnosis", sql);
+        Assert.Contains("opd_diagnosis_json", sql);
+        Assert.Contains("patient_journey", sql);
+        Assert.Contains("patient_diagnosis", sql);
+        Assert.Contains("diagnosis_code", sql);
+        Assert.Contains("fn_create_patient_journey_on_ot_prepared", sql);
+        Assert.Contains("clinical_summary", sql);
+        Assert.Contains("clinical_examination", sql);
+        Assert.DoesNotContain("v_dx_summary := v_session_surgery", sql);
+        Assert.DoesNotContain("opd_bill", sql);
+        Assert.DoesNotContain("ChargeItems", sql);
+    }
+
+    [Fact]
     public void Migration176_SeedsClaimQueryFsm()
     {
         var root = SchemaDrift.FindRepoRoot();

@@ -94,7 +94,81 @@ public class OpdJourneyCopyTests : IDisposable
         Assert.Contains(_db.JourneyAuditLogs, a => a.Action == "OpdClinicalRefreshed");
     }
 
-    private PatientJourney SeedJourney(Guid otId, string? iol, string? procedure, string? eye)
+    [Fact]
+    public async Task ApplyCopy_FillsNullDiagnosisWithoutTouchingFinance()
+    {
+        var otId = Guid.NewGuid();
+        var journey = SeedJourney(otId, iol: "+21.00 D", procedure: "Phaco + IOL", eye: "OD");
+        var json = """[{"icd10":"H25.1","description":"Age-related cataract","laterality":"OD","diagnosisType":"primary","isPrimary":true},{"icd10":"H40.1","description":"Open-angle glaucoma","laterality":"OS","diagnosisType":"secondary","isPrimary":false}]""";
+
+        var result = await _svc.ApplyOpdClinicalCopyAsync(new ApplyOpdClinicalCopyRequest(
+            otId, _tenantId, "Phaco + IOL", "OD", "+21.00 D", ForceRefresh: false, _actorId.ToString(),
+            Diagnosis: "H25.1 — Age-related cataract (OD); H40.1 — Open-angle glaucoma (OS)",
+            DiagnosisJson: json));
+
+        Assert.Contains("H25.1", result!.Diagnosis);
+        Assert.Contains("H40.1", result.Diagnosis);
+        Assert.Equal(json, result.DiagnosisJson);
+        var saved = await _db.PatientJourneys.AsNoTracking().SingleAsync(j => j.Id == journey.Id);
+        Assert.Contains("H25.1", saved.OpdDiagnosis);
+        Assert.Contains("H40.1", saved.OpdDiagnosisJson);
+        Assert.Null(saved.OpdBillId);
+        Assert.Empty(_db.IntegrationOutboxEvents);
+        Assert.Contains(_db.JourneyAuditLogs, a => a.Action == "OpdClinicalCopied");
+    }
+
+    [Fact]
+    public async Task SecondCopy_DoesNotOverwriteOrDuplicateDiagnosis()
+    {
+        var otId = Guid.NewGuid();
+        SeedJourney(otId, iol: "+21.00 D", procedure: "Phaco + IOL", eye: "OD",
+            diagnosis: "H25.1 — Age-related cataract (OD)",
+            diagnosisJson: """[{"icd10":"H25.1","description":"Age-related cataract","isPrimary":true}]""");
+
+        var result = await _svc.ApplyOpdClinicalCopyAsync(new ApplyOpdClinicalCopyRequest(
+            otId, _tenantId, "Phaco + IOL", "OD", "+21.00 D", ForceRefresh: false, _actorId.ToString(),
+            Diagnosis: "H40.1 — Open-angle glaucoma",
+            DiagnosisJson: """[{"icd10":"H40.1","description":"Open-angle glaucoma","isPrimary":true}]"""));
+
+        Assert.Contains("H25.1", result!.Diagnosis);
+        Assert.DoesNotContain("H40.1", result.Diagnosis);
+        Assert.Single(_db.PatientJourneys);
+    }
+
+    [Fact]
+    public async Task ForceRefresh_OverwritesDiagnosisSnapshot()
+    {
+        var otId = Guid.NewGuid();
+        SeedJourney(otId, iol: "+21.00 D", procedure: "Phaco + IOL", eye: "OD",
+            diagnosis: "H25.1 — Age-related cataract (OD)",
+            diagnosisJson: """[{"icd10":"H25.1","description":"Age-related cataract","isPrimary":true}]""");
+
+        var result = await _svc.ApplyOpdClinicalCopyAsync(new ApplyOpdClinicalCopyRequest(
+            otId, _tenantId, "Phaco + IOL", "OD", "+21.00 D", ForceRefresh: true, _actorId.ToString(),
+            Diagnosis: "H40.1 — Open-angle glaucoma (OS)",
+            DiagnosisJson: """[{"icd10":"H40.1","description":"Open-angle glaucoma","laterality":"OS","isPrimary":true}]"""));
+
+        Assert.Contains("H40.1", result!.Diagnosis);
+        Assert.DoesNotContain("H25.1", result.Diagnosis);
+        Assert.Contains(_db.JourneyAuditLogs, a => a.Action == "OpdClinicalRefreshed");
+    }
+
+    [Fact]
+    public async Task MissingDiagnosis_LeavesJourneyDiagnosisNull()
+    {
+        var otId = Guid.NewGuid();
+        SeedJourney(otId, iol: "+21.00 D", procedure: "Phaco + IOL", eye: "OD");
+
+        var result = await _svc.ApplyOpdClinicalCopyAsync(new ApplyOpdClinicalCopyRequest(
+            otId, _tenantId, "Phaco + IOL", "OD", "+21.00 D", ForceRefresh: false, _actorId.ToString()));
+
+        Assert.Null(result!.Diagnosis);
+        Assert.Null(result.DiagnosisJson);
+    }
+
+    private PatientJourney SeedJourney(
+        Guid otId, string? iol, string? procedure, string? eye,
+        string? diagnosis = null, string? diagnosisJson = null)
     {
         var journey = new PatientJourney
         {
@@ -109,6 +183,8 @@ public class OpdJourneyCopyTests : IDisposable
             IolPower = iol,
             ProcedureName = procedure,
             EyeOperated = eye,
+            OpdDiagnosis = diagnosis,
+            OpdDiagnosisJson = diagnosisJson,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Status = "active",

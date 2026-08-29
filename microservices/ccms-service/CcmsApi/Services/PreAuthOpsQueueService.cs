@@ -1,4 +1,5 @@
 using CcmsApi.Data;
+using CcmsApi.Models.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace CcmsApi.Services;
@@ -132,26 +133,64 @@ public sealed class PreAuthOpsQueueService
         };
     }
 
-    private async Task<HashSet<Guid>> LoadInboundDraftCaseIdsAsync(
-        Guid tenantId, List<Guid> caseIds, CancellationToken ct)
-    {
-        if (caseIds.Count == 0)
-            return [];
-
-        var draftCaseIds = await _db.CommunicationLogs
+    /// <summary>
+    /// SQL-translatable candidate filter for inbound draft enrichment.
+    /// Must not call <c>string.Contains</c> on <see cref="CcmsCommunicationLog.MetadataJson"/>:
+    /// that column is <c>jsonb</c> and EF translates Contains to <c>LIKE</c>, which PostgreSQL
+    /// rejects with <c>42883: operator does not exist: jsonb ~~ unknown</c>.
+    /// </summary>
+    public static IQueryable<CcmsCommunicationLog> BuildInboundDraftCandidateQuery(
+        CcmsDbContext db, Guid tenantId, IReadOnlyCollection<Guid> caseIds) =>
+        db.CommunicationLogs
             .AsNoTracking()
             .Where(l =>
                 l.DeletedAt == null &&
                 l.TenantId == tenantId &&
                 l.Direction == "inbound" &&
                 caseIds.Contains(l.CoverageCase_Id) &&
-                l.MetadataJson != null &&
-                l.MetadataJson.Contains("draft_ready"))
-            .Select(l => l.CoverageCase_Id)
-            .Distinct()
+                l.MetadataJson != null);
+
+    /// <summary>
+    /// True when inbound metadata marks a TPA parse draft ready for ops review.
+    /// Prefer <c>reviewStatus == draft_ready</c> (see <c>TpaInboundEmailService</c>);
+    /// fall back to literal <c>draft_ready</c> for legacy payloads.
+    /// </summary>
+    public static bool IsInboundDraftReadyMetadata(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return false;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(metadataJson);
+            if (doc.RootElement.TryGetProperty("reviewStatus", out var status) &&
+                status.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return status.GetString() == "draft_ready";
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Non-JSON legacy payload — fall through to literal search.
+        }
+
+        return metadataJson.Contains("draft_ready", StringComparison.Ordinal);
+    }
+
+    private async Task<HashSet<Guid>> LoadInboundDraftCaseIdsAsync(
+        Guid tenantId, List<Guid> caseIds, CancellationToken ct)
+    {
+        if (caseIds.Count == 0)
+            return [];
+
+        var rows = await BuildInboundDraftCandidateQuery(_db, tenantId, caseIds)
+            .Select(l => new { l.CoverageCase_Id, l.MetadataJson })
             .ToListAsync(ct);
 
-        return draftCaseIds.ToHashSet();
+        return rows
+            .Where(r => IsInboundDraftReadyMetadata(r.MetadataJson))
+            .Select(r => r.CoverageCase_Id)
+            .ToHashSet();
     }
 }
 

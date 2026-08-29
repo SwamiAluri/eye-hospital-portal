@@ -11,7 +11,8 @@ public record AuthOpdClinicalSnapshot(
     string? IolPower,
     bool BiometryMissing,
     string? EyePhrase,
-    string? Diagnosis);
+    string? Diagnosis,
+    string? DiagnosisJson = null);
 
 public interface IAuthOpdClinicalClient
 {

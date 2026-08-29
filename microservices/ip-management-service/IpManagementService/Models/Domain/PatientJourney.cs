@@ -25,6 +25,9 @@ public class PatientJourney
     // Surgery context (denormalized at trigger time)
     public string?  ProcedureName            { get; set; }
     public string?  EyeOperated              { get; set; }
+    /// <summary>FR-1.1 OPD diagnosis snapshot at onboard / refresh. Not a live MPI reference.</summary>
+    public string?  OpdDiagnosis             { get; set; }
+    public string?  OpdDiagnosisJson         { get; set; }
     public Guid?    PrimarySurgeonId         { get; set; }
     public string?  AnaesthesiaType          { get; set; }
     public DateTime? SurgeryScheduledAt      { get; set; }

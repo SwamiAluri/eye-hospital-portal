@@ -6,6 +6,7 @@ import type { PreauthStatusDto } from '@/lib/api/ip-management.api';
 import { remindCcmsTeam } from '@/lib/api/ccms/ccms-coverage-cases.api';
 import { CoveragePaymentTerms, patientDueFromCollection } from '@/lib/ip-management/coverage-payment-terminology';
 import { coverageToneToBadge } from '@/lib/ip-management/ip-target-badges';
+import { isCcmsPreAuthAwaiting } from '@/lib/ccms/ccms-preauth-awaiting';
 
 function fmtINR(n: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -81,9 +82,7 @@ export function CoverageContextBlock({
   const due = obligation != null ? patientDueFromCollection(obligation, collected) : null;
   const approved = preauth?.approvedAmount ?? null;
   const settlementPending = ['SETTLEMENT_PENDING', 'PARTIAL_SETTLEMENT', 'CLAIM_SUBMITTED', 'CLAIM_IN_PROCESS'].includes(state);
-  const awaiting =
-    ['WAITING_APPROVAL', 'PREAUTH_SENT', 'CLARIFICATION_REQUIRED', 'RESUBMITTED', 'PREAUTH_GENERATED'].includes(state)
-    || preauth?.decision === 'BLOCK';
+  const awaiting = isCcmsPreAuthAwaiting(state, preauth?.decision);
   const rejected = state === 'REJECTED';
   const mode = (paymentMode ?? preauth?.paymentMode ?? '').toLowerCase();
   const selfPay = (!preauth?.caseId && (!mode || mode === 'cash' || mode === 'selfpay' || mode === 'self-pay'));

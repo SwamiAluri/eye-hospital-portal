@@ -23,6 +23,7 @@ export interface ClinicalEvaluationPanelProps {
   journeyId: string;
   counselingSessionId?: string | null;
   journeyDiagnosis?: string | null;
+  journeyDiagnosisJson?: string | null;
   clinicalState: string;
   paymentMode?: string;
   procedureName?: string;
@@ -50,6 +51,7 @@ export function ClinicalEvaluationPanel({
   journeyId,
   counselingSessionId,
   journeyDiagnosis,
+  journeyDiagnosisJson,
   clinicalState,
   paymentMode,
   procedureName,
@@ -123,6 +125,7 @@ export function ClinicalEvaluationPanel({
           journeyId={journeyId}
           counselingSessionId={counselingSessionId}
           journeyDiagnosis={journeyDiagnosis}
+          journeyDiagnosisJson={journeyDiagnosisJson}
           clinicalState={clinicalState}
           paymentMode={paymentMode}
           procedureName={procedureName}

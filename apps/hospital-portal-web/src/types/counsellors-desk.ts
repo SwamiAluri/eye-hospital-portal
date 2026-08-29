@@ -350,12 +350,17 @@ export interface WardPatient {
 }
 
 export interface AddPatientFormData {
+  /** MPI patient id — required after search select or registration. */
+  patientId: string;
+  /** Display MRN/UHID from MPI (not free-typed identity). */
   uhid: string;
+  /** Display name from MPI (not free-typed identity). */
   patientName: string;
   eye: string;
   surgeryType: 'Procedure' | 'Surgery';
   surgeryName: string;
-  doctor: string;
+  /** Referring surgeon user id (required for CreateSession). */
+  doctorId: string;
   remarks: string;
   /** Master code from counsellor.session_type */
   sessionTypeCode: string;

@@ -191,7 +191,9 @@ public record PatientJourneyDetailDto(
     string?  SlotSession = null,
     int?     SlotSequenceNo = null,
     DateTime? PlannedArrivalAt = null,
-    Guid?    SlotTheatreId = null
+    Guid?    SlotTheatreId = null,
+    string?  Diagnosis = null,
+    string?  DiagnosisJson = null
 );
 
 // ─── Admit ────────────────────────────────────────────────────────────────────
@@ -289,7 +291,9 @@ public record ApplyOpdClinicalCopyRequest(
     string?  EyeOperated,
     string?  IolPower,
     bool     ForceRefresh,
-    string?  ActorUserId);
+    string?  ActorUserId,
+    string?  Diagnosis = null,
+    string?  DiagnosisJson = null);
 
 public record RefreshOpdClinicalResponse(
     PatientJourneyDetailDto Journey,

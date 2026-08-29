@@ -125,6 +125,8 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.PostOpState).HasColumnName("post_op_state");
             e.Property(p => p.ProcedureName).HasColumnName("procedure_name");
             e.Property(p => p.EyeOperated).HasColumnName("eye_operated");
+            e.Property(p => p.OpdDiagnosis).HasColumnName("opd_diagnosis");
+            e.Property(p => p.OpdDiagnosisJson).HasColumnName("opd_diagnosis_json").HasColumnType("jsonb");
             e.Property(p => p.PrimarySurgeonId).HasColumnName("primary_surgeon_id");
             e.Property(p => p.AnaesthesiaType).HasColumnName("anaesthesia_type");
             e.Property(p => p.SurgeryScheduledAt).HasColumnName("surgery_scheduled_at");
@@ -451,14 +453,15 @@ public class IpManagementDbContext : DbContext
             e.Property(p => p.Id).HasColumnName("id");
             e.Property(p => p.TenantId).HasColumnName("tenant_id");
             e.Property(p => p.PatientJourneyId).HasColumnName("patient_journey_id");
-            e.Property(p => p.Medications).HasColumnName("medications");
+            e.Property(p => p.Medications).HasColumnName("medications").HasColumnType("jsonb");
             e.Property(p => p.ActivityRestrictions).HasColumnName("activity_restrictions");
             e.Property(p => p.DietaryInstructions).HasColumnName("dietary_instructions");
             e.Property(p => p.FollowupDate).HasColumnName("followup_date");
             e.Property(p => p.FollowupDoctorId).HasColumnName("followup_doctor_id");
             e.Property(p => p.FollowupAppointmentId).HasColumnName("followup_appointment_id");
             e.Property(p => p.EyeCareInstructions).HasColumnName("eye_care_instructions");
-            e.Property(p => p.WarningSigns).HasColumnName("warning_signs");
+            e.Property(p => p.WarningSigns).HasColumnName("warning_signs").HasColumnType("jsonb");
+            e.Property(p => p.Status).HasColumnName("status").HasDefaultValue("active");
             e.Property(p => p.IsSaved).HasColumnName("is_saved");
             e.Property(p => p.SavedAt).HasColumnName("saved_at");
             e.Property(p => p.SavedByUserId).HasColumnName("saved_by_user_id");

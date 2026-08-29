@@ -869,7 +869,8 @@ namespace AuthService.Services
                 if (session != null)
                 {
                     visitDate = session.SessionDate;
-                    diagnosis = session.RecommendedSurgery;
+                    var dxSnap = await ResolveOpdDiagnosisAsync(tenantId, session.PatientId, session);
+                    diagnosis = dxSnap.Summary;
 
                     var patient = await _db.Patients
                         .AsNoTracking()
@@ -1190,6 +1191,8 @@ namespace AuthService.Services
                 biometryIol: biometryIol,
                 preferBiometry: preferBiometry);
 
+            var diagnosis = await ResolveOpdDiagnosisAsync(tenantId, patientId, session);
+
             return new OpdClinicalSnapshotDto
             {
                 ProcedureName = OpdClinicalCopy.FirstNonEmpty(session?.RecommendedSurgery),
@@ -1197,8 +1200,52 @@ namespace AuthService.Services
                 IolPower = iol,
                 BiometryMissing = biometryMissing,
                 EyePhrase = OpdClinicalCopy.EyePhrase(eyeRaw),
-                Diagnosis = session?.RecommendedSurgery,
+                Diagnosis = diagnosis.Summary,
+                DiagnosisJson = diagnosis.Json,
             };
+        }
+
+        private async Task<OpdDiagnosisSnapshot> ResolveOpdDiagnosisAsync(
+            Guid tenantId, Guid patientId, CounselingSession? session)
+        {
+            var rows = await _db.PatientDiagnoses
+                .AsNoTracking()
+                .Include(d => d.DiagnosisCode)
+                .Where(d => d.PatientId == patientId
+                         && d.TenantId == tenantId
+                         && d.DeletedAt == null
+                         && (d.Status == null || d.Status == "active"))
+                .OrderByDescending(d => d.DiagnosedAt)
+                .ToListAsync();
+
+            var lines = rows
+                .Select(d => OpdClinicalCopy.FromPatientDiagnosis(
+                    d.DiagnosisCode?.Code,
+                    d.DiagnosisCode?.Description,
+                    d.EyeSpecificity ?? d.DiagnosisCode?.Laterality,
+                    d.DiagnosisType))
+                .ToList();
+
+            string? examDiagnosis = null;
+            if (lines.Count == 0)
+            {
+                examDiagnosis = await _db.ClinicalExaminations
+                    .AsNoTracking()
+                    .Where(e => e.PatientId == patientId
+                             && e.TenantId == tenantId
+                             && e.Diagnosis != null
+                             && e.Diagnosis != "")
+                    .OrderByDescending(e => e.IsSigned)
+                    .ThenByDescending(e => e.ExaminationDate)
+                    .Select(e => e.Diagnosis)
+                    .FirstOrDefaultAsync();
+            }
+
+            return OpdClinicalCopy.ResolveDiagnosis(
+                lines,
+                session?.ClinicalSummary,
+                examDiagnosis,
+                session?.RecommendedSurgery);
         }
 
         private async Task NotifyJourneyOpdCopyAsync(
@@ -1212,6 +1259,17 @@ namespace AuthService.Services
                 if (!string.IsNullOrEmpty(key))
                     client.DefaultRequestHeaders.Add("X-Internal-Key", key);
 
+                CounselingSession? session = null;
+                if (entity.CounsellingSessionId is { } sid)
+                {
+                    session = await _db.CounselingSession
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(s => s.Id == sid && s.TenantId == tenantId);
+                }
+
+                var snap = await ResolveOpdSnapshotAsync(
+                    tenantId, entity.PatientId, session, entity.Eye, preferBiometry: forceRefresh);
+
                 var payload = new
                 {
                     otScheduleId   = entity.Id,
@@ -1221,6 +1279,8 @@ namespace AuthService.Services
                     iolPower       = entity.IolPower,
                     forceRefresh,
                     actorUserId    = userId.ToString(),
+                    diagnosis      = snap.Diagnosis,
+                    diagnosisJson  = snap.DiagnosisJson,
                 };
                 var response = await client.PostAsJsonAsync(
                     $"{baseUrl.TrimEnd('/')}/ip-management/internal/journey-sync/copy-opd",

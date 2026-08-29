@@ -34,7 +34,8 @@ import {
   isClinicalEvaluationEditLocked,
   isEvaluationSignedOff,
   isIolCataractProcedure,
-  outpatientDiagnosisFromJourney,
+  outpatientDiagnosisFromOpdSnapshot,
+  parseJourneyOpdDiagnoses,
   readClinicalEvaluationFields,
   type ClinicalEvaluationFields,
   type DiagnosisLaterality,
@@ -49,6 +50,7 @@ export interface ClinicalEvaluationFormProps {
   journeyId: string;
   counselingSessionId?: string | null;
   journeyDiagnosis?: string | null;
+  journeyDiagnosisJson?: string | null;
   clinicalState: string;
   paymentMode?: string;
   procedureName?: string;
@@ -71,6 +73,7 @@ export function ClinicalEvaluationForm({
   journeyId,
   counselingSessionId,
   journeyDiagnosis,
+  journeyDiagnosisJson,
   clinicalState,
   paymentMode,
   procedureName,
@@ -163,13 +166,23 @@ export function ClinicalEvaluationForm({
       prefillDone.current = true;
       if (bioPower) setBiometryPowerSuggestion(bioPower);
       setBiometryChecked(true);
-      if (examSource) setOpSource(prev => prev ?? examSource);
+      const snapshotRows = parseJourneyOpdDiagnoses(journeyDiagnosisJson);
+      const snapshotSource = outpatientDiagnosisFromOpdSnapshot(journeyDiagnosis, journeyDiagnosisJson);
+      if (snapshotSource) setOpSource(prev => prev ?? snapshotSource);
+      else if (examSource) setOpSource(prev => prev ?? examSource);
       setFields(f => {
         const next = { ...f };
-        if (examSource && !next.sourceDiagnosis) next.sourceDiagnosis = examSource;
-        if (next.diagnoses.length === 0 && dxRows.length > 0) {
-          next.diagnoses = dxRows;
-          next.diagnosisSummary = formatWardDiagnosisSummary(dxRows);
+        if (!next.sourceDiagnosis) {
+          next.sourceDiagnosis = snapshotSource ?? examSource ?? next.sourceDiagnosis;
+        }
+        if (next.diagnoses.length === 0) {
+          const fromSnapshot = snapshotRows;
+          const fromLive = dxRows;
+          const chosen = fromSnapshot.length > 0 ? fromSnapshot : fromLive;
+          if (chosen.length > 0) {
+            next.diagnoses = chosen;
+            next.diagnosisSummary = formatWardDiagnosisSummary(chosen);
+          }
         }
         next.comorbidities = mergeSuggestedComorbidities(next.comorbidities, comorbHints);
         if (!next.iol.power) {
@@ -182,11 +195,11 @@ export function ClinicalEvaluationForm({
     return () => {
       cancelled = true;
     };
-  }, [patientId, eyeOperated, journeyIolPower, signedOff]);
+  }, [patientId, eyeOperated, journeyIolPower, journeyDiagnosis, journeyDiagnosisJson, signedOff]);
 
   useEffect(() => {
-    setOpSource(outpatientDiagnosisFromJourney(journeyDiagnosis));
-  }, [journeyDiagnosis]);
+    setOpSource(outpatientDiagnosisFromOpdSnapshot(journeyDiagnosis, journeyDiagnosisJson));
+  }, [journeyDiagnosis, journeyDiagnosisJson]);
 
   useEffect(() => {
     if (!counselingSessionId) {
@@ -340,6 +353,21 @@ export function ClinicalEvaluationForm({
       setJourneyIolPower(nextPower);
       if (nextPower) {
         setFields(f => ({ ...f, iol: { ...f.iol, power: nextPower } }));
+      }
+      const refreshedSource = outpatientDiagnosisFromOpdSnapshot(
+        result.journey.diagnosis,
+        result.journey.diagnosisJson,
+      );
+      if (refreshedSource) {
+        setOpSource(refreshedSource);
+        setFields(f => {
+          const snapshotRows = parseJourneyOpdDiagnoses(result.journey.diagnosisJson);
+          return {
+            ...f,
+            sourceDiagnosis: refreshedSource,
+            diagnoses: f.diagnoses.length === 0 && snapshotRows.length > 0 ? snapshotRows : f.diagnoses,
+          };
+        });
       }
       if (result.biometryMissing) {
         toast.error(`No biometry on file for the ${result.eyePhrase ?? 'selected eye'}.`);

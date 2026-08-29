@@ -229,12 +229,13 @@ export default function PatientFormModal({
       };
       setSavedPatient(savedPatientData);
       
-      // Call onSave with patient data immediately for walk-in registration
+      // Call onSave with patient data immediately for walk-in / counselling handoff
       onSave(savedPatientData);
       
       // Don't close modal yet - let user see success state and print card if needed
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save patient');
+      const { formatPatientApiError } = await import('@/lib/patients/patient-write-payload');
+      setError(formatPatientApiError(err));
     } finally {
       setLoading(false);
     }

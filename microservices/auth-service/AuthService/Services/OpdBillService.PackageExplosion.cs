@@ -89,6 +89,11 @@ public partial class OpdBillService
             ?? (request.PackageAmount > 0 ? request.PackageAmount : template.PackageAmount);
         agreed = Math.Max(0, agreed);
 
+        var payerId = await _context.CcmsCoverageCases.AsNoTracking()
+            .Where(c => c.JourneyId == request.PatientJourneyId && c.DeletedAt == null)
+            .Select(c => c.InsuranceProviderId)
+            .FirstOrDefaultAsync();
+
         var components = await _context.PackageComponentMaps
             .AsNoTracking()
             .Where(c => c.TenantId == bill.TenantId && c.PackageTemplateId == template.Id)
@@ -112,7 +117,7 @@ public partial class OpdBillService
                 continue;
             }
 
-            var resolved = await _catalog!.ResolveVariantAsync(bill.TenantId, variantId);
+            var resolved = await _catalog!.ResolveVariantAsync(bill.TenantId, variantId, payerId: payerId);
             if (!resolved.CanPost)
             {
                 failed.Add(new PackageExplosionFailure(
@@ -127,7 +132,7 @@ public partial class OpdBillService
                 key,
                 variantId,
                 null,
-                null,
+                resolved.UnitPrice,
                 component.ComponentName));
         }
 

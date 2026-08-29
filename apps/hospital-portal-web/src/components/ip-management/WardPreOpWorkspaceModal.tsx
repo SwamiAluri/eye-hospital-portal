@@ -125,13 +125,17 @@ function WardPreOpWorkspaceModalInner({
   const [markingReady, setMarkingReady] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [journeyDiagnosis, setJourneyDiagnosis] = useState<string | null>(null);
+  const [journeyDiagnosisJson, setJourneyDiagnosisJson] = useState<string | null>(null);
   const careRef = useRef<WardPreOpCareTabsHandle>(null);
   const clearanceCtx = usePreOpClearanceOptional();
 
   useEffect(() => {
     let cancelled = false;
     void ipManagementApi.getJourneyDetail(journey.id).then(detail => {
-      if (!cancelled) setJourneyDiagnosis(detail?.diagnosis ?? null);
+      if (!cancelled) {
+        setJourneyDiagnosis(detail?.diagnosis ?? null);
+        setJourneyDiagnosisJson(detail?.diagnosisJson ?? null);
+      }
     });
     return () => {
       cancelled = true;
@@ -289,6 +293,7 @@ function WardPreOpWorkspaceModalInner({
           journeyId={journey.id}
           counselingSessionId={journey.counselingSessionId}
           journeyDiagnosis={journeyDiagnosis}
+          journeyDiagnosisJson={journeyDiagnosisJson}
           clinicalState={journey.clinicalState}
           paymentMode={journey.paymentMode ?? undefined}
           procedureName={journey.procedureName ?? undefined}

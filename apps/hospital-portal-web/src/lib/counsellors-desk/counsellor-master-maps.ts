@@ -90,9 +90,38 @@ const SESSION_TYPE_LEGACY_TO_CODE: Record<string, string> = {
   AttenderCounseling: 'FOLLOW_UP',
 };
 
+/**
+ * DB check counseling_sessions_session_type_check allows only:
+ * Initial | Followup | Recheck | Urgent
+ * Master UI codes must be mapped before POST /Counseling/sessions.
+ */
+const SESSION_TYPE_CODE_TO_DB: Record<string, string> = {
+  INITIAL: 'Initial',
+  FOLLOW_UP: 'Followup',
+  PRE_OP: 'Recheck',
+  POST_OP: 'Followup',
+  PACKAGE: 'Initial',
+  URGENT: 'Urgent',
+  // Already-legacy / passthrough
+  Initial: 'Initial',
+  Followup: 'Followup',
+  Recheck: 'Recheck',
+  Urgent: 'Urgent',
+};
+
 export function defaultSessionTypeCode(context: 'new' | 'repeat' | 'requeue' = 'new'): string {
   if (context === 'repeat' || context === 'requeue') return 'FOLLOW_UP';
   return 'INITIAL';
+}
+
+/** Master counsellor.session_type code → counseling_sessions.session_type DB value */
+export function sessionTypeCodeToDb(code: string | undefined | null): string {
+  const raw = (code ?? '').trim();
+  if (!raw) return 'Initial';
+  const mapped = SESSION_TYPE_CODE_TO_DB[raw] ?? SESSION_TYPE_CODE_TO_DB[raw.toUpperCase()];
+  if (mapped) return mapped;
+  // Unknown master code — safest allowed default
+  return 'Initial';
 }
 
 /** Normalize DB / API session_type to counsellor.session_type master code */

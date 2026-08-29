@@ -63,6 +63,7 @@ export interface PatientSuggestRow {
   firstName: string;
   lastName: string;
   mrn: string;
+  healthId?: string | null;
   dateOfBirth: string;
   gender: string;
   phone?: string | null;

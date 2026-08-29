@@ -50,6 +50,38 @@ public class PatientLookupService : IPatientLookupService
 
         limit = Math.Clamp(limit, 1, 20);
 
+        // Strip separators so UHID-12345 and UHID12345 both exact-match stored HealthId/MRN.
+        var needleId = needle.Replace(" ", "").Replace("-", "").Replace("_", "").Replace("/", "");
+
+        // Exact MRN / HealthId first — avoids unordered Take(50) missing the true UHID hit.
+        var exactMatches = await _context.Patients
+            .AsNoTracking()
+            .Where(p => p.TenantId == tenantId && p.DeletedAt == null)
+            .Where(p => p.BranchId == null || p.BranchId == branchId)
+            .Where(p =>
+                (p.MedicalRecordNumber ?? "").ToLower()
+                    .Replace(" ", "").Replace("-", "").Replace("_", "").Replace("/", "") == needleId ||
+                (p.HealthId ?? "").ToLower()
+                    .Replace(" ", "").Replace("-", "").Replace("_", "").Replace("/", "") == needleId)
+            .Select(p => new PatientSuggestRowDto
+            {
+                Id = p.Id,
+                FirstName = p.FirstName,
+                LastName = p.LastName,
+                Mrn = p.MedicalRecordNumber,
+                HealthId = p.HealthId,
+                DateOfBirth = p.DateOfBirth,
+                Gender = p.Gender,
+                Phone = p.ContactNumber,
+                Email = p.Email,
+                PhotoThumbnailUrl = p.PhotoThumbnailUrl
+            })
+            .Take(limit)
+            .ToListAsync();
+
+        if (exactMatches.Count > 0)
+            return PatientLookupRanking.Rank(exactMatches, needle).Take(limit).ToList();
+
         var candidates = await _context.Patients
             .AsNoTracking()
             .Where(p => p.TenantId == tenantId && p.DeletedAt == null)
@@ -57,8 +89,17 @@ public class PatientLookupService : IPatientLookupService
             .Where(p =>
                 (p.FirstName + " " + p.LastName).ToLower().Contains(needle) ||
                 (p.MedicalRecordNumber ?? "").ToLower().Contains(needle) ||
+                (p.HealthId ?? "").ToLower().Contains(needle) ||
+                (p.MedicalRecordNumber ?? "").ToLower()
+                    .Replace(" ", "").Replace("-", "").Replace("_", "").Replace("/", "")
+                    .Contains(needleId) ||
+                (p.HealthId ?? "").ToLower()
+                    .Replace(" ", "").Replace("-", "").Replace("_", "").Replace("/", "")
+                    .Contains(needleId) ||
                 (p.ContactNumber ?? "").Contains(needle) ||
                 (p.Email ?? "").ToLower().Contains(needle))
+            .OrderBy(p => p.LastName)
+            .ThenBy(p => p.FirstName)
             .Take(50)
             .Select(p => new PatientSuggestRowDto
             {
@@ -66,6 +107,7 @@ public class PatientLookupService : IPatientLookupService
                 FirstName = p.FirstName,
                 LastName = p.LastName,
                 Mrn = p.MedicalRecordNumber,
+                HealthId = p.HealthId,
                 DateOfBirth = p.DateOfBirth,
                 Gender = p.Gender,
                 Phone = p.ContactNumber,

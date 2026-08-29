@@ -189,6 +189,17 @@ namespace AuthService.Models.Counselor
         [MaxLength(20)]
         public string? Urgency { get; set; } // Routine, Urgent, Emergency
 
+        /// <summary>Waiting-list TYPE badge: Surgery | Procedure | Consultation.</summary>
+        [MaxLength(30)]
+        public string? SessionCategory { get; set; }
+
+        /// <summary>Tentative eye for counselling queue display (RE | LE | BE).</summary>
+        [MaxLength(10)]
+        public string? SurgeryTentativeEye { get; set; }
+
+        /// <summary>Optional counsellor remarks shown on the waiting list.</summary>
+        public string? AdditionalNotes { get; set; }
+
         // Session Outcome — Patient Intention & Anesthesia
         [MaxLength(50)]
         public string? PatientIntention { get; set; }
