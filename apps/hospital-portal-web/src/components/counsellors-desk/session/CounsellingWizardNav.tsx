@@ -8,13 +8,20 @@ import {
   type CounsellingPhase,
   type CounsellingPhaseCompletion,
 } from '@/lib/counsellors-desk/counselling-progress';
-import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { WorkspaceStepNav } from '@/components/counsellors-desk/session/WorkspaceStepNav';
 import { cn } from '@/lib/utils';
 
 const PHASE_ICONS: Record<CounsellingPhase, LucideIcon> = {
   estimate: Receipt,
   decision: ClipboardList,
   wrapup: FileText,
+};
+
+const SUBORDINATE_LABELS: Record<CounsellingPhase, string> = {
+  estimate: 'Quote',
+  decision: 'Decision',
+  wrapup: 'Notes',
 };
 
 export interface CounsellingWizardNavProps {
@@ -24,6 +31,8 @@ export interface CounsellingWizardNavProps {
   onPhaseSelect: (phase: CounsellingPhase) => void;
   canGoToPhase: (phase: CounsellingPhase) => boolean;
   className?: string;
+  /** Subordinate step indicator when Journey Rail is present. */
+  variant?: 'default' | 'subordinate';
 }
 
 export function CounsellingWizardNav({
@@ -33,7 +42,27 @@ export function CounsellingWizardNav({
   onPhaseSelect,
   canGoToPhase,
   className,
+  variant = 'default',
 }: CounsellingWizardNavProps) {
+  if (variant === 'subordinate') {
+    return (
+      <WorkspaceStepNav
+        ariaLabel="Counselling workspace"
+        data-testid={counsellingTestIds.counsellingPhaseNav}
+        className={className}
+        activeId={activePhase}
+        onSelect={(id) => onPhaseSelect(id as CounsellingPhase)}
+        items={COUNSELLING_PHASES.map((phase) => ({
+          id: phase.id,
+          label: SUBORDINATE_LABELS[phase.id],
+          testId: phase.testId,
+          isComplete: phaseCompletion[phase.id] && visitedPhases.includes(phase.id),
+          disabled: !canGoToPhase(phase.id),
+        }))}
+      />
+    );
+  }
+
   return (
     <nav
       aria-label="Counselling session phases"

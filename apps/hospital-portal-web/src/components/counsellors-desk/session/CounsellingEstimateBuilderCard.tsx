@@ -1,14 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { IolMasterDto } from '@/lib/api/service-catalog.api';
 import type { CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
 import type { CounsellingPackageTemplate } from '@/types/counselling-estimate';
-import type { MasterCatalogItem } from '@/types/counsellors-desk';
+import type { InvestigationItem, MasterCatalogItem } from '@/types/counsellors-desk';
 import type { UseCounsellingEstimateResult } from '@/hooks/use-counselling-estimate';
 import type { CounsellingEyeOption } from '@/lib/counsellors-desk/counselling-eye';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
-import { counsellingSectionIds, counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingSectionIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
   CounsellingAlertDialog,
   CounsellingAlertDialogAction,
@@ -18,22 +18,14 @@ import {
   CounsellingAlertDialogFooter,
   CounsellingAlertDialogHeader,
   CounsellingAlertDialogTitle,
-  CounsellingCard,
-  CounsellingCardContent,
-  CounsellingCardHeader,
-  CounsellingCardTitle,
-  CounsellingTabs,
-  CounsellingTabsContent,
-  CounsellingTabsList,
-  CounsellingTabsTrigger,
+  CounsellingEmptyState,
 } from '@/components/counsellors-desk/session/primitives';
-import { CounsellingEyeSelector } from '@/components/counsellors-desk/session/CounsellingEyeSelector';
+import { QuoteModeNav, type QuoteModeTab } from '@/components/counsellors-desk/session/QuoteModeNav';
+import { QuoteProcedureCatalogGrid } from '@/components/counsellors-desk/session/QuoteProcedureCatalogGrid';
+import { QuoteSelectionConfigurePanel } from '@/components/counsellors-desk/session/QuoteSelectionConfigurePanel';
 import { PricingModeStatusStrip } from '@/components/counsellors-desk/session/PricingModeStatusStrip';
-import { ProcedureReadOnlyMirror } from '@/components/counsellors-desk/session/ProcedureReadOnlyMirror';
-import { CounsellingProceduresWorkspace } from '@/components/counsellors-desk/session/CounsellingProceduresWorkspace';
 import { CounsellingPackageWorkspace } from '@/components/counsellors-desk/session/CounsellingPackageWorkspace';
-
-type EstimateTab = 'custom' | 'package';
+import { CounsellingInvestigationsWorkspace } from '@/components/counsellors-desk/session/CounsellingInvestigationsWorkspace';
 
 interface PendingProcedurePick {
   variantId: string;
@@ -42,7 +34,6 @@ interface PendingProcedurePick {
 }
 
 export interface CounsellingEstimateBuilderCardProps {
-  phaseNav?: ReactNode;
   estimate: UseCounsellingEstimateResult;
   procedureVariants: CounsellorProcedureVariant[];
   procedureLoading: boolean;
@@ -63,7 +54,11 @@ export interface CounsellingEstimateBuilderCardProps {
     scan: MasterCatalogItem[];
     lab: MasterCatalogItem[];
   };
+  masterCatalogLoading?: boolean;
+  masterCatalogError?: boolean;
+  loadMasterCatalog?: () => void;
   quotedProcedurePrice?: number | null;
+  selectedInvestigations: Map<string, InvestigationItem>;
   onSelectVariant: (variantId: string, surgeryId: string, eye: CounsellingEyeOption) => void;
   onClearVariant: () => void;
   onSelectEye: (eye: CounsellingEyeOption) => void;
@@ -72,11 +67,12 @@ export interface CounsellingEstimateBuilderCardProps {
   onSelectIol: (iolId: string | null) => void;
   onReEvaluate: () => void;
   onSwitchToRecommendedProcedure: (variantId: string, eye: CounsellingEyeOption) => void;
+  onToggleInvestigation: (item: MasterCatalogItem) => void;
+  onClearInvestigations: () => void;
   markDirty: () => void;
 }
 
 export function CounsellingEstimateBuilderCard({
-  phaseNav,
   estimate,
   procedureVariants,
   procedureLoading,
@@ -93,7 +89,10 @@ export function CounsellingEstimateBuilderCard({
   isDoneState,
   packageTemplates,
   masterCatalog,
-  quotedProcedurePrice = null,
+  masterCatalogLoading,
+  masterCatalogError,
+  loadMasterCatalog,
+  selectedInvestigations,
   onSelectVariant,
   onClearVariant,
   onSelectEye,
@@ -102,14 +101,17 @@ export function CounsellingEstimateBuilderCard({
   onSelectIol,
   onReEvaluate,
   onSwitchToRecommendedProcedure,
+  onToggleInvestigation,
+  onClearInvestigations,
   markDirty,
 }: CounsellingEstimateBuilderCardProps) {
-  const [activeTab, setActiveTab] = useState<EstimateTab>(
-    estimate.isPackageMode ? 'package' : 'custom',
-  );
+  const [activeTab, setActiveTab] = useState<QuoteModeTab>(estimate.isPackageMode ? 'package' : 'custom');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const pendingPickRef = useRef<PendingProcedurePick | null>(null);
   const prevTemplateIdRef = useRef<string | null>(estimate.activeTemplate?.id ?? null);
+
+  const hasBaseSelection = Boolean(selectedVariantId || estimate.activeTemplate);
+  const investigationTabsEnabled = hasBaseSelection;
 
   useEffect(() => {
     const templateId = estimate.activeTemplate?.id ?? null;
@@ -119,16 +121,30 @@ export function CounsellingEstimateBuilderCard({
     prevTemplateIdRef.current = templateId;
   }, [estimate.activeTemplate?.id]);
 
+  useEffect(() => {
+    if (!investigationTabsEnabled && (activeTab === 'imaging' || activeTab === 'labs')) {
+      setActiveTab(estimate.isPackageMode ? 'package' : 'custom');
+    }
+  }, [activeTab, estimate.isPackageMode, investigationTabsEnabled]);
+
   const handleEyeChange = useCallback(
     (eye: CounsellingEyeOption) => {
       onSelectEye(eye);
       onEyeInvestigationSync(eye);
-      if (selectedVariantId) {
+      // Package mode: eye must not re-enter procedure-select (clears package + toast spam).
+      if (selectedVariantId && !estimate.isPackageMode) {
         onSelectVariant(selectedVariantId, `type-${selectedVariantId}-${eye}`, eye);
       }
       markDirty();
     },
-    [markDirty, onEyeInvestigationSync, onSelectEye, onSelectVariant, selectedVariantId],
+    [
+      estimate.isPackageMode,
+      markDirty,
+      onEyeInvestigationSync,
+      onSelectEye,
+      onSelectVariant,
+      selectedVariantId,
+    ],
   );
 
   const applyProcedurePick = useCallback(
@@ -159,11 +175,18 @@ export function CounsellingEstimateBuilderCard({
     if (pick) applyProcedurePick(pick);
   }, [applyProcedurePick, estimate]);
 
-  const handleSwitchToCustom = useCallback(() => {
-    if (isReadOnly) return;
-    estimate.setEstimateMode('custom');
-    setActiveTab('custom');
-  }, [estimate, isReadOnly]);
+  const handleSwitchToCustom = useCallback(
+    (opts?: { clearSelection?: boolean }) => {
+      if (isReadOnly) return;
+      estimate.setEstimateMode('custom');
+      setActiveTab('custom');
+      if (opts?.clearSelection) {
+        onClearVariant();
+        onSelectIol(null);
+      }
+    },
+    [estimate, isReadOnly, onClearVariant, onSelectIol],
+  );
 
   const handleSelectPackage = useCallback(
     (templateId: string) => {
@@ -174,124 +197,185 @@ export function CounsellingEstimateBuilderCard({
     [estimate, isReadOnly],
   );
 
+  const handleClearSelection = useCallback(() => {
+    if (isReadOnly) return;
+    if (estimate.isPackageMode) {
+      estimate.setEstimateMode('custom');
+    }
+    onClearVariant();
+    onSelectIol(null);
+    setActiveTab((tab) => (tab === 'imaging' || tab === 'labs' ? 'custom' : tab));
+    markDirty();
+  }, [estimate, isReadOnly, markDirty, onClearVariant, onSelectIol]);
+
   const handleModeChange = useCallback(
-    (mode: EstimateTab) => {
-      setActiveTab(mode);
+    (mode: QuoteModeTab) => {
+      if ((mode === 'imaging' || mode === 'labs') && !investigationTabsEnabled) return;
       if (mode === 'custom' && estimate.isPackageMode) {
-        handleSwitchToCustom();
+        // Leaving package via tab: force re-pick so custom and package never feel dual-active
+        handleSwitchToCustom({ clearSelection: true });
+        return;
       }
+      setActiveTab(mode);
     },
-    [estimate.isPackageMode, handleSwitchToCustom],
+    [estimate.isPackageMode, handleSwitchToCustom, investigationTabsEnabled],
   );
 
-  const eyeReadOnly = estimate.isPackageMode && !!estimate.activeTemplate;
   const showPackageStatus = estimate.isPackageMode && !!estimate.activeTemplate;
+  const showCustomSelected =
+    activeTab === 'custom' && !!selectedVariantId && !estimate.isPackageMode;
+  const showPackageSelected = activeTab === 'package' && !!estimate.activeTemplate;
+
+  const configureProps = useMemo(
+    () => ({
+      procedureVariants,
+      procedureLoading,
+      procedureError,
+      loadProcedures,
+      recommendedVariantIds,
+      selectedVariantId,
+      selectedEye,
+      variantSubOption,
+      iolOptions,
+      selectedIolId,
+      isReadOnly,
+      isDoneState,
+      onClearVariant: handleClearSelection,
+      onSelectVariant: handleSelectVariant,
+      onSelectEye,
+      onEyeInvestigationSync,
+      onVariantSubOption,
+      onSelectIol,
+      onReEvaluate,
+      markDirty,
+    }),
+    [
+      procedureVariants,
+      procedureLoading,
+      procedureError,
+      loadProcedures,
+      recommendedVariantIds,
+      selectedVariantId,
+      selectedEye,
+      variantSubOption,
+      iolOptions,
+      selectedIolId,
+      isReadOnly,
+      isDoneState,
+      handleClearSelection,
+      handleSelectVariant,
+      onSelectEye,
+      onEyeInvestigationSync,
+      onVariantSubOption,
+      onSelectIol,
+      onReEvaluate,
+      markDirty,
+    ],
+  );
+
+  const investigationProps = {
+    embedded: true as const,
+    masterCatalog,
+    masterCatalogLoading,
+    masterCatalogError,
+    onRetryMasterCatalog: loadMasterCatalog,
+    selectedInvestigations,
+    onToggleInvestigation,
+    onClearAll: onClearInvestigations,
+    isReadOnly,
+    isPackageMode: estimate.isPackageMode,
+    packageInvestigationIds: estimate.activeTemplate?.investigationIds ?? [],
+    hideSectionChrome: true,
+  };
 
   return (
     <>
-      <CounsellingCard
-        id={counsellingSectionIds.estimateBuilder}
-        className={`${counsellingSessionTokens.card} scroll-mt-24`}
-      >
-        <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-              {counsellingCopy.buildEstimate}
-            </CounsellingCardTitle>
-            <CounsellingEyeSelector
-              value={selectedEye}
-              onChange={handleEyeChange}
-              disabled={isReadOnly}
-              readOnly={eyeReadOnly}
-              variant="inline"
-              className="shrink-0"
+      <div id={counsellingSectionIds.estimateBuilder} className="scroll-mt-24 space-y-4">
+        <QuoteModeNav
+          activeTab={activeTab}
+          onModeChange={handleModeChange}
+          selectedEye={selectedEye}
+          onEyeChange={handleEyeChange}
+          isReadOnly={isReadOnly}
+          investigationTabsEnabled={investigationTabsEnabled}
+        />
+
+        {showPackageStatus && activeTab === 'package' ? (
+          <PricingModeStatusStrip
+            isPackageMode={estimate.isPackageMode}
+            activeTemplate={estimate.activeTemplate}
+            selectedVariantId={selectedVariantId}
+            selectedEye={selectedEye}
+            procedureVariants={procedureVariants}
+            onSwitchToCustom={() => handleSwitchToCustom()}
+            onClear={handleClearSelection}
+          />
+        ) : null}
+
+        {activeTab === 'custom' ? (
+          showCustomSelected ? (
+            <QuoteSelectionConfigurePanel {...configureProps} />
+          ) : (
+            <QuoteProcedureCatalogGrid
+              procedureVariants={procedureVariants}
+              procedureLoading={procedureLoading}
+              procedureError={procedureError}
+              loadProcedures={loadProcedures}
+              recommendedVariantIds={recommendedVariantIds}
+              selectedVariantId={selectedVariantId}
+              selectedEye={selectedEye}
+              isReadOnly={isReadOnly}
+              isDoneState={isDoneState}
+              onPickVariant={handleSelectVariant}
+              onReEvaluate={onReEvaluate}
+              markDirty={markDirty}
             />
-          </div>
-        </CounsellingCardHeader>
+          )
+        ) : null}
 
-        <CounsellingCardContent className={`${counsellingSessionTokens.cardBody} space-y-3`}>
-          {phaseNav}
-          <CounsellingTabs value={activeTab} onValueChange={(v) => handleModeChange(v as EstimateTab)}>
-            <CounsellingTabsList className="grid h-9 w-full grid-cols-2">
-              <CounsellingTabsTrigger value="custom" data-testid={counsellingTestIds.tabCustom} className="text-sm">
-                {counsellingCopy.customProcedure}
-              </CounsellingTabsTrigger>
-              <CounsellingTabsTrigger value="package" data-testid={counsellingTestIds.tabPackage} className="text-sm">
-                {counsellingCopy.package}
-              </CounsellingTabsTrigger>
-            </CounsellingTabsList>
+        {activeTab === 'package' ? (
+          <>
+            <CounsellingPackageWorkspace
+              embedded
+              collapseBrowseWhenSelected
+              estimate={estimate}
+              packageTemplates={packageTemplates}
+              procedureVariants={procedureVariants}
+              masterCatalog={masterCatalog}
+              recommendedVariantIds={recommendedVariantIds}
+              doctorRecommendationName={doctorRecommendationName}
+              selectedVariantId={selectedVariantId}
+              selectedEye={selectedEye}
+              isReadOnly={isReadOnly}
+              onSelectPackage={handleSelectPackage}
+              onSwitchToRecommendedProcedure={onSwitchToRecommendedProcedure}
+            />
+            {showPackageSelected ? <QuoteSelectionConfigurePanel {...configureProps} /> : null}
+          </>
+        ) : null}
 
-            {showPackageStatus && (
-              <PricingModeStatusStrip
-                isPackageMode={estimate.isPackageMode}
-                activeTemplate={estimate.activeTemplate}
-                selectedVariantId={selectedVariantId}
-                selectedEye={selectedEye}
-                procedureVariants={procedureVariants}
-                onSwitchToCustom={handleSwitchToCustom}
-              />
-            )}
+        {activeTab === 'imaging' ? (
+          investigationTabsEnabled ? (
+            <CounsellingInvestigationsWorkspace {...investigationProps} forceCategory="imaging" />
+          ) : (
+            <CounsellingEmptyState
+              compact
+              title={counsellingCopy.imaging}
+            />
+          )
+        ) : null}
 
-            <CounsellingTabsContent value="custom" className="mt-3">
-              {estimate.isPackageMode ? (
-                <ProcedureReadOnlyMirror
-                  procedureVariants={procedureVariants}
-                  selectedVariantId={selectedVariantId}
-                  selectedEye={selectedEye}
-                  variantSubOption={variantSubOption}
-                  selectedIolId={selectedIolId}
-                  iolOptions={iolOptions}
-                  activeTemplate={estimate.activeTemplate}
-                  isReadOnly={isReadOnly}
-                  onSwitchToCustom={handleSwitchToCustom}
-                />
-              ) : (
-                <CounsellingProceduresWorkspace
-                  embedded
-                  procedureVariants={procedureVariants}
-                  procedureLoading={procedureLoading}
-                  procedureError={procedureError}
-                  loadProcedures={loadProcedures}
-                  recommendedVariantIds={recommendedVariantIds}
-                  selectedVariantId={selectedVariantId}
-                  selectedEye={selectedEye}
-                  variantSubOption={variantSubOption}
-                  iolOptions={iolOptions}
-                  selectedIolId={selectedIolId}
-                  isReadOnly={isReadOnly}
-                  isDoneState={isDoneState}
-                  onSelectVariant={handleSelectVariant}
-                  onClearVariant={onClearVariant}
-                  onSelectEye={onSelectEye}
-                  onEyeInvestigationSync={onEyeInvestigationSync}
-                  onVariantSubOption={onVariantSubOption}
-                  onSelectIol={onSelectIol}
-                  onReEvaluate={onReEvaluate}
-                  markDirty={markDirty}
-                  quotedProcedurePrice={quotedProcedurePrice}
-                />
-              )}
-            </CounsellingTabsContent>
-
-            <CounsellingTabsContent value="package" className="mt-3">
-              <CounsellingPackageWorkspace
-                embedded
-                estimate={estimate}
-                packageTemplates={packageTemplates}
-                procedureVariants={procedureVariants}
-                masterCatalog={masterCatalog}
-                recommendedVariantIds={recommendedVariantIds}
-                doctorRecommendationName={doctorRecommendationName}
-                selectedVariantId={selectedVariantId}
-                selectedEye={selectedEye}
-                isReadOnly={isReadOnly}
-                onSelectPackage={handleSelectPackage}
-                onSwitchToRecommendedProcedure={onSwitchToRecommendedProcedure}
-              />
-            </CounsellingTabsContent>
-          </CounsellingTabs>
-        </CounsellingCardContent>
-      </CounsellingCard>
+        {activeTab === 'labs' ? (
+          investigationTabsEnabled ? (
+            <CounsellingInvestigationsWorkspace {...investigationProps} forceCategory="lab" />
+          ) : (
+            <CounsellingEmptyState
+              compact
+              title={counsellingCopy.labs}
+            />
+          )
+        ) : null}
+      </div>
 
       <CounsellingAlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <CounsellingAlertDialogContent>
@@ -303,7 +387,11 @@ export function CounsellingEstimateBuilderCard({
             </CounsellingAlertDialogDescription>
           </CounsellingAlertDialogHeader>
           <CounsellingAlertDialogFooter>
-            <CounsellingAlertDialogCancel onClick={() => { pendingPickRef.current = null; }}>
+            <CounsellingAlertDialogCancel
+              onClick={() => {
+                pendingPickRef.current = null;
+              }}
+            >
               Cancel
             </CounsellingAlertDialogCancel>
             <CounsellingAlertDialogAction onClick={handleConfirmSwitchToCustom}>

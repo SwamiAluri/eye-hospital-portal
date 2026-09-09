@@ -34,6 +34,8 @@ export interface UseCounsellingEstimateParams {
   selectedInvestigations: Map<string, InvestigationItem>;
   iolOptions: IolMasterDto[];
   procedureOverridePrice?: number | null;
+  /** Session Azure override for active package template amount. */
+  packageOverridePrice?: number | null;
   packageTemplates: CounsellingPackageTemplate[];
   settings: CounsellingSettings;
   masterCatalog: {
@@ -103,6 +105,7 @@ export function useCounsellingEstimate(
       computeEstimateResult({
         estimateMode: params.estimate.estimateMode,
         packageTemplate: activeTemplate,
+        packageOverridePrice: params.packageOverridePrice,
         procedure: selectedProcedure,
         procedureOverridePrice: params.procedureOverridePrice,
         procedureFallbackLabel: selectedProcedure?.name,
@@ -120,6 +123,7 @@ export function useCounsellingEstimate(
       params.settings,
       activeTemplate,
       selectedProcedure,
+      params.packageOverridePrice,
       params.procedureOverridePrice,
       selectedIol,
       investigationsList,

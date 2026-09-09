@@ -27,6 +27,22 @@ describe('counselling-coverage-workspace-sync', () => {
     expect(patch.insuranceCompany).toBe('Custom TPA');
   });
 
+  it('does not sync coverage estimate totals back into counselling', () => {
+    const patch = extractCounsellingSyncFromCoverageForm(
+      {
+        estimatedAmount: 5200,
+        estimatedSurgery: 5000,
+        estimatedLab: 200,
+        estimateLineItems: [{ key: 'lab', label: 'Lab', amount: 200, kind: 'lab' }],
+      },
+      providers,
+    );
+    expect(patch.estimatedAmount).toBeUndefined();
+    expect(patch.estimatedSurgery).toBeUndefined();
+    expect(patch.estimatedLab).toBeUndefined();
+    expect(patch.estimateLineItems).toBeUndefined();
+  });
+
   it('detects patch equality for loop prevention', () => {
     expect(
       counsellingSyncPatchesEqual(
@@ -40,5 +56,13 @@ describe('counselling-coverage-workspace-sync', () => {
         { insuranceCompany: 'B' },
       ),
     ).toBe(false);
+  });
+
+  it('normalizes ISO surgeryDate when syncing from coverage', () => {
+    const patch = extractCounsellingSyncFromCoverageForm(
+      { surgeryDate: '2026-09-07T08:14:00.000Z' },
+      providers,
+    );
+    expect(patch.surgeryDate).toBe('2026-09-07');
   });
 });

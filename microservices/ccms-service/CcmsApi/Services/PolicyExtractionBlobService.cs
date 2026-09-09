@@ -21,7 +21,7 @@ public class PolicyExtractionBlobService
             ?? _config["Values:AzureWebJobsStorage"]
             ?? "UseDevelopmentStorage=true";
 
-        var serviceClient   = new BlobServiceClient(connStr);
+        var serviceClient   = CcmsBlobClients.CreateServiceClient(connStr);
         var containerClient = serviceClient.GetBlobContainerClient(ContainerName);
         await containerClient.CreateIfNotExistsAsync(PublicAccessType.None, cancellationToken: ct);
 

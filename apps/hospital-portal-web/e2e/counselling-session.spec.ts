@@ -19,6 +19,7 @@ import {
   expectProcedureSearchVisible,
   expectPricingModeTabs,
   expectQuotePanelVisible,
+  goCounsellingWorkspace,
   goCounsellingSession,
   goCoverageTab,
   goCoverageTabWithWizard,
@@ -27,6 +28,7 @@ import {
   goToWrapupPhase,
   hasCounsellingFixture,
   openQuotePanel,
+  openProcedureCatalogueSheet,
   patientDetailsButton,
   phaseNextButton,
   saveSessionButton,
@@ -106,7 +108,7 @@ test.describe('Counselling session workspace @counselling', () => {
 
     await goCounsellingSession(page);
 
-    await expect(page.getByRole('tab', { name: 'Outpatient Safety', exact: true })).toBeVisible();
+    await expect(page.getByTestId('counselling-outpatient-access')).toBeVisible();
 
     await expectQuotePanelVisible(page);
 
@@ -158,13 +160,15 @@ test.describe('Counselling session workspace @counselling', () => {
 
     await toggleEstimateMode(page, 'package');
 
-    await expect(page.getByTestId('counselling-tab-package')).toHaveAttribute('data-state', 'active');
+    await expect(page.getByTestId('counselling-tab-package')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('counselling-package-search')).toBeVisible();
 
     await toggleEstimateMode(page, 'custom');
 
-    await expect(page.getByTestId('counselling-tab-custom')).toHaveAttribute('data-state', 'active');
-    await expect(page.getByTestId('counselling-procedure-search')).toBeVisible();
+    await expect(page.getByTestId('counselling-tab-custom')).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      page.getByTestId('counselling-quote-change-procedure').or(page.getByTestId('counselling-quote-select-procedure')),
+    ).toBeVisible();
 
     await openQuotePanel(page);
 
@@ -266,7 +270,7 @@ test.describe('Counselling session workspace @counselling', () => {
 
     await expect(page.getByTestId('coverage-estimated-amount')).toBeVisible({ timeout: 15_000 });
 
-    await expect(coverageMainTab(page)).toHaveAttribute('data-state', 'active');
+    await expect(coverageMainTab(page)).toHaveAttribute('data-journey-status', 'current');
 
   });
 
@@ -286,14 +290,14 @@ test.describe('Counselling session workspace @counselling', () => {
     await goCoverageTab(page);
     await expect(page.getByTestId('coverage-insurer-name')).toBeEnabled({ timeout: 15_000 });
 
-    await counsellingMainTab(page).click();
+    await goCounsellingWorkspace(page);
     await saveBtn.click();
     await expect(page.getByText(/saved successfully/i)).toBeVisible({ timeout: 30_000 });
 
     await goCoverageTab(page);
     await expect(page.getByTestId('coverage-insurer-name')).toBeEnabled({ timeout: 15_000 });
 
-    await counsellingMainTab(page).click();
+    await goCounsellingWorkspace(page);
     await page.locator('#counselling-note-counsellor').fill('E2E editable cycle dirty again');
     await goCoverageTab(page);
     await expect(page.getByTestId('coverage-insurer-name')).toBeEnabled({ timeout: 15_000 });
@@ -336,7 +340,7 @@ test.describe('Counselling session workspace @counselling', () => {
     }
 
     await fySelect.selectOption({ label: '2025-26' });
-    await counsellingMainTab(page).click();
+    await goCounsellingWorkspace(page);
     await goCoverageTab(page);
     await expect(fySelect).toHaveValue('2025-26', { timeout: 15_000 });
   });
@@ -365,7 +369,7 @@ test.describe('Counselling session workspace @counselling', () => {
     const target = options[1];
     await payerSelect.selectOption(target.value);
 
-    await counsellingMainTab(page).click();
+    await goCounsellingWorkspace(page);
     await goToPhase(page, 'decision');
     await expect(counsellingInsuranceSelect(page)).toContainText(target.label, {
       timeout: 15_000,
@@ -797,11 +801,9 @@ test.describe('Counselling session workspace @counselling', () => {
 
     await openQuotePanel(page);
 
-    await expect(page.getByText('Discount', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('counselling-quote-discount-panel')).toBeVisible();
 
     await expect(page.getByText(/Max without manager/i)).toBeVisible();
-
-    await page.getByRole('button', { name: /Apply Discount/i }).click();
 
     await page.getByTestId('counselling-quote-discount-percent').click();
 
@@ -1068,17 +1070,14 @@ test.describe('Counselling session workspace @counselling', () => {
 
   test('procedure catalog: keyboard can focus and activate first row', async ({ page }) => {
     await goCounsellingSession(page);
-    await toggleEstimateMode(page, 'custom');
+    await openProcedureCatalogueSheet(page);
 
-    const search = page.getByTestId('counselling-procedure-search');
+    const grid = page.getByTestId('counselling-quote-procedure-catalog-grid');
+    const search = grid.getByTestId('counselling-procedure-search');
     await expect(search).toBeVisible({ timeout: 30_000 });
-    await search.focus();
+    await search.fill('a');
 
-    const firstRow = page
-      .locator('#counselling-step-1')
-      .getByRole('button')
-      .filter({ hasText: /₹/ })
-      .first();
+    const firstRow = grid.getByRole('button', { name: /Select procedure/i }).first();
     if (!(await firstRow.isVisible({ timeout: 10_000 }).catch(() => false))) {
       test.skip(true, 'No procedures in catalog');
     }
@@ -1086,7 +1085,7 @@ test.describe('Counselling session workspace @counselling', () => {
     await firstRow.focus();
     await expect(firstRow).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(firstRow).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('counselling-quote-selection-configure')).toBeVisible();
   });
 
   test('counselling session desktop layout snapshot', async ({ page }) => {

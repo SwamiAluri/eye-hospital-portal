@@ -1,21 +1,20 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { useMemo } from 'react';
+import { FileText } from 'lucide-react';
+import type { CounsellingPhaseValidationContext } from '@/lib/counsellors-desk/counselling-progress';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
+import { resolveNotesPhaseBlocker } from '@/lib/counsellors-desk/notes-workspace-presentation';
+import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { CounsellingAdditionalOptionsSection } from '@/components/counsellors-desk/session/CounsellingWorkflowSections';
 import {
-  CounsellingBadge,
-  CounsellingCard,
-  CounsellingCardContent,
-  CounsellingCardHeader,
-  CounsellingCardTitle,
   CounsellingLabel,
   CounsellingTextarea,
 } from '@/components/counsellors-desk/session/primitives';
-import { CounsellingAdditionalOptionsSection } from '@/components/counsellors-desk/session/CounsellingWorkflowSections';
-import { CounsellingPreOpInvestigationsPanel } from '@/components/counsellors-desk/session/CounsellingPreOpInvestigationsPanel';
+import { cn } from '@/lib/utils';
 
 export interface CounsellingWrapupPhaseProps {
-  phaseNav?: ReactNode;
+  /** Retained for caller compatibility; Pre-op panel is not shown on Notes (Wave 2E-5R). */
   counselingSessionId: string;
   counsellorNotes: string;
   setCounsellorNotes: (v: string) => void;
@@ -31,11 +30,11 @@ export interface CounsellingWrapupPhaseProps {
   setNotRequiredPreAuth: (v: boolean) => void;
   isReadOnly: boolean;
   markDirty: () => void;
+  phaseValidationContext: CounsellingPhaseValidationContext;
 }
 
 export function CounsellingWrapupPhase({
-  phaseNav,
-  counselingSessionId,
+  counselingSessionId: _counselingSessionId,
   counsellorNotes,
   setCounsellorNotes,
   patientRemarks,
@@ -50,12 +49,22 @@ export function CounsellingWrapupPhase({
   setNotRequiredPreAuth,
   isReadOnly,
   markDirty,
+  phaseValidationContext,
 }: CounsellingWrapupPhaseProps) {
+  const blocker = useMemo(
+    () => resolveNotesPhaseBlocker(phaseValidationContext),
+    [phaseValidationContext],
+  );
+
   const noteFields = [
     {
       id: 'counsellor',
-      label: 'Counsellor notes',
+      testId: counsellingTestIds.notesCounsellorField,
+      label: 'Counsellor',
+      placeholder: 'Enter counsellor notes…',
       value: counsellorNotes,
+      rows: 2,
+      minClass: 'min-h-[3.25rem]',
       onChange: (v: string) => {
         setCounsellorNotes(v);
         markDirty();
@@ -63,8 +72,12 @@ export function CounsellingWrapupPhase({
     },
     {
       id: 'patient',
-      label: 'Patient remarks',
+      testId: counsellingTestIds.notesPatientField,
+      label: 'Patient',
+      placeholder: 'Enter patient remarks…',
       value: patientRemarks,
+      rows: 2,
+      minClass: 'min-h-[2.75rem]',
       onChange: (v: string) => {
         setPatientRemarks(v);
         markDirty();
@@ -72,8 +85,12 @@ export function CounsellingWrapupPhase({
     },
     {
       id: 'doctor',
-      label: 'Doctor notes',
+      testId: counsellingTestIds.notesDoctorField,
+      label: 'Doctor',
+      placeholder: 'Enter doctor notes…',
       value: doctorNotes,
+      rows: 2,
+      minClass: 'min-h-[2.75rem]',
       onChange: (v: string) => {
         setDoctorNotes(v);
         markDirty();
@@ -82,67 +99,66 @@ export function CounsellingWrapupPhase({
   ] as const;
 
   return (
-    <div className="flex flex-col gap-5 pb-4">
-      {phaseNav ? (
-        <CounsellingCard className={counsellingSessionTokens.card}>
-          <CounsellingCardContent className={`${counsellingSessionTokens.cardBody} pt-4`}>
-            {phaseNav}
-          </CounsellingCardContent>
-        </CounsellingCard>
-      ) : null}
-      <CounsellingPreOpInvestigationsPanel
-        counselingSessionId={counselingSessionId}
-        readOnly={isReadOnly}
-      />
-      <CounsellingCard className={counsellingSessionTokens.card}>
-        <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
-          <div className="flex items-center gap-2">
-            <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-              Notes
-            </CounsellingCardTitle>
-            <CounsellingBadge variant="outline" className="border-counselling-border text-[10px] text-counselling-muted-foreground">
-              Optional
-            </CounsellingBadge>
-          </div>
-        </CounsellingCardHeader>
-        <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
-          <div className="space-y-4">
-            {noteFields.map(({ id, label, value, onChange }) => (
-              <div key={id}>
-                <CounsellingLabel
-                  htmlFor={`counselling-note-${id}`}
-                  className="mb-1.5 block text-xs font-medium text-counselling-muted-foreground"
-                >
-                  {label}
-                </CounsellingLabel>
-                <CounsellingTextarea
-                  id={`counselling-note-${id}`}
-                  rows={4}
-                  value={value}
-                  readOnly={isReadOnly}
-                  disabled={isReadOnly}
-                  onChange={(e) => {
-                    if (!isReadOnly) onChange(e.target.value);
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        </CounsellingCardContent>
-      </CounsellingCard>
+    <section
+      data-testid={counsellingTestIds.notesWorkspace}
+      className={cn(
+        counsellingSessionTokens.sessionWidget,
+        counsellingSessionTokens.sessionWidgetPad,
+        'flex h-full min-h-0 flex-col gap-3 overflow-hidden',
+      )}
+    >
+      <h2 className={cn(counsellingSessionTokens.sessionWidgetTitle, 'shrink-0')}>
+        <FileText className="h-4 w-4 text-counselling-primary" aria-hidden />
+        {counsellingCopy.notes}
+      </h2>
 
-      <CounsellingCard className={counsellingSessionTokens.card}>
-        <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
-          <div className="flex items-center gap-2">
-            <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-              Workflow options
-            </CounsellingCardTitle>
-            <CounsellingBadge variant="outline" className="border-counselling-border text-[10px] text-counselling-muted-foreground">
-              Optional
-            </CounsellingBadge>
+      {blocker ? (
+        <p
+          data-testid={counsellingTestIds.notesInlineBlocker}
+          className="shrink-0 text-xs text-amber-900"
+          role="status"
+        >
+          {blocker}
+        </p>
+      ) : null}
+
+      <div
+        data-testid={counsellingTestIds.notesDocumentationSection}
+        className="min-h-0 flex-1 space-y-2"
+      >
+        {noteFields.map(({ id, testId, label, placeholder, value, rows, minClass, onChange }) => (
+          <div key={id} className="space-y-1">
+            <CounsellingLabel
+              htmlFor={`counselling-note-${id}`}
+              className="text-xs font-medium text-counselling-muted-foreground"
+            >
+              {label}
+            </CounsellingLabel>
+            <CounsellingTextarea
+              id={`counselling-note-${id}`}
+              data-testid={testId}
+              rows={rows}
+              value={value}
+              placeholder={isReadOnly ? undefined : placeholder}
+              readOnly={isReadOnly}
+              disabled={isReadOnly}
+              className={cn(
+                minClass,
+                'resize-none border-counselling-border/80 bg-counselling-card py-1.5',
+              )}
+              onChange={(e) => {
+                if (!isReadOnly) onChange(e.target.value);
+              }}
+            />
           </div>
-        </CounsellingCardHeader>
-        <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
+        ))}
+      </div>
+
+      <div className="shrink-0 space-y-1.5 border-t border-counselling-border/50 pt-2.5">
+        <p className={counsellingSessionTokens.sessionAdditionalOptionsLabel}>
+          {counsellingCopy.additionalOptions}
+        </p>
+        <div data-testid={counsellingTestIds.notesAdditionalOptions}>
           <CounsellingAdditionalOptionsSection
             embedded
             wantToSeeDoctor={wantToSeeDoctor}
@@ -154,8 +170,8 @@ export function CounsellingWrapupPhase({
             isReadOnly={isReadOnly}
             markDirty={markDirty}
           />
-        </CounsellingCardContent>
-      </CounsellingCard>
-    </div>
+        </div>
+      </div>
+    </section>
   );
 }

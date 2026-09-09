@@ -27,6 +27,7 @@ export default function DocumentsPage() {
       case_?.insuranceProviderId, case_?.tpaProviderId, case_?.governmentSchemeId,
     ],
     queryFn: () => listDocumentRequirements({
+      stage: 'preauth',
       insuranceProviderId: case_?.insuranceProviderId,
       tpaProviderId: case_?.tpaProviderId,
       governmentSchemeId: case_?.governmentSchemeId,

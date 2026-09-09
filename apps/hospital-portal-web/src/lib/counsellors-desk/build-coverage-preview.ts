@@ -148,6 +148,20 @@ export function resolveCoverageSessionFinalPayable(params: {
   return undefined;
 }
 
+/**
+ * Counselling quote final payable for display (chrome, coverage mirror).
+ * Live quote is authoritative; saved total is only used while the live estimate is still zero.
+ */
+export function resolveCounsellingQuoteFinalPayable(params: {
+  liveFinalPayable: number;
+  savedFinalPayable?: number;
+  estimateLines: EstimateLine[];
+}): number | undefined {
+  const live = Math.max(0, params.liveFinalPayable);
+  if (live > 0) return live;
+  return resolveCoverageSessionFinalPayable(params);
+}
+
 
 
 export function buildCoveragePreviewSnapshot(

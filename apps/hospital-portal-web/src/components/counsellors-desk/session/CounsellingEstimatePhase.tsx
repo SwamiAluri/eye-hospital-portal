@@ -1,17 +1,15 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { CounsellingEstimateBuilderCard } from '@/components/counsellors-desk/session/CounsellingEstimateBuilderCard';
 import type { IolMasterDto } from '@/lib/api/service-catalog.api';
 import type { CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
 import type { CounsellingPackageTemplate } from '@/types/counselling-estimate';
 import type { MasterCatalogItem, InvestigationItem } from '@/types/counsellors-desk';
 import type { UseCounsellingEstimateResult } from '@/hooks/use-counselling-estimate';
 import type { CounsellingEyeOption } from '@/lib/counsellors-desk/counselling-eye';
-import { CounsellingEstimateBuilderCard } from '@/components/counsellors-desk/session/CounsellingEstimateBuilderCard';
-import { CounsellingInvestigationsCard } from '@/components/counsellors-desk/session/CounsellingInvestigationsCard';
 
 export interface CounsellingEstimatePhaseProps {
-  phaseNav?: ReactNode;
   estimate: UseCounsellingEstimateResult;
   procedureVariants: CounsellorProcedureVariant[];
   procedureLoading: boolean;
@@ -50,32 +48,14 @@ export interface CounsellingEstimatePhaseProps {
   markDirty: () => void;
 }
 
-export function CounsellingEstimatePhase({
-  phaseNav,
-  selectedInvestigations,
-  onToggleInvestigation,
-  onClearInvestigations,
-  masterCatalogLoading,
-  masterCatalogError,
-  loadMasterCatalog,
-  ...estimateProps
-}: CounsellingEstimatePhaseProps) {
+/** Wave 2G — Quote phase is a single builder with Procedure | Package | Imaging | Labs tabs. */
+export function CounsellingEstimatePhase(props: CounsellingEstimatePhaseProps) {
   return (
-    <div className="flex flex-col gap-3 pb-4">
-      <CounsellingEstimateBuilderCard phaseNav={phaseNav} {...estimateProps} />
-
-      <CounsellingInvestigationsCard
-        masterCatalog={estimateProps.masterCatalog}
-        masterCatalogLoading={masterCatalogLoading}
-        masterCatalogError={masterCatalogError}
-        onRetryMasterCatalog={loadMasterCatalog}
-        selectedInvestigations={selectedInvestigations}
-        onToggleInvestigation={onToggleInvestigation}
-        onClearAll={onClearInvestigations}
-        isReadOnly={estimateProps.isReadOnly}
-        isPackageMode={estimateProps.estimate.isPackageMode}
-        packageInvestigationIds={estimateProps.estimate.activeTemplate?.investigationIds ?? []}
-      />
+    <div
+      className={`${counsellingSessionTokens.quoteWorkspace} pb-4`}
+      data-testid={counsellingTestIds.quoteWorkspace}
+    >
+      <CounsellingEstimateBuilderCard {...props} />
     </div>
   );
 }

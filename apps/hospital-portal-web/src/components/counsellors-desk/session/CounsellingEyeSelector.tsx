@@ -41,9 +41,7 @@ export function CounsellingEyeSelector({
     return (
       <div className={className}>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-counselling-muted-foreground">
-            Eye{readOnly ? ' (package)' : ''}
-          </span>
+          <span className="text-xs font-medium text-counselling-muted-foreground">Eye</span>
           <CounsellingSegmented
             options={COUNSELLING_EYE_OPTIONS}
             selected={value}
@@ -58,20 +56,13 @@ export function CounsellingEyeSelector({
             }}
           />
         </div>
-        {readOnly ? (
-          <p className="mt-1 text-[10px] text-counselling-muted-foreground/80">
-            Locked while package pricing is active.
-          </p>
-        ) : null}
       </div>
     );
   }
 
   return (
     <div className={className}>
-      <p className="mb-1.5 text-xs font-medium text-counselling-muted-foreground">
-        Eye {readOnly ? '(from package)' : ''}
-      </p>
+      <p className="mb-1.5 text-xs font-medium text-counselling-muted-foreground">Eye</p>
       <CounsellingSegmented
         options={COUNSELLING_EYE_OPTIONS}
         selected={value}
@@ -85,11 +76,6 @@ export function CounsellingEyeSelector({
           BE: counsellingTestIds.eyeBe,
         }}
       />
-      {readOnly ? (
-        <p className="mt-1 text-[11px] text-counselling-muted-foreground/80">
-          Locked while package pricing is active.
-        </p>
-      ) : null}
     </div>
   );
 }

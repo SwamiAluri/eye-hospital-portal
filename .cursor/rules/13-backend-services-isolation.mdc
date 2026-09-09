@@ -1,0 +1,9 @@
+---
+description: Activates strictly for .NET Backend microservice changes to prevent frontend token bleed.
+globs: "microservices/**/*"
+alwaysApply: false
+---
+# .NET Microservice Cost Isolation Rules
+- **Token Control:** Generate code using highly compact Diffs only. Never rewrite clean files, boilerplate definitions, or untouched endpoint structures.
+- **Context Limiter:** Do not pull frontend UI or styling rules into compilation contexts.
+- **Architectural Guardrails:** Enforce explicit database transactions and permission gates inline. Zero conversational filler or explanations allowed.

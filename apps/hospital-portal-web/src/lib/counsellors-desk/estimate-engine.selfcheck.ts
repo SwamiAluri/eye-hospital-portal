@@ -70,8 +70,10 @@ const custom = computeEstimateResult({
   discountValue: 0,
   settings: { maxDiscountPercent: 50 },
 });
-assert(custom.itemizedSubtotal === 40500, 'custom itemized = procedure + iol + inv');
-assert(custom.finalPayableAmount === 40500, 'custom final without discount');
+assert(custom.itemizedSubtotal === 30500, 'custom itemized = procedure + inv (IOL included)');
+assert(custom.finalPayableAmount === 30500, 'custom final without discount');
+const iolLine = custom.lines.find((l) => l.kind === 'iol');
+assert(!!iolLine && iolLine.amount === 0, 'IOL listed as included (₹0)');
 
 // Package mode: bundle savings + package base
 const pkg = computeEstimateResult({
@@ -84,8 +86,8 @@ const pkg = computeEstimateResult({
   discountValue: 10,
   settings: { maxDiscountPercent: 50 },
 });
-assert(pkg.itemizedSubtotal === 40000, 'package itemized still shown');
-assert(pkg.bundleSavings === 0, 'itemized equals package amount');
+assert(pkg.itemizedSubtotal === 30000, 'package itemized = procedure (IOL included)');
+assert(pkg.bundleSavings === 0, 'itemized below package amount');
 assert(pkg.baseBeforeDiscount === 40000, 'package base is template amount');
 assert(pkg.finalPayableAmount === 36000, 'package final = amount - 10%');
 

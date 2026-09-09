@@ -93,15 +93,7 @@ namespace AuthService.Services
         public string? Gender { get; set; }
         public DateTime? VisitDate { get; set; }
         public string? Diagnosis { get; set; }
-        // Detail fields (now persisted on ot_finalize_schedule)
-        // 'new' suppresses CS0108 — base OtScheduleResponse now also exposes ReportingTime
-        public new TimeSpan? ReportingTime { get; set; }
-        public string? AnesthesiaType { get; set; }
-        public string? AnesthetistName { get; set; }
-        public string? IolPower { get; set; }
-        public string? Remarks { get; set; }
-        public string? CancelReason { get; set; }
-        // PackageName and PackageRate inherited from OtScheduleResponse
+        // Detail fields inherited from OtScheduleResponse (ReportingTime, Anesthesia*, Remarks, …)
         // Patient demographics (populated from Patient table)
         public string? ContactNumber { get; set; }
         public string? BloodGroup { get; set; }
@@ -186,6 +178,12 @@ namespace AuthService.Services
         public decimal? PackageRate { get; set; }
         // Reporting time — surfaced in both list and detail views
         public TimeSpan? ReportingTime { get; set; }
+        // Anaesthesia / notes — required on list + UpdateDetails response for FE rehydration
+        public string? AnesthesiaType { get; set; }
+        public string? AnesthetistName { get; set; }
+        public string? IolPower { get; set; }
+        public string? Remarks { get; set; }
+        public string? CancelReason { get; set; }
         // Derived checklist summary (for list view columns)
         public string? InvestigationsStatus { get; set; }  // Pending | Done | NotRequired
         public string? ChecklistSummary { get; set; }       // AllClear | Pending | Missing

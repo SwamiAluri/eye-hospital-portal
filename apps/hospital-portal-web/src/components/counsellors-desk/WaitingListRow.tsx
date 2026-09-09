@@ -2,6 +2,7 @@
 
 import React, { memo } from 'react';
 import { ChevronRight, User } from 'lucide-react';
+import { getStateLabel } from '@/lib/api/ccms/ccms-state-labels';
 import type { WaitingListPatient } from '@/types/counsellors-desk';
 import { isCoveragePaymentTypeValue } from '@/lib/counsellors-desk/session-utils';
 
@@ -23,32 +24,31 @@ const STATUS_BADGE: Record<string, string> = {
   SurgeryDone:       'bg-teal-100 text-teal-700 ring-teal-200',
 };
 
-
-const CCMS_STATE_BADGE: Record<string, { label: string; cls: string }> = {
-  DRAFT:                  { label: 'Draft',            cls: 'bg-gray-100 text-gray-600' },
-  ELIGIBILITY_PENDING:    { label: 'Eligibility Check',cls: 'bg-amber-100 text-amber-700' },
-  ELIGIBILITY_VERIFIED:   { label: 'Eligibility OK',  cls: 'bg-blue-100 text-blue-700' },
-  PREAUTH_GENERATED:      { label: 'Pre-auth Ready',   cls: 'bg-blue-100 text-blue-700' },
-  PREAUTH_SENT:           { label: 'Sent to CCMS',     cls: 'bg-indigo-100 text-indigo-700' },
-  WAITING_APPROVAL:       { label: 'Awaiting Approval',cls: 'bg-violet-100 text-violet-700' },
-  APPROVED:               { label: 'Approved',         cls: 'bg-emerald-100 text-emerald-700' },
-  PARTIAL_APPROVAL:       { label: 'Partial Approved', cls: 'bg-teal-100 text-teal-700' },
-  REJECTED:               { label: 'Rejected',         cls: 'bg-red-100 text-red-700' },
-  EXPIRED:                { label: 'Expired',          cls: 'bg-red-100 text-red-700' },
-  CLARIFICATION_REQUIRED: { label: 'Clarification Req',cls: 'bg-amber-100 text-amber-700' },
-  RESUBMITTED:            { label: 'Resubmitted',      cls: 'bg-blue-100 text-blue-700' },
-  BILL_PENDING:           { label: 'Bill Pending',     cls: 'bg-purple-100 text-purple-700' },
-  CLAIM_RAISED:           { label: 'Claim Raised',     cls: 'bg-violet-100 text-violet-700' },
-  FULL_SETTLEMENT:        { label: 'Settled',          cls: 'bg-emerald-100 text-emerald-700' },
-  CLOSED:                 { label: 'Closed',           cls: 'bg-gray-100 text-gray-500' },
+const CCMS_STATE_BADGE_CLS: Record<string, string> = {
+  DRAFT:                  'bg-gray-100 text-gray-600',
+  ELIGIBILITY_PENDING:    'bg-amber-100 text-amber-700',
+  ELIGIBILITY_VERIFIED:   'bg-blue-100 text-blue-700',
+  POLICY_CAPTURED:        'bg-blue-100 text-blue-700',
+  PREAUTH_GENERATED:      'bg-blue-100 text-blue-700',
+  PREAUTH_SENT:           'bg-indigo-100 text-indigo-700',
+  WAITING_APPROVAL:       'bg-violet-100 text-violet-700',
+  APPROVED:               'bg-emerald-100 text-emerald-700',
+  PARTIAL_APPROVAL:       'bg-teal-100 text-teal-700',
+  REJECTED:               'bg-red-100 text-red-700',
+  EXPIRED:                'bg-red-100 text-red-700',
+  CLARIFICATION_REQUIRED: 'bg-amber-100 text-amber-700',
+  RESUBMITTED:            'bg-blue-100 text-blue-700',
+  BILL_PENDING:           'bg-purple-100 text-purple-700',
+  FULL_SETTLEMENT:        'bg-emerald-100 text-emerald-700',
+  CLOSED:                 'bg-gray-100 text-gray-500',
 };
 
 function PreAuthStateBadge({ state }: { state: string }) {
-  const cfg = CCMS_STATE_BADGE[state];
-  if (!cfg) return null;
+  if (!state) return null;
+  const cls = CCMS_STATE_BADGE_CLS[state] ?? 'bg-gray-100 text-gray-600';
   return (
-    <span className={`block text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 ${cfg.cls} leading-tight`}>
-      {cfg.label}
+    <span className={`block text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 ${cls} leading-tight`}>
+      {getStateLabel(state)}
     </span>
   );
 }

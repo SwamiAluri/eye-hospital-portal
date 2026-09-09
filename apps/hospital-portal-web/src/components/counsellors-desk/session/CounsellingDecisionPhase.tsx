@@ -1,25 +1,26 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useMemo } from 'react';
+import { Calendar, ClipboardList, CreditCard, UserCheck } from 'lucide-react';
 import type { CombinedPaymentType, DecisionType, ScheduleData } from '@/types/counsellors-desk';
-import { isCoveragePaymentType } from '@/lib/counsellors-desk/counselling-progress';
+import { type CounsellingPhaseValidationContext } from '@/lib/counsellors-desk/counselling-progress';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
-import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
-  CounsellingCard,
-  CounsellingCardContent,
-  CounsellingCardHeader,
-  CounsellingCardTitle,
-  CounsellingButton,
-} from '@/components/counsellors-desk/session/primitives';
+  isDecisionPhaseComplete,
+  resolveDecisionPhaseBlocker,
+} from '@/lib/counsellors-desk/decision-workspace-presentation';
+import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { DecisionSummaryStrip } from '@/components/counsellors-desk/session/DecisionSummaryStrip';
+import { CounsellingSessionWidget } from '@/components/counsellors-desk/session/CounsellingSessionWidget';
+import { CounsellingStatusPill } from '@/components/counsellors-desk/session/CounsellingStatusPill';
 import {
   CounsellingDecisionSection,
+  CounsellingFollowUpSection,
   CounsellingPaymentSection,
   CounsellingScheduleSection,
 } from '@/components/counsellors-desk/session/CounsellingWorkflowSections';
 
 export interface CounsellingDecisionPhaseProps {
-  phaseNav?: ReactNode;
   paymentType: CombinedPaymentType | '';
   setPaymentType: (v: CombinedPaymentType | '') => void;
   insuranceCompany: string;
@@ -37,11 +38,10 @@ export interface CounsellingDecisionPhaseProps {
   setIsScheduleModalOpen: (open: boolean) => void;
   isReadOnly: boolean;
   markDirty: () => void;
-  onOpenCoverageTab?: () => void;
+  phaseValidationContext: CounsellingPhaseValidationContext;
 }
 
 export function CounsellingDecisionPhase({
-  phaseNav,
   paymentType,
   setPaymentType,
   insuranceCompany,
@@ -59,91 +59,119 @@ export function CounsellingDecisionPhase({
   setIsScheduleModalOpen,
   isReadOnly,
   markDirty,
-  onOpenCoverageTab,
+  phaseValidationContext,
 }: CounsellingDecisionPhaseProps) {
   const showSchedule = decision === 'DateForSurgery' || decision === 'Interested';
-  const showCoverageBanner = paymentType && isCoveragePaymentType(paymentType);
+  const scheduleRequired = decision === 'DateForSurgery';
+  const showFollowUp = decision === 'NotInterested' || decision === 'NeedsTime';
+  const phaseInput = phaseValidationContext;
+  const isComplete = isDecisionPhaseComplete(phaseValidationContext);
+  const blocker = useMemo(() => resolveDecisionPhaseBlocker(phaseInput), [phaseInput]);
 
   return (
-    <div className="flex flex-col gap-3 pb-4">
-      {phaseNav ? (
-        <CounsellingCard className={counsellingSessionTokens.card}>
-          <CounsellingCardContent className={`${counsellingSessionTokens.cardBody} pt-4`}>
-            {phaseNav}
-          </CounsellingCardContent>
-        </CounsellingCard>
-      ) : null}
-      <CounsellingCard className={counsellingSessionTokens.card}>
-        <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
-          <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-            {counsellingCopy.paymentAndCoverage}
-          </CounsellingCardTitle>
-        </CounsellingCardHeader>
-        <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
-          <CounsellingPaymentSection
-            embedded
-            paymentType={paymentType}
-            setPaymentType={setPaymentType}
-            insuranceCompany={insuranceCompany}
-            setInsuranceCompany={setInsuranceCompany}
-            insuranceProviderOptions={insuranceProviderOptions}
-            freeSurgeryReason={freeSurgeryReason}
-            setFreeSurgeryReason={setFreeSurgeryReason}
-            isReadOnly={isReadOnly}
-            markDirty={markDirty}
-          />
-          {showCoverageBanner && onOpenCoverageTab ? (
-            <div className="mt-4">
-              <CounsellingButton
-                type="button"
-                variant="outline"
-                onClick={onOpenCoverageTab}
-                data-testid={counsellingTestIds.btnOpenCoverage}
-              >
-                {counsellingCopy.coverageAndPreAuth}
-              </CounsellingButton>
-            </div>
-          ) : null}
-        </CounsellingCardContent>
-      </CounsellingCard>
+    <div
+      data-testid={counsellingTestIds.decisionWorkspace}
+      className={`${counsellingSessionTokens.counsellingWorkspace} pb-4`}
+    >
+      <CounsellingSessionWidget
+        title={counsellingCopy.decision}
+        icon={<UserCheck className="h-4 w-4 text-counselling-primary" aria-hidden />}
+        data-testid={counsellingTestIds.decisionWorkspaceHeader}
+        headerAction={
+          <CounsellingStatusPill
+            tone={isComplete ? 'complete' : 'required'}
+            data-testid={counsellingTestIds.decisionWorkspaceStatus}
+          >
+            {isComplete
+              ? counsellingCopy.decisionRecordedBadge
+              : counsellingCopy.decisionRequiredBadge}
+          </CounsellingStatusPill>
+        }
+      >
+        {!isComplete && blocker ? (
+          <p
+            data-testid={counsellingTestIds.decisionInlineBlocker}
+            className="text-xs text-amber-900"
+            role="status"
+          >
+            {blocker}
+          </p>
+        ) : null}
 
-      <CounsellingCard className={counsellingSessionTokens.card}>
-        <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
-          <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-            {counsellingCopy.patientDecisionTitle}
-          </CounsellingCardTitle>
-        </CounsellingCardHeader>
-        <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
-          <CounsellingDecisionSection
-            embedded
+        <CounsellingDecisionSection
+          embedded
+          decision={decision}
+          setDecision={setDecision}
+          followUpReason={followUpReason}
+          setFollowUpReason={setFollowUpReason}
+          followUpDate={followUpDate}
+          setFollowUpDate={setFollowUpDate}
+          isReadOnly={isReadOnly}
+          markDirty={markDirty}
+        />
+
+        {decision ? (
+          <DecisionSummaryStrip
             decision={decision}
-            setDecision={setDecision}
+            paymentType={paymentType}
+            insuranceCompany={insuranceCompany}
+            schedule={schedule}
+          />
+        ) : null}
+      </CounsellingSessionWidget>
+
+      <CounsellingSessionWidget
+        title={counsellingCopy.fundingSource}
+        icon={<CreditCard className="h-4 w-4 text-counselling-primary" aria-hidden />}
+        data-testid="counselling-decision-funding-widget"
+      >
+        <CounsellingPaymentSection
+          embedded
+          paymentType={paymentType}
+          setPaymentType={setPaymentType}
+          insuranceCompany={insuranceCompany}
+          setInsuranceCompany={setInsuranceCompany}
+          insuranceProviderOptions={insuranceProviderOptions}
+          freeSurgeryReason={freeSurgeryReason}
+          setFreeSurgeryReason={setFreeSurgeryReason}
+          isReadOnly={isReadOnly}
+          markDirty={markDirty}
+        />
+      </CounsellingSessionWidget>
+
+      {showSchedule ? (
+        <CounsellingSessionWidget
+          title={counsellingCopy.surgerySchedule}
+          icon={<Calendar className="h-4 w-4 text-counselling-primary" aria-hidden />}
+          data-testid="counselling-decision-schedule-widget"
+        >
+          <CounsellingScheduleSection
+            embedded
+            compact
+            schedule={schedule}
+            required={scheduleRequired}
+            optional={decision === 'Interested'}
+            setIsScheduleModalOpen={setIsScheduleModalOpen}
+          />
+        </CounsellingSessionWidget>
+      ) : null}
+
+      {showFollowUp ? (
+        <CounsellingSessionWidget
+          title={counsellingCopy.followUpRequired}
+          icon={<ClipboardList className="h-4 w-4 text-counselling-primary" aria-hidden />}
+          data-testid="counselling-decision-followup-widget"
+        >
+          <CounsellingFollowUpSection
+            embedded
             followUpReason={followUpReason}
             setFollowUpReason={setFollowUpReason}
             followUpDate={followUpDate}
             setFollowUpDate={setFollowUpDate}
-            schedule={schedule}
             isReadOnly={isReadOnly}
             markDirty={markDirty}
           />
-        </CounsellingCardContent>
-      </CounsellingCard>
-
-      {showSchedule ? (
-        <CounsellingCard className={counsellingSessionTokens.card}>
-          <CounsellingCardHeader className={counsellingSessionTokens.cardHeader}>
-            <CounsellingCardTitle className={counsellingSessionTokens.sectionTitle}>
-              {counsellingCopy.surgerySchedule}
-            </CounsellingCardTitle>
-          </CounsellingCardHeader>
-          <CounsellingCardContent className={counsellingSessionTokens.cardBody}>
-            <CounsellingScheduleSection
-              embedded
-              schedule={schedule}
-              setIsScheduleModalOpen={setIsScheduleModalOpen}
-            />
-          </CounsellingCardContent>
-        </CounsellingCard>
+        </CounsellingSessionWidget>
       ) : null}
     </div>
   );

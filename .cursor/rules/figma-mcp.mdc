@@ -1,6 +1,6 @@
 ---
 description: Use the remote Figma MCP server for design-to-code and code-to-Figma work in this repo
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Figma MCP

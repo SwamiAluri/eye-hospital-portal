@@ -49,6 +49,8 @@ export interface CounsellingPackageWorkspaceProps {
   isReadOnly: boolean;
   onSelectPackage: (templateId: string) => void;
   onSwitchToRecommendedProcedure: (variantId: string, eye: CounsellingEyeOption) => void;
+  /** When true and a package is active, hide search + card grid */
+  collapseBrowseWhenSelected?: boolean;
 }
 
 function resolveInvestigations(
@@ -86,6 +88,7 @@ export function CounsellingPackageWorkspace({
   isReadOnly,
   onSelectPackage,
   onSwitchToRecommendedProcedure,
+  collapseBrowseWhenSelected = false,
 }: CounsellingPackageWorkspaceProps) {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [packageSearch, setPackageSearch] = useState('');
@@ -120,8 +123,6 @@ export function CounsellingPackageWorkspace({
 
   const filteredPackages = useMemo(() => {
     const q = packageSearch.trim().toLowerCase();
-    if (!categoryFilter && !q) return [];
-
     return activeTemplates.filter((t) => {
       if (categoryFilter && (t.category ?? 'Other') !== categoryFilter) return false;
       if (!q) return true;
@@ -133,7 +134,9 @@ export function CounsellingPackageWorkspace({
     });
   }, [activeTemplates, categoryFilter, packageSearch]);
 
-  const showBrowseCatalog = !!categoryFilter || packageSearch.trim().length > 0;
+  const showBrowseCatalog =
+    !(collapseBrowseWhenSelected && activeTemplateId) &&
+    (embedded || !!categoryFilter || packageSearch.trim().length > 0);
 
   const matchingRecommendedPackage = useMemo(() => {
     const recId = recommendedVariantIds[0];
@@ -161,6 +164,32 @@ export function CounsellingPackageWorkspace({
     onSwitchToRecommendedProcedure(recId, eye);
   };
 
+  if (collapseBrowseWhenSelected && activeTemplateId) {
+    return (
+      <>
+        {hasConflict && (
+          <CounsellingInfoAlert variant="warning" className="mb-4">
+            <p>
+              Selected procedure differs from doctor&apos;s recommendation
+              {doctorRecommendationName ? ` (${doctorRecommendationName})` : ''}.
+            </p>
+            {!isReadOnly && recommendedVariantIds.length > 0 && (
+              <CounsellingButton
+                type="button"
+                size="sm"
+                className="mt-2"
+                onClick={handleSwitchToRecommended}
+              >
+                Switch to recommended
+                {matchingRecommendedPackage ? ` (${matchingRecommendedPackage.name})` : ''}
+              </CounsellingButton>
+            )}
+          </CounsellingInfoAlert>
+        )}
+      </>
+    );
+  }
+
   const renderPackageCard = (template: CounsellingPackageTemplate, suggestedRow: boolean) => {
     const procedure = findCounsellorVariant(procedureVariants, template.procedureVariantId ?? null);
     const investigations = resolveInvestigations(template.investigationIds ?? [], masterCatalog);
@@ -185,6 +214,8 @@ export function CounsellingPackageWorkspace({
         selected={activeTemplateId === template.id}
         suggested={suggestedRow}
         disabled={isReadOnly}
+        selectLabel={counsellingCopy.selectPackage}
+        selectedLabel={counsellingCopy.selected}
         data-testid={counsellingTestIds.packageCard(template.id)}
         badges={
           <>
@@ -293,13 +324,11 @@ export function CounsellingPackageWorkspace({
             <CounsellingEmptyState
               compact
               title={counsellingCopy.selectCategoryToBrowse}
-              description={counsellingCopy.selectCategoryToBrowsePackages}
             />
           ) : browseList.length === 0 ? (
             <CounsellingEmptyState
               compact
               title="No packages match"
-              description="Try a different category or search term."
             />
           ) : (
             <>

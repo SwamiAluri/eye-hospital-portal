@@ -5,7 +5,11 @@ export const COUNSELLING_SESSION_ID = process.env.E2E_COUNSELLING_SESSION_ID ?? 
 /** Mirrors `coverage-test-ids.ts` for Playwright helpers (no src imports in e2e). */
 export const coverageTestIds = {
   insurerName: 'coverage-insurer-name',
+  /** @deprecated Wave 2C — use estimateMirrorPayable */
   estimatedAmount: 'coverage-estimated-amount',
+  estimateMirror: 'coverage-estimate-mirror',
+  estimateMirrorPayable: 'coverage-estimate-mirror-payable',
+  submitToClaims: 'coverage-submit-to-claims',
   policyOcrPanel: 'policy-card-ocr-panel',
   stepPolicy: 'coverage-step-policy',
   stepEstimate: 'coverage-step-estimate',
@@ -30,22 +34,46 @@ export function counsellingSessionUrl(sessionId = COUNSELLING_SESSION_ID): strin
   return `/dashboard/counsellors-desk/${sessionId}`;
 }
 
-/** Main counselling workspace tab (Radix TabsTrigger → role=tab). */
+/** Primary workflow stage for the Quote counselling workspace. */
 export function counsellingMainTab(page: Page) {
-  return page.getByRole('tab', { name: 'Counselling', exact: true });
+  return counsellingJourneyStage(page, 'quote');
 }
 
-/** Coverage & Pre-Auth main tab (visible when payment type requires CCMS). */
+/** Primary workflow stage for the Insurance coverage workspace. */
 export function coverageMainTab(page: Page) {
-  return page.getByRole('tab', { name: /Coverage & Pre-Auth/i });
+  return counsellingJourneyStage(page, 'insurance');
 }
 
-/** Open the Coverage & Pre-Auth workspace tab. */
+/** Return to the counselling workspace from Insurance or Outpatient. */
+export async function goCounsellingWorkspace(page: Page): Promise<void> {
+  const counsellingVisible = await page
+    .locator(
+      '#counselling-step-1, [data-testid="counselling-decision-workspace"], [data-testid="counselling-notes-workspace"]',
+    )
+    .first()
+    .isVisible()
+    .catch(() => false);
+  if (counsellingVisible) return;
+  await clickJourneyStage(page, 'quote');
+  await expect(page.locator('#counselling-step-1')).toBeVisible({ timeout: 30_000 });
+}
+
+/** Open the Insurance (Coverage) workspace via the primary journey navigation. */
 export async function goCoverageTab(page: Page): Promise<void> {
-  const tab = coverageMainTab(page);
-  await expect(tab).toBeVisible({ timeout: 30_000 });
-  await tab.click();
-  await expect(tab).toHaveAttribute('data-state', 'active');
+  if (await page.getByTestId(coverageTestIds.stepPolicy).isVisible().catch(() => false)) {
+    return;
+  }
+  const insurance = counsellingJourneyStage(page, 'insurance');
+  const skipped = await insurance.getAttribute('data-journey-status');
+  if (skipped === 'skipped') {
+    test.skip(true, 'Insurance stage skipped — cash/self-pay session');
+  }
+  await expect(insurance).toBeVisible({ timeout: 30_000 });
+  const button = insurance.getByRole('button');
+  if (await button.isVisible().catch(() => false)) {
+    await button.click();
+  }
+  await expect(page.getByTestId(coverageTestIds.stepPolicy)).toBeVisible({ timeout: 30_000 });
 }
 
 /** Open Coverage tab and wait for wizard step nav. */
@@ -125,11 +153,13 @@ export async function skipIfSessionReadOnly(page: Page): Promise<void> {
   }
 }
 
-/** Ensure Insurance payment type so the coverage tab is available. */
+/** Ensure Insurance payment type so the coverage workflow is available. */
 export async function ensureInsurancePaymentType(page: Page): Promise<void> {
+  const insuranceStage = counsellingJourneyStage(page, 'insurance');
+  const status = await insuranceStage.getAttribute('data-journey-status').catch(() => null);
+  if (status !== 'skipped') return;
+
   await goToPhase(page, 'decision');
-  const coverageTab = coverageMainTab(page);
-  if (await coverageTab.isVisible().catch(() => false)) return;
 
   const paymentTrigger = page
     .locator('#counselling-step-3')
@@ -138,12 +168,34 @@ export async function ensureInsurancePaymentType(page: Page): Promise<void> {
   await expect(paymentTrigger).toBeVisible({ timeout: 15_000 });
   await paymentTrigger.click();
   await page.getByRole('option', { name: /^Insurance$/i }).click();
-  await expect(coverageTab).toBeVisible({ timeout: 15_000 });
+  await expect(insuranceStage).not.toHaveAttribute('data-journey-status', 'skipped', {
+    timeout: 15_000,
+  });
 }
 
-/** Counselling wizard icon-card step (Build Quote / Patient Decision / Session Notes). */
+/** Counselling journey rail stage (Wave 2E-2R primary workflow). */
+export function counsellingJourneyStage(
+  page: Page,
+  stage: 'quote' | 'decision' | 'insurance' | 'notes' | 'close',
+) {
+  return page.getByTestId(`counselling-journey-stage-${stage}`);
+}
+
+/** Open Outpatient Safety via the session chrome access link (not a journey stage). */
+export async function goOutpatientSafety(page: Page): Promise<void> {
+  const link = page.getByTestId('counselling-outpatient-access');
+  await expect(link).toBeVisible({ timeout: 30_000 });
+  await link.click();
+  await expect(
+    page.getByText(/Outpatient Safety Checklist|Loading safety checklist|not configured/i).first(),
+  ).toBeVisible({ timeout: 30_000 });
+}
+
+/** @deprecated Wave 2A — use counsellingJourneyStage */
 export function counsellingPhaseStep(page: Page, phase: CounsellingPhaseId) {
-  return page.getByTestId(`counselling-phase-${phase}`);
+  const stage =
+    phase === 'estimate' ? 'quote' : phase === 'decision' ? 'decision' : 'notes';
+  return counsellingJourneyStage(page, stage);
 }
 
 /** @deprecated Use counsellingPhaseStep — horizontal wizard replaced vertical sidebar. */
@@ -151,13 +203,16 @@ export function visiblePhaseControl(page: Page, phase: CounsellingPhaseId) {
   return counsellingPhaseStep(page, phase);
 }
 
-/** Navigate to a counselling session and wait for the counselling workspace shell. */
+/** Navigate to a counselling session and wait for the primary workflow shell. */
 export async function goCounsellingSession(page: Page, sessionId = COUNSELLING_SESSION_ID): Promise<void> {
   await page.goto(counsellingSessionUrl(sessionId), { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
-  await expect(counsellingMainTab(page)).toBeVisible({ timeout: 60_000 });
-  await expect(visiblePhaseControl(page, 'estimate')).toBeVisible({ timeout: 60_000 });
-  await goToPhase(page, 'estimate');
+  await expect(page.getByTestId('counselling-journey-rail')).toBeVisible({ timeout: 60_000 });
+  await expect(counsellingJourneyStage(page, 'quote')).toBeVisible({ timeout: 60_000 });
+  const onEstimate = await page.locator('#counselling-step-1').isVisible().catch(() => false);
+  if (!onEstimate) {
+    await goToPhase(page, 'estimate');
+  }
   await expect(page.locator('#counselling-step-1')).toBeVisible({ timeout: 30_000 });
 }
 
@@ -181,11 +236,42 @@ export function phaseNextButton(page: Page) {
   return page.getByTestId('counselling-btn-phase-next');
 }
 
+export function actionBarPrimary(page: Page) {
+  return page
+    .getByTestId('counselling-action-bar-primary')
+    .or(page.getByTestId('counselling-btn-phase-next'));
+}
+
+export function actionBar(page: Page) {
+  return page.getByTestId('counselling-action-bar');
+}
+
+export function journeyStage(page: Page, stageId: string) {
+  return page.getByTestId(`counselling-journey-stage-${stageId}`);
+}
+
+export function quoteFinalPayable(page: Page) {
+  return page.getByTestId('counselling-quote-final-payable');
+}
+
+export function coverageEstimateMirror(page: Page) {
+  return page.getByTestId(coverageTestIds.estimateMirror);
+}
+
+export function coverageEstimateMirrorPayable(page: Page) {
+  return page.getByTestId(coverageTestIds.estimateMirrorPayable);
+}
+
 /** Desktop quote aside or mobile estimate bottom-sheet strip. */
 export async function expectQuotePanelVisible(page: Page): Promise<void> {
-  const desktopQuote = page.getByTestId('counselling-quote-panel');
+  const viewport = page.viewportSize();
   const mobileEstimate = page.getByRole('button', { name: /Estimate/i });
-  await expect(desktopQuote.or(mobileEstimate).first()).toBeVisible({ timeout: 30_000 });
+  if (viewport && viewport.width < 1024) {
+    await expect(mobileEstimate).toBeVisible({ timeout: 30_000 });
+    return;
+  }
+  const desktopQuote = page.getByTestId('counselling-quote-panel');
+  await expect(desktopQuote).toBeVisible({ timeout: 30_000 });
 }
 
 /** Expand mobile quote sheet if needed; no-op on desktop. */
@@ -203,19 +289,55 @@ export async function openQuotePanel(page: Page): Promise<void> {
   await expectQuotePanelVisible(page);
 }
 
-/** Switch Custom / Package tabs in the Build estimate card. */
+/** Switch Custom / Package mode in the Build estimate card. */
 export async function toggleEstimateMode(page: Page, mode: 'custom' | 'package'): Promise<void> {
   await goToPhase(page, 'estimate');
   const testId = mode === 'custom' ? 'counselling-tab-custom' : 'counselling-tab-package';
   const tab = page.getByTestId(testId);
   await expect(tab).toBeVisible({ timeout: 30_000 });
   await tab.click();
-  await expect(tab).toHaveAttribute('data-state', 'active');
+  await expect(tab).toHaveAttribute('aria-current', 'step');
+}
+
+async function clickJourneyStage(page: Page, stageId: 'quote' | 'decision' | 'notes'): Promise<void> {
+  const stage = counsellingJourneyStage(page, stageId);
+  await expect(stage).toBeVisible({ timeout: 15_000 });
+  const button = stage.getByRole('button');
+  if (await button.isVisible().catch(() => false)) {
+    await button.click();
+    return;
+  }
+  await stage.click();
 }
 
 /** Click a phase in the session flow (estimate, decision, wrapup). */
 export async function goToPhase(page: Page, phase: CounsellingPhaseId): Promise<void> {
-  await visiblePhaseControl(page, phase).click();
+  if (phase === 'estimate') {
+    if (await page.locator('#counselling-step-1').isVisible().catch(() => false)) {
+      return;
+    }
+    await clickJourneyStage(page, 'quote');
+    await expect(page.locator('#counselling-step-1')).toBeVisible({ timeout: 30_000 });
+    return;
+  }
+
+  if (phase === 'decision') {
+    if (await page.getByTestId('counselling-decision-workspace').isVisible().catch(() => false)) {
+      return;
+    }
+    await clickJourneyStage(page, 'decision');
+    await expect(page.getByTestId('counselling-decision-workspace')).toBeVisible({ timeout: 30_000 });
+    return;
+  }
+
+  if (phase === 'wrapup') {
+    if (await page.getByTestId('counselling-notes-workspace').isVisible().catch(() => false)) {
+      return;
+    }
+    await clickJourneyStage(page, 'notes');
+    await expect(page.getByTestId('counselling-notes-workspace')).toBeVisible({ timeout: 30_000 });
+    return;
+  }
 }
 
 /** Advance to the next phase using the footer Next button. */
@@ -225,35 +347,34 @@ export async function goToNextPhase(page: Page): Promise<void> {
   await next.click();
 }
 
-/** Pick first procedure via inline catalog search. Returns false if none available. */
-export async function selectFirstProcedureFromSearch(page: Page): Promise<boolean> {
+/** Ensure inline procedure catalog grid is visible on the Custom Procedure tab. */
+export async function openProcedureCatalogGrid(page: Page): Promise<void> {
   await toggleEstimateMode(page, 'custom');
+  await expect(page.getByTestId('counselling-quote-procedure-catalog-grid')).toBeVisible({
+    timeout: 15_000,
+  });
+}
 
-  const search = page.getByTestId('counselling-procedure-search');
+/** @deprecated Use openProcedureCatalogGrid — Wave 2F removed the modal/sheet catalogue. */
+export async function openProcedureCatalogueSheet(page: Page): Promise<void> {
+  return openProcedureCatalogGrid(page);
+}
+
+/** Pick first procedure via inline catalog grid search. Returns false if none available. */
+export async function selectFirstProcedureFromSearch(page: Page): Promise<boolean> {
+  await openProcedureCatalogGrid(page);
+
+  const grid = page.getByTestId('counselling-quote-procedure-catalog-grid');
+  const search = grid.getByTestId('counselling-procedure-search');
   await expect(search).toBeVisible({ timeout: 30_000 });
 
-  const row = page
-    .locator('#counselling-step-1')
-    .getByRole('button')
-    .filter({ hasText: /₹/ })
-    .first();
-
-  if (await row.isVisible({ timeout: 10_000 }).catch(() => false)) {
-    await row.click();
-    return true;
-  }
-
   await search.fill('a');
-  const filteredRow = page
-    .locator('#counselling-step-1')
-    .getByRole('button')
-    .filter({ hasText: /₹/ })
-    .first();
+  const card = grid.getByRole('button', { name: /Select procedure/i }).first();
 
-  if (!(await filteredRow.isVisible({ timeout: 10_000 }).catch(() => false))) {
+  if (!(await card.isVisible({ timeout: 10_000 }).catch(() => false))) {
     return false;
   }
-  await filteredRow.click();
+  await card.click();
   return true;
 }
 
@@ -264,10 +385,11 @@ export async function expectEyeSelectorTestIds(page: Page): Promise<void> {
   await expect(page.getByTestId('counselling-eye-be')).toBeVisible();
 }
 
-/** Assert inline procedure search is visible and accepts input. */
+/** Assert inline procedure catalog search is visible and accepts input. */
 export async function expectProcedureSearchVisible(page: Page): Promise<void> {
-  await toggleEstimateMode(page, 'custom');
-  const search = page.getByTestId('counselling-procedure-search');
+  await openProcedureCatalogGrid(page);
+  const grid = page.getByTestId('counselling-quote-procedure-catalog-grid');
+  const search = grid.getByTestId('counselling-procedure-search');
   await expect(search).toBeVisible({ timeout: 30_000 });
   await search.fill('cat');
   await expect(search).toHaveValue('cat');
@@ -286,9 +408,9 @@ export async function expectPricingModeTabs(page: Page): Promise<boolean> {
     return false;
   }
   await toggleEstimateMode(page, 'package');
-  await expect(page.getByTestId('counselling-tab-package')).toHaveAttribute('data-state', 'active');
+  await expect(page.getByTestId('counselling-tab-package')).toHaveAttribute('aria-current', 'step');
   await toggleEstimateMode(page, 'custom');
-  await expect(customTab).toHaveAttribute('data-state', 'active');
+  await expect(customTab).toHaveAttribute('aria-current', 'step');
   return true;
 }
 

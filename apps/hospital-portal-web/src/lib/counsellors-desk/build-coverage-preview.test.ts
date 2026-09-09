@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveCoverageSessionFinalPayable } from '@/lib/counsellors-desk/build-coverage-preview';
+import { resolveCoverageSessionFinalPayable, resolveCounsellingQuoteFinalPayable } from '@/lib/counsellors-desk/build-coverage-preview';
 
 describe('resolveCoverageSessionFinalPayable', () => {
   it('prefers saved total when live estimate has no procedure line', () => {
@@ -37,5 +37,17 @@ describe('resolveCoverageSessionFinalPayable', () => {
         estimateLines: [],
       }),
     ).toBe(50000);
+  });
+
+  it('resolveCounsellingQuoteFinalPayable ignores stale saved total when live quote exists', () => {
+    expect(
+      resolveCounsellingQuoteFinalPayable({
+        liveFinalPayable: 155200,
+        savedFinalPayable: 180200,
+        estimateLines: [
+          { key: 'procedure', label: 'PPV', amount: 150000, kind: 'procedure' },
+        ],
+      }),
+    ).toBe(155200);
   });
 });

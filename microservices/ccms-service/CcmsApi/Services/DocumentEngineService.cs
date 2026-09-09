@@ -1,5 +1,6 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Azure.Storage.Sas;
 using CcmsApi.Data;
 using CcmsApi.Models.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -35,39 +36,68 @@ public class DocumentEngineService
         string fileName,
         string mimeType,
         string documentType,
-        string stage = "preauth",
+        string stage = CcmsDocumentStages.Preauth,
         CancellationToken ct = default)
     {
+        var category = CcmsDocumentStages.Normalize(stage);
+        var documentName = CcmsDocumentFileNames.Resolve(fileName, null, documentType);
+        if (fileStream.CanSeek && fileStream.Length <= 0)
+            throw new InvalidOperationException("Uploaded file is empty.");
+
         var coverageCase = await _db.CoverageCases
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == coverageCaseId && c.DeletedAt == null, ct)
             ?? throw new KeyNotFoundException($"Coverage case {coverageCaseId} not found.");
 
         // Upload to Azure Blob Storage (Azurite locally)
-        var blobUrl = await UploadToBlobAsync(coverageCaseId, fileName, mimeType, fileStream, ct);
+        string? uploadedBlobName = null;
+        string blobUrl;
+        try
+        {
+            blobUrl = await UploadToBlobAsync(coverageCaseId, documentName, mimeType, fileStream, ct);
+            uploadedBlobName = ExtractBlobName(blobUrl);
+        }
+        catch
+        {
+            throw;
+        }
 
+        var now = DateTime.UtcNow;
+        await SoftDeletePriorDocumentsAsync(coverageCaseId, documentType, category, actorUserId, now, ct);
         var doc = new CcmsDocument
         {
             Id               = Guid.NewGuid(),
             TenantId         = coverageCase.TenantId,
             CoverageCase_Id  = coverageCaseId,
-            DocumentCategory = stage,
+            DocumentCategory = category,
             DocumentType     = documentType,
-            DocumentName     = fileName,
+            DocumentName     = documentName,
             BlobUrl          = blobUrl,
             FileSizeBytes    = fileStream.CanSeek ? fileStream.Length : 0,
             MimeType         = mimeType,
-            UploadedAt       = DateTime.UtcNow,
-            CreatedAt        = DateTime.UtcNow,
-            UpdatedAt        = DateTime.UtcNow,
+            UploadedAt       = now,
+            UploadedByUserId = actorUserId,
+            CreatedAt        = now,
+            UpdatedAt        = now,
             CreatedByUserId  = actorUserId,
             UpdatedByUserId  = actorUserId,
-            Status           = "active"
+            Status           = "active",
+            RowVersion       = 1,
         };
 
         _db.Documents.Add(doc);
-        await _db.SaveChangesAsync(ct);
-        _log.LogInformation("Document {Name} uploaded for case {CaseId}", fileName, coverageCaseId);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            if (uploadedBlobName is not null)
+                await TryDeleteBlobAsync(uploadedBlobName, ct);
+            _log.LogError(ex, "Failed to persist document {Type} for case {CaseId}", documentType, coverageCaseId);
+            throw;
+        }
+        _log.LogInformation("Document {Name} uploaded for case {CaseId}", documentName, coverageCaseId);
         return doc;
     }
 
@@ -82,20 +112,27 @@ public class DocumentEngineService
             .FirstOrDefaultAsync(c => c.Id == coverageCaseId && c.DeletedAt == null, ct)
             ?? throw new KeyNotFoundException($"Coverage case {coverageCaseId} not found.");
 
+        var category = CcmsDocumentStages.Normalize(req.Stage);
+        var documentName = CcmsDocumentFileNames.Resolve(null, req.DocumentName, req.DocumentType);
+        var now = DateTime.UtcNow;
+        await SoftDeletePriorDocumentsAsync(
+            coverageCaseId, req.DocumentType, category, actorUserId, now, ct);
+
         var doc = new CcmsDocument
         {
             Id               = Guid.NewGuid(),
             TenantId         = coverageCase.TenantId,
             CoverageCase_Id  = coverageCaseId,
-            DocumentCategory = req.Stage,
+            DocumentCategory = category,
             DocumentType     = req.DocumentType,
-            DocumentName     = req.DocumentName,
+            DocumentName     = documentName,
             BlobUrl          = req.BlobUrl,
             FileSizeBytes    = req.FileSizeBytes ?? 0,
             MimeType         = req.MimeType,
-            UploadedAt       = DateTime.UtcNow,
-            CreatedAt        = DateTime.UtcNow,
-            UpdatedAt        = DateTime.UtcNow,
+            UploadedAt       = now,
+            UploadedByUserId = actorUserId,
+            CreatedAt        = now,
+            UpdatedAt        = now,
             CreatedByUserId  = actorUserId,
             UpdatedByUserId  = actorUserId,
             Status           = "active"
@@ -220,7 +257,7 @@ public class DocumentEngineService
         var q = _db.Documents.AsNoTracking()
             .Where(d => d.CoverageCase_Id == coverageCaseId && d.DeletedAt == null);
         if (!string.IsNullOrEmpty(stage))
-            q = q.Where(d => d.DocumentCategory == stage);
+            q = q.Where(d => d.DocumentCategory == CcmsDocumentStages.Normalize(stage));
         return await q.OrderByDescending(d => d.CreatedAt).ToListAsync(ct);
     }
 
@@ -236,6 +273,148 @@ public class DocumentEngineService
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Returns a short-lived read SAS for stored blobs, or the pointer URL unchanged for biometry/pacs.
+    /// When <paramref name="coverageCaseId"/> is supplied, the document must belong to that case.
+    /// </summary>
+    public async Task<DocumentAccessUrlResult> GetReadAccessUrlAsync(
+        Guid documentId,
+        Guid? coverageCaseId = null,
+        CancellationToken ct = default)
+    {
+        var doc = await _db.Documents.AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == documentId && d.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Document {documentId} not found.");
+
+        if (coverageCaseId is Guid expected && doc.CoverageCase_Id != expected)
+            throw new KeyNotFoundException($"Document {documentId} not found for case {expected}.");
+
+        return await BuildAccessUrlResultAsync(doc, ct);
+    }
+
+    /// <summary>
+    /// Streams blob bytes for preview/download through the CCMS API (JWT-authenticated).
+  /// Avoids cross-origin Azurite/CORS issues in the browser PDF viewer.
+    /// </summary>
+    public async Task<DocumentBlobContent> OpenBlobReadStreamAsync(
+        Guid documentId,
+        Guid? coverageCaseId = null,
+        CancellationToken ct = default)
+    {
+        var doc = await _db.Documents.AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == documentId && d.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Document {documentId} not found.");
+
+        if (coverageCaseId is Guid expected && doc.CoverageCase_Id != expected)
+            throw new KeyNotFoundException($"Document {documentId} not found for case {expected}.");
+
+        var storedUrl = doc.BlobUrl?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(storedUrl))
+            throw new InvalidOperationException("Document has no stored location.");
+
+        if (IsPointerUrl(storedUrl))
+            throw new InvalidOperationException("Pointer documents cannot be streamed as files.");
+
+        await EnsureBlobExistsAsync(storedUrl, ct);
+
+        var blobName        = ExtractBlobName(storedUrl);
+        var serviceClient   = CcmsBlobClients.CreateServiceClient(GetStorageConnectionString());
+        var containerClient = serviceClient.GetBlobContainerClient(ContainerName);
+        var blobClient      = containerClient.GetBlobClient(blobName);
+        var download        = await blobClient.DownloadStreamingAsync(cancellationToken: ct);
+
+        var contentType = !string.IsNullOrWhiteSpace(doc.MimeType)
+            ? doc.MimeType!
+            : download.Value.Details.ContentType ?? "application/octet-stream";
+
+        return new DocumentBlobContent(
+            download.Value.Content,
+            contentType,
+            doc.DocumentName,
+            download.Value.Details.ContentLength);
+    }
+
+    /// <summary>Builds a read SAS (or pointer URL) for an already-loaded document row.</summary>
+    public DocumentAccessUrlResult BuildAccessUrlResult(CcmsDocument doc)
+    {
+        var storedUrl = doc.BlobUrl?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(storedUrl))
+            throw new InvalidOperationException("Document has no stored location.");
+
+        if (IsPointerUrl(storedUrl))
+            return new DocumentAccessUrlResult(storedUrl, null, true);
+
+        return new DocumentAccessUrlResult(
+            GenerateReadSasUrl(storedUrl),
+            DateTimeOffset.UtcNow.AddHours(1),
+            false);
+    }
+
+    public async Task<DocumentAccessUrlResult> BuildAccessUrlResultAsync(
+        CcmsDocument doc,
+        CancellationToken ct = default)
+    {
+        var storedUrl = doc.BlobUrl?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(storedUrl))
+            throw new InvalidOperationException("Document has no stored location.");
+
+        if (IsPointerUrl(storedUrl))
+            return new DocumentAccessUrlResult(storedUrl, null, true);
+
+        await EnsureBlobExistsAsync(storedUrl, ct);
+        return BuildAccessUrlResult(doc);
+    }
+
+    private async Task EnsureBlobExistsAsync(string blobUrl, CancellationToken ct)
+    {
+        var blobName = ExtractBlobName(blobUrl);
+        var serviceClient   = CcmsBlobClients.CreateServiceClient(GetStorageConnectionString());
+        var containerClient = serviceClient.GetBlobContainerClient(ContainerName);
+        var blobClient      = containerClient.GetBlobClient(blobName);
+        if (!await blobClient.ExistsAsync(ct))
+        {
+            throw new KeyNotFoundException(
+                "Document file is not available in storage. The upload may have been lost or the link is invalid. Please upload the document again.");
+        }
+    }
+
+    /// <summary>Returns null when SAS cannot be generated (logs warning).</summary>
+    public async Task<string?> TryBuildReadAccessUrlAsync(CcmsDocument doc, CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await BuildAccessUrlResultAsync(doc, ct);
+            return result.Url;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Could not build read access URL for document {DocumentId}", doc.Id);
+            return null;
+        }
+    }
+
+    private async Task SoftDeletePriorDocumentsAsync(
+        Guid coverageCaseId,
+        string documentType,
+        string stage,
+        Guid actorUserId,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var prior = await _db.Documents
+            .Where(d => d.CoverageCase_Id == coverageCaseId
+                        && d.DocumentCategory == stage
+                        && d.DocumentType == documentType
+                        && d.DeletedAt == null)
+            .ToListAsync(ct);
+        foreach (var old in prior)
+        {
+            old.DeletedAt       = now;
+            old.UpdatedAt       = now;
+            old.UpdatedByUserId = actorUserId;
+        }
+    }
+
     // ── Private: Azure Blob Storage upload ────────────────────────────────────
 
     private async Task<string> UploadToBlobAsync(
@@ -246,7 +425,7 @@ public class DocumentEngineService
             ?? _config["Values:AzureWebJobsStorage"]
             ?? "UseDevelopmentStorage=true";
 
-        var serviceClient   = new BlobServiceClient(connStr);
+        var serviceClient   = CcmsBlobClients.CreateServiceClient(connStr);
         var containerClient = serviceClient.GetBlobContainerClient(ContainerName);
         await containerClient.CreateIfNotExistsAsync(PublicAccessType.None, cancellationToken: ct);
 
@@ -261,8 +440,73 @@ public class DocumentEngineService
         return blobClient.Uri.ToString();
     }
 
+    private async Task TryDeleteBlobAsync(string blobName, CancellationToken ct)
+    {
+        try
+        {
+            var serviceClient   = CcmsBlobClients.CreateServiceClient(GetStorageConnectionString());
+            var containerClient = serviceClient.GetBlobContainerClient(ContainerName);
+            await containerClient.GetBlobClient(blobName).DeleteIfExistsAsync(cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Could not roll back blob {BlobName} after failed document save", blobName);
+        }
+    }
+
     private static string SanitizeName(string name)
         => string.Join("_", name.Split(System.IO.Path.GetInvalidFileNameChars()));
+
+    internal static bool IsPointerUrl(string url)
+    {
+        var u = url.Trim();
+        return u.StartsWith("biometry://", StringComparison.OrdinalIgnoreCase)
+               || u.StartsWith("pacs://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string ExtractBlobName(string blobUrl)
+    {
+        var marker = $"/{ContainerName}/";
+        var idx = blobUrl.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+            throw new InvalidOperationException("Unrecognized blob storage URL for this document.");
+
+        var raw = blobUrl[(idx + marker.Length)..];
+        var queryIdx = raw.IndexOf('?');
+        if (queryIdx >= 0)
+            raw = raw[..queryIdx];
+
+        // Uri.ToString() percent-encodes reserved chars (e.g. "(" → "%28") but Azurite/Azure
+        // store the blob under the literal key. Decode so GetBlobClient resolves the real object.
+        return Uri.UnescapeDataString(raw);
+    }
+
+    private string GetStorageConnectionString() =>
+        _config["AzureWebJobsStorage"]
+        ?? _config["Values:AzureWebJobsStorage"]
+        ?? "UseDevelopmentStorage=true";
+
+    private string GenerateReadSasUrl(string blobUrl)
+    {
+        var blobName = ExtractBlobName(blobUrl);
+        var serviceClient   = CcmsBlobClients.CreateServiceClient(GetStorageConnectionString());
+        var containerClient = serviceClient.GetBlobContainerClient(ContainerName);
+        var blobClient      = containerClient.GetBlobClient(blobName);
+
+        if (!blobClient.CanGenerateSasUri)
+            throw new InvalidOperationException("Blob client cannot generate a SAS URI. Check storage credentials.");
+
+        var sas = new BlobSasBuilder
+        {
+            BlobContainerName = ContainerName,
+            BlobName          = blobName,
+            Resource          = "b",
+            StartsOn          = DateTimeOffset.UtcNow.AddMinutes(-5),
+            ExpiresOn         = DateTimeOffset.UtcNow.AddHours(1),
+        };
+        sas.SetPermissions(BlobSasPermissions.Read);
+        return blobClient.GenerateSasUri(sas).ToString();
+    }
 
     internal static string FormatBiometryName(
         string? eye, DateTime? examinationDate, decimal? calculatedIol, string? device)
@@ -300,3 +544,14 @@ public record AttachBiometryRecordRequest(
     DateTime? ExaminationDate,
     decimal? CalculatedIol,
     string? Device);
+
+public record DocumentAccessUrlResult(
+    string Url,
+    DateTimeOffset? ExpiresAt,
+    bool IsPointer);
+
+public record DocumentBlobContent(
+    Stream Stream,
+    string ContentType,
+    string FileName,
+    long? ContentLength);

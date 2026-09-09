@@ -1,7 +1,24 @@
 ﻿'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { ClipboardList, LockKeyhole, AlertCircle, X, Printer, RefreshCw } from 'lucide-react';
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
+import {
+  ClipboardList,
+  LockKeyhole,
+  AlertCircle,
+  X,
+  Printer,
+  ChevronRight,
+  Calendar,
+  Search,
+  Users,
+} from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi, mapOtRecord } from '@/lib/api/counsellors-desk.api';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -12,25 +29,70 @@ import {
 } from '@/hooks/use-counsellors-desk-queries';
 import { StatusBadge } from '@/components/counsellors-desk/StatusBadge';
 import { FinalizeOtModal } from '@/components/counsellors-desk/FinalizeOtModal';
+import { WaitingListQueuePagination } from '@/components/counsellors-desk/waiting-list/WaitingListQueuePagination';
+import { CounsellingButton } from '@/components/counsellors-desk/session/primitives/CounsellingButton';
+import { CounsellingInput } from '@/components/counsellors-desk/session/primitives/CounsellingInput';
+import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { formatWaitingListDoctorDisplay } from '@/lib/counsellors-desk/waiting-list-layout';
+import {
+  WAITING_LIST_DEFAULT_PAGE_SIZE,
+  getWaitingListTotalPages,
+  sliceWaitingListPage,
+  type WaitingListPageSize,
+} from '@/lib/counsellors-desk/waiting-list-pagination';
 import type {
   FinalizeSurgeryRecord,
   FinalizeStatus,
   PrepareOtListItem,
 } from '@/types/counsellors-desk';
+import { cn } from '@/lib/utils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_TABS = [
-  { key: 'All',          label: 'All',           color: 'bg-slate-500',   activeClass: 'bg-slate-600 border-slate-600 text-white'   },
-  { key: 'NotConfirmed', label: 'Not Confirmed',  color: 'bg-amber-500',   activeClass: 'bg-amber-500 border-amber-500 text-white'   },
-  { key: 'Confirmed',    label: 'Confirmed',      color: 'bg-blue-500',    activeClass: 'bg-blue-500 border-blue-500 text-white'     },
-  { key: 'Finalised',    label: 'Finalised',      color: 'bg-indigo-500',  activeClass: 'bg-indigo-500 border-indigo-500 text-white' },
-  { key: 'OTPrepared',   label: 'OT Prepared',    color: 'bg-emerald-500', activeClass: 'bg-emerald-500 border-emerald-500 text-white' },
-  { key: 'Cancelled',    label: 'Cancelled',      color: 'bg-red-500',     activeClass: 'bg-red-500 border-red-500 text-white'       },
-  { key: 'SurgeryDone',  label: 'Surgery Done',   color: 'bg-teal-500',    activeClass: 'bg-teal-500 border-teal-500 text-white'     },
-];
+  { key: 'All', label: 'All' },
+  { key: 'NotConfirmed', label: 'Not Confirmed' },
+  { key: 'Confirmed', label: 'Confirmed' },
+  { key: 'Finalised', label: 'Finalised' },
+  { key: 'OTPrepared', label: 'OT Prepared' },
+  { key: 'Cancelled', label: 'Cancelled' },
+  { key: 'SurgeryDone', label: 'Surgery Done' },
+] as const;
 
 type ActionKey = 'confirm' | 'finalise' | 'cancel' | 'reopen';
+
+const denseBtn = 'min-h-8 !min-h-8 h-8 text-xs';
+const WORK_GRID = 'finalize-surgery-work-grid';
+const COLUMN_CUES = ['Patient', 'Surgery', 'Status', 'Schedule', 'Action'] as const;
+
+function formatScheduleDate(raw?: string): string {
+  if (!raw) return '—';
+  const d = new Date(`${raw.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function primaryActionForStatus(status: FinalizeStatus): {
+  label: string;
+  action?: ActionKey;
+  openModal?: boolean;
+  variant?: 'primary' | 'outline' | 'ghost';
+} {
+  switch (status) {
+    case 'NotConfirmed':
+      return { label: 'Confirm', action: 'confirm', variant: 'primary' };
+    case 'Confirmed':
+      return { label: 'Finalise', action: 'finalise', variant: 'primary' };
+    case 'Cancelled':
+      return { label: 'Reopen', action: 'reopen', variant: 'outline' };
+    case 'OTPrepared':
+      return { label: 'Reopen', action: 'reopen', variant: 'outline' };
+    case 'Finalised':
+    case 'SurgeryDone':
+    default:
+      return { label: 'Open', openModal: true, variant: 'ghost' };
+  }
+}
 
 // ─── Prepare OT List Modal ────────────────────────────────────────────────────
 
@@ -43,21 +105,28 @@ interface PrepareModalProps {
 
 function PrepareOtListModal({ finalisedRecords, prepareDate, onClose, onSubmit }: PrepareModalProps) {
   const [sequences, setSequences] = useState<Record<string, string>>(
-    Object.fromEntries(finalisedRecords.map((r, i) => [r.id, String(i + 1)]))
+    Object.fromEntries(finalisedRecords.map((r, i) => [r.id, String(i + 1)])),
   );
   const [submitting, setSubmitting] = useState(false);
   const [conflictingIds, setConflictingIds] = useState<string[]>([]);
   const [editedTimes, setEditedTimes] = useState<Record<string, string>>({});
 
+  const dateLabel = (() => {
+    const raw = prepareDate || new Date().toISOString().slice(0, 10);
+    const d = new Date(`${raw.slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  })();
+
   const handleSubmit = async () => {
-    const items: PrepareOtListItem[] = finalisedRecords.map(r => ({
+    const items: PrepareOtListItem[] = finalisedRecords.map((r) => ({
       scheduleId: r.id,
       sequence: parseInt(sequences[r.id] ?? '0', 10) || 0,
       ...(editedTimes[r.id] ? { newStartTime: editedTimes[r.id] } : {}),
     }));
 
     const hasDuplicates = items.some(
-      (a, i) => items.slice(i + 1).some(b => b.sequence === a.sequence && a.sequence !== 0)
+      (a, i) => items.slice(i + 1).some((b) => b.sequence === a.sequence && a.sequence !== 0),
     );
     if (hasDuplicates) {
       toast.error('Duplicate sequence numbers — each row must have a unique number.');
@@ -67,25 +136,32 @@ function PrepareOtListModal({ finalisedRecords, prepareDate, onClose, onSubmit }
     setSubmitting(true);
     try {
       await onSubmit(items);
-      // success — modal will close from parent; reset conflict state just in case
       setConflictingIds([]);
     } catch (err: unknown) {
-      const response = err && typeof err === 'object' && 'response' in err
-        ? (err as { response?: { status?: number; data?: { message?: string; conflictingScheduleIds?: string[] } } }).response
-        : undefined;
+      const response =
+        err && typeof err === 'object' && 'response' in err
+          ? (
+              err as {
+                response?: {
+                  status?: number;
+                  data?: { message?: string; conflictingScheduleIds?: string[] };
+                };
+              }
+            ).response
+          : undefined;
       if (response?.status === 409) {
         const ids = response.data?.conflictingScheduleIds;
         if (Array.isArray(ids) && ids.length > 0) {
-          // New backend: time-slot conflict — highlight specific rows
           setConflictingIds(ids);
-          setEditedTimes(t => {
+          setEditedTimes((t) => {
             const next = { ...t };
-            Object.keys(next).forEach(id => { if (!ids.includes(id)) delete next[id]; });
+            Object.keys(next).forEach((id) => {
+              if (!ids.includes(id)) delete next[id];
+            });
             return next;
           });
         } else {
-          // Fallback: backend returned 409 without specific IDs — highlight all rows
-          setConflictingIds(finalisedRecords.map(r => r.id));
+          setConflictingIds(finalisedRecords.map((r) => r.id));
           setEditedTimes({});
         }
       } else {
@@ -96,123 +172,321 @@ function PrepareOtListModal({ finalisedRecords, prepareDate, onClose, onSubmit }
     }
   };
 
+  const lockDisabled =
+    submitting ||
+    finalisedRecords.length === 0 ||
+    (conflictingIds.length > 0 && conflictingIds.some((id) => !editedTimes[id]));
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+    <div className="counselling-session fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        className={cn(
+          counsellingSessionTokens.sessionWidget,
+          'flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden shadow-xl',
+        )}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prepare-ot-list-title"
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-counselling-border/60 px-5 py-3.5">
           <div>
-            <h3 className="text-base font-semibold text-gray-900">Prepare OT List</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Assign sequence numbers. Records will be locked once submitted.</p>
+            <h2
+              id="prepare-ot-list-title"
+              className="text-lg font-semibold text-counselling-foreground"
+            >
+              Prepare OT List
+            </h2>
+            <p className="mt-0.5 text-[13px] text-counselling-muted-foreground">
+              {finalisedRecords.length} Finalised · {dateLabel}
+            </p>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-            <X className="h-4 w-4 text-gray-500" />
-          </button>
+          <CounsellingButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="!min-h-8 h-8 w-8 px-0"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </CounsellingButton>
         </div>
 
-        <div className="overflow-y-auto max-h-96 px-6 py-4">
-          {conflictingIds.length > 0 && (
-            <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-amber-800">
-                <span className="font-semibold">Start-time conflict detected.</span>
-                {' '}The highlighted records share a time slot with an already-prepared surgery. Update the start time on each highlighted row, then click Lock &amp; Prepare.
-              </p>
-            </div>
-          )}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3">
           {finalisedRecords.length === 0 ? (
-            <div className="py-10 text-center text-gray-400">
-              <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No Finalised records found for this date.</p>
-              <p className="text-xs mt-1 text-gray-400">Apply a date filter or finalise some records first.</p>
-            </div>
+            <p className="py-8 text-center text-sm text-counselling-muted-foreground">
+              No Finalised records for this date.
+            </p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b border-gray-100">
-                  <th className="pb-2 text-left font-semibold w-20">Seq #</th>
-                  <th className="pb-2 text-left font-semibold">Patient</th>
-                  <th className="pb-2 text-left font-semibold">Surgery</th>
-                  <th className="pb-2 text-left font-semibold">Start Time</th>
-                  <th className="pb-2 text-left font-semibold">Surgeon</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {finalisedRecords.map(r => (
-                  <tr key={r.id}>
-                    <td className="py-2 pr-3">
-                      <input
+            <div className="divide-y divide-counselling-border/40">
+              {finalisedRecords.map((r) => {
+                const conflict = conflictingIds.includes(r.id);
+                return (
+                  <div
+                    key={r.id}
+                    className={cn(
+                      'flex flex-wrap items-center gap-3 py-3',
+                      conflict && 'rounded-lg bg-amber-50/80 px-2',
+                    )}
+                  >
+                    <div className="w-14 shrink-0">
+                      <label className="mb-0.5 block text-[11px] font-medium text-counselling-muted-foreground">
+                        Seq #
+                      </label>
+                      <CounsellingInput
                         type="number"
                         min={1}
                         value={sequences[r.id] ?? ''}
-                        onChange={e => setSequences(s => ({ ...s, [r.id]: e.target.value }))}
-                        className="w-16 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        onChange={(e) =>
+                          setSequences((s) => ({ ...s, [r.id]: e.target.value }))
+                        }
+                        className="h-8"
                       />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <p className="font-medium text-gray-900">{r.patientName}</p>
-                      <p className="text-xs text-gray-500 font-mono">{r.uhid}</p>
-                    </td>
-                    <td className="py-2 pr-3 text-gray-700">{r.surgeryName}</td>
-                    <td className="py-2 pr-3 text-gray-600 text-xs whitespace-nowrap">
-                      {conflictingIds.includes(r.id) ? (
-                        <div>
-                          <input
-                            type="time"
-                            value={editedTimes[r.id] ?? ''}
-                            onChange={e => setEditedTimes(t => ({ ...t, [r.id]: e.target.value }))}
-                            className="border border-amber-400 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 bg-amber-50 w-28"
-                          />
-                          <p className="text-amber-600 text-[10px] mt-0.5 font-medium">Time conflict — choose a new time</p>
-                        </div>
-                      ) : (
-                        r.startTime || '—'
-                      )}
-                    </td>
-                    <td className="py-2 text-gray-600 text-xs">{r.surgeon}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-counselling-foreground">
+                        {r.patientName}
+                      </p>
+                      <p className="truncate text-[13px] text-counselling-muted-foreground">
+                        {[r.uhid, r.surgeryName, r.eyes].filter(Boolean).join(' · ')}
+                      </p>
+                      <p className="truncate text-xs text-counselling-muted-foreground">
+                        {[r.startTime, r.theaterName].filter(Boolean).join(' · ') || '—'}
+                      </p>
+                    </div>
+                    {conflict ? (
+                      <div className="w-28 shrink-0">
+                        <label className="mb-0.5 block text-[11px] font-medium text-amber-800">
+                          New start
+                        </label>
+                        <CounsellingInput
+                          type="time"
+                          value={editedTimes[r.id] ?? ''}
+                          onChange={(e) =>
+                            setEditedTimes((t) => ({ ...t, [r.id]: e.target.value }))
+                          }
+                          className="h-8"
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50">
-          <button
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-counselling-border/60 px-5 py-3">
+          <CounsellingButton
+            type="button"
+            variant="outline"
+            size="sm"
+            className={denseBtn}
             onClick={onClose}
-            className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
           >
             Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || finalisedRecords.length === 0 || (conflictingIds.length > 0 && !conflictingIds.every(id => editedTimes[id]))}
-            className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+          </CounsellingButton>
+          <CounsellingButton
+            type="button"
+            size="sm"
+            className={cn(denseBtn, 'bg-counselling-primary text-white hover:bg-counselling-primary/90')}
+            onClick={() => void handleSubmit()}
+            disabled={lockDisabled}
+            loading={submitting}
           >
-            {submitting && (
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            )}
-            Lock & Prepare
-          </button>
+            Lock &amp; Prepare
+          </CounsellingButton>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Skeleton Row ─────────────────────────────────────────────────────────────
+// ─── Work row ─────────────────────────────────────────────────────────────────
 
-function SkeletonRow({ cols }: { cols: number }) {
+function FinalizeWorkRow({
+  rec,
+  isDuplicate,
+  isSelected,
+  onOpen,
+  onAction,
+  onPrint,
+}: {
+  rec: FinalizeSurgeryRecord;
+  isDuplicate: boolean;
+  isSelected: boolean;
+  onOpen: () => void;
+  onAction: (action: ActionKey) => void;
+  onPrint: () => void;
+}) {
+  const primary = primaryActionForStatus(rec.status);
+  const doctor = formatWaitingListDoctorDisplay(rec.surgeon);
+  const typeLabel =
+    rec.patientType === 'Insurance' ? 'Insurance / TPA' : rec.patientType || null;
+  const identityLine = [rec.uhid, typeLabel].filter(Boolean).join(' · ');
+  const scheduleLine = [
+    formatScheduleDate(rec.scheduleDate),
+    rec.eyes || null,
+    rec.startTime || null,
+    rec.theaterName || null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const quietMeta = [
+    doctor || null,
+    rec.packageName || null,
+    rec.paymentMode || null,
+    rec.checklistSummary
+      ? rec.checklistSummary === 'AllClear'
+        ? 'Slot clear'
+        : rec.checklistSummary === 'Pending'
+          ? 'Slot pending'
+          : 'Slot missing'
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onOpen();
+    }
+  };
+
+  const stop = (e: MouseEvent) => e.stopPropagation();
+
   return (
-    <tr className="border-b border-gray-100">
-      {Array.from({ length: cols }).map((_, i) => (
-        <td key={i} className="px-3 py-3">
-          <div className="h-3 bg-gray-200 rounded animate-pulse" style={{ width: `${40 + (i * 13) % 45}%` }} />
-        </td>
+    <div
+      role="button"
+      tabIndex={0}
+      data-testid="finalize-surgery-work-row"
+      data-schedule-id={rec.id}
+      aria-pressed={isSelected}
+      aria-label={`${rec.patientName}, ${rec.status}. Activate to open surgery details.`}
+      onClick={onOpen}
+      onKeyDown={onKeyDown}
+      className={cn(
+        'group min-h-14 cursor-pointer bg-transparent px-1 py-2.5 transition-colors',
+        'hover:bg-counselling-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/40',
+        isSelected && 'bg-counselling-accent/35',
+        rec.isLocked && 'bg-counselling-accent/15',
+      )}
+    >
+      <div className={WORK_GRID}>
+        <div className="min-w-0">
+          <div className="flex items-start gap-1.5">
+            <p className="truncate text-sm font-semibold leading-5 text-counselling-foreground">
+              {rec.patientName}
+            </p>
+            {rec.isLocked ? (
+              <LockKeyhole
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-counselling-primary"
+                aria-label="Locked"
+              />
+            ) : null}
+            {isDuplicate ? (
+              <AlertCircle
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500"
+                aria-label="Possible duplicate booking"
+              />
+            ) : null}
+          </div>
+          <p className="mt-0.5 truncate text-[13px] font-medium leading-4 text-counselling-muted-foreground">
+            {identityLine || '—'}
+          </p>
+          {quietMeta ? (
+            <p className="mt-0.5 truncate text-xs leading-4 text-counselling-muted-foreground">
+              {quietMeta}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
+            {rec.surgeryName || '—'}
+          </p>
+          {rec.anesthesiaType ? (
+            <p className="mt-0.5 truncate text-xs text-counselling-muted-foreground">
+              {rec.anesthesiaType}
+              {rec.reportingTime ? ` · Report ${rec.reportingTime}` : ''}
+            </p>
+          ) : rec.reportingTime ? (
+            <p className="mt-0.5 truncate text-xs text-counselling-muted-foreground">
+              Report {rec.reportingTime}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="min-w-0">
+          <StatusBadge status={rec.status} size="sm" showDot />
+        </div>
+
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
+            {scheduleLine}
+          </p>
+          {rec.packageRate != null ? (
+            <p className="mt-0.5 truncate text-xs tabular-nums text-counselling-muted-foreground">
+              ₹{Number(rec.packageRate).toLocaleString('en-IN')}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex min-w-0 items-center justify-end gap-0.5" onClick={stop}>
+          <CounsellingButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="!min-h-8 h-8 w-8 px-0 text-counselling-muted-foreground"
+            title="Print OT Slip"
+            aria-label="Print OT Slip"
+            onClick={onPrint}
+          >
+            <Printer className="h-3.5 w-3.5" />
+          </CounsellingButton>
+          <CounsellingButton
+            type="button"
+            size="sm"
+            variant={primary.variant === 'ghost' ? 'ghost' : primary.variant === 'outline' ? 'outline' : 'default'}
+            className={cn(
+              denseBtn,
+              'px-2.5',
+              primary.variant === 'primary' &&
+                'bg-counselling-primary text-white hover:bg-counselling-primary/90',
+              primary.variant === 'outline' &&
+                'border-amber-300 text-amber-900 hover:bg-amber-50',
+            )}
+            onClick={() => {
+              if (primary.openModal) onOpen();
+              else if (primary.action) onAction(primary.action);
+            }}
+          >
+            {primary.label}
+          </CounsellingButton>
+          <ChevronRight
+            className="h-4 w-4 shrink-0 text-counselling-muted-foreground/50 transition-colors group-hover:text-counselling-muted-foreground"
+            aria-hidden
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorklistSkeleton() {
+  return (
+    <div className="divide-y divide-counselling-border/40" aria-hidden>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className={cn(WORK_GRID, 'min-h-14 items-center px-1 py-2.5')}>
+          <div className="h-3 max-w-[80%] animate-pulse rounded-full bg-counselling-muted" />
+          <div className="hidden h-3 max-w-[70%] animate-pulse rounded-full bg-counselling-muted sm:block" />
+          <div className="hidden h-3 w-16 animate-pulse rounded-full bg-counselling-muted sm:block" />
+          <div className="hidden h-3 max-w-[60%] animate-pulse rounded-full bg-counselling-muted sm:block" />
+          <div className="hidden h-7 w-16 justify-self-end animate-pulse rounded-md bg-counselling-muted sm:block" />
+        </div>
       ))}
-    </tr>
+    </div>
   );
 }
 
@@ -225,27 +499,38 @@ export default function FinalizeSurgeryPage() {
   const debouncedFilters = useDebouncedValue(filters, 300);
 
   const finalizeQuery = useFinalizeListQuery(debouncedFilters);
-  const records = finalizeQuery.data ?? [];
+  const records = useMemo(() => finalizeQuery.data ?? [], [finalizeQuery.data]);
   const isLoading = finalizeQuery.isLoading && records.length === 0;
   const isRefreshing = finalizeQuery.isFetching && records.length > 0;
 
-  // Finalize OT detail modal
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Prepare OT List modal
   const [prepareModalOpen, setPrepareModalOpen] = useState(false);
   const [prepareDate, setPrepareDate] = useState('');
 
-  // Locked OT list (bottom section)
   const [otListDate, setOtListDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [otList, setOtList] = useState<FinalizeSurgeryRecord[]>([]);
   const [otLoading, setOtLoading] = useState(false);
-  const preparedListRef = useRef<HTMLDivElement>(null);
+  /** UI workspace only — not a backend status. */
+  const [activeWorkspace, setActiveWorkspace] = useState<'finalization' | 'ot-preparation'>(
+    'finalization',
+  );
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<WaitingListPageSize>(WAITING_LIST_DEFAULT_PAGE_SIZE);
 
   useEffect(() => {
     if (finalizeQuery.isError) toast.error('Failed to load finalize list');
   }, [finalizeQuery.isError]);
+
+  useEffect(() => {
+    if (!prepareModalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [prepareModalOpen]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -257,51 +542,82 @@ export default function FinalizeSurgeryPage() {
 
   const filtered = useMemo(() => {
     if (activeTab === 'All') return records;
-    return records.filter(r => r.status === activeTab);
+    return records.filter((r) => r.status === activeTab);
   }, [records, activeTab]);
+
+  // Reset to page 1 when the visible queue scope changes (client-side pagination only).
+  useEffect(() => {
+    setPage(1);
+  }, [
+    activeTab,
+    debouncedFilters.date,
+    debouncedFilters.uhid,
+    debouncedFilters.name,
+    pageSize,
+  ]);
+
+  useEffect(() => {
+    const totalPages = getWaitingListTotalPages(filtered.length, pageSize);
+    if (page > totalPages) setPage(totalPages);
+  }, [filtered.length, pageSize, page]);
+
+  const pagedRecords = useMemo(
+    () => sliceWaitingListPage(filtered, page, pageSize),
+    [filtered, page, pageSize],
+  );
+
+  const handlePageSizeChange = useCallback((next: WaitingListPageSize) => {
+    setPageSize(next);
+    setPage(1);
+  }, []);
 
   const tabCounts = useMemo(() => {
     const map: Record<string, number> = { All: records.length };
     STATUS_TABS.slice(1).forEach(({ key }) => {
-      map[key] = records.filter(r => r.status === key).length;
+      map[key] = records.filter((r) => r.status === key).length;
     });
     return map;
   }, [records]);
 
   const finalisedForDate = useMemo(() => {
-    return records.filter(r => r.status === 'Finalised');
+    return records.filter((r) => r.status === 'Finalised');
   }, [records]);
 
-  // ── Stats bar ─────────────────────────────────────────────────────────────
   const statsBar = useMemo(() => {
-    const pendingActions = records.filter(r => r.status === 'NotConfirmed' || r.status === 'Confirmed').length;
-    const surgeryDone    = records.filter(r => r.status === 'SurgeryDone').length;
-    const waitTimes      = records
-      .filter(r => r.counsellingDate && r.scheduleDate)
-      .map(r => Math.round(
-        (new Date(r.scheduleDate!).getTime() - new Date(r.counsellingDate!).getTime()) / 86_400_000
-      ))
-      .filter(d => d >= 0);
-    const avgWait = waitTimes.length > 0
-      ? Math.round(waitTimes.reduce((a, b) => a + b, 0) / waitTimes.length)
-      : 0;
+    const pendingActions = records.filter(
+      (r) => r.status === 'NotConfirmed' || r.status === 'Confirmed',
+    ).length;
+    const surgeryDone = records.filter((r) => r.status === 'SurgeryDone').length;
+    const waitTimes = records
+      .filter((r) => r.counsellingDate && r.scheduleDate)
+      .map((r) =>
+        Math.round(
+          (new Date(r.scheduleDate!).getTime() - new Date(r.counsellingDate!).getTime()) /
+            86_400_000,
+        ),
+      )
+      .filter((d) => d >= 0);
+    const avgWait =
+      waitTimes.length > 0
+        ? Math.round(waitTimes.reduce((a, b) => a + b, 0) / waitTimes.length)
+        : 0;
     return { total: records.length, pendingActions, surgeryDone, avgWait };
   }, [records]);
 
-  // ── Duplicate booking detection ───────────────────────────────────────────
   const duplicateIds = useMemo(() => {
     const groups: Record<string, string[]> = {};
     for (const r of records) {
       const date = r.scheduleDate?.slice(0, 10) ?? '_nodate_';
-      const key  = `${r.uhid}_${date}`;
+      const key = `${r.uhid}_${date}`;
       (groups[key] ??= []).push(r.id);
     }
     const result = new Set<string>();
-    Object.values(groups).forEach(ids => { if (ids.length > 1) ids.forEach(id => result.add(id)); });
+    Object.values(groups).forEach((ids) => {
+      if (ids.length > 1) ids.forEach((id) => result.add(id));
+    });
     return result;
   }, [records]);
 
-  // ── Print OT Slip ─────────────────────────────────────────────────────────
   const printOtSlip = (rec: FinalizeSurgeryRecord) => {
     const w = window.open('', '_blank', 'width=620,height=540');
     if (!w) return;
@@ -357,9 +673,8 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
       } else if (action === 'reopen') {
         const u = await counsellorsDeskApi.reopenOtCase(rec.id);
         patch({ status: u.status, version: u.version, isLocked: false });
-        // Refresh OT list if loaded
-        if (otList.find(r => r.id === rec.id)) {
-          setOtList(l => l.filter(r => r.id !== rec.id));
+        if (otList.find((r) => r.id === rec.id)) {
+          setOtList((l) => l.filter((r) => r.id !== rec.id));
         }
         toast.success(`${rec.patientName} reopened for editing`);
       }
@@ -382,7 +697,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
     setOtLoading(true);
     try {
       const data = await counsellorsDeskApi.getOtList(
-        otListDate || new Date().toISOString().slice(0, 10)
+        otListDate || new Date().toISOString().slice(0, 10),
       );
       setOtList(data);
     } catch {
@@ -392,8 +707,30 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
     }
   };
 
+  const otPrepDateLabel = useMemo(() => {
+    const raw = otListDate || new Date().toISOString().slice(0, 10);
+    const d = new Date(`${raw.slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  }, [otListDate]);
+  const openRow = (id: string) => {
+    setSelectedId(id);
+    setModalOpen(true);
+  };
+
+  const openPrepareFlow = (dateSource: string) => {
+    setActiveWorkspace('ot-preparation');
+    setPrepareDate(dateSource || new Date().toISOString().slice(0, 10));
+    setPrepareModalOpen(true);
+  };
+
   return (
-    <div className="space-y-4">
+    <div
+      className={cn(
+        counsellingSessionTokens.shellPage,
+        'gap-2 overflow-hidden px-4 pb-4 pt-2.5 sm:gap-2.5',
+      )}
+    >
       <FinalizeOtModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -412,325 +749,444 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
         />
       )}
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex items-end gap-3 flex-wrap">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Schedule Date</label>
-            <input type="date" value={filters.date}
-              onChange={e => setFilters(f => ({ ...f, date: e.target.value }))}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">UHID</label>
-            <input type="text" placeholder="Search UHID…" value={filters.uhid}
-              onChange={e => setFilters(f => ({ ...f, uhid: e.target.value }))}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Patient Name</label>
-            <input type="text" placeholder="Search name…" value={filters.name}
-              onChange={e => setFilters(f => ({ ...f, name: e.target.value }))}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          {isRefreshing && (
-            <RefreshCw className="h-4 w-4 text-blue-500 animate-spin mb-2" aria-label="Refreshing" />
+      <header className="flex shrink-0 flex-col justify-center px-0.5 py-0.5">
+        <h1 className="text-xl font-semibold tracking-tight text-counselling-foreground sm:text-[1.375rem]">
+          Surgery Finalization
+        </h1>
+      </header>
+
+      {/* ONE compact stats widget — counselling sessionStatusStrip */}
+      <div
+        className={cn(counsellingSessionTokens.sessionStatusStrip, 'shrink-0')}
+        data-testid="finalize-surgery-summary"
+        aria-label="Schedule summary"
+      >
+        <dl
+          className={cn(
+            counsellingSessionTokens.sessionStatusDetails,
+            'grid-cols-2 sm:grid-cols-4',
           )}
-          <div className="ml-auto">
-            <button
-              disabled={(tabCounts['Finalised'] ?? 0) === 0}
-              title={(tabCounts['Finalised'] ?? 0) === 0 ? 'No Finalised records — finalise some records first' : 'Prepare OT List'}
-              onClick={() => { setPrepareDate(filters.date); setPrepareModalOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+        >
+          <div className="min-w-0" data-testid="finalize-stat-scheduled">
+            <dd className="text-lg font-semibold leading-6 tabular-nums text-counselling-foreground sm:text-xl">
+              {statsBar.total}
+            </dd>
+            <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Scheduled</dt>
+          </div>
+          <div className="min-w-0" data-testid="finalize-stat-needs-attention">
+            <dd className="text-lg font-semibold leading-6 tabular-nums text-counselling-foreground sm:text-xl">
+              {statsBar.pendingActions}
+            </dd>
+            <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Needs Attention</dt>
+          </div>
+          <div className="min-w-0" data-testid="finalize-stat-surgery-done">
+            <dd className="text-lg font-semibold leading-6 tabular-nums text-counselling-foreground sm:text-xl">
+              {statsBar.surgeryDone}
+            </dd>
+            <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Surgery Done</dt>
+          </div>
+          <div className="min-w-0" data-testid="finalize-stat-avg-wait">
+            <dd className="text-lg font-semibold leading-6 tabular-nums text-counselling-foreground sm:text-xl">
+              {statsBar.avgWait}{' '}
+              <span className="text-sm font-semibold text-counselling-muted-foreground">days</span>
+            </dd>
+            <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Avg. Wait</dt>
+          </div>
+        </dl>
+      </div>
+
+      {/* Primary workspace — journey pill tabs (approved Finalize Surgery treatment) */}
+      <nav
+        aria-label="Surgery finalization workspaces"
+        data-testid="finalize-surgery-workspace-nav"
+        className="flex min-w-0 shrink-0 flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain px-0.5"
+      >
+        <button
+          type="button"
+          aria-current={activeWorkspace === 'finalization' ? 'page' : undefined}
+          data-testid="finalize-workspace-finalization"
+          onClick={() => setActiveWorkspace('finalization')}
+          className={cn(
+            counsellingSessionTokens.journeyTab,
+            'shrink-0 whitespace-nowrap',
+            activeWorkspace === 'finalization'
+              ? counsellingSessionTokens.journeyTabCurrent
+              : 'border-transparent bg-transparent text-counselling-muted-foreground hover:bg-transparent hover:text-counselling-foreground',
+          )}
+        >
+          Surgery Finalization
+        </button>
+        <button
+          type="button"
+          aria-current={activeWorkspace === 'ot-preparation' ? 'page' : undefined}
+          data-testid="finalize-workspace-ot-preparation"
+          onClick={() => setActiveWorkspace('ot-preparation')}
+          className={cn(
+            counsellingSessionTokens.journeyTab,
+            'shrink-0 whitespace-nowrap',
+            activeWorkspace === 'ot-preparation'
+              ? counsellingSessionTokens.journeyTabCurrent
+              : 'border-transparent bg-transparent text-counselling-muted-foreground hover:bg-transparent hover:text-counselling-foreground',
+          )}
+        >
+          OT Preparation
+        </button>
+      </nav>
+
+      {activeWorkspace === 'finalization' ? (
+          <section
+            data-testid="finalize-surgery-workspace"
+            aria-label="Surgery queue workspace"
+            className={cn(
+              counsellingSessionTokens.sessionWidget,
+              'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+            )}
+          >
+            <div
+              className="shrink-0 border-b border-counselling-border/50 px-4 pt-3 sm:px-5"
+              data-testid="finalize-surgery-status-nav"
+              data-status-style="pill-tab"
+              role="tablist"
+              aria-label="Surgery status"
             >
-              <ClipboardList className="h-4 w-4" />
-              Prepare OT List
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: 'Total Scheduled',  value: statsBar.total,          color: 'bg-blue-50 border-blue-200',     text: 'text-blue-700'    },
-          { label: 'Pending Actions',  value: statsBar.pendingActions,  color: 'bg-amber-50 border-amber-200',   text: 'text-amber-700'   },
-          { label: 'Surgery Done',     value: statsBar.surgeryDone,     color: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
-          { label: 'Avg. Wait (days)', value: statsBar.avgWait,         color: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700'  },
-        ].map(card => (
-          <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
-            <p className={`text-2xl font-bold ${card.text}`}>{card.value}</p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">{card.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Main Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="flex items-center px-4 pt-4 pb-3 overflow-x-auto gap-1.5">
-          {STATUS_TABS.map(({ key, label, color, activeClass }) => {
-            const count = tabCounts[key] ?? 0;
-            const isActive = activeTab === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
-                  isActive
-                    ? `${activeClass} shadow-sm`
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
-                }`}
+              <div
+                className={cn(
+                  counsellingSessionTokens.pillTabTrack,
+                  'flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain pb-3',
+                )}
               >
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isActive ? 'bg-white/80' : color}`} />
-                {label}
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
-                }`}>{count}</span>
-              </button>
-            );
-          })}
-        </div>
+                {STATUS_TABS.map(({ key, label }) => {
+                  const count = tabCounts[key] ?? 0;
+                  const isActive = activeTab === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      data-testid={`finalize-status-tab-${key}`}
+                      onClick={() => setActiveTab(key)}
+                      className={cn(
+                        counsellingSessionTokens.pillTab,
+                        'shrink-0 whitespace-nowrap',
+                        isActive && counsellingSessionTokens.pillTabCurrent,
+                      )}
+                    >
+                      <span>{label}</span>
+                      <span
+                        className={cn(
+                          'tabular-nums',
+                          isActive ? 'text-white/90' : 'text-counselling-muted-foreground',
+                        )}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-        {duplicateIds.size > 0 && (
-          <div className="mx-4 mb-3 flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-            <AlertCircle className="h-4 w-4 flex-shrink-0 text-amber-500" />
-            <span>
-              <strong>{duplicateIds.size} record{duplicateIds.size > 1 ? 's' : ''}</strong> flagged as possible duplicate bookings — same patient scheduled on the same date.
-            </span>
-          </div>
-        )}
+            <div
+              className="shrink-0 border-b border-counselling-border/50 px-4 py-3 sm:px-5"
+              data-testid="finalize-surgery-toolbar"
+            >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[9.5rem_8.5rem_minmax(0,1fr)_auto] lg:items-end lg:gap-3">
+              <div className="min-w-0">
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+                  <Calendar className="h-3 w-3" aria-hidden />
+                  Date
+                </label>
+                <CounsellingInput
+                  type="date"
+                  value={filters.date}
+                  onChange={(e) => setFilters((f) => ({ ...f, date: e.target.value }))}
+                  className="h-8"
+                  aria-label="Schedule date"
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+                  <Search className="h-3 w-3" aria-hidden />
+                  UHID
+                </label>
+                <CounsellingInput
+                  type="text"
+                  placeholder="UHID…"
+                  value={filters.uhid}
+                  onChange={(e) => setFilters((f) => ({ ...f, uhid: e.target.value }))}
+                  className="h-8"
+                  aria-label="UHID"
+                />
+              </div>
+              <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+                  <Users className="h-3 w-3" aria-hidden />
+                  Patient Name
+                </label>
+                <CounsellingInput
+                  type="text"
+                  placeholder="Search by patient name…"
+                  value={filters.name}
+                  onChange={(e) => setFilters((f) => ({ ...f, name: e.target.value }))}
+                  className="h-8"
+                  aria-label="Patient name"
+                />
+              </div>
+              <div className="flex items-end justify-stretch sm:justify-end">
+                <CounsellingButton
+                  type="button"
+                  size="sm"
+                  className={cn(
+                    denseBtn,
+                    'h-8 w-full bg-counselling-primary text-white hover:bg-counselling-primary/90 sm:w-auto',
+                  )}
+                  disabled={finalisedForDate.length === 0}
+                  onClick={() =>
+                    openPrepareFlow(filters.date || new Date().toISOString().slice(0, 10))
+                  }
+                >
+                  <ClipboardList className="h-3.5 w-3.5" aria-hidden />
+                  Prepare OT List
+                </CounsellingButton>
+              </div>
+            </div>
+            </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-y border-gray-100">
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Status</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">UHID</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Patient</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Surgery</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide whitespace-nowrap">Surgery Date</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Eyes</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Type</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Surgeon</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Start Time</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Theatre</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Package</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Pkg. Amount</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Reporting</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Anesthesia</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Payment</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">Checklist</th>
-                <th className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {isLoading && records.length === 0
-                ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={17} />)
-                : filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={17} className="py-14 text-center text-gray-400">
-                      <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">No records found</p>
-                    </td>
-                  </tr>
-                ) : filtered.map(rec => (
-                  <tr
-                    key={rec.id}
-                    className={`hover:bg-blue-50/50 cursor-pointer transition-colors ${rec.isLocked ? 'bg-indigo-50/30' : ''}`}
-                    onClick={() => { setSelectedId(rec.id); setModalOpen(true); }}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-3 pt-2.5 sm:px-5">
+            <div className="mb-1.5 flex shrink-0 items-center justify-between gap-2">
+              <h2 className={counsellingSessionTokens.sessionWidgetTitle}>Surgery Queue</h2>
+              <span className="text-xs font-medium text-counselling-muted-foreground">
+                <span className="tabular-nums text-counselling-foreground">{filtered.length}</span>{' '}
+                records
+                {isRefreshing ? (
+                  <span className="ml-2 inline-flex items-center gap-1">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-counselling-border border-t-counselling-primary" />
+                    Refreshing
+                  </span>
+                ) : null}
+              </span>
+            </div>
+
+            {duplicateIds.size > 0 && (
+              <div className="mb-2 flex shrink-0 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
+                <span>
+                  <strong>
+                    {duplicateIds.size} record{duplicateIds.size > 1 ? 's' : ''}
+                  </strong>{' '}
+                  flagged as possible duplicate bookings — same patient scheduled on the same date.
+                </span>
+              </div>
+            )}
+
+            {!isLoading && filtered.length > 0 ? (
+              <div
+                className={cn(
+                  WORK_GRID,
+                  'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-2 max-md:hidden',
+                )}
+                aria-hidden
+              >
+                {COLUMN_CUES.map((cue) => (
+                  <p
+                    key={cue}
+                    className={cn(
+                      'text-[11px] font-medium tracking-wide text-counselling-muted-foreground',
+                      cue === 'Action' && 'text-right',
+                    )}
                   >
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <StatusBadge status={rec.status} size="sm" />
-                        {rec.isLocked && (
-                          <span title="Record locked — use Reopen to edit">
-                            <LockKeyhole className="h-3 w-3 text-indigo-500" />
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 font-mono text-xs text-blue-700 font-medium whitespace-nowrap">{rec.uhid}</td>
-                    <td className="px-3 py-3 font-medium text-gray-900">{rec.patientName}</td>
-                    <td className="px-3 py-3 text-gray-700">{rec.surgeryName}</td>
-                    <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">{rec.scheduleDate || '—'}</td>
-                    <td className="px-3 py-3">
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-xs font-medium">{rec.eyes}</span>
-                    </td>
-                    <td className="px-3 py-3 text-gray-600 text-xs">{rec.patientType === 'Insurance' ? 'Insurance / TPA' : (rec.patientType || '—')}</td>
-                    <td className="px-3 py-3 text-gray-700 text-xs">{rec.surgeon}</td>
-                    <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">{rec.startTime || '—'}</td>
-                    <td className="px-3 py-3 text-gray-600 text-xs">{rec.theaterName}</td>
-                    <td className="px-3 py-3 text-gray-700 text-xs max-w-[120px]">
-                      <span className="truncate block" title={rec.packageName ?? ''}>{rec.packageName || '—'}</span>
-                    </td>
-                    <td className="px-3 py-3 text-gray-700 text-xs whitespace-nowrap">
-                      {rec.packageRate != null ? `₹${Number(rec.packageRate).toLocaleString('en-IN')}` : '—'}
-                    </td>
-                    <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">{rec.reportingTime || '—'}</td>
-                    <td className="px-3 py-3 text-xs">
-                      {rec.anesthesiaType
-                        ? <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs font-medium">{rec.anesthesiaType}</span>
-                        : <span className="text-gray-400">—</span>
-                      }
-                    </td>
-                    <td className="px-3 py-3 text-gray-600 text-xs">{rec.paymentMode || '—'}</td>
-                    <td className="px-3 py-3 text-xs">
-                      {rec.checklistSummary
-                        ? <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                            rec.checklistSummary === 'AllClear' ? 'bg-green-100 text-green-700'
-                            : rec.checklistSummary === 'Pending' ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-red-100 text-red-600'
-                          }`}>
-                            {rec.checklistSummary === 'AllClear' ? '✓ Clear'
-                              : rec.checklistSummary === 'Pending' ? '⏳ Pending'
-                              : '✗ Missing'}
-                          </span>
-                        : <span className="text-gray-400">—</span>
-                      }
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                        <button
-                          title="Print OT Slip"
-                          onClick={() => printOtSlip(rec)}
-                          className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
-                        >
-                          <Printer className="h-4 w-4" />
-                        </button>
-                        {duplicateIds.has(rec.id) && (
-                          <span title="Possible duplicate booking — patient already scheduled on this date">
-                            <AlertCircle className="h-4 w-4 text-amber-500" />
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              }
-            </tbody>
-          </table>
-        </div>
+                    {cue}
+                  </p>
+                ))}
+              </div>
+            ) : null}
 
-        {!isLoading && filtered.length > 0 && (
-          <div className="px-4 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500 flex items-center gap-2">
-              {isRefreshing && (
-                <RefreshCw className="h-3 w-3 animate-spin text-blue-500" aria-hidden />
-              )}
-              Showing <span className="font-medium">{filtered.length}</span> of{' '}
-              <span className="font-medium">{records.length}</span> records
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* ── Locked OT List Section ── */}
-      <div ref={preparedListRef} className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-            <LockKeyhole className="h-4 w-4 text-indigo-500" />
-            Prepared OT List
-          </h2>
-          {otList.length > 0 && (
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 hover:bg-gray-50 rounded-lg text-gray-600 transition-colors"
+            <div
+              className="counselling-hidden-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              data-testid="finalize-surgery-table-viewport"
             >
-              <Printer className="h-3.5 w-3.5" />
-              Print
-            </button>
-          )}
-        </div>
-        <div className="p-5">
-          <div className="flex items-end gap-3 mb-4 flex-wrap">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-              <input type="date" value={otListDate}
-                onChange={e => setOtListDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <button onClick={handleLoadOtList} disabled={otLoading}
-              className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              {otLoading ? (
-                <><svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>Loading…</>
+              {isLoading ? (
+                <WorklistSkeleton />
+              ) : filtered.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                  <p className="text-sm font-medium text-counselling-foreground">No records found</p>
+                  <p className="text-xs text-counselling-muted-foreground">
+                    Try adjusting the date or search filters
+                  </p>
+                </div>
               ) : (
-                <><ClipboardList className="h-4 w-4" />Load OT List</>
-              )}
-            </button>
-            <button
-              onClick={() => { setPrepareDate(otListDate); setPrepareModalOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2 border border-indigo-300 text-indigo-700 hover:bg-indigo-50 rounded-lg text-sm font-medium transition-colors"
-            >
-              + Prepare New List
-            </button>
-          </div>
-
-          {otList.length === 0 && !otLoading ? (
-            <div className="py-10 text-center text-gray-400">
-              <ClipboardList className="h-7 w-7 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">Select a date and click "Load OT List" to view the locked schedule.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto border border-gray-100 rounded-xl">
-              <table className="w-full text-xs">
-                <thead className="bg-indigo-50 text-indigo-700">
-                  <tr>
-                    <th className="px-3 py-2.5 text-left font-semibold">#</th>
-                    <th className="px-3 py-2.5 text-left font-semibold">UHID</th>
-                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Patient Name</th>
-                    <th className="px-3 py-2.5 text-left font-semibold">Surgery</th>
-                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Surgery Date</th>
-                    <th className="px-3 py-2.5 text-left font-semibold">Eyes</th>
-                    <th className="px-3 py-2.5 text-left font-semibold">Surgeon</th>
-                    <th className="px-3 py-2.5 text-left font-semibold">Theatre</th>
-                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Start Time</th>
-                    <th className="px-3 py-2.5 text-left font-semibold">Type</th>
-                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Prepared At</th>
-                    <th className="px-3 py-2.5 text-left font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {otList.map((row, idx) => (
-                    <tr key={row.id} className="hover:bg-indigo-50/20 transition-colors">
-                      <td className="px-3 py-2.5 text-indigo-600 font-bold">{row.sequenceNo ?? idx + 1}</td>
-                      <td className="px-3 py-2.5 font-mono text-blue-700 font-medium">{row.uhid}</td>
-                      <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">{row.patientName}</td>
-                      <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{row.surgeryName}</td>
-                      <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{row.scheduleDate || '—'}</td>
-                      <td className="px-3 py-2.5">
-                        <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded">{row.eyes}</span>
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{row.surgeon}</td>
-                      <td className="px-3 py-2.5 text-gray-600">{row.theaterName}</td>
-                      <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{row.startTime || '—'}</td>
-                      <td className="px-3 py-2.5 text-gray-500">{row.patientType}</td>
-                      <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">
-                        {row.preparedAt ? new Date(row.preparedAt).toLocaleString() : '—'}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <button
-                          onClick={() => handleAction('reopen', row)}
-                          className="px-2 py-1 text-amber-700 border border-amber-300 hover:bg-amber-50 rounded-lg text-xs font-medium transition-colors"
-                        >
-                          Reopen
-                        </button>
-                      </td>
-                    </tr>
+                <div className="min-w-0 divide-y divide-counselling-border/40">
+                  {pagedRecords.map((rec) => (
+                    <FinalizeWorkRow
+                      key={rec.id}
+                      rec={rec}
+                      isDuplicate={duplicateIds.has(rec.id)}
+                      isSelected={selectedId === rec.id}
+                      onOpen={() => openRow(rec.id)}
+                      onAction={(action) => void handleAction(action, rec)}
+                      onPrint={() => printOtSlip(rec)}
+                    />
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
             </div>
+
+            {!isLoading && filtered.length > 0 ? (
+              <div className="mt-2.5 shrink-0 border-t border-counselling-border/50 pt-2.5">
+                <WaitingListQueuePagination
+                  page={page}
+                  pageSize={pageSize}
+                  totalCount={filtered.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={handlePageSizeChange}
+                  isRefreshing={isRefreshing}
+                  itemLabel="records"
+                  data-testid="finalize-surgery-pagination"
+                />
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : (
+        <section
+          data-testid="finalize-ot-preparation-workspace"
+          aria-label="OT preparation workspace"
+          className={cn(
+            counsellingSessionTokens.sessionWidget,
+            'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
           )}
-        </div>
-      </div>
+        >
+          <div
+            className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-3 sm:px-5"
+            data-testid="finalize-prepared-ot-list"
+          >
+            <div className="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className={counsellingSessionTokens.sessionWidgetTitle}>OT Preparation</h2>
+                <p className="mt-0.5 text-[13px] text-counselling-muted-foreground">
+                  {finalisedForDate.length > 0
+                    ? `${finalisedForDate.length} Finalised ready for preparation`
+                    : 'Load or prepare the OT list for a surgery date'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-3 flex shrink-0 flex-wrap items-end gap-2 border-b border-counselling-border/50 pb-3">
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+                  <Calendar className="h-3 w-3" aria-hidden />
+                  Date
+                </label>
+                <CounsellingInput
+                  type="date"
+                  value={otListDate}
+                  onChange={(e) => setOtListDate(e.target.value)}
+                  className="h-8 w-[9.5rem]"
+                  aria-label="Prepared OT list date"
+                />
+              </div>
+              <CounsellingButton
+                type="button"
+                size="sm"
+                variant="outline"
+                className={cn(denseBtn, 'h-8')}
+                onClick={handleLoadOtList}
+                disabled={otLoading}
+                loading={otLoading}
+              >
+                <ClipboardList className="h-3.5 w-3.5" aria-hidden />
+                Load OT List
+              </CounsellingButton>
+              <CounsellingButton
+                type="button"
+                size="sm"
+                className={cn(
+                  denseBtn,
+                  'h-8 bg-counselling-primary text-white hover:bg-counselling-primary/90',
+                )}
+                disabled={finalisedForDate.length === 0}
+                onClick={() => openPrepareFlow(otListDate)}
+              >
+                Prepare New List
+              </CounsellingButton>
+              {otList.length > 0 ? (
+                <CounsellingButton
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className={cn(denseBtn, 'h-8')}
+                  onClick={() => window.print()}
+                >
+                  <Printer className="h-3.5 w-3.5" aria-hidden />
+                  Print
+                </CounsellingButton>
+              ) : null}
+            </div>
+
+            {otList.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-counselling-border/70 px-4 py-6 text-center">
+                <p className="text-sm font-medium text-counselling-foreground">
+                  No prepared OT list for this date
+                </p>
+                <p className="mt-1 text-xs text-counselling-muted-foreground">
+                  {otPrepDateLabel} · Use Load OT List or Prepare New List
+                </p>
+              </div>
+            ) : (
+              <div className="counselling-hidden-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-counselling-foreground">
+                    Prepared OT List
+                  </p>
+                  <p className="text-xs text-counselling-muted-foreground">
+                    {otPrepDateLabel} ·{' '}
+                    <span className="tabular-nums font-semibold text-counselling-foreground">
+                      {otList.length}
+                    </span>{' '}
+                    patients
+                  </p>
+                </div>
+                <div className="divide-y divide-counselling-border/40">
+                  {otList.map((row, idx) => (
+                    <div
+                      key={row.id}
+                      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 py-2.5 text-[13px]"
+                    >
+                      <span className="w-6 shrink-0 font-semibold tabular-nums text-counselling-primary">
+                        {row.sequenceNo ?? idx + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-counselling-foreground">
+                          {row.patientName}
+                        </p>
+                        <p className="truncate text-xs text-counselling-muted-foreground">
+                          {[row.uhid, row.surgeryName, row.eyes, row.startTime, row.theaterName]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      </div>
+                      <CounsellingButton
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          denseBtn,
+                          'border-amber-300 text-amber-800 hover:bg-amber-50',
+                        )}
+                        onClick={() => void handleAction('reopen', row)}
+                      >
+                        Reopen
+                      </CounsellingButton>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
+

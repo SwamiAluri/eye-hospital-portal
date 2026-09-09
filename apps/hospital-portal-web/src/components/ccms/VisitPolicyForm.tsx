@@ -20,6 +20,8 @@ interface Props {
   existingPolicies?: VisitPolicy[];
   /** True when adding a policy beyond the auto-created primary. */
   isAdditionalPolicy?: boolean;
+  /** Prefer case/form insurer UUID when creating a new visit policy. */
+  defaultInsuranceProviderId?: string;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -38,7 +40,8 @@ function Field({
 }
 
 export function VisitPolicyForm({
-  caseId, existing, existingPolicies = [], isAdditionalPolicy = false, onClose, onSaved,
+  caseId, existing, existingPolicies = [], isAdditionalPolicy = false,
+  defaultInsuranceProviderId, onClose, onSaved,
 }: Props) {
   const [mounted, setMounted] = useState(false);
   React.useEffect(() => setMounted(true), []);
@@ -56,7 +59,12 @@ export function VisitPolicyForm({
   const [accommodationClass,    setAccommodationClass]    = useState(existing?.accommodationClass ?? '');
   const [tpaCoordinatorName,    setTpaCoordinatorName]    = useState(existing?.tpaCoordinatorName ?? '');
   const [serviceTaxApplicable,  setServiceTaxApplicable]  = useState(existing?.serviceTaxApplicable ?? false);
-  const [isPrimary,             setIsPrimary]             = useState(existing?.isPrimary ?? false);
+  // First policy on an empty visit defaults to primary; additional policies stay opt-in.
+  const [isPrimary, setIsPrimary] = useState(() => {
+    if (existing) return Boolean(existing.isPrimary);
+    if (isAdditionalPolicy || existingPolicies.length > 0) return false;
+    return true;
+  });
 
   const { options: tpaOptions } = useTpaProviderMaster();
   const tpaNames = useMemo(() => tpaOptions.map((o) => o.label), [tpaOptions]);
@@ -78,6 +86,7 @@ export function VisitPolicyForm({
 
     setBusy(true);
     try {
+      const isFirstOnVisit = !existing && existingPolicies.length === 0;
       const payload: CreateVisitPolicyRequest = {
         coverageCaseId:       caseId,
         policyNumber:         policyNumber.trim(),
@@ -90,7 +99,8 @@ export function VisitPolicyForm({
         accommodationClass:   (accommodationClass || undefined) as any,
         tpaCoordinatorName:   tpaCoordinatorName || undefined,
         serviceTaxApplicable,
-        isPrimary,
+        isPrimary:            isFirstOnVisit ? true : isPrimary,
+        insuranceProviderId:  defaultInsuranceProviderId || undefined,
       };
 
       if (existing) {

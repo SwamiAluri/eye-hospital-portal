@@ -26,6 +26,10 @@ export interface CounsellingPricingCardProps {
   selected?: boolean;
   suggested?: boolean;
   disabled?: boolean;
+  /** CTA when not selected — default "Select package" for package cards */
+  selectLabel?: string;
+  /** CTA when selected — default "Selected" */
+  selectedLabel?: string;
   onSelect?: () => void;
   className?: string;
   'data-testid'?: string;
@@ -46,6 +50,8 @@ export function CounsellingPricingCard({
   selected = false,
   suggested = false,
   disabled,
+  selectLabel = 'Select package',
+  selectedLabel = 'Selected',
   onSelect,
   className,
   'data-testid': testId,
@@ -101,7 +107,7 @@ export function CounsellingPricingCard({
           disabled={disabled}
           onClick={onSelect}
         >
-          {selected ? 'Selected' : 'Select package'}
+          {selected ? selectedLabel : selectLabel}
         </CounsellingButton>
       </CardFooter>
     </Card>

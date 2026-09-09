@@ -1,8 +1,12 @@
 import { getApi } from '../api';
 import { serviceCatalogApi } from './service-catalog.api';
 import { buildInvestigationCatalogFromServiceCatalog } from '@/lib/counsellors-desk/investigation-catalog';
-import { sessionTypeApiToCode } from '@/lib/counsellors-desk/counsellor-master-maps';
-import { parseEstimateFromBlob } from '@/lib/counsellors-desk/package-addons-blob';
+import { sessionTypeApiToCode, sessionTypeCodeToDb } from '@/lib/counsellors-desk/counsellor-master-maps';
+import {
+  parseEstimateFromBlob,
+  restoreLensSelectionFromBlob,
+} from '@/lib/counsellors-desk/package-addons-blob';
+import { toCounsellingDateOnly } from '@/lib/counsellors-desk/session-utils';
 import type { CounsellingPackageAddonsBlob } from '@/types/counselling-estimate';
 import type {
   WaitingListPatient,
@@ -225,6 +229,7 @@ export const counsellorsDeskApi = {
       }
 
       const estimate = parseEstimateFromBlob(cd);
+      const lensSelection = restoreLensSelectionFromBlob(cd);
 
       // Derive decision: blob → boolean fallback (patientAgreedToSurgery / pendingDecision)
       const restoredDecision: string =
@@ -240,20 +245,32 @@ export const counsellorsDeskApi = {
       const restoredEye: string = cd.eye ?? raw.surgeryTentativeEye ?? 'RE';
 
       // Restore schedule: blob object (full restore from new saves) → blob string (legacy date-only saves)
-      // → server-side surgeryTentativeDate column as last resort
+      // → server-side surgeryTentativeDate column as last resort.
+      // Always normalize selectedDate to yyyy-MM-dd (.NET DateTime often serializes with time).
       const restoredSchedule: ScheduleData | null =
         (cd.schedule || raw.surgeryTentativeDate)
-          ? typeof cd.schedule === 'object' && cd.schedule !== null
-            ? (cd.schedule as ScheduleData)                         // full object stored by new code
-            : {
-                selectedDate: (typeof cd.schedule === 'string' ? cd.schedule : null)
-                  ?? (raw.surgeryTentativeDate as string).split('T')[0],
+          ? (() => {
+              if (typeof cd.schedule === 'object' && cd.schedule !== null) {
+                const obj = cd.schedule as ScheduleData;
+                return {
+                  ...obj,
+                  selectedDate: toCounsellingDateOnly(
+                    obj.selectedDate || (raw.surgeryTentativeDate as string | undefined),
+                  ),
+                };
+              }
+              const rawDate =
+                (typeof cd.schedule === 'string' ? cd.schedule : null) ??
+                (raw.surgeryTentativeDate as string | undefined);
+              return {
+                selectedDate: toCounsellingDateOnly(rawDate),
                 operationTheatre: '',
                 doctor: '',
                 surgeryStartTime: (raw.surgeryTentativeTimeSlot as string | undefined) ?? '',
                 avoidTimeFrom: '',
                 avoidTimeTo: '',
-              }
+              };
+            })()
           : null;
 
       // Map queue status → WaitingListStatus.
@@ -288,6 +305,8 @@ export const counsellorsDeskApi = {
         // even when selectedSurgeryId is null (no blob saved yet).
         restoredEye: restoredEye as string,
         iolPower: typeof raw.iolPower === 'string' ? raw.iolPower : undefined,
+        variantSubOption: lensSelection.variantSubOption,
+        selectedIolId: lensSelection.selectedIolId,
         patientType: restoredPaymentType,
         paymentMode: restoredPaymentType,
         company: cd.insuranceCompany ?? '',
@@ -362,11 +381,11 @@ export const counsellorsDeskApi = {
   },
 
   async startSession(id: string, sessionType?: string): Promise<void> {
-    try {
-      await getApi().post(`/Counseling/sessions/${id}/start`, sessionType ? { sessionType } : {});
-    } catch {
-      // fire-and-forget — silent
-    }
+    // Master codes (FOLLOW_UP) must map to DB values (Followup) — check constraint on session_type.
+    const payload = sessionType
+      ? { sessionType: sessionTypeCodeToDb(sessionType) }
+      : {};
+    await getApi().post(`/Counseling/sessions/${id}/start`, payload);
   },
 
   /**
@@ -549,17 +568,27 @@ export const counsellorsDeskApi = {
     }));
   },
 
-  async getAnesthetists(): Promise<{ id: string; name: string }[]> {
-    try {
-      const response = await getApi().get('/users/anesthetists');
-      const list = response.data ?? [];
-      return list.map((u: { id: string; fullName?: string; name?: string }) => ({
+  async getAnesthetists(): Promise<
+    { id: string; name: string; employeeId?: string; jobTitle?: string; specialization?: string }[]
+  > {
+    const response = await getApi().get('/users/anesthetists');
+    const list = response.data ?? [];
+    return list.map(
+      (u: {
+        id: string;
+        fullName?: string;
+        name?: string;
+        employeeId?: string;
+        jobTitle?: string;
+        specialization?: string;
+      }) => ({
         id: u.id,
-        name: u.fullName ?? u.name ?? '',
-      }));
-    } catch {
-      return [];
-    }
+        name: (u.fullName ?? u.name ?? '').trim(),
+        employeeId: u.employeeId || undefined,
+        jobTitle: u.jobTitle || undefined,
+        specialization: u.specialization || undefined,
+      }),
+    );
   },
 
   async getOtTheaters(branchId?: string): Promise<{ id: string; name: string }[]> {

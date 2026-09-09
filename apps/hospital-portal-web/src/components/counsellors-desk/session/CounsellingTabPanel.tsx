@@ -6,8 +6,6 @@ import type { CounsellingSession, CombinedPaymentType, DecisionType } from '@/ty
 
 import type { IolMasterDto } from '@/lib/api/service-catalog.api';
 
-import { CounsellingPhaseNav } from '@/components/counsellors-desk/session/CounsellingPhaseNav';
-
 import { CounsellingSessionLayout } from '@/components/counsellors-desk/session/CounsellingSessionLayout';
 
 import { CounsellingQuotePanel } from '@/components/counsellors-desk/session/CounsellingQuotePanel';
@@ -17,6 +15,7 @@ import { CounsellingEstimatePhase } from '@/components/counsellors-desk/session/
 import { CounsellingDecisionPhase } from '@/components/counsellors-desk/session/CounsellingDecisionPhase';
 
 import { CounsellingWrapupPhase } from '@/components/counsellors-desk/session/CounsellingWrapupPhase';
+import { CounsellingFinishSummary } from '@/components/counsellors-desk/session/CounsellingFinishSummary';
 
 import type { CounsellingPackageTemplate } from '@/types/counselling-estimate';
 
@@ -201,15 +200,21 @@ export function CounsellingTabPanel() {
 
     activePhase,
 
+    finishSummaryActive,
+
+    showCoverageWorkflow,
+
+    coverageProgress,
+
     visitedPhases,
 
     phaseCompletion,
 
+    phaseValidationContext,
+
     goToPhase,
 
     canGoToPhase,
-
-    setActiveMainTab,
 
   } = ctx;
 
@@ -249,248 +254,163 @@ export function CounsellingTabPanel() {
 
   }, [sess?.surgeries]);
 
-  const phaseNav = useMemo(
-    () => (
-      <CounsellingPhaseNav
-        activePhase={activePhase}
-        visitedPhases={visitedPhases}
-        phaseCompletion={phaseCompletion}
-        onPhaseSelect={goToPhase}
-        canGoToPhase={canGoToPhase}
-      />
-    ),
-    [activePhase, visitedPhases, phaseCompletion, goToPhase, canGoToPhase],
-  );
-
   const workspace = useMemo(() => {
+    let phaseContent: ReactNode;
 
     if (activePhase === 'estimate') {
-
-      return (
-
+      phaseContent = (
         <CounsellingEstimatePhase
-          phaseNav={phaseNav}
           estimate={estimate}
-
           procedureVariants={procedureVariants}
-
           procedureLoading={procedureLoading}
-
           procedureError={procedureError}
-
           loadProcedures={loadProcedures}
-
           recommendedVariantIds={recommendedVariantIds}
-
           doctorRecommendationName={doctorRecommendation}
-
           selectedVariantId={selectedVariantId}
-
           selectedEye={selectedEye}
-
           variantSubOption={variantSubOption}
-
           iolOptions={iolOptions as IolMasterDto[]}
-
           selectedIolId={selectedIolId}
-
           isReadOnly={isReadOnly}
-
           isDoneState={isDoneState}
-
           packageTemplates={templates}
-
           masterCatalog={masterCatalog}
-
           masterCatalogLoading={masterCatalogLoading}
-
           masterCatalogError={masterCatalogError}
-
           loadMasterCatalog={loadMasterCatalog}
-
           quotedProcedurePrice={resolveProcedureOverridePrice(savedOverrides, selectedVariantId)}
-
           selectedInvestigations={selectedInvestigations}
-
           onSelectVariant={(variantId, surgeryId, eye) => {
-
             setSelectedEye(eye);
-
-            setSelectedVariantId(variantId);
-
             setSelectedSurgeryId(surgeryId);
-
-            setVariantSubOption(null);
-
+            if (variantId !== selectedVariantId) {
+              setSelectedVariantId(variantId);
+              setVariantSubOption(null);
+              setSelectedIolId(null);
+            }
           }}
-
           onClearVariant={() => {
-
             setSelectedVariantId(null);
-
             setSelectedSurgeryId(null);
-
             setVariantSubOption(null);
-
+            setSelectedIolId(null);
           }}
-
-          onSelectEye={setSelectedEye}
-
-          onEyeInvestigationSync={(eye) => {
-
-            setSelectedInvestigations((prev) => {
-
-              const next = new Map(prev);
-
-              next.forEach((inv, key) => {
-
-                if (inv.testType !== 'Lab') {
-
-                  next.set(key, { ...inv, eye });
-
-                }
-
-              });
-
-              return next;
-
-            });
-
-          }}
-
-          onVariantSubOption={setVariantSubOption}
-
-          onSelectIol={setSelectedIolId}
-
-          onReEvaluate={handleReEvaluate}
-
-          onSwitchToRecommendedProcedure={(variantId, eye) => {
-
+          onSelectEye={(eye) => {
             setSelectedEye(eye);
-
+            if (selectedVariantId) {
+              setSelectedSurgeryId(`type-${selectedVariantId}-${eye}`);
+            }
+          }}
+          onEyeInvestigationSync={(eye) => {
+            setSelectedInvestigations((prev) => {
+              const next = new Map(prev);
+              next.forEach((inv, key) => {
+                if (inv.testType !== 'Lab') {
+                  next.set(key, { ...inv, eye });
+                }
+              });
+              return next;
+            });
+          }}
+          onVariantSubOption={setVariantSubOption}
+          onSelectIol={setSelectedIolId}
+          onReEvaluate={handleReEvaluate}
+          onSwitchToRecommendedProcedure={(variantId, eye) => {
+            setSelectedEye(eye);
             setSelectedVariantId(variantId);
-
             setSelectedSurgeryId(`type-${variantId}-${eye}`);
-
             setVariantSubOption(null);
-
+            setSelectedIolId(null);
           }}
-
           onToggleInvestigation={toggleInvestigation}
-
           onClearInvestigations={() => {
-
             setSelectedInvestigations(new Map());
-
             estimate.notifySelectionChange('investigation');
-
             markDirty();
-
           }}
-
           markDirty={markDirty}
-
         />
-
       );
-
-    }
-
-
-
-    if (activePhase === 'decision') {
-
-      return (
-
+    } else if (activePhase === 'decision') {
+      phaseContent = (
         <CounsellingDecisionPhase
-          phaseNav={phaseNav}
           paymentType={paymentType as CombinedPaymentType | ''}
-
           setPaymentType={setPaymentType}
-
           insuranceCompany={insuranceCompany}
-
           setInsuranceCompany={setInsuranceCompany}
-
           insuranceProviderOptions={insuranceProviderOptions}
-
           freeSurgeryReason={freeSurgeryReason}
-
           setFreeSurgeryReason={setFreeSurgeryReason}
-
           decision={decision as DecisionType | ''}
-
           setDecision={setDecision}
-
           followUpReason={followUpReason}
-
           setFollowUpReason={setFollowUpReason}
-
           followUpDate={followUpDate}
-
           setFollowUpDate={setFollowUpDate}
-
           schedule={schedule}
-
           setIsScheduleModalOpen={setIsScheduleModalOpen}
-
           isReadOnly={isReadOnly}
-
           markDirty={markDirty}
-
-          onOpenCoverageTab={() => setActiveMainTab('coverage')}
-
+          phaseValidationContext={phaseValidationContext}
         />
-
       );
-
+    } else if (finishSummaryActive) {
+      const selectedVariant = procedureVariants.find((v) => v.id === selectedVariantId);
+      phaseContent = (
+        <CounsellingFinishSummary
+          queueStatus={queueStatus}
+          decision={decision as DecisionType | ''}
+          paymentType={paymentType as string}
+          insuranceCompany={insuranceCompany}
+          schedule={schedule}
+          finalPayableAmount={
+            estimate.mergedEstimate.finalPayableAmount > 0
+              ? estimate.mergedEstimate.finalPayableAmount
+              : null
+          }
+          showCoverageWorkflow={showCoverageWorkflow}
+          notRequiredPreAuth={notRequiredPreAuth}
+          coverageProgress={coverageProgress}
+          counsellorNotes={counsellorNotes}
+          patientRemarks={patientRemarks}
+          doctorNotes={doctorNotes}
+          patientName={sess?.patientName}
+          procedureName={selectedVariant?.name ?? doctorRecommendation}
+          packageName={estimate.activeTemplate?.name ?? null}
+          selectedEye={selectedEye}
+          estimateLines={estimate.lines}
+          itemizedSubtotal={estimate.itemizedSubtotal}
+          discountAmount={estimate.discountAmount}
+          baseBeforeDiscount={estimate.baseBeforeDiscount}
+        />
+      );
+    } else {
+      phaseContent = (
+        <CounsellingWrapupPhase
+          counselingSessionId={sessionId}
+          counsellorNotes={counsellorNotes}
+          setCounsellorNotes={setCounsellorNotes}
+          patientRemarks={patientRemarks}
+          setPatientRemarks={setPatientRemarks}
+          doctorNotes={doctorNotes}
+          setDoctorNotes={setDoctorNotes}
+          wantToSeeDoctor={wantToSeeDoctor}
+          setWantToSeeDoctor={setWantToSeeDoctor}
+          interestedToUpgrade={interestedToUpgrade}
+          setInterestedToUpgrade={setInterestedToUpgrade}
+          notRequiredPreAuth={notRequiredPreAuth}
+          setNotRequiredPreAuth={setNotRequiredPreAuth}
+          isReadOnly={isReadOnly}
+          markDirty={markDirty}
+          phaseValidationContext={phaseValidationContext}
+        />
+      );
     }
 
-
-
-    return (
-
-      <CounsellingWrapupPhase
-        phaseNav={phaseNav}
-        counselingSessionId={sessionId}
-        counsellorNotes={counsellorNotes}
-
-        setCounsellorNotes={setCounsellorNotes}
-
-        patientRemarks={patientRemarks}
-
-        setPatientRemarks={setPatientRemarks}
-
-        doctorNotes={doctorNotes}
-
-        setDoctorNotes={setDoctorNotes}
-
-        wantToSeeDoctor={wantToSeeDoctor}
-
-        setWantToSeeDoctor={setWantToSeeDoctor}
-
-        interestedToUpgrade={interestedToUpgrade}
-
-        setInterestedToUpgrade={setInterestedToUpgrade}
-
-        notRequiredPreAuth={notRequiredPreAuth}
-
-        setNotRequiredPreAuth={setNotRequiredPreAuth}
-
-        isReadOnly={isReadOnly}
-
-        markDirty={markDirty}
-
-      />
-
-    );
-
+    return phaseContent;
   }, [
-
     activePhase,
-
-    phaseNav,
-
     estimate,
 
     procedureVariants,
@@ -605,7 +525,17 @@ export function CounsellingTabPanel() {
 
     setNotRequiredPreAuth,
 
-    setActiveMainTab,
+    sessionId,
+
+    phaseValidationContext,
+
+    finishSummaryActive,
+
+    queueStatus,
+
+    showCoverageWorkflow,
+
+    coverageProgress,
 
   ]);
 
@@ -672,7 +602,7 @@ export function CounsellingTabPanel() {
 
   return (
 
-    <div className={counsellingSessionTokens.page + ' flex min-h-0 flex-1 flex-col overflow-hidden p-5'}>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-0 pt-3">
 
       {isSurgeryDoneState && (
         <CounsellingInfoAlert variant="info" className="mb-4 shrink-0" title="Surgery completed">
@@ -680,7 +610,7 @@ export function CounsellingTabPanel() {
         </CounsellingInfoAlert>
       )}
 
-      {isDoneState && (
+      {isDoneState && !finishSummaryActive && (
         <CounsellingInfoAlert
           variant="success"
           className="mb-4 shrink-0"
@@ -696,53 +626,42 @@ export function CounsellingTabPanel() {
             </CounsellingButton>
           }
         >
-          You can update the package/price or reschedule below. To change the procedure, click{' '}
-          <strong>Re-evaluate</strong> — this will reopen the session.
+          This session is <strong>read-only</strong>. Click <strong>Re-evaluate</strong> to reopen
+          counselling and change the procedure, quote, or decision.
         </CounsellingInfoAlert>
       )}
 
-      {queueStatus === 'AddOnSurgery' && (
+      {queueStatus === 'AddOnSurgery' && !finishSummaryActive && (
         <CounsellingInfoAlert variant="info" className="mb-4 shrink-0" title="Upgraded case">
-          Package was upgraded on this completed session. Update the new package details and save to
-          confirm the add-on surgery.
+          Add-on surgery counselling is complete and <strong>read-only</strong>. Use Re-evaluate from
+          a Done session path if the case must be reopened.
         </CounsellingInfoAlert>
       )}
 
 
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <CounsellingSessionLayout workspace={workspace} quotePanel={
-
+      <CounsellingSessionLayout
+        workspaceScroll={activePhase !== 'wrapup' || finishSummaryActive}
+        workspace={workspace}
+        quotePanel={
+          finishSummaryActive ? null : (
           <CounsellingQuotePanel
-
             estimate={estimate}
-
             estimateDiscountType={estimate.mergedEstimate.discountType}
-
             estimateDiscountValue={estimate.mergedEstimate.discountValue}
-
             estimateDiscountReason={estimate.mergedEstimate.discountReason}
-
             selectedVariantId={selectedVariantId}
-
+            selectedEye={selectedEye}
             procedureVariants={procedureVariants}
-
             savedOverrides={savedOverrides}
-
             isReadOnly={isReadOnly}
-
             activePhase={activePhase}
-
-            onGoToBuildQuote={() => goToPhase('estimate')}
-
             overrideDialogProps={overrideDialogProps}
-
           />
-
+          )
         }
-
       />
-
       </div>
 
     </div>

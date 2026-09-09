@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { ccmsKeys } from '@/lib/ccms/ccms-query-keys';
 import type { CoverageCaseWorkspace } from '@/lib/api/ccms/ccms-workspace.api';
+import { mapCaseDocumentsFromApi } from '@/lib/api/ccms/ccms-documents.api';
 import { mapPreAuthorizationFromApi } from '@/lib/api/ccms/ccms-authorizations.api';
 import { mapApprovalEventFromApi } from '@/lib/api/ccms/ccms-approvals.api';
 import {
@@ -44,7 +45,10 @@ export function hydrateCaseQueryCache(
   }
 
   if (workspace.documents != null) {
-    queryClient.setQueryData(ccmsKeys.documents(caseId), workspace.documents);
+    queryClient.setQueryData(
+      ccmsKeys.documents(caseId),
+      mapCaseDocumentsFromApi(workspace.documents),
+    );
   }
 
   if (workspace.approvalEvents != null) {

@@ -8,9 +8,15 @@ import {
 export type CounsellingSegmentedProps<T extends string = string> =
   SegmentedButtonGroupProps<T>;
 
-/** RE/LE/BE, Imaging/Lab, and other 2–4 option toggles. */
+/** RE/LE/BE, estimate mode, and other clinical mode selectors. */
 export function CounsellingSegmented<T extends string = string>(
   props: CounsellingSegmentedProps<T>,
 ) {
-  return <SegmentedButtonGroup {...props} size={props.size ?? 'sm'} />;
+  return (
+    <SegmentedButtonGroup
+      {...props}
+      size={props.size ?? 'sm'}
+      variant={props.variant ?? 'mode'}
+    />
+  );
 }

@@ -39,13 +39,14 @@ export function computePackagePreview(params: {
   }
 
   if (params.iol) {
+    // Align with counselling estimate: IOL is included in procedure charge (catalog compare still lists it).
+    const brand = params.iol.brandManufacturer;
     lines.push({
       key: 'iol',
       label: params.iol.modelName,
-      detail: params.iol.brandManufacturer,
-      amount: params.iol.price,
+      detail: brand ? `${brand} · Included` : 'Included',
+      amount: 0,
     });
-    itemizedTotal += params.iol.price;
   }
 
   for (const inv of params.investigations ?? []) {
@@ -64,13 +65,59 @@ export function computePackagePreview(params: {
   return { lines, itemizedTotal, packageAmount, bundleSavings };
 }
 
+/**
+ * Azure `session_price_overrides.variant_id` is a Guid.
+ * Package overrides store the package template Guid with priceType PACKAGE.
+ */
+export function packageOverrideVariantId(packageTemplateId: string): string {
+  return packageTemplateId;
+}
+
+export function isPackagePriceOverride(override: Pick<PriceOverrideRecord, 'priceType'>): boolean {
+  return (override.priceType ?? '').toUpperCase() === 'PACKAGE';
+}
+
+/** @deprecated Prefer priceType === PACKAGE; kept for reading any legacy prefixed rows. */
+export const PACKAGE_OVERRIDE_VARIANT_PREFIX = 'pkg-override:';
+
+export function isPackageOverrideVariantId(variantId: string): boolean {
+  return variantId.startsWith(PACKAGE_OVERRIDE_VARIANT_PREFIX);
+}
+
+/** Most recent active override for a package template, if any. */
+export function resolvePackageOverride(
+  overrides: PriceOverrideRecord[],
+  packageTemplateId: string | null | undefined,
+): PriceOverrideRecord | null {
+  if (!packageTemplateId || overrides.length === 0) return null;
+  const matches = overrides.filter(
+    (o) => isPackagePriceOverride(o) && o.variantId === packageTemplateId,
+  );
+  if (matches.length === 0) return null;
+  return matches.reduce((latest, o) =>
+    new Date(o.createdAt) > new Date(latest.createdAt) ? o : latest,
+  );
+}
+
+export function resolvePackageOverridePrice(
+  overrides: PriceOverrideRecord[],
+  packageTemplateId: string | null | undefined,
+): number | null {
+  return resolvePackageOverride(overrides, packageTemplateId)?.overriddenPrice ?? null;
+}
+
 /** Most recent active override for a specific procedure variant, if any. */
 export function resolveProcedureOverride(
   overrides: PriceOverrideRecord[],
   selectedVariantId: string | null | undefined,
 ): PriceOverrideRecord | null {
   if (!selectedVariantId || overrides.length === 0) return null;
-  const matches = overrides.filter((o) => o.variantId === selectedVariantId);
+  const matches = overrides.filter(
+    (o) =>
+      o.variantId === selectedVariantId &&
+      !isPackagePriceOverride(o) &&
+      !isPackageOverrideVariantId(o.variantId),
+  );
   if (matches.length === 0) return null;
   return matches.reduce((latest, o) =>
     new Date(o.createdAt) > new Date(latest.createdAt) ? o : latest,

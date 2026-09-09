@@ -7,7 +7,7 @@ import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { counsellingAzureApi } from '@/lib/api/counselling-azure.api';
 import type { PriceOverrideRecord } from '@/lib/api/counselling-azure.api';
-import { resolveProcedureOverridePrice } from '@/lib/counsellors-desk/package-preview';
+import { resolvePackageOverridePrice, resolveProcedureOverridePrice } from '@/lib/counsellors-desk/package-preview';
 import { useAuthStore } from '@/lib/auth-store';
 import { useConfirmation } from '@/components/common/ConfirmationDialog';
 import { useMasterValues } from '@/hooks/use-master-values';
@@ -28,6 +28,7 @@ import {
 import {
   derivePaymentType,
   requiresInsuranceCompany,
+  toCounsellingDateOnly,
 } from '@/lib/counsellors-desk/session-utils';
 import type {
   CounsellingSession,
@@ -53,10 +54,22 @@ import {
   buildCounsellingEstimatePdfData,
   canPrintCounsellingEstimate,
 } from '@/lib/counsellors-desk/counselling-estimate-pdf-content';
+import { formatScheduleSummary } from '@/lib/counsellors-desk/decision-workspace-presentation';
+import { finishOutcomeHeadline } from '@/lib/counsellors-desk/counselling-finish-outcome';
+import {
+  buildFinishPatientNextSteps,
+  eyeDisplayLabel,
+  resolveFinishCoverageLabel,
+} from '@/lib/counsellors-desk/counselling-finish-presentation';
 import { useCounsellingOverrides } from '@/hooks/use-counselling-overrides';
 import { buildCounsellingFieldSnapshot } from '@/lib/counsellors-desk/counselling-field-snapshot';
 import { saveCounsellingSession } from '@/lib/counsellors-desk/save-counselling-session';
+import {
+  formatDecisionLabel,
+  type CoverageProgressSnapshot,
+} from '@/lib/counsellors-desk/session-status-summary';
 import { saveCounsellingDraft } from '@/lib/counsellors-desk/save-counselling-draft';
+import { planCounsellingDualDraftSave } from '@/lib/counsellors-desk/counselling-dual-draft-save';
 import type {
   CoverageDraftSaveOptions,
   CoveragePreauthPanelHandle,
@@ -64,17 +77,21 @@ import type {
 import type { OutpatientChecklistHandle } from '@/components/counsellors-desk/outpatient-checklist-handle';
 import type { CounsellingWorkspaceSyncPatch } from '@/lib/counsellors-desk/counselling-coverage-workspace-sync';
 import { patientApi, type Patient } from '@/lib/api/patients.api';
+import { unwrapPatientApiResponse } from '@/lib/patients/patient-display-utils';
 import {
   type CounsellingPhase,
-  COUNSELLING_PHASE_ORDER,
+  canNavigateToCounsellingPhase,
   computePhaseCompletion,
   inferVisitedPhases,
   isCoveragePaymentType,
   nextPhase,
-  prevPhase,
   validatePhase,
+  validatePhasesBefore,
+  validateSaveSessionDecision,
   type CounsellingPhaseInput,
 } from '@/lib/counsellors-desk/counselling-progress';
+import { resolveSessionBackTarget } from '@/lib/counsellors-desk/counselling-session-navigation';
+import { isCounsellingTerminalOutcome, shouldAutoOpenFinishSummary } from '@/lib/counsellors-desk/counselling-finish-outcome';
 
 type MasterCatalogShape = {
   imaging: MasterCatalogItem[];
@@ -186,6 +203,12 @@ export function useCounsellingSessionController({
   const counsellingSyncSkipRef = useRef(false);
   const [workspaceCcmsCaseNumber, setWorkspaceCcmsCaseNumber] = useState<string | undefined>();
   const [workspaceCcmsState, setWorkspaceCcmsState] = useState<string | undefined>();
+  const [coverageProgress, setCoverageProgress] = useState<CoverageProgressSnapshot>({
+    uploadedDocCount: 0,
+    requiredDocCount: 0,
+    ccmsState: null,
+    preAuthSubmitted: false,
+  });
   const [patientDetails, setPatientDetails] = useState<Patient | null>(null);
   const [patientDetailsLoading, setPatientDetailsLoading] = useState(false);
   const [queueStatus, setQueueStatus] = useState<WaitingListStatus>('Pending');
@@ -199,6 +222,7 @@ export function useCounsellingSessionController({
   const [estimatePrintOpen, setEstimatePrintOpen] = useState(false);
   const [activePhase, setActivePhase] = useState<CounsellingPhase>('estimate');
   const [visitedPhases, setVisitedPhases] = useState<CounsellingPhase[]>(['estimate']);
+  const [finishSummaryActive, setFinishSummaryActive] = useState(false);
   const phasesInitializedRef = useRef(false);
 
   const overrides = useCounsellingOverrides({ sessionId, setSavedOverrides });
@@ -211,9 +235,7 @@ export function useCounsellingSessionController({
     void masterCatalogQuery.refetch();
   }, [masterCatalogQuery]);
 
-  const procedureQuery = useCounsellorProcedureVariants(
-    !!session && activeMainTab === 'counselling',
-  );
+  const procedureQuery = useCounsellorProcedureVariants(!!session);
   const procedureVariants = procedureQuery.variants;
   const procedureLoading = procedureQuery.loading;
   const procedureError = procedureQuery.error;
@@ -243,6 +265,11 @@ export function useCounsellingSessionController({
     [savedOverrides, selectedVariantId],
   );
 
+  const packageOverridePrice = useMemo(
+    () => resolvePackageOverridePrice(savedOverrides, estimateState.packageTemplateId),
+    [savedOverrides, estimateState.packageTemplateId],
+  );
+
   const counsellingEstimate = useCounsellingEstimate({
     estimate: estimateState,
     onEstimateChange: useCallback((patch: Partial<CounsellingEstimateState>) => {
@@ -258,6 +285,7 @@ export function useCounsellingSessionController({
     selectedInvestigations,
     iolOptions,
     procedureOverridePrice,
+    packageOverridePrice,
     packageTemplates,
     settings: counsellingSettings ?? { maxDiscountPercent: 50, maxDiscountFlat: null },
     masterCatalog,
@@ -305,23 +333,12 @@ export function useCounsellingSessionController({
         changed = true;
       }
 
-      if (
-        patch.estimatedAmount !== undefined &&
-        patch.estimatedAmount !== estimateState.finalPayableAmount
-      ) {
-        setEstimateState((prev) => ({
-          ...prev,
-          finalPayableAmount: patch.estimatedAmount!,
-        }));
-        setPackageRate(patch.estimatedAmount);
-        changed = true;
-      }
-
       if (patch.surgeryDate !== undefined) {
+        const nextDate = toCounsellingDateOnly(patch.surgeryDate);
         const currentDate = schedule?.selectedDate ?? '';
-        if (patch.surgeryDate !== currentDate) {
+        if (nextDate !== currentDate) {
           setSchedule((prev) => ({
-            selectedDate: patch.surgeryDate!,
+            selectedDate: nextDate,
             operationTheatre: prev?.operationTheatre ?? '',
             doctor: prev?.doctor ?? '',
             surgeryStartTime: prev?.surgeryStartTime ?? '',
@@ -345,7 +362,6 @@ export function useCounsellingSessionController({
     [
       insuranceCompany,
       insuranceProviderOptions,
-      estimateState.finalPayableAmount,
       schedule?.selectedDate,
       paymentType,
       markDirty,
@@ -387,9 +403,212 @@ export function useCounsellingSessionController({
     [selectedVariantId, mergedEstimate.packageTemplateId, counsellingEstimate.lines.length],
   );
 
+  const phaseInput = useMemo(
+    (): CounsellingPhaseInput => ({
+      selectedVariantId,
+      hasActiveTemplate: !!counsellingEstimate.activeTemplate,
+      selectedIolId,
+      variantSubOption,
+      iolOptionCount: iolOptions.length,
+      paymentType,
+      insuranceCompany,
+      decision,
+      schedule,
+      followUpReason,
+      followUpDate,
+      counsellorNotes,
+      patientRemarks,
+      wantToSeeDoctor,
+      interestedToUpgrade,
+      notRequiredPreAuth,
+    }),
+    [
+      selectedVariantId,
+      counsellingEstimate.activeTemplate,
+      selectedIolId,
+      variantSubOption,
+      iolOptions.length,
+      paymentType,
+      insuranceCompany,
+      decision,
+      schedule,
+      followUpReason,
+      followUpDate,
+      counsellorNotes,
+      patientRemarks,
+      wantToSeeDoctor,
+      interestedToUpgrade,
+      notRequiredPreAuth,
+    ],
+  );
+
+  const phaseValidationContext = useMemo(
+    () => ({ ...phaseInput, procedureVariants }),
+    [phaseInput, procedureVariants],
+  );
+
+  const phaseCompletion = useMemo(
+    () => computePhaseCompletion(phaseValidationContext),
+    [phaseValidationContext],
+  );
+
+  const phaseAdvanceError = useMemo(
+    () => validatePhase(activePhase, phaseValidationContext),
+    [activePhase, phaseValidationContext],
+  );
+
+  const canAdvancePhase = !phaseAdvanceError;
+
+  useEffect(() => {
+    if (!session || phasesInitializedRef.current) return;
+    if (sessionAppliedRef.current !== sessionId) return;
+
+    const inferred = inferVisitedPhases(phaseValidationContext);
+    setVisitedPhases(Array.from(inferred));
+    setActivePhase('estimate');
+    phasesInitializedRef.current = true;
+  }, [session, sessionId, phaseValidationContext]);
+
+  const markPhaseVisited = useCallback((phase: CounsellingPhase) => {
+    setVisitedPhases((prev) => (prev.includes(phase) ? prev : [...prev, phase]));
+  }, []);
+
+  const goToPhase = useCallback(
+    (phase: CounsellingPhase) => {
+      if (queueStatus === 'RepeatCounselling' || queueStatus === 'SurgeryDone') return;
+      if (
+        !canNavigateToCounsellingPhase(
+          phase,
+          activePhase,
+          phaseValidationContext,
+          phaseCompletion,
+        )
+      ) {
+        const error = validatePhasesBefore(phase, phaseValidationContext);
+        toast.error(error ?? 'Complete the current step before continuing');
+        return;
+      }
+      setActivePhase(phase);
+      markPhaseVisited(phase);
+    },
+    [activePhase, phaseCompletion, phaseValidationContext, markPhaseVisited, queueStatus],
+  );
+
+  const goNext = useCallback(() => {
+    const error = validatePhase(activePhase, phaseValidationContext);
+    if (error) {
+      toast.error(error);
+      return false;
+    }
+    markPhaseVisited(activePhase);
+    const nxt = nextPhase(activePhase);
+    if (nxt) {
+      setActivePhase(nxt);
+      markPhaseVisited(nxt);
+    }
+    return true;
+  }, [activePhase, phaseValidationContext, markPhaseVisited]);
+
+  const canGoToPhase = useCallback(
+    (phase: CounsellingPhase) => {
+      if (queueStatus === 'RepeatCounselling' || queueStatus === 'SurgeryDone') return false;
+      return canNavigateToCounsellingPhase(
+        phase,
+        activePhase,
+        phaseValidationContext,
+        phaseCompletion,
+      );
+    },
+    [activePhase, phaseCompletion, phaseValidationContext, queueStatus],
+  );
+
+  const isDoneState = queueStatus === 'Done';
+  const isRepeatState = queueStatus === 'RepeatCounselling';
+  const isSurgeryDoneState = queueStatus === 'SurgeryDone';
+  const isAddOnState = queueStatus === 'AddOnSurgery';
+  /** Terminal counselling outcomes are sealed until Re-evaluate / reopen. */
+  const isReadOnly =
+    isRepeatState ||
+    isSurgeryDoneState ||
+    isDoneState ||
+    isAddOnState ||
+    finishSummaryActive;
+
+  const saveDisabledReason = useMemo((): string | null => {
+    if (isSurgeryDoneState) return 'Session is read-only';
+    if (isSaving || isSavingDraft) return 'Saving session…';
+    return validateSaveSessionDecision(phaseInput);
+  }, [isSurgeryDoneState, isSaving, isSavingDraft, phaseInput]);
+
+  const saveDraftDisabledReason = useMemo((): string | null => {
+    if (isSurgeryDoneState) return 'Session is read-only';
+    if (isSaving || isSavingDraft) return 'Saving…';
+    if (isRepeatState) return 'Start repeat session to continue';
+    return null;
+  }, [isSurgeryDoneState, isSaving, isSavingDraft, isRepeatState]);
+
+  const printDisabledReason = useMemo((): string | null => {
+    if (isRepeatState) return 'Start repeat session to continue';
+    if (canPrintEstimate) return null;
+    return 'Select a procedure or package to print an estimate';
+  }, [canPrintEstimate, isRepeatState]);
+
+  const showCoverageWorkflow = useMemo(
+    () => isCoveragePaymentType(paymentType as string) && !notRequiredPreAuth,
+    [paymentType, notRequiredPreAuth],
+  );
+
+  /** Insurance tab stays openable for coverage payment types even when pre-auth is not required. */
+  const coverageTabAvailable = useMemo(
+    () => isCoveragePaymentType(paymentType as string),
+    [paymentType],
+  );
+
   const estimatePdfData = useMemo(() => {
     if (!session || !canPrintEstimate) return null;
     const pdfVariant = findCounsellorVariant(procedureVariants, selectedVariantId);
+    const scheduleSummary = formatScheduleSummary(schedule);
+    const coverageLabel = resolveFinishCoverageLabel({
+      showCoverageWorkflow,
+      notRequiredPreAuth,
+      coverageProgress,
+    });
+    const docsSummary =
+      coverageProgress.requiredDocCount > 0
+        ? `${coverageProgress.uploadedDocCount}/${coverageProgress.requiredDocCount} received`
+        : undefined;
+    const notesRecorded = [counsellorNotes, patientRemarks, doctorNotes].some((n) => n.trim());
+    const fundingSource = insuranceCompany.trim()
+      ? `${paymentType || '—'} · ${insuranceCompany.trim()}`
+      : paymentType || undefined;
+    const summaryExtras = finishSummaryActive
+      ? {
+          documentKind: 'counselling-summary' as const,
+          procedureName: pdfVariant?.name,
+          eyeLabel: eyeDisplayLabel(selectedEye),
+          surgeonName: schedule?.doctor || undefined,
+          scheduleSummary: scheduleSummary || undefined,
+          operationTheatre: schedule?.operationTheatre || undefined,
+          decisionLabel: decision ? formatDecisionLabel(decision as DecisionType) : undefined,
+          outcomeLabel: finishOutcomeHeadline(queueStatus),
+          fundingSource,
+          insurerName: insuranceCompany.trim() || undefined,
+          coverageStatusLabel: showCoverageWorkflow || notRequiredPreAuth ? coverageLabel : undefined,
+          documentsSummary: docsSummary,
+          notesRecorded,
+          nextSteps: buildFinishPatientNextSteps({
+            queueStatus,
+            scheduleSummary,
+            showCoverageWorkflow,
+            coverageLabel,
+            preAuthSubmitted: coverageProgress.preAuthSubmitted,
+            docsIncomplete:
+              coverageProgress.requiredDocCount > 0 &&
+              coverageProgress.uploadedDocCount < coverageProgress.requiredDocCount,
+          }),
+        }
+      : { documentKind: 'estimate' as const };
+
     return buildCounsellingEstimatePdfData({
       sessionId,
       session,
@@ -412,6 +631,7 @@ export function useCounsellingSessionController({
       counsellorName: authUser
         ? `${authUser.firstName} ${authUser.lastName}`.trim()
         : undefined,
+      ...summaryExtras,
     });
   }, [
     session,
@@ -427,148 +647,18 @@ export function useCounsellingSessionController({
     procedureVariants,
     paymentType,
     authUser,
+    finishSummaryActive,
+    schedule,
+    showCoverageWorkflow,
+    notRequiredPreAuth,
+    coverageProgress,
+    counsellorNotes,
+    patientRemarks,
+    doctorNotes,
+    insuranceCompany,
+    decision,
+    queueStatus,
   ]);
-
-  const phaseInput = useMemo(
-    (): CounsellingPhaseInput => ({
-      selectedVariantId,
-      hasActiveTemplate: !!counsellingEstimate.activeTemplate,
-      selectedIolId,
-      variantSubOption,
-      iolOptionCount: iolOptions.length,
-      paymentType,
-      decision,
-      schedule,
-      counsellorNotes,
-      patientRemarks,
-      wantToSeeDoctor,
-      interestedToUpgrade,
-      notRequiredPreAuth,
-    }),
-    [
-      selectedVariantId,
-      counsellingEstimate.activeTemplate,
-      selectedIolId,
-      variantSubOption,
-      iolOptions.length,
-      paymentType,
-      decision,
-      schedule,
-      counsellorNotes,
-      patientRemarks,
-      wantToSeeDoctor,
-      interestedToUpgrade,
-      notRequiredPreAuth,
-    ],
-  );
-
-  const phaseCompletion = useMemo(
-    () => computePhaseCompletion(phaseInput),
-    [phaseInput],
-  );
-
-  const phaseValidationContext = useMemo(
-    () => ({ ...phaseInput, procedureVariants }),
-    [phaseInput, procedureVariants],
-  );
-
-  const phaseAdvanceError = useMemo(
-    () => validatePhase(activePhase, phaseValidationContext),
-    [activePhase, phaseValidationContext],
-  );
-
-  const canAdvancePhase = !phaseAdvanceError;
-
-  useEffect(() => {
-    if (!session || phasesInitializedRef.current) return;
-    if (sessionAppliedRef.current !== sessionId) return;
-
-    const inferred = inferVisitedPhases(phaseInput);
-    setVisitedPhases(Array.from(inferred));
-    setActivePhase('estimate');
-    phasesInitializedRef.current = true;
-  }, [session, sessionId, phaseInput]);
-
-  const markPhaseVisited = useCallback((phase: CounsellingPhase) => {
-    setVisitedPhases((prev) => (prev.includes(phase) ? prev : [...prev, phase]));
-  }, []);
-
-  const goToPhase = useCallback(
-    (phase: CounsellingPhase) => {
-      const phaseIdx = COUNSELLING_PHASE_ORDER.indexOf(phase);
-      const maxVisitedIdx = Math.max(
-        ...visitedPhases.map((p) => COUNSELLING_PHASE_ORDER.indexOf(p)),
-        0,
-      );
-      if (phaseIdx <= maxVisitedIdx + 1) {
-        setActivePhase(phase);
-        markPhaseVisited(phase);
-      }
-    },
-    [visitedPhases, markPhaseVisited],
-  );
-
-  const goNext = useCallback(() => {
-    const error = validatePhase(activePhase, phaseValidationContext);
-    if (error) {
-      toast.error(error);
-      return false;
-    }
-    markPhaseVisited(activePhase);
-    const nxt = nextPhase(activePhase);
-    if (nxt) {
-      setActivePhase(nxt);
-      markPhaseVisited(nxt);
-    }
-    return true;
-  }, [activePhase, phaseValidationContext, markPhaseVisited]);
-
-  const goToPreviousPhase = useCallback(() => {
-    const prev = prevPhase(activePhase);
-    if (prev) setActivePhase(prev);
-  }, [activePhase]);
-
-  const canGoToPhase = useCallback(
-    (phase: CounsellingPhase) => {
-      const phaseIdx = COUNSELLING_PHASE_ORDER.indexOf(phase);
-      const maxVisitedIdx = Math.max(
-        ...visitedPhases.map((p) => COUNSELLING_PHASE_ORDER.indexOf(p)),
-        0,
-      );
-      return phaseIdx <= maxVisitedIdx + 1;
-    },
-    [visitedPhases],
-  );
-
-  const isDoneState = queueStatus === 'Done';
-  const isRepeatState = queueStatus === 'RepeatCounselling';
-  const isSurgeryDoneState = queueStatus === 'SurgeryDone';
-  const isReadOnly = isRepeatState || isSurgeryDoneState;
-
-  const saveDisabledReason = useMemo((): string | null => {
-    if (isSurgeryDoneState) return 'Session is read-only';
-    if (isSaving || isSavingDraft) return 'Saving session…';
-    if (!decision) return 'Select a patient decision before saving';
-    return null;
-  }, [isSurgeryDoneState, isSaving, isSavingDraft, decision]);
-
-  const saveDraftDisabledReason = useMemo((): string | null => {
-    if (isSurgeryDoneState) return 'Session is read-only';
-    if (isSaving || isSavingDraft) return 'Saving…';
-    if (isRepeatState) return 'Start repeat session to continue';
-    return null;
-  }, [isSurgeryDoneState, isSaving, isSavingDraft, isRepeatState]);
-
-  const printDisabledReason = useMemo((): string | null => {
-    if (isRepeatState) return 'Start repeat session to continue';
-    if (canPrintEstimate) return null;
-    return 'Select a procedure or package to print an estimate';
-  }, [canPrintEstimate, isRepeatState]);
-
-  const showCoverageWorkflow = useMemo(
-    () => isCoveragePaymentType(paymentType as string) && !notRequiredPreAuth,
-    [paymentType, notRequiredPreAuth],
-  );
 
   useEffect(() => {
     const patientId = session?.patientId;
@@ -581,8 +671,8 @@ export function useCounsellingSessionController({
     setPatientDetailsLoading(true);
     void patientApi
       .getById(patientId)
-      .then((patient) => {
-        if (!cancelled) setPatientDetails(patient);
+      .then((response) => {
+        if (!cancelled) setPatientDetails(unwrapPatientApiResponse(response));
       })
       .catch(() => {
         if (!cancelled) setPatientDetails(null);
@@ -703,6 +793,8 @@ export function useCounsellingSessionController({
       );
       setFreeSurgeryReason(data.freeSurgeryReason);
       setVariantSubOption(data.variantSubOption ?? null);
+      setSelectedIolId(data.selectedIolId ?? null);
+      prevVariantIdRef.current = restoredVariantId;
       setPackageName(data.packageName);
       setPackageRate(data.packageRate);
       setEstimateState({
@@ -717,7 +809,11 @@ export function useCounsellingSessionController({
         finalPayableAmount: data.finalPayableAmount ?? 0,
       });
       setDecision(data.decision);
-      setSchedule(data.schedule);
+      setSchedule(
+        data.schedule
+          ? { ...data.schedule, selectedDate: toCounsellingDateOnly(data.schedule.selectedDate) }
+          : null,
+      );
       setCounsellorNotes(data.counsellorNotes);
       setPatientRemarks(data.patientRemarks);
       setDoctorNotes(data.doctorNotes);
@@ -725,6 +821,10 @@ export function useCounsellingSessionController({
       setInterestedToUpgrade(data.interestedToUpgrade);
       setNotRequiredPreAuth(data.notRequiredPreAuth);
       setQueueStatus((data.status as WaitingListStatus) || 'Pending');
+      const status = (data.status as WaitingListStatus) || 'Pending';
+      setFinishSummaryActive(
+        shouldAutoOpenFinishSummary(status, status === 'SurgeryDone'),
+      );
       setFollowUpReason(data.followUpReason ?? '');
       setFollowUpDate(data.followUpDate ?? '');
       savedSnapshotRef.current = buildCounsellingFieldSnapshot({
@@ -786,7 +886,7 @@ export function useCounsellingSessionController({
         }
         if (!data.schedule && azureRecord.scheduledDate) {
           setSchedule({
-            selectedDate: azureRecord.scheduledDate.split('T')[0],
+            selectedDate: toCounsellingDateOnly(azureRecord.scheduledDate),
             operationTheatre: '',
             doctor: '',
             surgeryStartTime: '',
@@ -832,7 +932,11 @@ export function useCounsellingSessionController({
         /* non-critical */
       }
 
-      if (data.status === 'Pending') counsellorsDeskApi.startSession(sessionId);
+      if (data.status === 'Pending') {
+        void counsellorsDeskApi.startSession(sessionId).catch(() => {
+          /* Pending auto-start is best-effort */
+        });
+      }
       if ((data.status as string) !== 'SurgeryDone') {
         isSurgeryDoneRef.current = false;
         counsellingAzureApi.lock(sessionId);
@@ -870,6 +974,20 @@ export function useCounsellingSessionController({
     }
     prevVariantIdRef.current = selectedVariantId;
   }, [selectedVariantId]);
+
+  /** Drop stale IOL when current procedure does not support it or catalog no longer contains it. */
+  useEffect(() => {
+    if (applyingPackageRef.current) return;
+    if (!selectedIolId) return;
+    const variant = findCounsellorVariant(procedureVariants, selectedVariantId);
+    if (!variant?.hasIolOptions) {
+      setSelectedIolId(null);
+      return;
+    }
+    if (iolOptions.length > 0 && !iolOptions.some((iol) => iol.id === selectedIolId)) {
+      setSelectedIolId(null);
+    }
+  }, [selectedIolId, selectedVariantId, procedureVariants, iolOptions]);
 
   useEffect(() => {
     if (!session) return;
@@ -980,6 +1098,39 @@ export function useCounsellingSessionController({
     router.back();
   }, [isDirty, showConfirmation, router]);
 
+  const goToPreviousPhase = useCallback(() => {
+    const target = resolveSessionBackTarget({
+      activeMainTab,
+      activePhase,
+      showCoverageWorkflow,
+      coverageTabAvailable,
+      finishSummaryActive,
+    });
+    if (!target) return;
+    if (target.leaveSession) {
+      handleBack();
+      return;
+    }
+    if (typeof target.finishSummaryActive === 'boolean') {
+      setFinishSummaryActive(target.finishSummaryActive);
+    }
+    if (target.tab) setActiveMainTab(target.tab);
+    if (target.phase) setActivePhase(target.phase);
+  }, [
+    activeMainTab,
+    activePhase,
+    showCoverageWorkflow,
+    coverageTabAvailable,
+    finishSummaryActive,
+    handleBack,
+  ]);
+
+  const openFinishSummary = useCallback(() => {
+    setFinishSummaryActive(true);
+    setActiveMainTab('counselling');
+    setActivePhase('wrapup');
+  }, []);
+
   const handleReEvaluate = useCallback(() => {
     showConfirmation({
       title: 'Re-evaluate Session',
@@ -991,29 +1142,53 @@ export function useCounsellingSessionController({
         try {
           await counsellingAzureApi.reEvaluate(sessionId);
           setQueueStatus('Processed');
+          setFinishSummaryActive(false);
+          setActiveMainTab('counselling');
+          setActivePhase('estimate');
+          setVisitedPhases(['estimate']);
+          phasesInitializedRef.current = false;
+          invalidateWaitingList();
+          invalidateSession(sessionId);
           toast.success('Session reopened for re-evaluation');
         } catch {
           toast.error('Failed to re-open session');
         }
       },
     });
-  }, [sessionId, showConfirmation]);
+  }, [sessionId, showConfirmation, invalidateWaitingList, invalidateSession]);
 
   const handleStartRepeatSession = useCallback(async () => {
     try {
       await counsellorsDeskApi.startSession(sessionId, repeatSessionTypeCode);
       setSession((prev) => (prev ? { ...prev, sessionTypeCode: repeatSessionTypeCode } : prev));
       setQueueStatus('Processed');
+      setFinishSummaryActive(false);
+      setActiveMainTab('counselling');
+      setActivePhase('estimate');
+      setVisitedPhases(['estimate']);
+      phasesInitializedRef.current = false;
+      invalidateWaitingList();
+      invalidateSession(sessionId);
       toast.success('Repeat counselling session started');
     } catch {
       toast.error('Failed to start repeat session');
     }
-  }, [sessionId, repeatSessionTypeCode]);
+  }, [
+    sessionId,
+    repeatSessionTypeCode,
+    invalidateWaitingList,
+    invalidateSession,
+  ]);
 
   const handleSelectVariantId = useCallback(
     (id: string | null) => {
-      setSelectedVariantId(id);
-      if (!applyingPackageRef.current) counsellingEstimate.notifySelectionChange('procedure');
+      setSelectedVariantId((prev) => {
+        if (prev === id) return prev;
+        if (!applyingPackageRef.current) {
+          queueMicrotask(() => counsellingEstimate.notifySelectionChange('procedure'));
+        }
+        return id;
+      });
       markDirty();
     },
     [counsellingEstimate, markDirty],
@@ -1083,69 +1258,87 @@ export function useCounsellingSessionController({
   const handleSaveDraft = useCallback(async () => {
     if (!session || saveDraftDisabledReason) return;
 
-    if (activeMainTab === 'coverage') {
-      if (!showCoverageWorkflow) return;
-      setIsSavingDraft(true);
-      try {
-        const saved = await saveCoveragePanelDraft({ force: true });
-        if (saved) {
-          toast.success('Draft saved');
-        }
-      } finally {
-        setIsSavingDraft(false);
-      }
-      return;
-    }
+    const coveragePanelReady = Boolean(coveragePanelRef.current?.saveDraft);
+    const coverageDraftEditable = coveragePanelRef.current?.isCoverageDraftEditable
+      ? coveragePanelRef.current.isCoverageDraftEditable()
+      : true;
 
-    if (activeMainTab === 'outpatient') {
-      setIsSavingDraft(true);
-      try {
-        await outpatientChecklistRef.current?.flushDraft({ silent: true });
-      } finally {
-        setIsSavingDraft(false);
-      }
-      return;
-    }
+    const plan = planCounsellingDualDraftSave({
+      draftDisabled: false,
+      coverageWorkflowActive: showCoverageWorkflow,
+      coveragePanelReady,
+      coverageEditable: coverageDraftEditable,
+      flushOutpatient: true,
+    });
 
-    if (!validateCounsellingForSave()) return;
+    if (!plan.saveCounselling && !plan.saveCoverage && !plan.flushOutpatient) return;
+
+    if (plan.saveCounselling && !validateCounsellingForSave()) return;
 
     setIsSavingDraft(true);
+    let counsellingSaved = false;
+    let coverageSaved = false;
     try {
-      await saveCounsellingDraft({
-        sessionId,
-        session,
-        selectedSurgeryId,
-        selectedVariantId,
-        selectedEye,
-        selectedIolId,
-        variantSubOption,
-        packageName,
-        packageRate,
-        paymentType,
-        insuranceCompany,
-        insuranceProviderId,
-        freeSurgeryReason,
-        decision,
-        followUpReason,
-        followUpDate,
-        counsellorNotes,
-        patientRemarks,
-        doctorNotes,
-        wantToSeeDoctor,
-        interestedToUpgrade,
-        notRequiredPreAuth,
-        schedule,
-        selectedInvestigations,
-        mergedEstimate,
-        savedSnapshot: savedSnapshotRef.current,
-        isDoneState,
-        onSuccess: (snapshot) => {
-          savedSnapshotRef.current = snapshot;
-          setIsDirty(false);
-        },
-        invalidateSession,
-      });
-      toast.success('Draft saved');
+      if (plan.saveCounselling) {
+        await saveCounsellingDraft({
+          sessionId,
+          session,
+          selectedSurgeryId,
+          selectedVariantId,
+          selectedEye,
+          selectedIolId,
+          variantSubOption,
+          packageName,
+          packageRate,
+          paymentType,
+          insuranceCompany,
+          insuranceProviderId,
+          freeSurgeryReason,
+          decision,
+          followUpReason,
+          followUpDate,
+          counsellorNotes,
+          patientRemarks,
+          doctorNotes,
+          wantToSeeDoctor,
+          interestedToUpgrade,
+          notRequiredPreAuth,
+          schedule,
+          selectedInvestigations,
+          mergedEstimate,
+          savedSnapshot: savedSnapshotRef.current,
+          isDoneState,
+          onSuccess: (snapshot) => {
+            savedSnapshotRef.current = snapshot;
+            setIsDirty(false);
+          },
+          invalidateSession,
+        });
+        counsellingSaved = true;
+      }
+
+      if (plan.saveCoverage) {
+        coverageSaved = await saveCoveragePanelDraft({ force: true });
+      } else if (plan.coverageSoftWarn) {
+        toast('Counselling draft saved; open Insurance to save coverage details', {
+          icon: 'ℹ️',
+        });
+      }
+
+      if (plan.flushOutpatient) {
+        await outpatientChecklistRef.current?.flushDraft({ silent: true });
+      }
+
+      if (counsellingSaved && coverageSaved) {
+        toast.success('Draft saved');
+      } else if (counsellingSaved && (plan.coverageSkippedLocked || (!plan.saveCoverage && !plan.coverageSoftWarn))) {
+        toast.success('Draft saved');
+      } else if (counsellingSaved && plan.saveCoverage && !coverageSaved) {
+        toast.success('Counselling draft saved');
+        toast.error('Coverage draft could not be saved');
+      } else if (!counsellingSaved && coverageSaved) {
+        toast.success('Coverage draft saved');
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : getApiErrorMessage(err);
       toast.error(msg ? `Save failed: ${msg}` : 'Failed to save draft — check network tab');
@@ -1155,7 +1348,6 @@ export function useCounsellingSessionController({
   }, [
     session,
     saveDraftDisabledReason,
-    activeMainTab,
     showCoverageWorkflow,
     saveCoveragePanelDraft,
     validateCounsellingForSave,
@@ -1193,8 +1385,9 @@ export function useCounsellingSessionController({
       toast('No procedure selected — saving decision and notes only', { icon: '⚠️' });
     }
     if (!validateCounsellingForSave()) return;
-    if (!decision) {
-      toast.error('Please select a decision');
+    const saveDecisionError = validateSaveSessionDecision(phaseInput);
+    if (saveDecisionError) {
+      toast.error(saveDecisionError);
       return;
     }
 
@@ -1238,7 +1431,11 @@ export function useCounsellingSessionController({
           savedSnapshotRef.current = snapshot;
           setIsDirty(false);
           setQueueStatus(nextStatus);
-          if (openCoverageTab) {
+          if (isCounsellingTerminalOutcome(nextStatus)) {
+            setFinishSummaryActive(true);
+            setActivePhase('wrapup');
+            setActiveMainTab('counselling');
+          } else if (openCoverageTab) {
             setCoverageRefreshKey((k) => k + 1);
             setActiveMainTab('coverage');
           }
@@ -1248,7 +1445,13 @@ export function useCounsellingSessionController({
       });
 
       if (showCoverageWorkflow) {
-        await saveCoveragePanelDraft({ force: true });
+        const editable = coveragePanelRef.current?.isCoverageDraftEditable?.() ?? true;
+        if (coveragePanelRef.current?.saveDraft && editable) {
+          await saveCoveragePanelDraft({ force: true });
+        } else if (!coveragePanelRef.current?.saveDraft) {
+          toast('Session saved; open Insurance to sync coverage draft', { icon: 'ℹ️' });
+        }
+        // Locked coverage (Waiting for TPA): skip silently — counselling session already saved.
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data
@@ -1261,7 +1464,7 @@ export function useCounsellingSessionController({
     session,
     selectedSurgeryId,
     validateCounsellingForSave,
-    decision,
+    phaseInput,
     sessionId,
     selectedVariantId,
     selectedEye,
@@ -1294,12 +1497,31 @@ export function useCounsellingSessionController({
 
   const handleScheduleSubmit = useCallback(
     (data: ScheduleData) => {
-      setSchedule(data);
+      setSchedule({
+        ...data,
+        selectedDate: toCounsellingDateOnly(data.selectedDate),
+      });
       markDirty();
       toast.success('Schedule set successfully');
     },
     [markDirty],
   );
+
+  const handleCoverageProgressChange = useCallback((progress: CoverageProgressSnapshot) => {
+    setCoverageProgress((prev) => {
+      if (
+        prev.uploadedDocCount === progress.uploadedDocCount &&
+        prev.requiredDocCount === progress.requiredDocCount &&
+        prev.ccmsState === progress.ccmsState &&
+        prev.preAuthSubmitted === progress.preAuthSubmitted &&
+        prev.canSubmitToClaims === progress.canSubmitToClaims &&
+        prev.submittingToClaims === progress.submittingToClaims
+      ) {
+        return prev;
+      }
+      return progress;
+    });
+  }, []);
 
   return {
     sessionId,
@@ -1322,10 +1544,13 @@ export function useCounsellingSessionController({
     handleCaseWorkspaceChange,
     workspaceCcmsCaseNumber,
     workspaceCcmsState,
+    coverageProgress,
+    handleCoverageProgressChange,
     patientDetails,
     patientDetailsLoading,
     workspaceIntegrationContext,
     showCoverageWorkflow,
+    coverageTabAvailable,
     saveDraftDisabledReason,
     handleSaveDraft,
     activeMainTab,
@@ -1407,8 +1632,12 @@ export function useCounsellingSessionController({
     isScheduleModalOpen,
     handleScheduleSubmit,
     activePhase,
+    finishSummaryActive,
+    setFinishSummaryActive,
+    openFinishSummary,
     visitedPhases,
     phaseCompletion,
+    phaseValidationContext,
     canAdvancePhase,
     phaseAdvanceError,
     saveDisabledReason,

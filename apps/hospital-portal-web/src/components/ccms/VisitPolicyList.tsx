@@ -2,14 +2,14 @@
 
 import React, { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Shield, Plus, Star, Trash2, RefreshCw, AlertCircle, Check } from 'lucide-react';
+import { Shield, Plus, Star, RefreshCw, AlertCircle, Pencil } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import {
-  getPoliciesBySession, deletePolicy, setPrimaryPolicy, createPolicy,
+  getPoliciesBySession, setPrimaryPolicy, createPolicy,
   type VisitPolicy,
 } from '@/lib/api/ccms/visit-policies.api';
 import { parseCounsellorDraft } from '@/lib/api/ccms/parse-counsellor-draft';
-import { hasDbPrimaryVisitPolicy, buildVisitPolicyFromDraft } from '@/lib/ccms/ccms-visit-policy-prereq';
+import { buildVisitPolicyFromDraft, shouldOfferImportPolicyFromCounsellorDraft } from '@/lib/ccms/ccms-visit-policy-prereq';
 import { ccmsKeys, useCcmsCasePolicies } from '@/hooks/use-ccms-case';
 import { VisitPolicyForm } from './VisitPolicyForm';
 import { coverageTestIds } from '@/lib/counsellors-desk/coverage-test-ids';
@@ -21,9 +21,21 @@ interface Props {
   readOnly?: boolean;
   counsellorDraftJson?: string;
   onChanged?: () => void;
+  /** Wave 2E-INS — flat rows inside Insurance widget (no nested cards). */
+  dense?: boolean;
+  /** Pass through to Add Policy so new rows inherit the Policy-tab payer. */
+  defaultInsuranceProviderId?: string;
 }
 
-export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsellorDraftJson, onChanged }: Props) {
+export function VisitPolicyList({
+  caseId,
+  sessionId,
+  readOnly = false,
+  counsellorDraftJson,
+  onChanged,
+  dense = false,
+  defaultInsuranceProviderId,
+}: Props) {
   const queryClient = useQueryClient();
   const casePoliciesQuery = useCcmsCasePolicies(caseId);
   const [sessionPolicies, setSessionPolicies] = useState<VisitPolicy[]>([]);
@@ -53,9 +65,12 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
   const error = caseId ? (casePoliciesQuery.error ? (casePoliciesQuery.error as Error).message : null) : sessionError;
 
   const draft = parseCounsellorDraft(counsellorDraftJson);
-  const canImportFromDraft = Boolean(
-    caseId && !readOnly && draft?.policyNumber?.trim() && !hasDbPrimaryVisitPolicy(policies),
-  );
+  const canImportFromDraft = shouldOfferImportPolicyFromCounsellorDraft({
+    hasCaseId: Boolean(caseId),
+    readOnly,
+    draftPolicyNumber: draft?.policyNumber,
+    policies,
+  });
 
   const reload = useCallback(async () => {
     if (caseId) {
@@ -64,18 +79,6 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
       await loadSessionPolicies();
     }
   }, [caseId, queryClient, loadSessionPolicies]);
-
-  const handleDelete = async (policy: VisitPolicy) => {
-    if (!caseId) return;
-    if (!confirm(`Remove policy ${policy.policyNumber}?`)) return;
-    try {
-      await deletePolicy(caseId, policy.id);
-      toast.success('Policy removed');
-      await reload();
-    } catch {
-      toast.error('Failed to remove policy');
-    }
-  };
 
   const handleSetPrimary = async (policy: VisitPolicy) => {
     if (!caseId) return;
@@ -135,12 +138,24 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
 
       {policies.map(p => (
         <div key={p.id}
-          className={`rounded-xl border p-3 flex items-start justify-between gap-3 ${
-            p.isPrimary ? 'bg-counselling-accent border-counselling-primary/30' : 'bg-counselling-card border-counselling-border'
-          }`}
+          className={
+            dense
+              ? `flex items-start justify-between gap-3 border-b border-counselling-border/50 py-2.5 last:border-b-0 ${
+                  p.isPrimary ? 'bg-counselling-accent/40 -mx-1 rounded-md px-1' : ''
+                }`
+              : `rounded-xl border p-3 flex items-start justify-between gap-3 ${
+                  p.isPrimary ? 'bg-counselling-accent border-counselling-primary/30' : 'bg-counselling-card border-counselling-border'
+                }`
+          }
         >
           <div className="flex items-start gap-2 min-w-0">
-            <div className={`mt-0.5 p-1.5 rounded-lg ${p.isPrimary ? 'bg-counselling-accent' : 'bg-counselling-muted'}`}>
+            <div
+              className={
+                dense
+                  ? 'mt-0.5 shrink-0'
+                  : `mt-0.5 p-1.5 rounded-lg ${p.isPrimary ? 'bg-counselling-accent' : 'bg-counselling-muted'}`
+              }
+            >
               <Shield className={`w-3.5 h-3.5 ${p.isPrimary ? 'text-counselling-primary' : 'text-counselling-muted-foreground'}`} />
             </div>
             <div className="min-w-0">
@@ -165,19 +180,22 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
           {!readOnly && (
             <div className="flex items-center gap-1 flex-shrink-0">
               {!p.isPrimary && (
-                <button onClick={() => handleSetPrimary(p)}
+                <button
+                  type="button"
+                  onClick={() => handleSetPrimary(p)}
                   title="Set as Primary"
-                  className="p-1.5 rounded-lg hover:bg-yellow-50 text-gray-300 hover:text-yellow-500 transition-colors">
+                  className="p-1.5 rounded-lg hover:bg-yellow-50 text-gray-300 hover:text-yellow-500 transition-colors"
+                >
                   <Star className="w-3.5 h-3.5" />
                 </button>
               )}
-              <button onClick={() => { setEditing(p); setShowForm(true); }}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                <Check className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => handleDelete(p)}
-                className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500">
-                <Trash2 className="w-3.5 h-3.5" />
+              <button
+                type="button"
+                onClick={() => { setEditing(p); setShowForm(true); }}
+                title="Edit policy"
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+              >
+                <Pencil className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
@@ -185,17 +203,31 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
       ))}
 
       {policies.length === 0 && (
-        <div className="bg-gray-50 rounded-xl border border-dashed border-gray-200 py-6 text-center space-y-2">
-          <Shield className="w-7 h-7 text-gray-300 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">No visit policies saved in CCMS yet.</p>
-          <p className="text-[11px] text-counselling-muted-foreground px-4">
-            {counsellingCopy.firstPolicyOnSaveDraft}
-          </p>
-          {draft?.policyNumber && (
-            <p className="text-[11px] text-amber-700 px-4">
-              Counsellor draft has policy <span className="font-mono font-semibold">{draft.policyNumber}</span> — save the policy draft to create it.
+        <div
+          className={
+            dense
+              ? 'space-y-2 py-3 text-center'
+              : 'bg-gray-50 rounded-xl border border-dashed border-gray-200 py-6 text-center space-y-2'
+          }
+        >
+          {!dense ? <Shield className="w-7 h-7 text-gray-300 mx-auto mb-2" /> : null}
+          <p className="text-xs text-gray-500">{counsellingCopy.noPoliciesOnVisit}</p>
+          {!readOnly && caseId ? (
+            <button
+              type="button"
+              data-testid={coverageTestIds.visitPolicyAdd}
+              onClick={() => { setEditing(null); setShowForm(true); }}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-counselling-primary/30 px-3 py-1.5 text-xs font-semibold text-counselling-primary hover:bg-counselling-accent transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {counsellingCopy.addPolicy}
+            </button>
+          ) : null}
+          {readOnly ? (
+            <p className="text-[10px] text-counselling-muted-foreground">
+              {counsellingCopy.visitPoliciesLockedHint}
             </p>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -222,14 +254,28 @@ export function VisitPolicyList({ caseId, sessionId, readOnly = false, counsello
         </button>
       )}
 
+      {readOnly && policies.length > 0 ? (
+        <p className="text-[10px] text-counselling-muted-foreground px-0.5">
+          {counsellingCopy.visitPoliciesLockedHint}
+        </p>
+      ) : null}
+
       {showForm && caseId && (
         <VisitPolicyForm
           caseId={caseId}
           existing={editing}
           existingPolicies={policies}
           isAdditionalPolicy={!editing && policies.length > 0}
+          defaultInsuranceProviderId={defaultInsuranceProviderId}
           onClose={() => { setShowForm(false); setEditing(null); }}
-          onSaved={() => { setShowForm(false); setEditing(null); void reload(); onChanged?.(); }}
+          onSaved={() => {
+            setShowForm(false);
+            setEditing(null);
+            void (async () => {
+              await reload();
+              onChanged?.();
+            })();
+          }}
         />
       )}
     </div>

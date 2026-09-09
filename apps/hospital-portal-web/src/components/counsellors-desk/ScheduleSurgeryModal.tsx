@@ -1,12 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { format, startOfDay } from 'date-fns';
+import { startOfDay } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import type { ScheduleData } from '@/types/counsellors-desk';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import {
+  formatCounsellingDateDisplay,
+  formatCounsellingDateLabel,
+  toCounsellingDateOnly,
+} from '@/lib/counsellors-desk/session-utils';
 import {
   CounsellingBadge,
   CounsellingButton,
@@ -61,7 +66,9 @@ export function ScheduleSurgeryModal({
 }: ScheduleSurgeryModalProps) {
   const minSurgeryDate = useMemo(() => startOfDay(new Date()), []);
 
-  const [selectedDate, setSelectedDate] = useState(existingSchedule?.selectedDate ?? '');
+  const [selectedDate, setSelectedDate] = useState(
+    () => toCounsellingDateOnly(existingSchedule?.selectedDate),
+  );
   const [form, setForm] = useState({
     operationTheatre: existingSchedule?.operationTheatre ?? '',
     doctor: existingSchedule?.doctor ?? '',
@@ -95,17 +102,20 @@ export function ScheduleSurgeryModal({
       setPreviewRows([]);
       return;
     }
+    const dateOnly = toCounsellingDateOnly(selectedDate);
+    if (!dateOnly) {
+      setPreviewRows([]);
+      return;
+    }
     setLoadingPreview(true);
     counsellorsDeskApi
-      .getFinalizeList({ date: selectedDate })
+      .getFinalizeList({ date: dateOnly })
       .then((records) =>
         setPreviewRows(
           records.map((r) => ({
-            date: new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-IN', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-            }),
+            date:
+              formatCounsellingDateDisplay(dateOnly) ??
+              dateOnly,
             ot: r.theaterName || '—',
             start: r.startTime || '—',
             end: r.endTime || '—',
@@ -123,7 +133,7 @@ export function ScheduleSurgeryModal({
       return;
     }
     if (existingSchedule) {
-      setSelectedDate(existingSchedule.selectedDate);
+      setSelectedDate(toCounsellingDateOnly(existingSchedule.selectedDate));
       setForm({
         operationTheatre: existingSchedule.operationTheatre,
         doctor: existingSchedule.doctor,
@@ -136,7 +146,7 @@ export function ScheduleSurgeryModal({
 
   const validate = () => {
     const next: Record<string, string> = {};
-    if (!selectedDate) next.date = 'Please select a date';
+    if (!toCounsellingDateOnly(selectedDate)) next.date = 'Please select a date';
     if (!form.operationTheatre) next.operationTheatre = 'Operation Theatre is required';
     if (!form.doctor) next.doctor = 'Doctor is required';
     if (!form.surgeryStartTime) next.surgeryStartTime = 'Start time is required';
@@ -146,7 +156,7 @@ export function ScheduleSurgeryModal({
 
   const handleSubmit = () => {
     if (!validate()) return;
-    onSubmit({ selectedDate, ...form });
+    onSubmit({ selectedDate: toCounsellingDateOnly(selectedDate), ...form });
     onClose();
   };
 
@@ -157,9 +167,7 @@ export function ScheduleSurgeryModal({
     [onClose],
   );
 
-  const selectedDateLabel = selectedDate
-    ? format(new Date(`${selectedDate}T00:00:00`), 'EEEE, d MMMM yyyy')
-    : null;
+  const selectedDateLabel = formatCounsellingDateLabel(selectedDate);
 
   return (
     <CounsellingDialog open={isOpen} onOpenChange={handleOpenChange}>

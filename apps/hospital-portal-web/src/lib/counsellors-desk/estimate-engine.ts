@@ -37,6 +37,8 @@ export interface DiscountCapResult {
 export interface ComputeEstimateInput {
   estimateMode: CounsellingEstimateMode;
   packageTemplate: CounsellingPackageTemplate | null;
+  /** When set in package mode, replaces catalog packageAmount for payable base. */
+  packageOverridePrice?: number | null;
   procedure: CounsellorProcedureVariant | null;
   procedureOverridePrice?: number | null;
   procedureFallbackLabel?: string | null;
@@ -169,14 +171,15 @@ export function computeItemizedLines(input: {
   }
 
   if (input.iol) {
+    // Single charge: procedure carries the payable; selected IOL is listed as included.
+    const brand = sanitizeVariantName(input.iol.brandManufacturer);
     lines.push({
       key: `iol-${input.iol.id}`,
       label: sanitizeVariantName(input.iol.modelName),
-      detail: sanitizeVariantName(input.iol.brandManufacturer),
-      amount: input.iol.price,
+      detail: brand ? `${brand} · Included` : 'Included',
+      amount: 0,
       kind: 'iol',
     });
-    subtotal += input.iol.price;
   }
 
   for (const inv of input.investigations) {
@@ -204,7 +207,13 @@ export function computeEstimateResult(input: ComputeEstimateInput): ComputeEstim
   });
 
   const isPackage = input.estimateMode === 'package' && !!input.packageTemplate;
-  const packageAmount = isPackage ? Math.max(0, input.packageTemplate!.packageAmount) : 0;
+  const catalogPackageAmount = isPackage ? Math.max(0, input.packageTemplate!.packageAmount) : 0;
+  const packageAmount =
+    isPackage &&
+    input.packageOverridePrice != null &&
+    input.packageOverridePrice > 0
+      ? Math.max(0, input.packageOverridePrice)
+      : catalogPackageAmount;
   const bundleSavings =
     isPackage && itemizedSubtotal > packageAmount ? itemizedSubtotal - packageAmount : 0;
   const baseBeforeDiscount = isPackage ? packageAmount : itemizedSubtotal;
@@ -359,8 +368,15 @@ export function mergeEstimateState(
   );
   const savedFinal = base.finalPayableAmount ?? 0;
   const liveFinal = computed.finalPayableAmount;
-  const finalPayableAmount =
-    !hasProcedureLine && savedFinal > liveFinal ? savedFinal : liveFinal;
+  const finalPayableAmount = hasProcedureLine
+    ? liveFinal
+    : liveFinal > 0
+      ? savedFinal > liveFinal
+        ? savedFinal
+        : liveFinal
+      : savedFinal > 0
+        ? savedFinal
+        : liveFinal;
 
   return {
     ...base,

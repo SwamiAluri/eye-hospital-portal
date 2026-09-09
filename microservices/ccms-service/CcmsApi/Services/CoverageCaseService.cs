@@ -150,8 +150,39 @@ public class CoverageCaseService
             coverageCase.DraftSavedAt = DateTime.UtcNow;
         }
 
+        // Shrink TOCTOU window: another request may have created a case while we prepared this one.
+        if (sessionId.HasValue && sessionId.Value != Guid.Empty)
+        {
+            var raced = await GetBySessionIdAsync(sessionId.Value, ct);
+            if (raced is not null)
+            {
+                _log.LogInformation(
+                    "Coverage case {Num} won the create race for session {Session} — returning existing",
+                    raced.CaseNumber, sessionId.Value);
+                return raced;
+            }
+        }
+
         _db.CoverageCases.Add(coverageCase);
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            if (sessionId.HasValue && sessionId.Value != Guid.Empty)
+            {
+                var existingAfterRace = await GetBySessionIdAsync(sessionId.Value, ct);
+                if (existingAfterRace is not null)
+                {
+                    _log.LogWarning(ex,
+                        "Create raced for session {Session} — returning existing {Num}",
+                        sessionId.Value, existingAfterRace.CaseNumber);
+                    return existingAfterRace;
+                }
+            }
+            throw;
+        }
 
         _log.LogInformation("Coverage case {Num} created for patient {Patient}",
             caseNumber, req.PatientId);
@@ -247,9 +278,42 @@ public class CoverageCaseService
         return null;
     }
 
+    /// <summary>
+    /// Resolves the coverage case for a counselling session.
+    /// When duplicates exist (historical race), prefer the case that has active documents,
+    /// otherwise the most recently created non-deleted case.
+    /// </summary>
     public async Task<CcmsCoverageCase?> GetBySessionIdAsync(Guid sessionId, CancellationToken ct = default)
-        => await _db.CoverageCases.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.SessionId == sessionId && c.DeletedAt == null, ct);
+    {
+        var cases = await _db.CoverageCases.AsNoTracking()
+            .Where(c => c.SessionId == sessionId && c.DeletedAt == null)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync(ct);
+
+        if (cases.Count == 0) return null;
+        if (cases.Count == 1) return cases[0];
+
+        var caseIds = cases.Select(c => c.Id).ToList();
+        var caseIdsWithDocs = await _db.Documents.AsNoTracking()
+            .Where(d => caseIds.Contains(d.CoverageCase_Id) && d.DeletedAt == null)
+            .Select(d => d.CoverageCase_Id)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var withDocs = cases.FirstOrDefault(c => caseIdsWithDocs.Contains(c.Id));
+        if (withDocs is not null)
+        {
+            _log.LogWarning(
+                "Session {Session} has {Count} coverage cases; preferring {Num} (has documents)",
+                sessionId, cases.Count, withDocs.CaseNumber);
+            return withDocs;
+        }
+
+        _log.LogWarning(
+            "Session {Session} has {Count} coverage cases; preferring latest {Num}",
+            sessionId, cases.Count, cases[0].CaseNumber);
+        return cases[0];
+    }
 
     public async Task<List<CcmsCoverageCase>> GetBySessionIdsAsync(
         List<Guid> sessionIds, CancellationToken ct = default)

@@ -700,6 +700,11 @@ namespace AuthService.Services
             PackageRate = e.PackageRate,
             // Reporting time — surfaced in list view
             ReportingTime = e.ReportingTime,
+            AnesthesiaType  = e.AnesthesiaType,
+            AnesthetistName = e.AnesthetistName,
+            IolPower        = e.IolPower,
+            Remarks         = e.Remarks,
+            CancelReason    = e.CancelReason,
             // Derive checklist health from slot assignment completeness
             ChecklistSummary =
                 (string.IsNullOrEmpty(e.DoctorName) && string.IsNullOrEmpty(e.TheatreName))

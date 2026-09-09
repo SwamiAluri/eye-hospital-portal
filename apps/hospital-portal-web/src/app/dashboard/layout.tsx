@@ -29,12 +29,21 @@ export default function DashboardLayout({
   const isImmersive = immersiveRoutes.some((r) => pathname === r || pathname.startsWith(`${r}/`));
 
   // No-pad routes: keep TopNav but render children directly (no padding wrapper, no outer scroll)
-  const noPadRoutes = ['/dashboard/counselor/analytics', '/dashboard/optometrist/exam'];
+  const noPadRoutes = [
+    '/dashboard/counselor/analytics',
+    '/dashboard/optometrist/exam',
+    '/dashboard/counsellors-desk/waiting-list',
+    '/dashboard/counsellors-desk/finalize-surgery',
+  ];
   const isCounsellingSessionPage =
     /^\/dashboard\/counsellors-desk\/[^/]+$/.test(pathname) &&
     pathname !== '/dashboard/counsellors-desk/waiting-list' &&
     pathname !== '/dashboard/counsellors-desk/finalize-surgery' &&
     pathname !== '/dashboard/counsellors-desk/surgery-followup';
+  /** Counsellor ops worklists share the grey counselling canvas (no white padded shell). */
+  const isCounsellingOpsCanvas =
+    pathname === '/dashboard/counsellors-desk/waiting-list' ||
+    pathname === '/dashboard/counsellors-desk/finalize-surgery';
   const isNoPad =
     noPadRoutes.some((r) => pathname.startsWith(r)) || isCounsellingSessionPage;
 
@@ -112,8 +121,12 @@ export default function DashboardLayout({
           <main
             id="main-content"
             tabIndex={-1}
-            className={`min-h-0 flex-1 rounded-2xl bg-white shadow-sm outline-none ${
-              isNoPad ? 'flex flex-col overflow-hidden' : 'overflow-auto'
+            className={`min-h-0 flex-1 rounded-2xl shadow-sm outline-none ${
+              isCounsellingSessionPage || isCounsellingOpsCanvas
+                ? 'flex flex-col overflow-hidden bg-gray-100'
+                : isNoPad
+                  ? 'flex flex-col overflow-hidden bg-white'
+                  : 'overflow-auto bg-white'
             }`}
             role="main"
             aria-label="Main content"

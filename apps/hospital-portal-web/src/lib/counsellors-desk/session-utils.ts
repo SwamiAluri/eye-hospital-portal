@@ -1,3 +1,4 @@
+import { format, isValid, parseISO } from 'date-fns';
 import type { CombinedPaymentType, WaitingListStatus } from '@/types/counsellors-desk';
 import type { MasterOption } from '@/hooks/use-master-values';
 import type { PatientTypeConfig } from '@/lib/api/patient-type-configs.api';
@@ -72,4 +73,51 @@ export function formatTime(t: string): string {
   const [h, m] = t.split(':');
   const hour = parseInt(h, 10);
   return `${hour > 12 ? hour - 12 : hour}:${m} ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+/**
+ * Normalize counselling surgery / follow-up dates to `yyyy-MM-dd`.
+ * Accepts date-only, ISO datetimes, and space-separated datetimes from .NET.
+ * Returns '' when the value cannot be used safely with local date formatting.
+ */
+export function toCounsellingDateOnly(value: string | null | undefined): string {
+  if (!value?.trim()) return '';
+  const raw = value.trim();
+  const ymdCandidate = raw.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymdCandidate)) {
+    const parsed = parseISO(ymdCandidate);
+    return isValid(parsed) ? ymdCandidate : '';
+  }
+  const iso = parseISO(raw);
+  if (isValid(iso)) return format(iso, 'yyyy-MM-dd');
+  const fallback = new Date(raw);
+  return isValid(fallback) ? format(fallback, 'yyyy-MM-dd') : '';
+}
+
+/** Safe date-fns format for counselling dates — never throws on invalid input. */
+export function formatCounsellingDateLabel(
+  value: string | null | undefined,
+  pattern = 'EEEE, d MMMM yyyy',
+): string | null {
+  const ymd = toCounsellingDateOnly(value);
+  if (!ymd) return null;
+  const parsed = parseISO(ymd);
+  return isValid(parsed) ? format(parsed, pattern) : null;
+}
+
+/** Locale display for schedule cards; returns null instead of "Invalid Date". */
+export function formatCounsellingDateDisplay(
+  value: string | null | undefined,
+  locales = 'en-IN',
+  options: Intl.DateTimeFormatOptions = {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  },
+): string | null {
+  const ymd = toCounsellingDateOnly(value);
+  if (!ymd) return null;
+  const parsed = new Date(`${ymd}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString(locales, options);
 }

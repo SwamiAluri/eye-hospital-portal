@@ -1,38 +1,33 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Receipt } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { CounsellingQuoteBottomSheet } from '@/components/counsellors-desk/session/CounsellingQuoteBottomSheet';
 import { CounsellingQuoteSummary } from '@/components/counsellors-desk/session/CounsellingQuoteSummary';
 import type { UseCounsellingEstimateResult } from '@/hooks/use-counselling-estimate';
 import type { CounsellingDiscountType } from '@/types/counselling-estimate';
-import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { findCounsellorVariant, type CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
 import type { PriceOverrideRecord } from '@/lib/api/counselling-azure.api';
 import type { CounsellingPhase } from '@/lib/counsellors-desk/counselling-progress';
+import type { CounsellingEyeOption } from '@/lib/counsellors-desk/counselling-eye';
 import { CounsellingPriceOverrideDialog } from './CounsellingPriceOverrideDialog';
 import type { CounsellingPriceOverrideDialogProps } from './CounsellingPriceOverrideDialog';
-import {
-  CounsellingCard,
-  CounsellingCardContent,
-  CounsellingCardHeader,
-  CounsellingCardTitle,
-} from '@/components/counsellors-desk/session/primitives';
-
+import { cn } from '@/lib/utils';
 interface CounsellingQuotePanelProps {
   estimate: UseCounsellingEstimateResult;
   estimateDiscountType: CounsellingDiscountType | null;
   estimateDiscountValue: number;
   estimateDiscountReason: string;
   selectedVariantId: string | null;
+  selectedEye: CounsellingEyeOption;
   procedureVariants: CounsellorProcedureVariant[];
   savedOverrides: PriceOverrideRecord[];
   isReadOnly: boolean;
   activePhase?: CounsellingPhase;
-  onGoToBuildQuote?: () => void;
   overrideDialogProps: Omit<
     CounsellingPriceOverrideDialogProps,
-    'open' | 'onOpenChange' | 'selectedVariant'
+    'open' | 'onOpenChange' | 'selectedVariant' | 'packageTarget'
   >;
 }
 
@@ -42,20 +37,30 @@ export function CounsellingQuotePanel({
   estimateDiscountValue,
   estimateDiscountReason,
   selectedVariantId,
+  selectedEye,
   procedureVariants,
   savedOverrides,
   isReadOnly,
   activePhase,
-  onGoToBuildQuote,
   overrideDialogProps,
 }: CounsellingQuotePanelProps) {
   const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideKind, setOverrideKind] = useState<'procedure' | 'package'>('procedure');
   const [mobileExpanded, setMobileExpanded] = useState(false);
 
   const selectedVariant = useMemo(
     () => findCounsellorVariant(procedureVariants, selectedVariantId) ?? null,
     [procedureVariants, selectedVariantId],
   );
+
+  const packageTarget = useMemo(() => {
+    if (!estimate.activeTemplate) return null;
+    return {
+      id: estimate.activeTemplate.id,
+      name: estimate.activeTemplate.name,
+      basePrice: estimate.activeTemplate.packageAmount,
+    };
+  }, [estimate.activeTemplate]);
 
   const summaryProps = useMemo(
     () => ({
@@ -64,11 +69,18 @@ export function CounsellingQuotePanel({
       estimateDiscountValue,
       estimateDiscountReason,
       selectedVariant,
+      selectedEye,
       savedOverrides,
       isReadOnly,
-      onOpenOverride: () => setOverrideOpen(true),
+      onOpenOverride: () => {
+        setOverrideKind('procedure');
+        setOverrideOpen(true);
+      },
+      onOpenPackageOverride: () => {
+        setOverrideKind('package');
+        setOverrideOpen(true);
+      },
       activePhase,
-      onGoToBuildQuote,
     }),
     [
       estimate,
@@ -76,32 +88,32 @@ export function CounsellingQuotePanel({
       estimateDiscountValue,
       estimateDiscountReason,
       selectedVariant,
+      selectedEye,
       savedOverrides,
       isReadOnly,
       activePhase,
-      onGoToBuildQuote,
     ],
   );
 
   return (
     <>
-      <aside className="hidden min-h-0 min-w-0 lg:flex lg:min-h-0 lg:min-w-0 lg:flex-[1_1_45%] lg:flex-col lg:overflow-hidden">
-        <CounsellingCard
-          data-testid={counsellingTestIds.quotePanel}
-          className={`${counsellingSessionTokens.card} flex min-h-0 w-full flex-1 flex-col overflow-hidden`}
-        >
-          <CounsellingCardHeader className={`${counsellingSessionTokens.cardHeader} shrink-0`}>
-            <CounsellingCardTitle className="flex items-center gap-2 text-sm font-semibold text-counselling-foreground">
-              <Receipt size={16} className="text-counselling-primary" />
-              Quote
-            </CounsellingCardTitle>
-          </CounsellingCardHeader>
-          <CounsellingCardContent className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 scrollbar-hide">
-              <CounsellingQuoteSummary {...summaryProps} />
-            </div>
-          </CounsellingCardContent>
-        </CounsellingCard>
+      <aside
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+          counsellingSessionTokens.quoteSummaryRail,
+        )}
+      >
+        <div className={`${counsellingSessionTokens.quoteSummaryInner} flex min-h-0 flex-1 flex-col`}>
+          <header className="mb-3 shrink-0">
+            <h2 className={counsellingSessionTokens.quoteSummaryTitle}>
+              <FileText className="h-4 w-4 text-counselling-primary" aria-hidden />
+              Estimate
+            </h2>
+          </header>
+          <div className={counsellingSessionTokens.quoteSummaryPanel}>
+            <CounsellingQuoteSummary {...summaryProps} />
+          </div>
+        </div>
       </aside>
 
       <CounsellingQuoteBottomSheet
@@ -109,13 +121,19 @@ export function CounsellingQuotePanel({
         expanded={mobileExpanded}
         onExpandedChange={setMobileExpanded}
       >
-        {mobileExpanded ? <CounsellingQuoteSummary {...summaryProps} /> : null}
+        {mobileExpanded ? (
+          <>
+            <h2 className={counsellingSessionTokens.quoteSummaryTitle}>Quote summary</h2>
+            <CounsellingQuoteSummary {...summaryProps} />
+          </>
+        ) : null}
       </CounsellingQuoteBottomSheet>
 
       <CounsellingPriceOverrideDialog
         open={overrideOpen}
         onOpenChange={setOverrideOpen}
-        selectedVariant={selectedVariant}
+        selectedVariant={overrideKind === 'procedure' ? selectedVariant : null}
+        packageTarget={overrideKind === 'package' ? packageTarget : null}
         {...overrideDialogProps}
       />
     </>

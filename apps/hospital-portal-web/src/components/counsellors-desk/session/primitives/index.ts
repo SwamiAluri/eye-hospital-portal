@@ -22,6 +22,10 @@ export {
 } from './CounsellingSelectableRow';
 export { CounsellingInfoAlert, type CounsellingInfoAlertProps } from './CounsellingInfoAlert';
 export {
+  CounsellingStatusMessage,
+  type CounsellingStatusMessageProps,
+} from './CounsellingStatusMessage';
+export {
   CounsellingPricingCard,
   type CounsellingPricingCardProps,
 } from './CounsellingPricingCard';
@@ -74,6 +78,10 @@ export {
   type CounsellingDatePickerProps,
   type CounsellingDatePickerVariant,
 } from './CounsellingDatePicker';
+export {
+  CounsellingTimePicker,
+  type CounsellingTimePickerProps,
+} from './CounsellingTimePicker';
 export { SessionDatePicker, type SessionDatePickerProps, type SessionDatePickerVariant } from './SessionDatePicker';
 export {
   CounsellingGlassRadioGroup,

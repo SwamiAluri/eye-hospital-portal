@@ -49,6 +49,21 @@ export interface CounsellingEstimatePdfData {
   discountLabel?: string;
   finalPayable: number;
   hasDoctorConflict: boolean;
+  /** Quote print vs Finish patient counselling summary print. */
+  documentKind?: 'estimate' | 'counselling-summary';
+  procedureName?: string;
+  eyeLabel?: string;
+  surgeonName?: string;
+  scheduleSummary?: string;
+  operationTheatre?: string;
+  decisionLabel?: string;
+  outcomeLabel?: string;
+  fundingSource?: string;
+  insurerName?: string;
+  coverageStatusLabel?: string;
+  documentsSummary?: string;
+  notesRecorded?: boolean;
+  nextSteps?: string[];
 }
 
 export interface BilingualTerm {
@@ -169,6 +184,20 @@ export function buildCounsellingEstimatePdfData(params: {
   counsellorName?: string;
   hospitalName?: string;
   issueDate?: Date;
+  documentKind?: 'estimate' | 'counselling-summary';
+  procedureName?: string;
+  eyeLabel?: string;
+  surgeonName?: string;
+  scheduleSummary?: string;
+  operationTheatre?: string;
+  decisionLabel?: string;
+  outcomeLabel?: string;
+  fundingSource?: string;
+  insurerName?: string;
+  coverageStatusLabel?: string;
+  documentsSummary?: string;
+  notesRecorded?: boolean;
+  nextSteps?: string[];
 }): CounsellingEstimatePdfData {
   const issueDate = params.issueDate ?? new Date();
   const validityDate = addCalendarDays(issueDate, 3);
@@ -238,5 +267,19 @@ export function buildCounsellingEstimatePdfData(params: {
     discountLabel,
     finalPayable: params.finalPayable,
     hasDoctorConflict: hasDoctorRecommendationConflict(recommendedIds, params.selectedVariantId),
+    documentKind: params.documentKind ?? 'estimate',
+    procedureName: params.procedureName,
+    eyeLabel: params.eyeLabel,
+    surgeonName: params.surgeonName,
+    scheduleSummary: params.scheduleSummary,
+    operationTheatre: params.operationTheatre,
+    decisionLabel: params.decisionLabel,
+    outcomeLabel: params.outcomeLabel,
+    fundingSource: params.fundingSource,
+    insurerName: params.insurerName,
+    coverageStatusLabel: params.coverageStatusLabel,
+    documentsSummary: params.documentsSummary,
+    notesRecorded: params.notesRecorded,
+    nextSteps: params.nextSteps,
   };
 }

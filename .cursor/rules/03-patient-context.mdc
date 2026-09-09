@@ -1,6 +1,6 @@
 ---
 description: Canonical patient identity, encounter context, MPI, and patient-header reuse across all staff and portal workflows.
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Patient and encounter context

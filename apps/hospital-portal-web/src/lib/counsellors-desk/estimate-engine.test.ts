@@ -9,6 +9,7 @@ import {
   computeDiscountAmount,
   effectiveMaxDiscountPercent,
   groupEstimateLinesForDisplay,
+  mergeEstimateState,
   shouldClearPackageOnChange,
 } from './estimate-engine';
 
@@ -78,8 +79,11 @@ describe('estimate-engine', () => {
       discountValue: 0,
       settings: { maxDiscountPercent: 50 },
     });
-    expect(result.itemizedSubtotal).toBe(40500);
-    expect(result.finalPayableAmount).toBe(40500);
+    expect(result.itemizedSubtotal).toBe(30500);
+    expect(result.finalPayableAmount).toBe(30500);
+    const iolLine = result.lines.find((l) => l.kind === 'iol');
+    expect(iolLine?.amount).toBe(0);
+    expect(iolLine?.detail).toContain('Included');
   });
 
   it('uses selectedEye on procedure line detail', () => {
@@ -143,6 +147,24 @@ describe('estimate-engine', () => {
     expect(result.finalPayableAmount).toBe(36000);
   });
 
+  it('package mode: uses packageOverridePrice instead of catalog packageAmount', () => {
+    const result = computeEstimateResult({
+      estimateMode: 'package',
+      packageTemplate: template,
+      packageOverridePrice: 45000,
+      procedure,
+      iol,
+      investigations: [],
+      discountType: null,
+      discountValue: 0,
+      settings: { maxDiscountPercent: 50 },
+    });
+    expect(result.baseBeforeDiscount).toBe(45000);
+    expect(result.finalPayableAmount).toBe(45000);
+    // Bundle savings vs catalog itemized still uses the effective package amount
+    expect(result.bundleSavings).toBe(Math.max(0, result.itemizedSubtotal - 45000));
+  });
+
   it('effectiveMaxDiscountPercent: template cap wins in package mode', () => {
     expect(effectiveMaxDiscountPercent({ maxDiscountPercent: 50 }, template, 'package')).toBe(30);
   });
@@ -174,6 +196,8 @@ describe('estimate-engine', () => {
     expect(shouldClearPackageOnChange('procedure')).toBe(true);
     expect(shouldClearPackageOnChange('iol')).toBe(true);
     expect(shouldClearPackageOnChange('investigation')).toBe(false);
+    expect(shouldClearPackageOnChange('eye')).toBe(false);
+    expect(shouldClearPackageOnChange('package-select')).toBe(false);
   });
 
   it('clearPackageEstimatePatch resets package mode', () => {
@@ -223,5 +247,52 @@ describe('estimate-engine', () => {
     expect(restored.estimate.discountType).toBe('percent');
     expect(restored.selectedEye).toBe('LE');
     expect(restored.investigations.size).toBe(1);
+  });
+});
+
+describe('mergeEstimateState', () => {
+  it('prefers live quote when procedure line is present', () => {
+    const merged = mergeEstimateState(
+      { finalPayableAmount: 180_200 } as never,
+      {
+        finalPayableAmount: 155_200,
+        lines: [{ key: 'procedure', label: 'PPV', amount: 150_000, kind: 'procedure' }],
+        itemizedSubtotal: 155_200,
+        bundleSavings: 0,
+        discount: { discountAmount: 0, discountExceeded: false, effectiveMaxPercent: 50, maxDiscountAmount: 0 },
+        baseBeforeDiscount: 155_200,
+      },
+    );
+    expect(merged.finalPayableAmount).toBe(155_200);
+  });
+
+  it('restores saved total while live quote is still zero', () => {
+    const merged = mergeEstimateState(
+      { finalPayableAmount: 138_100 } as never,
+      {
+        finalPayableAmount: 0,
+        lines: [],
+        itemizedSubtotal: 0,
+        bundleSavings: 0,
+        discount: { discountAmount: 0, discountExceeded: false, effectiveMaxPercent: 50, maxDiscountAmount: 0 },
+        baseBeforeDiscount: 0,
+      },
+    );
+    expect(merged.finalPayableAmount).toBe(138_100);
+  });
+
+  it('restores saved total during partial hydration before procedure line returns', () => {
+    const merged = mergeEstimateState(
+      { finalPayableAmount: 138_100 } as never,
+      {
+        finalPayableAmount: 2700,
+        lines: [{ key: 'inv-1', label: 'OCT', amount: 1500, kind: 'investigation' }],
+        itemizedSubtotal: 2700,
+        bundleSavings: 0,
+        discount: { discountAmount: 0, discountExceeded: false, effectiveMaxPercent: 50, maxDiscountAmount: 0 },
+        baseBeforeDiscount: 2700,
+      },
+    );
+    expect(merged.finalPayableAmount).toBe(138_100);
   });
 });

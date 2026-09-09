@@ -1,5 +1,6 @@
 import type { CoveragePanelForm } from '@/lib/counsellors-desk/coverage-form-mappers';
 import type { CoverageEstimateLineItem } from '@/lib/counsellors-desk/coverage-estimate-sync';
+import { toCounsellingDateOnly } from '@/lib/counsellors-desk/session-utils';
 
 /** Shared counselling fields kept in sync with the Coverage workspace (in-memory only). */
 export interface CounsellingWorkspaceSyncPatch {
@@ -39,21 +40,11 @@ export function extractCounsellingSyncFromCoverageForm(
   }
 
   if (form.surgeryDate) {
-    patch.surgeryDate = form.surgeryDate.slice(0, 10);
+    const normalized = toCounsellingDateOnly(form.surgeryDate);
+    if (normalized) patch.surgeryDate = normalized;
   }
 
-  if (form.estimatedAmount != null && form.estimatedAmount > 0) {
-    patch.estimatedAmount = form.estimatedAmount;
-  }
-  if (form.estimatedSurgery != null && form.estimatedSurgery > 0) {
-    patch.estimatedSurgery = form.estimatedSurgery;
-  }
-  if (form.estimatedLab != null && form.estimatedLab > 0) {
-    patch.estimatedLab = form.estimatedLab;
-  }
-  if (form.estimatedOther != null && form.estimatedOther > 0) {
-    patch.estimatedOther = form.estimatedOther;
-  }
+  // Financial fields are counselling → coverage only; never sync estimate totals back.
 
   if (form.paymentType?.trim()) {
     patch.paymentType = form.paymentType.trim();
@@ -65,10 +56,6 @@ export function extractCounsellingSyncFromCoverageForm(
 
   if (form.surgeryProcedureLabel?.trim()) {
     patch.surgeryProcedureLabel = form.surgeryProcedureLabel.trim();
-  }
-
-  if (form.estimateLineItems?.length) {
-    patch.estimateLineItems = form.estimateLineItems;
   }
 
   return patch;

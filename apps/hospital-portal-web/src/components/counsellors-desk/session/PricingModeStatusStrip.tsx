@@ -4,12 +4,10 @@ import { formatInr } from '@/lib/counsellors-desk/package-preview';
 import { sanitizeVariantName } from '@/lib/utils/sanitize-names';
 import { findCounsellorVariant, type CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
 import type { CounsellingPackageTemplate } from '@/types/counselling-estimate';
-import {
-  counsellingEyeLabel,
-  type CounsellingEyeOption,
-} from '@/lib/counsellors-desk/counselling-eye';
-import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
+import type { CounsellingEyeOption } from '@/lib/counsellors-desk/counselling-eye';
+import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { CounsellingButton } from '@/components/counsellors-desk/session/primitives';
+import { CounsellingEyeBadge } from '@/components/counsellors-desk/session/CounsellingEyeBadge';
 
 export interface PricingModeStatusStripProps {
   isPackageMode: boolean;
@@ -19,6 +17,7 @@ export interface PricingModeStatusStripProps {
   procedureVariants: CounsellorProcedureVariant[];
   onSwitchToCustom?: () => void;
   onSwitchToPackage?: () => void;
+  onClear?: () => void;
 }
 
 /** Compact status bar shown after a procedure or package is selected. */
@@ -30,6 +29,7 @@ export function PricingModeStatusStrip({
   procedureVariants,
   onSwitchToCustom,
   onSwitchToPackage,
+  onClear,
 }: PricingModeStatusStripProps) {
   const variant = findCounsellorVariant(procedureVariants, selectedVariantId);
 
@@ -37,22 +37,33 @@ export function PricingModeStatusStrip({
     return (
       <div
         className={`flex flex-wrap items-center justify-between gap-2 ${counsellingSessionTokens.accentPanel}`}
+        data-testid={counsellingTestIds.quoteSelectedPackage}
       >
-        <p className={`text-sm ${counsellingSessionTokens.accentText}`}>
-          <span className="font-semibold">Package:</span> {activeTemplate.name}
-          <span className="ml-2 tabular-nums font-bold">{formatInr(activeTemplate.packageAmount)}</span>
+        <p className={`flex flex-wrap items-center gap-2 text-sm ${counsellingSessionTokens.accentText}`}>
+          <span className="font-semibold">Package:</span>
+          <span>{activeTemplate.name}</span>
+          <CounsellingEyeBadge eye={selectedEye} data-testid={counsellingTestIds.quoteSelectedEyeBadge} />
+          {/* Catalog amount only — overridden price is shown on Estimate */}
+          <span className="tabular-nums font-bold">{formatInr(activeTemplate.packageAmount)}</span>
         </p>
-        {onSwitchToCustom && (
-          <CounsellingButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={counsellingSessionTokens.primaryText}
-            onClick={onSwitchToCustom}
-          >
-            View procedure
-          </CounsellingButton>
-        )}
+        <div className="flex items-center gap-1">
+          {onSwitchToCustom && (
+            <CounsellingButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={counsellingSessionTokens.primaryText}
+              onClick={onSwitchToCustom}
+            >
+              View procedure
+            </CounsellingButton>
+          )}
+          {onClear ? (
+            <CounsellingButton type="button" variant="ghost" size="sm" onClick={onClear}>
+              Clear
+            </CounsellingButton>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -60,10 +71,11 @@ export function PricingModeStatusStrip({
   if (variant) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-counselling-border bg-counselling-muted px-3 py-2">
-        <p className="text-sm text-counselling-foreground">
-          <span className="font-semibold">Procedure:</span> {sanitizeVariantName(variant.name)}
-          <span className="ml-2 text-counselling-muted-foreground">{counsellingEyeLabel(selectedEye)}</span>
-          <span className={`ml-2 tabular-nums font-semibold ${counsellingSessionTokens.primaryText}`}>
+        <p className="flex flex-wrap items-center gap-2 text-sm text-counselling-foreground">
+          <span className="font-semibold">Procedure:</span>
+          <span>{sanitizeVariantName(variant.name)}</span>
+          <CounsellingEyeBadge eye={selectedEye} data-testid={counsellingTestIds.quoteSelectedEyeBadge} />
+          <span className={`tabular-nums font-semibold ${counsellingSessionTokens.primaryText}`}>
             {formatInr(variant.price)}
           </span>
         </p>

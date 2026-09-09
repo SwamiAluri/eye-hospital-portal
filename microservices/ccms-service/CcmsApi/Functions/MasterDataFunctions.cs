@@ -327,6 +327,11 @@ public class MasterDataFunctions
         var body = await JsonSerializer.DeserializeAsync<CcmsDocumentRequirement>(req.Body);
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
+        if (string.IsNullOrWhiteSpace(body.DocumentType))
+            return await req.BadRequestAsync("documentType is required.");
+        if (string.IsNullOrWhiteSpace(body.DocumentName))
+            body.DocumentName = body.DocumentType.Trim();
+
         body.TenantId        = claims!.TenantId;
         body.CreatedByUserId = claims.UserId;
         body.UpdatedByUserId = claims.UserId;

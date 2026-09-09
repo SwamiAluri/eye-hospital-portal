@@ -23,6 +23,7 @@ import {
   printCounsellingEstimateDocument,
   shareCounsellingEstimatePdf,
 } from '@/lib/counsellors-desk/counselling-estimate-pdf';
+import { cn } from '@/lib/utils';
 
 interface CounsellingEstimatePrintDialogProps {
   open: boolean;
@@ -37,9 +38,16 @@ export function CounsellingEstimatePrintDialog({
 }: CounsellingEstimatePrintDialogProps) {
   const [busy, setBusy] = useState<'print' | 'download' | 'share' | null>(null);
   const shareAvailable = canShareCounsellingEstimatePdf();
+  const isSummary = data?.documentKind === 'counselling-summary';
+  const dialogTitle = isSummary
+    ? 'Print counselling summary'
+    : 'Print estimate';
+  const shareTitle = isSummary
+    ? 'Counselling Summary & Cost Estimate'
+    : 'Counselling estimate';
 
   const filename = data
-    ? `counselling-estimate-${data.uhid}-${data.issueDate.toISOString().slice(0, 10)}.pdf`
+    ? `${isSummary ? 'counselling-summary' : 'counselling-estimate'}-${data.uhid}-${data.issueDate.toISOString().slice(0, 10)}.pdf`
     : 'counselling-estimate.pdf';
 
   const handlePrint = async () => {
@@ -57,7 +65,7 @@ export function CounsellingEstimatePrintDialog({
     setBusy('download');
     try {
       await downloadCounsellingEstimatePdf(COUNSELLING_ESTIMATE_PRINT_ROOT_ID, filename);
-      toast.success('Estimate PDF downloaded');
+      toast.success(isSummary ? 'Counselling summary PDF downloaded' : 'Estimate PDF downloaded');
     } catch {
       toast.error('Failed to generate PDF');
     } finally {
@@ -71,10 +79,10 @@ export function CounsellingEstimatePrintDialog({
       const shared = await shareCounsellingEstimatePdf(
         COUNSELLING_ESTIMATE_PRINT_ROOT_ID,
         filename,
-        'Counselling estimate',
+        shareTitle,
       );
       if (shared) {
-        toast.success('Estimate shared');
+        toast.success(isSummary ? 'Summary shared' : 'Estimate shared');
       } else {
         toast.error('Sharing is not supported on this device');
       }
@@ -87,22 +95,22 @@ export function CounsellingEstimatePrintDialog({
 
   return (
     <CounsellingDialog open={open} onOpenChange={onOpenChange}>
-      <CounsellingDialogContent className="flex max-h-[90vh] max-w-3xl flex-col gap-0 p-0">
-        <CounsellingDialogHeader className="border-b border-counselling-border px-6 py-4">
-          <CounsellingDialogTitle>Print estimate</CounsellingDialogTitle>
+      <CounsellingDialogContent
+        className={cn(
+          'counselling-print-dialog grid max-h-[90vh] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0',
+        )}
+      >
+        <CounsellingDialogHeader className="counselling-print-dialog-chrome shrink-0 border-b border-counselling-border px-6 py-4">
+          <CounsellingDialogTitle>{dialogTitle}</CounsellingDialogTitle>
         </CounsellingDialogHeader>
-        <div className="flex-1 overflow-y-auto bg-counselling-muted px-4 py-4">
+        <div className="counselling-print-dialog-preview min-h-0 overflow-y-auto overscroll-contain bg-counselling-muted px-4 py-4">
           {data ? (
             <CounsellingEstimatePdfDocument data={data} />
           ) : (
-            <CounsellingEmptyState
-              compact
-              title="No estimate data"
-              description="Select a procedure or package to generate a printable estimate."
-            />
+            <CounsellingEmptyState compact title="No estimate data" />
           )}
         </div>
-        <CounsellingDialogFooter className="border-t border-counselling-border px-6 py-4">
+        <CounsellingDialogFooter className="counselling-print-dialog-chrome shrink-0 border-t border-counselling-border px-6 py-4">
           <CounsellingButton type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </CounsellingButton>

@@ -193,6 +193,42 @@ export interface DocumentRequirement {
   governmentSchemeId?: string | null;
 }
 
+function readString(row: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (value != null && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
+function readBool(row: Record<string, unknown>, ...keys: string[]): boolean {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'boolean') return value;
+    if (value === 'true' || value === 1) return true;
+    if (value === 'false' || value === 0) return false;
+  }
+  return false;
+}
+
+export function mapDocumentRequirementRow(row: Record<string, unknown>): DocumentRequirement {
+  const documentType = readString(row, 'documentType', 'DocumentType');
+  const documentName = readString(row, 'documentName', 'DocumentName') || documentType;
+  return {
+    id: readString(row, 'id', 'Id'),
+    documentType,
+    documentName,
+    isRequired: readBool(row, 'isRequired', 'IsRequired', 'required', 'Required'),
+    appliesAt: readString(row, 'appliesAt', 'AppliesAt') || undefined,
+    insuranceProviderId:
+      (readString(row, 'insuranceProviderId', 'InsuranceProviderId') || null) as string | null,
+    tpaProviderId:
+      (readString(row, 'tpaProviderId', 'TpaProviderId') || null) as string | null,
+    governmentSchemeId:
+      (readString(row, 'governmentSchemeId', 'GovernmentSchemeId') || null) as string | null,
+  };
+}
+
 export async function listDocumentRequirements(opts?: {
   stage?: string;
   payerType?: string;
@@ -213,14 +249,7 @@ export async function listDocumentRequirements(opts?: {
     },
   });
   const items: Record<string, unknown>[] = Array.isArray(data) ? data : [];
-  return items.map(r => ({
-    id: String(r.id ?? ''),
-    documentType: String(r.documentType ?? ''),
-    documentName: String(r.documentName ?? r.documentType ?? ''),
-    isRequired: Boolean(r.isRequired),
-    appliesAt: r.appliesAt as string | undefined,
-    insuranceProviderId: (r.insuranceProviderId as string | null | undefined) ?? null,
-    tpaProviderId: (r.tpaProviderId as string | null | undefined) ?? null,
-    governmentSchemeId: (r.governmentSchemeId as string | null | undefined) ?? null,
-  }));
+  return items
+    .map(mapDocumentRequirementRow)
+    .filter((r) => r.documentType.length > 0);
 }

@@ -1,31 +1,31 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronRight, Loader2, Phone, Stethoscope } from 'lucide-react';
+import { ChevronRight, Loader2, Stethoscope } from 'lucide-react';
 import type { Patient } from '@/lib/api/patients.api';
 import type { CounsellingSession, WaitingListStatus } from '@/types/counsellors-desk';
 import { getStatusBadge } from '@/lib/counsellors-desk/session-utils';
 import { useCounsellorMasterOptions } from '@/hooks/use-counsellor-master-options';
 import { sessionTypeLabelForCode } from '@/lib/counsellors-desk/counsellor-master-maps';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
-import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import {
+  counsellingSessionTokens,
+  counsellingTestIds,
+} from '@/lib/counsellors-desk/counselling-session-tokens';
 import { PatientDemographicsSheet } from '@/components/examination/PatientDemographicsSheet';
 import { PatientAvatar } from '@/components/patients/PatientAvatar';
 import {
-  formatPatientDob,
+  calcPatientAge,
+  formatPatientDisplayName,
+  formatPatientSex,
   resolvePatientMrn,
-  resolvePatientPhone,
 } from '@/lib/patients/patient-display-utils';
 import { CounsellingButton } from '@/components/counsellors-desk/session/primitives';
-import { CounsellingDisabledActionTooltip } from '@/components/counsellors-desk/session/CounsellingDisabledActionTooltip';
+import { cn } from '@/lib/utils';
 
 function resolveDisplayAge(patient: Patient | null, sessionAge: number): number | null {
-  if (patient?.dateOfBirth) {
-    const dob = new Date(patient.dateOfBirth);
-    if (!Number.isNaN(dob.getTime())) {
-      return Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    }
-  }
+  const fromDob = calcPatientAge(patient?.dateOfBirth);
+  if (fromDob != null) return fromDob;
   return sessionAge ?? null;
 }
 
@@ -34,12 +34,9 @@ interface SessionPageHeaderProps {
   queueStatus: WaitingListStatus;
   patientDetails: Patient | null;
   patientDetailsLoading?: boolean;
-  onBack: () => void;
   doctorRecommendation?: string | null;
-  onSaveSession: () => void;
-  saveDisabledReason: string | null;
-  isSaving: boolean;
-  showSaveSession?: boolean;
+  consultingDoctor?: string | null;
+  operativeEye?: string | null;
 }
 
 export function SessionPageHeader({
@@ -47,12 +44,9 @@ export function SessionPageHeader({
   queueStatus,
   patientDetails,
   patientDetailsLoading = false,
-  onBack,
   doctorRecommendation,
-  onSaveSession,
-  saveDisabledReason,
-  isSaving,
-  showSaveSession = true,
+  consultingDoctor,
+  operativeEye,
 }: SessionPageHeaderProps) {
   const { sessionTypeOptions } = useCounsellorMasterOptions();
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -67,137 +61,163 @@ export function SessionPageHeader({
     [patientDetails, session.age],
   );
 
+  const patientName = formatPatientDisplayName(patientDetails, session.patientName);
   const mrn = resolvePatientMrn(patientDetails, session.uhid) ?? session.uhid;
-  const phone = resolvePatientPhone(patientDetails);
-  const dobLabel = formatPatientDob(patientDetails?.dateOfBirth);
-  const bloodGroup = patientDetails?.bloodGroup;
+  const gender = formatPatientSex(patientDetails?.gender?.trim() || session.gender);
 
   const identityMeta = [
-    displayAge != null ? `${displayAge} yrs` : null,
-    patientDetails?.gender ?? session.gender,
-    bloodGroup,
     mrn ? `MRN ${mrn}` : null,
-    dobLabel ? `DOB ${dobLabel}` : null,
+    displayAge != null ? `${displayAge} yrs` : null,
+    gender,
+    operativeEye?.trim() ? `${counsellingCopy.operativeEye} ${operativeEye}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
+  const clinicalMeta = [
+    consultingDoctor?.trim()
+      ? `${counsellingCopy.consultingDoctor}: ${consultingDoctor}`
+      : null,
+    counsellingCopy.counsellingSession,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const canOpenDetails = Boolean(patientDetails);
   const openDetails = () => {
-    if (patientDetails) setDetailsOpen(true);
+    if (canOpenDetails) setDetailsOpen(true);
   };
 
   return (
     <>
-      <div className="z-30 shrink-0 rounded-xl border border-counselling-border bg-counselling-card px-3 py-2.5 shadow-sm sm:px-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-start gap-2.5">
-            <CounsellingButton
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onBack}
-              className="mt-0.5 h-8 shrink-0 gap-1 px-2 text-counselling-muted-foreground"
-              aria-label="Back to waiting list"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">{counsellingCopy.back}</span>
-            </CounsellingButton>
+      <header
+        className={cn(
+          'z-30',
+          counsellingSessionTokens.sessionWidget,
+          counsellingSessionTokens.patientHeaderPad,
+        )}
+      >
+        <div className={cn('flex items-center', counsellingSessionTokens.patientHeaderGap)}>
+          <CounsellingButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!canOpenDetails && !patientDetailsLoading}
+            onClick={openDetails}
+            className="h-auto shrink-0 rounded-full p-0 hover:bg-transparent"
+            aria-label="View patient details"
+          >
+            {patientDetailsLoading ? (
+              <div
+                className={cn(
+                  'flex items-center justify-center rounded-full bg-counselling-muted',
+                  counsellingSessionTokens.patientHeaderPhoto,
+                )}
+              >
+                <Loader2 className="h-5 w-5 animate-spin text-counselling-muted-foreground" />
+              </div>
+            ) : (
+              <PatientAvatar
+                photoUrl={patientDetails?.photoUrl}
+                firstName={patientDetails?.firstName}
+                lastName={patientDetails?.lastName}
+                displayName={patientName}
+                size="lg"
+                className={counsellingSessionTokens.patientHeaderPhoto}
+              />
+            )}
+          </CounsellingButton>
 
-            <CounsellingButton
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={!patientDetails && !patientDetailsLoading}
-              onClick={openDetails}
-              className="h-auto shrink-0 rounded-full p-0 hover:bg-transparent"
-              aria-label="View patient details"
-            >
-              {patientDetailsLoading ? (
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-counselling-muted">
-                  <Loader2 className="h-4 w-4 animate-spin text-counselling-muted-foreground" />
-                </div>
-              ) : (
-                <PatientAvatar
-                  photoUrl={patientDetails?.photoUrl}
-                  firstName={patientDetails?.firstName}
-                  lastName={patientDetails?.lastName}
-                  displayName={session.patientName}
-                  size="md"
-                  className="h-10 w-10 ring-2 ring-counselling-accent"
-                />
-              )}
-            </CounsellingButton>
+          <div
+            className={cn(
+              'flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:justify-between',
+              counsellingSessionTokens.patientHeaderZones,
+            )}
+          >
+            <div className={cn('min-w-0 flex-1', counsellingSessionTokens.patientHeaderStack)}>
+              <p className={counsellingSessionTokens.patientLabel}>{counsellingCopy.patient}</p>
+              <h1 className={counsellingSessionTokens.patientName}>{patientName}</h1>
+              {identityMeta ? (
+                <p className={cn(counsellingSessionTokens.shellMeta, 'mt-1')}>{identityMeta}</p>
+              ) : null}
+              {clinicalMeta ? (
+                <p className={cn(counsellingSessionTokens.shellSecondaryMeta, 'mt-0.5')}>
+                  {clinicalMeta}
+                </p>
+              ) : null}
+            </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <h1 className="truncate text-sm font-semibold text-counselling-foreground sm:text-base">
-                  {session.patientName}
-                </h1>
+            <div className="flex shrink-0 flex-col items-stretch gap-1.5 sm:items-end">
+              <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
                 {queueStatus !== 'RepeatCounselling' ? (
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${statusBadge.cls}`}>
+                  <span
+                    className={cn(
+                      'rounded-md px-2.5 py-0.5',
+                      counsellingSessionTokens.patientStatusPill,
+                      statusBadge.cls,
+                    )}
+                  >
                     {statusBadge.label}
                   </span>
                 ) : null}
                 {sessionTypeLabel ? (
-                  <span className="rounded bg-counselling-muted px-1.5 py-0.5 text-[10px] text-counselling-foreground">
+                  <span
+                    className={cn(
+                      'rounded-md bg-counselling-muted/80 px-2.5 py-0.5 text-counselling-foreground',
+                      counsellingSessionTokens.patientStatusPill,
+                      'font-medium',
+                    )}
+                  >
                     {sessionTypeLabel}
                   </span>
                 ) : null}
-                {doctorRecommendation ? (
-                  <span
-                    className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800"
-                    title={`Doctor recommends: ${doctorRecommendation}`}
-                  >
-                    <Stethoscope className="h-3 w-3 shrink-0" aria-hidden />
-                    {doctorRecommendation}
-                  </span>
-                ) : null}
               </div>
-
-              <p className="mt-0.5 text-[11px] tabular-nums text-counselling-muted-foreground">{identityMeta}</p>
-
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                {phone ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] tabular-nums text-counselling-muted-foreground">
-                    <Phone className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
-                    {phone}
-                  </span>
-                ) : null}
-                {patientDetails ? (
-                  <CounsellingButton
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    data-testid={counsellingTestIds.btnPatientDetails}
-                    onClick={openDetails}
-                    className="h-auto gap-0.5 px-0 py-0 text-[11px] font-medium text-counselling-primary hover:bg-transparent hover:text-counselling-primary/80"
-                  >
-                    {counsellingCopy.patientDetails}
-                    <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-                  </CounsellingButton>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
-            {showSaveSession ? (
-              <CounsellingDisabledActionTooltip reason={saveDisabledReason}>
+              {canOpenDetails ? (
                 <CounsellingButton
                   type="button"
-                  onClick={onSaveSession}
-                  disabled={!!saveDisabledReason}
-                  data-testid={counsellingTestIds.btnSaveSession}
-                  className="h-9 gap-2 bg-counselling-primary px-4 hover:bg-counselling-primary/90 disabled:opacity-50 sm:px-6"
+                  variant="ghost"
+                  size="sm"
+                  data-testid={counsellingTestIds.btnPatientDetails}
+                  onClick={openDetails}
+                  className={cn(
+                    'h-auto min-h-9 justify-start gap-1 rounded-md px-2 py-1.5 hover:bg-counselling-muted/60 hover:text-counselling-primary focus-visible:ring-2 focus-visible:ring-counselling-primary/40 sm:justify-end',
+                    counsellingSessionTokens.patientDetailsAction,
+                  )}
                 >
-                  {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {counsellingCopy.saveSession}
+                  {counsellingCopy.patientDetails}
+                  <ChevronRight className="h-4 w-4" aria-hidden />
                 </CounsellingButton>
-              </CounsellingDisabledActionTooltip>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </div>
-      </div>
+
+        {doctorRecommendation ? (
+          <div
+            data-testid={counsellingTestIds.clinicalContextRow}
+            className="mt-2 flex flex-wrap items-start gap-x-2 gap-y-1 border-l-2 border-amber-400/80 bg-amber-50/60 py-1.5 pl-2.5 pr-1"
+          >
+            <span className="inline-flex min-w-0 items-start gap-1 text-[12.5px] leading-5 text-amber-950">
+              <Stethoscope className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>
+                <span className="font-medium">{counsellingCopy.recommendedProcedure}: </span>
+                <span className="line-clamp-2">{doctorRecommendation}</span>
+              </span>
+            </span>
+            {canOpenDetails ? (
+              <CounsellingButton
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={openDetails}
+                className="h-auto px-1 py-0 text-[12.5px] font-medium text-amber-900 hover:bg-amber-100/60 hover:text-amber-950"
+              >
+                {counsellingCopy.viewClinicalDetails}
+              </CounsellingButton>
+            ) : null}
+          </div>
+        ) : null}
+      </header>
 
       <PatientDemographicsSheet
         open={detailsOpen}
@@ -205,6 +225,16 @@ export function SessionPageHeader({
         patient={patientDetails}
         age={displayAge}
         visitLabel={counsellingCopy.counsellingSession}
+        displayNameFallback={session.patientName}
+        mrnFallback={session.uhid}
+        genderFallback={session.gender}
+        counsellingContext={{
+          counsellingType: sessionTypeLabel,
+          sessionStatus:
+            queueStatus !== 'RepeatCounselling' ? statusBadge.label : 'Repeat Counselling',
+          operativeEye,
+          consultingDoctor,
+        }}
       />
     </>
   );

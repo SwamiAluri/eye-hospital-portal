@@ -1,6 +1,6 @@
 ---
 description: Master source of truth for IP Management, Billing, Ward/Inpatient, CCMS, beds, and cross-module work. Extends existing services; never a greenfield rewrite.
-alwaysApply: true
+alwaysApply: false
 ---
 
 # IP + Billing + Ward + Cross-Module SoT

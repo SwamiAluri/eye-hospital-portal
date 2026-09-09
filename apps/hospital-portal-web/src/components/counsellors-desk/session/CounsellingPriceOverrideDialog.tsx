@@ -6,6 +6,10 @@ import { counsellingAzureApi, type PriceOverrideRecord } from '@/lib/api/counsel
 import type { CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
 import type { WaitingListStatus } from '@/types/counsellors-desk';
 import {
+  packageOverrideVariantId,
+} from '@/lib/counsellors-desk/package-preview';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
+import {
   CounsellingButton,
   CounsellingDialog,
   CounsellingDialogContent,
@@ -32,11 +36,19 @@ interface StaffMember {
   email?: string;
 }
 
+export type PackageOverrideTarget = {
+  id: string;
+  name: string;
+  basePrice: number;
+};
+
 export interface CounsellingPriceOverrideDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionId: string;
   selectedVariant: CounsellorProcedureVariant | null;
+  /** When set, dialog edits package amount instead of procedure price. */
+  packageTarget?: PackageOverrideTarget | null;
   isReadOnly: boolean;
   isDoneState: boolean;
   savedOverrides: PriceOverrideRecord[];
@@ -70,6 +82,7 @@ export function CounsellingPriceOverrideDialog({
   onOpenChange,
   sessionId,
   selectedVariant,
+  packageTarget = null,
   isReadOnly,
   isDoneState,
   savedOverrides,
@@ -97,17 +110,23 @@ export function CounsellingPriceOverrideDialog({
   onEditOverride,
   onRemoveOverride,
 }: CounsellingPriceOverrideDialogProps) {
-  const variantOverrides = useMemo(
-    () =>
-      selectedVariant
-        ? savedOverrides.filter((o) => o.variantId === selectedVariant.id)
-        : [],
-    [savedOverrides, selectedVariant?.id],
+  const isPackage = !!packageTarget;
+
+  const targetKey = isPackage
+    ? packageOverrideVariantId(packageTarget.id)
+    : selectedVariant?.id ?? null;
+
+  const targetName = isPackage ? packageTarget.name : selectedVariant?.name ?? '';
+  const basePrice = isPackage ? packageTarget.basePrice : selectedVariant?.price ?? 0;
+  const priceType = isPackage ? 'PACKAGE' : selectedVariant?.priceType ?? 'PER_EYE';
+
+  const targetOverrides = useMemo(
+    () => (targetKey ? savedOverrides.filter((o) => o.variantId === targetKey) : []),
+    [savedOverrides, targetKey],
   );
 
-  if (!selectedVariant) return null;
-
-  const basePrice = selectedVariant.price;
+  if (!isPackage && !selectedVariant) return null;
+  if (isPackage && !packageTarget) return null;
 
   const resetForm = () => {
     setEditingOverrideId(null);
@@ -131,6 +150,10 @@ export function CounsellingPriceOverrideDialog({
       setOverrideError('Reason is required.');
       return;
     }
+    if (!targetKey) {
+      setOverrideError('No price target selected.');
+      return;
+    }
     setOverrideSaving(true);
     try {
       if (editingOverrideId) {
@@ -144,11 +167,11 @@ export function CounsellingPriceOverrideDialog({
         resetForm();
       } else {
         await counsellingAzureApi.addPriceOverride(sessionId, {
-          variantId: selectedVariant.id,
-          variantName: selectedVariant.name,
+          variantId: targetKey,
+          variantName: targetName,
           basePrice,
           overriddenPrice: parsed,
-          priceType: selectedVariant.priceType,
+          priceType,
           reason: overrideReason.trim(),
           remarks: overrideRemarks.trim() || undefined,
           requestedByType: overrideRequesterType,
@@ -159,7 +182,7 @@ export function CounsellingPriceOverrideDialog({
         });
         const refreshed = await counsellingAzureApi.getPriceOverrides(sessionId);
         setSavedOverrides(refreshed);
-        if (isDoneState) {
+        if (isDoneState && !isPackage) {
           counsellingAzureApi.addOnSurgery(sessionId, overrideReason.trim());
           setQueueStatus('AddOnSurgery');
           toast.success('Price override saved — session marked as Add-On Surgery');
@@ -184,23 +207,25 @@ export function CounsellingPriceOverrideDialog({
     >
       <CounsellingDialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <CounsellingDialogHeader>
-          <CounsellingDialogTitle>Modify procedure price</CounsellingDialogTitle>
+          <CounsellingDialogTitle>
+            {isPackage ? counsellingCopy.modifyPackagePrice : counsellingCopy.modifyProcedurePrice}
+          </CounsellingDialogTitle>
         </CounsellingDialogHeader>
 
         <div className="space-y-3 py-1 text-sm">
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
             <p className="text-xs text-amber-800">
-              Reference price for <strong>{selectedVariant.name}</strong>
+              Reference price for <strong>{targetName}</strong>
             </p>
             <p className="text-lg font-bold tabular-nums text-amber-900">
               ₹{basePrice.toLocaleString('en-IN')}
             </p>
           </div>
 
-          {variantOverrides.length > 0 && (
+          {targetOverrides.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-xs font-semibold text-counselling-muted-foreground">Saved overrides</p>
-              {variantOverrides.map((ov) => (
+              {targetOverrides.map((ov) => (
                 <div
                   key={ov.id}
                   className="flex items-start justify-between gap-2 rounded-lg bg-counselling-muted px-2.5 py-2 text-xs"
@@ -300,23 +325,27 @@ export function CounsellingPriceOverrideDialog({
                       }}
                     >
                       <CounsellingSelectTrigger className="h-11 w-full">
-                        <CounsellingSelectValue placeholder="— Select —" />
+                        <CounsellingSelectValue placeholder="Select staff" />
                       </CounsellingSelectTrigger>
                       <CounsellingSelectContent>
-                        {staffList.map((s) => (
-                          <CounsellingSelectItem key={s.id} value={s.id}>
-                            {`${s.firstName} ${s.lastName}`.trim()}
-                          </CounsellingSelectItem>
-                        ))}
+                        {staffList.length === 0 ? (
+                          <CounsellingEmptyState compact title="No staff loaded" />
+                        ) : (
+                          staffList.map((s) => (
+                            <CounsellingSelectItem key={s.id} value={s.id}>
+                              {`${s.firstName} ${s.lastName}`.trim()}
+                            </CounsellingSelectItem>
+                          ))
+                        )}
                       </CounsellingSelectContent>
                     </CounsellingSelect>
                   </div>
                   <div>
                     <CounsellingLabel className="mb-1 block text-xs">Contact</CounsellingLabel>
                     <CounsellingInput
-                      type="text"
                       value={overrideStaffContact}
                       onChange={(e) => setOverrideStaffContact(e.target.value)}
+                      placeholder="Phone or email"
                     />
                   </div>
                 </div>
@@ -327,42 +356,39 @@ export function CounsellingPriceOverrideDialog({
                   Reason <span className="text-red-500">*</span>
                 </CounsellingLabel>
                 <CounsellingInput
-                  type="text"
                   value={overrideReason}
                   onChange={(e) => setOverrideReason(e.target.value)}
-                  placeholder="e.g. Financial hardship, doctor discretion"
+                  placeholder="Why is this price being changed?"
                 />
               </div>
-
               <div>
-                <CounsellingLabel className="mb-1 block text-xs">Remarks (optional)</CounsellingLabel>
+                <CounsellingLabel className="mb-1 block text-xs">Remarks</CounsellingLabel>
                 <CounsellingTextarea
-                  rows={3}
                   value={overrideRemarks}
                   onChange={(e) => setOverrideRemarks(e.target.value)}
                   placeholder="Additional context for this override"
+                  rows={2}
                 />
               </div>
-
               {overrideError && <p className="text-xs text-red-600">{overrideError}</p>}
             </div>
           )}
         </div>
 
-        {!isReadOnly && (
-          <CounsellingDialogFooter>
-            <CounsellingButton type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </CounsellingButton>
+        <CounsellingDialogFooter className="gap-2 sm:gap-0">
+          <CounsellingButton type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </CounsellingButton>
+          {!isReadOnly && (
             <CounsellingButton
               type="button"
-              disabled={overrideSaving}
               onClick={() => void handleSaveOverride()}
+              disabled={overrideSaving}
             >
               {overrideSaving ? 'Saving…' : editingOverrideId ? 'Update override' : 'Save override'}
             </CounsellingButton>
-          </CounsellingDialogFooter>
-        )}
+          )}
+        </CounsellingDialogFooter>
       </CounsellingDialogContent>
     </CounsellingDialog>
   );

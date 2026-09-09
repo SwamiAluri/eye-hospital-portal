@@ -2,32 +2,32 @@
 
 import dynamic from 'next/dynamic';
 import { useMemo } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Printer } from 'lucide-react';
 import { CounsellorOutpatientChecklist } from '@/components/counsellors-desk/CounsellorOutpatientChecklist';
 import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
 import { SessionPageHeader } from '@/components/counsellors-desk/session/SessionPageHeader';
 import { useCounsellingSession } from '@/components/counsellors-desk/session/CounsellingSessionContext';
 import { CounsellingEstimatePrintDialog } from '@/components/counsellors-desk/session/CounsellingEstimatePrintDialog';
 import {
-  CounsellingButton,
   CounsellingSkeleton,
   CounsellingTabs,
-  CounsellingTabsList,
-  CounsellingTabsTrigger,
   CounsellingTooltipProvider,
 } from '@/components/counsellors-desk/session/primitives';
-import { CounsellingDisabledActionTooltip } from '@/components/counsellors-desk/session/CounsellingDisabledActionTooltip';
+import { CounsellingStatusMessage } from '@/components/counsellors-desk/session/primitives/CounsellingStatusMessage';
 import { CounsellingRepeatSessionBanner } from '@/components/counsellors-desk/session/CounsellingRepeatSessionBanner';
 import { cn } from '@/lib/utils';
-import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
-import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
-import { isCoveragePaymentType } from '@/lib/counsellors-desk/counselling-progress';
+import { counsellingTestIds, counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { findCounsellorVariant } from '@/lib/master-data/clinical-catalog-master';
-import { resolveCoverageSessionFinalPayable } from '@/lib/counsellors-desk/build-coverage-preview';
+import { resolveCounsellingQuoteFinalPayable } from '@/lib/counsellors-desk/build-coverage-preview';
 import { humanizeProcedureCode } from '@/lib/counsellors-desk/coverage-estimate-sync';
 import { CoveragePreauthPanel } from '@/components/counsellors-desk/coverage/CoveragePreauthPanel';
 import { CounsellingTabPanel } from '@/components/counsellors-desk/session/CounsellingTabPanel';
-import { CounsellingCcmsStatusStrip } from '@/components/counsellors-desk/session/CounsellingCcmsStatusStrip';
+import { CounsellingSessionChrome } from '@/components/counsellors-desk/session/CounsellingSessionChrome';
+import { CounsellingActionBar } from '@/components/counsellors-desk/session/CounsellingActionBar';
+import {
+  clarifyPhaseAdvanceHint,
+  clarifySaveDraftHint,
+  clarifySaveSessionHint,
+} from '@/lib/counsellors-desk/counselling-action-hints';
 
 const ScheduleSurgeryModal = dynamic(
   () =>
@@ -36,10 +36,6 @@ const ScheduleSurgeryModal = dynamic(
     })),
   { ssr: false },
 );
-
-function isShowCoverageTab(paymentType: string): boolean {
-  return isCoveragePaymentType(paymentType);
-}
 
 /** Constrains flex/grid children so inner overflow-y-auto scrolls instead of growing the page. */
 const TAB_BODY_CLASS = 'flex min-h-0 flex-1 flex-col overflow-hidden';
@@ -60,25 +56,26 @@ export function CounsellingSessionPageContent() {
 
   if (ctx.isLoading) {
     return (
-      <div className="counselling-session space-y-4 p-6" aria-busy aria-label="Loading session">
-        <CounsellingSkeleton className="mx-auto h-10 w-10 rounded-full bg-counselling-muted" />
-        <CounsellingSkeleton className="h-8 w-48 bg-counselling-muted" />
-        <CounsellingSkeleton className="h-64 w-full rounded-xl bg-counselling-muted" />
-        <p className="text-center text-sm text-counselling-muted-foreground">Loading session…</p>
+      <div className={cn(counsellingSessionTokens.shellPage, 'gap-2 p-4')} aria-busy>
+        <CounsellingSkeleton className="h-12 w-full bg-counselling-muted/80" />
+        <CounsellingSkeleton className="h-16 w-full bg-counselling-muted/80" />
+        <div className="min-h-0 flex-1 border-t border-counselling-border/60 bg-counselling-card/25 p-4">
+          <CounsellingStatusMessage tone="loading" title="Loading session" />
+        </div>
+        <CounsellingSkeleton className="h-10 w-full border-t border-counselling-border/60 bg-counselling-muted/80" />
       </div>
     );
   }
 
   if (!ctx.session) {
     return (
-      <div className="py-20 text-center text-counselling-muted-foreground">
-        <p>Session not found</p>
+      <div className="counselling-session p-4">
+        <CounsellingStatusMessage tone="error" title="Session not found" description="Return to the waiting list." />
       </div>
     );
   }
 
   const ccmsCaseNumber = ctx.workspaceCcmsCaseNumber ?? ctx.session.ccmsCaseNumber;
-  const showCoverageTab = isShowCoverageTab(ctx.paymentType as string) || !!ccmsCaseNumber;
 
   const coverageProcedureVariant = findCounsellorVariant(ctx.procedureVariants, ctx.selectedVariantId);
   const counsellingProcedureLine = ctx.counsellingEstimate.lines.find(
@@ -111,51 +108,93 @@ export function CounsellingSessionPageContent() {
     sessionProcedureName ??
     (sessionProcedureCode ? humanizeProcedureCode(sessionProcedureCode) : undefined);
   const sessionProcedureAmount = counsellingProcedureLine?.amount;
-  const sessionFinalPayable = resolveCoverageSessionFinalPayable({
-    liveFinalPayable: ctx.counsellingEstimate.finalPayableAmount,
-    savedFinalPayable: ctx.session?.finalPayableAmount,
-    estimateLines: ctx.counsellingEstimate.lines,
-  });
+  const computedQuotePayable = ctx.counsellingEstimate.finalPayableAmount;
+  const sessionFinalPayable =
+    computedQuotePayable > 0
+      ? computedQuotePayable
+      : resolveCounsellingQuoteFinalPayable({
+          liveFinalPayable: computedQuotePayable,
+          savedFinalPayable: ctx.session?.finalPayableAmount,
+          estimateLines: ctx.counsellingEstimate.lines,
+        });
+  const consultingDoctor = ctx.schedule?.doctor?.trim() || undefined;
+  const operativeEye = ctx.selectedEye || ctx.session?.restoredEye || undefined;
+  const saveSessionHint = clarifySaveSessionHint(ctx.saveDisabledReason);
+  const saveDraftHint = clarifySaveDraftHint(ctx.saveDraftDisabledReason);
+  const phaseAdvanceHint = clarifyPhaseAdvanceHint(ctx.phaseAdvanceError);
   const sessionPackageName = ctx.counsellingEstimate.isPackageMode
     ? (ctx.counsellingEstimate.activeTemplate?.name ?? ctx.packageName) || undefined
     : undefined;
   const sessionEstimateMode = ctx.counsellingEstimate.isPackageMode ? ('package' as const) : ('custom' as const);
 
-  const isCounsellingTab = ctx.activeMainTab === 'counselling';
   const isRepeatGateActive = ctx.isRepeatState;
   const repeatPanelClass = 'pointer-events-none select-none opacity-45';
-  const showPhaseFooter =
-    isCounsellingTab && !ctx.isSurgeryDoneState && !isRepeatGateActive;
-  const showFooterActions = !ctx.isSurgeryDoneState;
   const outpatientReadOnly =
     ctx.queueStatus === 'SurgeryDone' || !canEditCounsellorOutpatient || isRepeatGateActive;
-  const tabTriggerClass =
-    'rounded-t-lg rounded-b-none border border-transparent px-4 py-2 data-[state=active]:border-counselling-border data-[state=active]:border-b-white data-[state=active]:bg-counselling-card data-[state=active]:text-counselling-primary disabled:pointer-events-none disabled:opacity-45';
 
   return (
     <CounsellingTooltipProvider delayDuration={300}>
-    <div className="counselling-session flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-    <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4">
-      <div className="flex min-h-0 shrink-0 flex-col gap-3">
-        <SessionPageHeader
-          session={ctx.session}
-          queueStatus={ctx.queueStatus}
-          patientDetails={ctx.patientDetails}
-          patientDetailsLoading={ctx.patientDetailsLoading}
-          onBack={ctx.handleBack}
-          doctorRecommendation={doctorRecommendation}
-          onSaveSession={ctx.handleSave}
-          saveDisabledReason={ctx.saveDisabledReason}
-          isSaving={ctx.isSaving}
-          showSaveSession={showFooterActions}
-        />
+    <div className={counsellingSessionTokens.shellPage}>
+    <div className={counsellingSessionTokens.shellPageGrid}>
+      <CounsellingTabs
+        value={ctx.activeMainTab}
+        onValueChange={(value) => {
+          if (isRepeatGateActive) return;
+          ctx.setActiveMainTab(value as 'counselling' | 'coverage' | 'outpatient');
+        }}
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      >
+        <div className={counsellingSessionTokens.shellChromeStack}>
+          <SessionPageHeader
+            session={ctx.session}
+            queueStatus={ctx.queueStatus}
+            patientDetails={ctx.patientDetails}
+            patientDetailsLoading={ctx.patientDetailsLoading}
+            doctorRecommendation={doctorRecommendation}
+            consultingDoctor={consultingDoctor}
+            operativeEye={operativeEye}
+          />
 
-        {showCoverageTab ? (
-          <CounsellingCcmsStatusStrip sessionId={ctx.sessionId} />
-        ) : null}
-      </div>
+          <CounsellingSessionChrome
+            sessionId={ctx.sessionId}
+            queueStatus={ctx.queueStatus}
+            activeMainTab={ctx.activeMainTab}
+            activePhase={ctx.activePhase}
+            phaseCompletion={ctx.phaseCompletion}
+            isRepeatState={ctx.isRepeatState}
+            isSurgeryDoneState={ctx.isSurgeryDoneState}
+            decision={ctx.decision}
+            paymentType={ctx.paymentType as string}
+            insuranceCompany={ctx.insuranceCompany}
+            finalPayableAmount={sessionFinalPayable}
+            showCoverageWorkflow={ctx.showCoverageWorkflow}
+            coverageTabAvailable={ctx.coverageTabAvailable}
+            notRequiredPreAuth={ctx.notRequiredPreAuth}
+            coverageProgress={ctx.coverageProgress}
+            workspaceCcmsState={ctx.workspaceCcmsState ?? ctx.session.ccmsCurrentState}
+            canGoToPhase={ctx.canGoToPhase}
+            finishSummaryActive={ctx.finishSummaryActive}
+            navigationBlocked={isRepeatGateActive}
+            onNavigateTab={(tab) => {
+              if (isRepeatGateActive) return;
+              ctx.setActiveMainTab(tab);
+            }}
+            onNavigatePhase={(phase) => {
+              if (isRepeatGateActive) return;
+              ctx.setActiveMainTab('counselling');
+              ctx.goToPhase(phase);
+            }}
+            onFinishSummaryActive={(active) => {
+              if (active) {
+                ctx.openFinishSummary();
+                return;
+              }
+              ctx.setFinishSummaryActive(false);
+            }}
+          />
+        </div>
 
-      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-counselling-border/80 bg-counselling-card shadow-sm">
+      <div className={cn(counsellingSessionTokens.shellModuleHost, 'min-h-0 flex-1')}>
         {isRepeatGateActive ? (
           <CounsellingRepeatSessionBanner
             sessionTypeCode={ctx.repeatSessionTypeCode}
@@ -163,49 +202,6 @@ export function CounsellingSessionPageContent() {
             onStartSession={ctx.handleStartRepeatSession}
           />
         ) : null}
-
-        <CounsellingTabs
-          value={ctx.activeMainTab}
-          onValueChange={(value) => {
-            if (isRepeatGateActive) return;
-            ctx.setActiveMainTab(value as 'counselling' | 'coverage' | 'outpatient');
-          }}
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-        >
-          <div className="flex-shrink-0 border-b border-counselling-border px-4 pt-3">
-            <CounsellingTabsList className="h-auto w-full justify-start gap-1 bg-transparent p-0">
-              <CounsellingTabsTrigger
-                value="counselling"
-                disabled={isRepeatGateActive}
-                className={tabTriggerClass}
-              >
-                Counselling
-              </CounsellingTabsTrigger>
-              {showCoverageTab ? (
-                <CounsellingTabsTrigger
-                  value="coverage"
-                  disabled={isRepeatGateActive}
-                  className={cn('flex items-center gap-1.5', tabTriggerClass)}
-                >
-                  Coverage &amp; Pre-Auth
-                  {ctx.activeMainTab !== 'coverage' ? (
-                    <span
-                      className="inline-block h-2 w-2 rounded-full bg-amber-400"
-                      title="Pre-auth required"
-                    />
-                  ) : null}
-                </CounsellingTabsTrigger>
-              ) : null}
-              <CounsellingTabsTrigger
-                value="outpatient"
-                disabled={isRepeatGateActive}
-                className={cn('flex items-center gap-1.5', tabTriggerClass)}
-              >
-                <ClipboardCheck className="h-3.5 w-3.5" />
-                Outpatient Safety
-              </CounsellingTabsTrigger>
-            </CounsellingTabsList>
-          </div>
 
         <div className={TAB_BODY_CLASS}>
         {ctx.coverageTabMounted && (
@@ -218,8 +214,8 @@ export function CounsellingSessionPageContent() {
           >
             <div
               className={cn(
-                TAB_SCROLL_CLASS,
-                'p-5',
+                'counselling-hidden-scroll flex min-h-0 flex-1 flex-col overflow-hidden',
+                counsellingSessionTokens.shellModuleBodyPadding,
                 isRepeatGateActive && repeatPanelClass,
               )}
               aria-disabled={isRepeatGateActive || undefined}
@@ -265,7 +261,13 @@ export function CounsellingSessionPageContent() {
               sessionPackageAmount={
                 ctx.counsellingEstimate.activeTemplate?.packageAmount
               }
-              forceReadOnly={isRepeatGateActive}
+              forceReadOnly={isRepeatGateActive || ctx.isReadOnly}
+              onProgressChange={ctx.handleCoverageProgressChange}
+              onEditQuote={() => {
+                if (isRepeatGateActive || ctx.isReadOnly) return;
+                ctx.setActiveMainTab('counselling');
+                ctx.goToPhase('estimate');
+              }}
             />
             </div>
           </div>
@@ -286,8 +288,9 @@ export function CounsellingSessionPageContent() {
           <div className={TAB_BODY_CLASS}>
             <div
               className={cn(
+                'counselling-hidden-scroll',
                 TAB_SCROLL_CLASS,
-                'p-5',
+                counsellingSessionTokens.shellModuleBodyPadding,
                 isRepeatGateActive && repeatPanelClass,
               )}
               aria-disabled={isRepeatGateActive || undefined}
@@ -303,98 +306,57 @@ export function CounsellingSessionPageContent() {
           </div>
         )}
         </div>
-        </CounsellingTabs>
       </div>
+      </CounsellingTabs>
 
-      <div className="z-[60] flex shrink-0 items-center justify-between gap-3 rounded-xl border border-counselling-border bg-counselling-card px-4 py-3 shadow-lg sm:px-6">
-        <div className="relative flex items-center gap-2">
-          {isRepeatGateActive ? (
-            <CounsellingButton
-              type="button"
-              variant="outline"
-              onClick={ctx.handleBack}
-              className="gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Cancel
-            </CounsellingButton>
-          ) : null}
-          {showFooterActions && showPhaseFooter && ctx.activePhase !== 'estimate' ? (
-            <CounsellingButton
-              type="button"
-              variant="outline"
-              onClick={ctx.goToPreviousPhase}
-              data-testid={counsellingTestIds.btnPhaseBack}
-              className="gap-1.5"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Back
-            </CounsellingButton>
-          ) : null}
-          {showFooterActions && !isRepeatGateActive ? (
-            <CounsellingButton
-              type="button"
-              variant="outline"
-              onClick={ctx.handleBack}
-              className="gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Cancel
-            </CounsellingButton>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          {showFooterActions &&
-          ((showPhaseFooter && ctx.activePhase === 'wrapup') || !showPhaseFooter) ? (
-            <CounsellingDisabledActionTooltip reason={ctx.printDisabledReason}>
-              <CounsellingButton
-                type="button"
-                variant="outline"
-                onClick={() => ctx.setEstimatePrintOpen(true)}
-                disabled={!!ctx.printDisabledReason}
-                className="gap-2 border-counselling-primary/40 text-counselling-primary hover:bg-counselling-accent"
-              >
-                <Printer className="h-4 w-4" />
-                <span className="hidden sm:inline">{counsellingCopy.printEstimate}</span>
-                <span className="sm:hidden">{counsellingCopy.print}</span>
-              </CounsellingButton>
-            </CounsellingDisabledActionTooltip>
-          ) : null}
-          {showFooterActions && showPhaseFooter && ctx.activePhase !== 'wrapup' ? (
-            <CounsellingDisabledActionTooltip reason={ctx.phaseAdvanceError}>
-              <CounsellingButton
-                type="button"
-                onClick={() => ctx.goNext()}
-                disabled={!ctx.canAdvancePhase}
-                data-testid={counsellingTestIds.btnPhaseNext}
-                className="gap-1.5 bg-counselling-primary px-5 hover:bg-counselling-primary/90 disabled:opacity-50 sm:px-6"
-              >
-                {ctx.activePhase === 'estimate'
-                  ? counsellingCopy.nextPatientDecision
-                  : counsellingCopy.nextSessionNotes}
-                <ChevronRight className="h-4 w-4" />
-              </CounsellingButton>
-            </CounsellingDisabledActionTooltip>
-          ) : null}
-          {showFooterActions ? (
-            <>
-              <CounsellingDisabledActionTooltip reason={ctx.saveDraftDisabledReason}>
-                <CounsellingButton
-                  type="button"
-                  variant="outline"
-                  onClick={ctx.handleSaveDraft}
-                  disabled={!!ctx.saveDraftDisabledReason}
-                  data-testid={counsellingTestIds.btnSaveDraft}
-                  className="gap-2 border-counselling-border px-4 sm:px-5"
-                >
-                  {ctx.isSavingDraft && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {counsellingCopy.saveDraft}
-                </CounsellingButton>
-              </CounsellingDisabledActionTooltip>
-            </>
-          ) : null}
-        </div>
-      </div>
+      <CounsellingActionBar
+        queueStatus={ctx.queueStatus}
+        activeMainTab={ctx.activeMainTab}
+        activePhase={ctx.activePhase}
+        phaseCompletion={ctx.phaseCompletion}
+        isRepeatState={ctx.isRepeatState}
+        isSurgeryDoneState={ctx.isSurgeryDoneState}
+        decision={ctx.decision}
+        paymentType={ctx.paymentType as string}
+        insuranceCompany={ctx.insuranceCompany}
+        finalPayableAmount={sessionFinalPayable}
+        showCoverageWorkflow={ctx.showCoverageWorkflow}
+        coverageTabAvailable={ctx.coverageTabAvailable}
+        notRequiredPreAuth={ctx.notRequiredPreAuth}
+        coverageProgress={ctx.coverageProgress}
+        canAdvancePhase={ctx.canAdvancePhase}
+        phaseAdvanceError={ctx.phaseAdvanceError}
+        saveDisabledReason={ctx.saveDisabledReason}
+        saveSessionTooltip={saveSessionHint}
+        phaseAdvanceTooltip={phaseAdvanceHint}
+        saveDraftDisabledReason={saveDraftHint ?? ctx.saveDraftDisabledReason}
+        printDisabledReason={ctx.printDisabledReason}
+        canSubmitToClaims={!!ctx.coverageProgress.canSubmitToClaims}
+        submittingToClaims={!!ctx.coverageProgress.submittingToClaims}
+        isSaving={ctx.isSaving}
+        isSavingDraft={ctx.isSavingDraft}
+        finishSummaryActive={ctx.finishSummaryActive}
+        navigationBlocked={isRepeatGateActive}
+        onPhaseBack={ctx.goToPreviousPhase}
+        onPhaseNext={() => ctx.goNext()}
+        onSaveSession={ctx.handleSave}
+        onSaveDraft={ctx.handleSaveDraft}
+        onPrint={() => ctx.setEstimatePrintOpen(true)}
+        onSubmitToClaims={() => void ctx.coveragePanelRef.current?.submitToClaims()}
+        onNavigateTab={(tab) => {
+          if (isRepeatGateActive) return;
+          ctx.setActiveMainTab(tab);
+        }}
+        onNavigatePhase={(phase) => {
+          if (isRepeatGateActive) return;
+          ctx.setActiveMainTab('counselling');
+          ctx.goToPhase(phase);
+        }}
+        onFinishSummaryActive={(active) => {
+          if (active) ctx.openFinishSummary();
+          else ctx.setFinishSummaryActive(false);
+        }}
+      />
     </div>
 
       <ctx.ConfirmationComponent />

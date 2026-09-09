@@ -47,11 +47,12 @@ public class DocumentFunctions
 
                 var reader = new MultipartReader(boundary, req.Body);
 
-                Stream?  fileStream   = null;
-                string   fileName     = "document";
-                string   mimeType     = "application/octet-stream";
-                string   docType      = "other";
-                string   stage        = "preauth";
+                Stream?  fileStream        = null;
+                string?  multipartFileName = null;
+                string?  explicitFileName  = null;
+                string   mimeType          = "application/octet-stream";
+                string   docType           = "other";
+                string   stage             = "preauth";
 
                 MultipartSection? section;
                 while ((section = await reader.ReadNextSectionAsync()) != null)
@@ -61,19 +62,20 @@ public class DocumentFunctions
 
                     var fieldName = disposition.Name.Value?.Trim('"') ?? string.Empty;
 
-                    if (fieldName.Equals("file", StringComparison.OrdinalIgnoreCase) && disposition.FileName.HasValue)
+                    if (fieldName.Equals("file", StringComparison.OrdinalIgnoreCase))
                     {
-                        fileName   = disposition.FileName.Value!.Trim('"');
-                        mimeType   = section.ContentType ?? "application/octet-stream";
-                        // Buffer to memory so we can seek
+                        var partName = CcmsDocumentFileNames.FromContentDisposition(disposition);
+                        if (!string.IsNullOrEmpty(partName))
+                            multipartFileName = partName;
+
                         var ms = new MemoryStream();
                         await section.Body.CopyToAsync(ms);
                         ms.Seek(0, SeekOrigin.Begin);
                         fileStream = ms;
+                        mimeType   = section.ContentType ?? mimeType;
                     }
                     else
                     {
-                        // Read text field
                         using var sr  = new StreamReader(section.Body);
                         var value     = (await sr.ReadToEndAsync()).Trim();
 
@@ -82,43 +84,60 @@ public class DocumentFunctions
                         else if (fieldName.Equals("stage", StringComparison.OrdinalIgnoreCase))
                             stage = value;
                         else if (fieldName.Equals("fileName", StringComparison.OrdinalIgnoreCase))
-                            fileName = value;
+                            explicitFileName = value;
                     }
                 }
 
-                if (fileStream is null)
+                if (fileStream is null || fileStream.Length <= 0)
                 {
                     var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-                    await bad.WriteAsJsonAsync(new { error = "No 'file' part found in multipart body." });
+                    await bad.WriteAsJsonAsync(new { error = "No non-empty 'file' part found in multipart body." });
                     return bad;
                 }
 
-                result = await _svc.UploadFileAsync(id, claims!.UserId, fileStream, fileName, mimeType, docType, stage);
+                var resolvedFileName = CcmsDocumentFileNames.Resolve(multipartFileName, explicitFileName, docType);
+
+                result = await _svc.UploadFileAsync(
+                    id, claims!.UserId, fileStream, resolvedFileName, mimeType, docType,
+                    CcmsDocumentStages.Normalize(stage));
             }
             else
             {
-                // ── JSON: metadata-only (blob URL already known) ─────────────────
+                // JSON metadata path — only for integrations that already uploaded to blob storage.
                 var body = await JsonSerializer.DeserializeAsync<UploadDocumentRequest>(
                     req.Body, CcmsApi.Services.HttpRequestDataExtensions.DeserializeOpts);
                 if (body is null)
                 {
                     return req.CreateResponse(HttpStatusCode.BadRequest);
                 }
+                if (string.IsNullOrWhiteSpace(body.BlobUrl) || (body.FileSizeBytes ?? 0) <= 0)
+                {
+                    var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                    await bad.WriteAsJsonAsync(new
+                    {
+                        error = "Binary file upload required. POST multipart/form-data with a non-empty file part.",
+                    });
+                    return bad;
+                }
                 result = await _svc.UploadAsync(id, claims!.UserId, body);
             }
 
+            CcmsDocumentUploadValidator.EnsureCompleteFileDocument(result);
+
             var resp = req.CreateResponse(HttpStatusCode.Created);
-            await resp.WriteAsJsonAsync(MapToDto(result));
+            await resp.WriteAsJsonAsync(MapToDto(result, await _svc.TryBuildReadAccessUrlAsync(result)));
             return resp;
         }
-        catch (KeyNotFoundException)
+        catch (KeyNotFoundException ex)
         {
-            return req.CreateResponse(HttpStatusCode.NotFound);
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = ex.Message });
+            return notFound;
         }
         catch (Exception ex)
         {
             var resp = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await resp.WriteAsJsonAsync(new { error = ex.Message });
+            await resp.WriteAsJsonAsync(new { error = DatabaseExceptionFormatter.ToClientMessage(ex) });
             return resp;
         }
     }
@@ -133,7 +152,156 @@ public class DocumentFunctions
 
         var stage = req.Query["stage"];
         var list  = await _svc.GetByCaseAsync(id, stage);
-        return await req.OkJsonAsync(list.Select(MapToDto).ToList());
+        var dtos = new List<object>(list.Count);
+        foreach (var d in list)
+            dtos.Add(MapToDto(d, await _svc.TryBuildReadAccessUrlAsync(d)));
+        return await req.OkJsonAsync(dtos);
+    }
+
+    // GET /api/ccms/coverage-cases/{caseId}/documents/{docId}/access-url
+    [Function("GetCcmsDocumentAccessUrl")]
+    public async Task<HttpResponseData> GetAccessUrl(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get",
+            Route = "ccms/coverage-cases/{caseId:guid}/documents/{docId:guid}/access-url")]
+        HttpRequestData req, Guid caseId, Guid docId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        try
+        {
+            var result = await _svc.GetReadAccessUrlAsync(docId, caseId);
+            return await req.OkJsonAsync(new
+            {
+                url       = result.Url,
+                expiresAt = result.ExpiresAt,
+                isPointer = result.IsPointer,
+            });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = ex.Message });
+            return notFound;
+        }
+        catch (InvalidOperationException ex)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = ex.Message });
+            return bad;
+        }
+        catch (Exception ex)
+        {
+            var resp = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await resp.WriteAsJsonAsync(new { error = DatabaseExceptionFormatter.ToClientMessage(ex) });
+            return resp;
+        }
+    }
+
+    // GET /api/ccms/documents/{docId}/access-url?coverageCaseId=
+    [Function("GetCcmsDocumentAccessUrlById")]
+    public async Task<HttpResponseData> GetAccessUrlByDocumentId(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get",
+            Route = "ccms/documents/{docId:guid}/access-url")]
+        HttpRequestData req, Guid docId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        Guid? caseId = null;
+        var caseIdRaw = req.Query["coverageCaseId"];
+        if (!string.IsNullOrWhiteSpace(caseIdRaw))
+        {
+            if (!Guid.TryParse(caseIdRaw, out var parsed))
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteAsJsonAsync(new { error = "Invalid coverageCaseId query parameter." });
+                return bad;
+            }
+            caseId = parsed;
+        }
+
+        try
+        {
+            var result = await _svc.GetReadAccessUrlAsync(docId, caseId);
+            return await req.OkJsonAsync(new
+            {
+                url       = result.Url,
+                expiresAt = result.ExpiresAt,
+                isPointer = result.IsPointer,
+            });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = ex.Message });
+            return notFound;
+        }
+        catch (InvalidOperationException ex)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = ex.Message });
+            return bad;
+        }
+        catch (Exception ex)
+        {
+            var resp = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await resp.WriteAsJsonAsync(new { error = DatabaseExceptionFormatter.ToClientMessage(ex) });
+            return resp;
+        }
+    }
+
+    // GET /api/ccms/documents/{docId}/content?coverageCaseId=
+    [Function("GetCcmsDocumentContent")]
+    public async Task<HttpResponseData> GetDocumentContent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get",
+            Route = "ccms/documents/{docId:guid}/content")]
+        HttpRequestData req, Guid docId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+
+        Guid? caseId = null;
+        var caseIdRaw = req.Query["coverageCaseId"];
+        if (!string.IsNullOrWhiteSpace(caseIdRaw))
+        {
+            if (!Guid.TryParse(caseIdRaw, out var parsed))
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteAsJsonAsync(new { error = "Invalid coverageCaseId query parameter." });
+                return bad;
+            }
+            caseId = parsed;
+        }
+
+        try
+        {
+            var content = await _svc.OpenBlobReadStreamAsync(docId, caseId);
+            var resp = req.CreateResponse(HttpStatusCode.OK);
+            resp.Headers.Add("Content-Type", content.ContentType);
+            if (content.ContentLength is > 0)
+                resp.Headers.Add("Content-Length", content.ContentLength.Value.ToString());
+            var safeName = ToContentDispositionFileName(content.FileName);
+            resp.Headers.Add("Content-Disposition", $"inline; filename=\"{safeName}\"");
+            await content.Stream.CopyToAsync(resp.Body);
+            return resp;
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return await req.NotFoundAsync(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = ex.Message });
+            return bad;
+        }
+        catch (Exception ex)
+        {
+            var resp = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await resp.WriteAsJsonAsync(new { error = DatabaseExceptionFormatter.ToClientMessage(ex) });
+            return resp;
+        }
     }
 
     // POST /api/ccms/coverage-cases/{id}/documents/pacs-study
@@ -154,7 +322,7 @@ public class DocumentFunctions
             var result = await _svc.AttachPacsStudyAsync(
                 id, claims!.UserId, body.StudyUid, body.AccessionNumber);
             var resp = req.CreateResponse(HttpStatusCode.Created);
-            await resp.WriteAsJsonAsync(MapToDto(result));
+            await resp.WriteAsJsonAsync(MapToDto(result, await _svc.TryBuildReadAccessUrlAsync(result)));
             return resp;
         }
         catch (KeyNotFoundException)
@@ -188,7 +356,7 @@ public class DocumentFunctions
                 id, claims!.UserId, body.BiometryRecordId,
                 body.Eye, body.ExaminationDate, body.CalculatedIol, body.Device);
             var resp = req.CreateResponse(HttpStatusCode.Created);
-            await resp.WriteAsJsonAsync(MapToDto(result));
+            await resp.WriteAsJsonAsync(MapToDto(result, await _svc.TryBuildReadAccessUrlAsync(result)));
             return resp;
         }
         catch (KeyNotFoundException)
@@ -223,17 +391,34 @@ public class DocumentFunctions
     }
 
     // ── Response DTO (matches CaseDocument interface on the frontend) ──────────
-    private static object MapToDto(CcmsApi.Models.Domain.CcmsDocument d) => new
+    private static object MapToDto(CcmsApi.Models.Domain.CcmsDocument d, string? accessUrl = null) => new
     {
         id           = d.Id,
         caseId       = d.CoverageCase_Id,
         documentType = d.DocumentType,
         fileName     = d.DocumentName,
         url          = d.BlobUrl ?? string.Empty,
+        accessUrl    = accessUrl ?? string.Empty,
         mimeType     = d.MimeType,
         sizeBytes    = d.FileSizeBytes,
         uploadedBy   = d.UploadedByUserId,
         uploadedAt   = d.UploadedAt,
         isActive     = d.DeletedAt == null
     };
+
+    private static string ToContentDispositionFileName(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return "document";
+
+        var sanitized = fileName.Trim()
+            .Replace("\"", string.Empty, StringComparison.Ordinal)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
+
+        foreach (var ch in new[] { '(', ')', ';', ',', '\\' })
+            sanitized = sanitized.Replace(ch, '_');
+
+        return string.IsNullOrWhiteSpace(sanitized) ? "document" : sanitized;
+    }
 }

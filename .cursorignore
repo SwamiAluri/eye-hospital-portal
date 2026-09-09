@@ -1,0 +1,22 @@
+# EYE HOSPITAL MONOREPO - AGGRESSIVE TOKEN SAVINGS
+node_modules/
+.next/
+.turbo/
+bin/
+obj/
+dist/
+build/
+*.log
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+project.assets.json
+apps/hospital-portal-web/docs/mockups/
+
+# Superpowers Agent Method Caches & Artifacts
+docs/superpowers/specs/
+docs/superpowers/plans/
+docs/superpowers/history/
+CLAUDE.md
+AGENTS.md
+.worktrees/

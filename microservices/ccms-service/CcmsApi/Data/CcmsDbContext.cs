@@ -380,6 +380,11 @@ public class CcmsDbContext : DbContext
             e.Property(x => x.ServiceTaxAmount).HasColumnName("service_tax_amount");
             // Denormalized display field (kept in sync by search trigger / migration 129)
             e.Property(x => x.InsurerName).HasColumnName("search_insurer_name").IsRequired(false);
+            // One active coverage case per counselling session (prevents doc orphaning on race create).
+            e.HasIndex(x => new { x.TenantId, x.SessionId })
+                .IsUnique()
+                .HasFilter("deleted_at IS NULL AND session_id IS NOT NULL")
+                .HasDatabaseName("ux_ccms_coverage_cases_tenant_session_active");
         });
 
         mb.Entity<CcmsEligibilityCheck>(e =>
@@ -691,9 +696,9 @@ public class CcmsDbContext : DbContext
             e.HasKey(x => x.Id);
             MapStandardColumns(e);
             e.Property(x => x.CoverageCase_Id).HasColumnName("coverage_case_id");
-            e.Property(x => x.DocumentCategory).HasColumnName("document_category");
+            e.Property(x => x.DocumentCategory).HasColumnName("document_category").HasMaxLength(30).IsRequired();
             e.Property(x => x.DocumentType).HasColumnName("document_type");
-            e.Property(x => x.DocumentName).HasColumnName("document_name");
+            e.Property(x => x.DocumentName).HasColumnName("document_name").HasMaxLength(200).IsRequired();
             e.Property(x => x.BlobUrl).HasColumnName("blob_url");
             e.Property(x => x.FileSizeBytes).HasColumnName("file_size_bytes");
             e.Property(x => x.MimeType).HasColumnName("mime_type");

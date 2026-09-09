@@ -1529,7 +1529,7 @@ namespace AuthService.Controllers
             if (!TryGetTenantId(out var tenantId)) return BadRequest(new { message = "TenantId missing" });
             try
             {
-                // Primary: users with role containing ANESTHET
+                // Primary: users with anaesthesia-related role (US + UK spellings)
                 var anesthetists = await (
                     from ur in _context.UserRoles.Cast<AppUserRole>()
                     join u in _userManager.Users on ur.UserId equals u.Id
@@ -1537,29 +1537,47 @@ namespace AuthService.Controllers
                     where u.TenantId == tenantId
                           && u.DeletedAt == null
                           && ur.IsActive
-                          && r.NormalizedName != null && r.NormalizedName.Contains("ANESTHET")
+                          && r.NormalizedName != null
+                          && (r.NormalizedName.Contains("ANESTHET")
+                              || r.NormalizedName.Contains("ANAESTHET")
+                              || r.NormalizedName.Contains("ANESTHES"))
                     select new
                     {
                         id = u.Id,
                         name = (u.FirstName ?? "") + " " + (u.LastName ?? ""),
+                        employeeId = u.EmployeeId ?? "",
                         specialization = u.Specialization ?? "",
                         jobTitle = r.Name,
                     }
                 ).Distinct().ToListAsync();
 
-                // Fallback: UserType field
+                // Fallback: UserType / Designation fields (US + UK spellings)
                 if (!anesthetists.Any())
                 {
                     anesthetists = await _userManager.Users
                         .Where(u => u.TenantId == tenantId
                                     && u.DeletedAt == null
-                                    && (u.UserType == "Anesthesiologist" || u.UserType == "Anesthetist"))
+                                    && (
+                                        u.UserType == "Anesthesiologist"
+                                        || u.UserType == "Anesthetist"
+                                        || u.UserType == "Anaesthetist"
+                                        || u.UserType == "Anaesthesiologist"
+                                        || (u.Designation != null && (
+                                            u.Designation.Contains("Anesthet")
+                                            || u.Designation.Contains("Anaesthet")
+                                            || u.Designation.Contains("Anesthes")))
+                                        || (u.Specialization != null && (
+                                            u.Specialization.Contains("Anesthet")
+                                            || u.Specialization.Contains("Anaesthet")
+                                            || u.Specialization.Contains("Anesthes")))
+                                    ))
                         .Select(u => new
                         {
                             id = u.Id,
                             name = (u.FirstName ?? "") + " " + (u.LastName ?? ""),
+                            employeeId = u.EmployeeId ?? "",
                             specialization = u.Specialization ?? "",
-                            jobTitle = u.UserType,
+                            jobTitle = u.Designation ?? u.UserType,
                         })
                         .ToListAsync();
                 }

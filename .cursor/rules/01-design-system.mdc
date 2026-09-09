@@ -1,6 +1,6 @@
 ---
 description: Canonical UI primitives, tokens, themes, icons, overlays, and reuse-before-create for the entire hospital portal.
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Design system

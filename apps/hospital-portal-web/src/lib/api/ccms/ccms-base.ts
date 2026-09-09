@@ -14,6 +14,20 @@ export const initCcmsApi = (): AxiosInstance => {
     headers: { 'Content-Type': 'application/json' },
   });
 
+  // FormData uploads must NOT inherit application/json — that routes CCMS document
+  // uploads to the JSON metadata handler and creates empty blob rows.
+  ccmsAxios.interceptors.request.use((config) => {
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      const headers = config.headers;
+      if (headers && typeof (headers as { delete?: (k: string) => void }).delete === 'function') {
+        (headers as { delete: (k: string) => void }).delete('Content-Type');
+      } else if (headers) {
+        delete (headers as Record<string, unknown>)['Content-Type'];
+      }
+    }
+    return config;
+  });
+
   attachAuthRequestInterceptor(ccmsAxios);
   attachAuthResponseInterceptor(ccmsAxios);
 

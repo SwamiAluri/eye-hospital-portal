@@ -141,6 +141,8 @@ export interface CounsellingSession {
   restoredEye?: string;
   /** Internal-only sub-type selected for the procedure (e.g. 'Supraphob', 'Premium'). Staff use only. */
   variantSubOption?: string | null;
+  /** Catalog IOL id restored from package_addons_json blob. */
+  selectedIolId?: string | null;
   /** Unified payment + patient classification (replaces patientType + paymentMode). */
   paymentType?: CombinedPaymentType | '';
   /** Insurance/TPA company — only relevant when paymentType is Insurance, CoPay, or CGHS. */

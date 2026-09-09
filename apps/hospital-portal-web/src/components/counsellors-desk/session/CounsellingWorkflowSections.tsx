@@ -2,19 +2,18 @@
 
 import { useMemo } from 'react';
 import { startOfDay } from 'date-fns';
-import { Calendar, Clock, Heart, ThumbsDown, Timer } from 'lucide-react';
-import { requiresInsuranceCompany, formatTime } from '@/lib/counsellors-desk/session-utils';
+import { Calendar, Clock } from 'lucide-react';
+import { requiresInsuranceCompany, formatTime, formatCounsellingDateDisplay } from '@/lib/counsellors-desk/session-utils';
 import { usePaymentCoverageOptions } from '@/hooks/use-payment-coverage-options';
 import type { CombinedPaymentType, DecisionType, ScheduleData } from '@/types/counsellors-desk';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
-import { counsellingSectionIds, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingSectionIds, counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
   CounsellingAccordion,
   CounsellingAccordionContent,
   CounsellingAccordionItem,
   CounsellingAccordionTrigger,
   CounsellingButton,
-  CounsellingCard,
   SessionDatePicker,
   CounsellingInput,
   CounsellingLabel,
@@ -48,39 +47,12 @@ function SectionHeader({ step, title }: { step: number; title: string }) {
 const DECISION_OPTIONS: {
   value: DecisionType;
   label: string;
-  icon: typeof Calendar;
 }[] = [
-  {
-    value: 'DateForSurgery',
-    label: counsellingCopy.dateForSurgery,
-    icon: Calendar,
-  },
-  {
-    value: 'Interested',
-    label: counsellingCopy.interested,
-    icon: Heart,
-  },
-  {
-    value: 'NotInterested',
-    label: counsellingCopy.notInterested,
-    icon: ThumbsDown,
-  },
-  {
-    value: 'NeedsTime',
-    label: counsellingCopy.needsTime,
-    icon: Timer,
-  },
+  { value: 'DateForSurgery', label: counsellingCopy.dateForSurgery },
+  { value: 'Interested', label: counsellingCopy.interested },
+  { value: 'NotInterested', label: counsellingCopy.notInterested },
+  { value: 'NeedsTime', label: counsellingCopy.needsTime },
 ];
-
-const FOLLOW_UP_REASONS = [
-  'Discuss with Family',
-  'Financial Planning',
-  'Fear of Surgery',
-  'Wants Second Opinion',
-  'Travel Plans',
-  'Medical Hold',
-  'Other',
-] as const;
 
 export interface CounsellingPaymentSectionProps {
   embedded?: boolean;
@@ -113,20 +85,20 @@ export function CounsellingPaymentSection({
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[12rem] flex-1">
-          <CounsellingLabel className="mb-1 block text-xs font-medium">
+          <CounsellingLabel className="mb-1 block text-xs font-medium text-counselling-muted-foreground">
             {counsellingCopy.paymentType} <span className="text-red-500">*</span>
           </CounsellingLabel>
-            <CounsellingSelect
-              value={paymentType || undefined}
-              onValueChange={(v) => {
-                setPaymentType(v as CombinedPaymentType | '');
-                markDirty();
-              }}
-              disabled={isReadOnly}
-            >
-              <CounsellingSelectTrigger className="h-11 w-full">
-                <CounsellingSelectValue placeholder="Select funding source" />
-              </CounsellingSelectTrigger>
+          <CounsellingSelect
+            value={paymentType || undefined}
+            onValueChange={(v) => {
+              setPaymentType(v as CombinedPaymentType | '');
+              markDirty();
+            }}
+            disabled={isReadOnly}
+          >
+            <CounsellingSelectTrigger className={`${counsellingSessionTokens.catalogInput} w-full`}>
+              <CounsellingSelectValue placeholder="Select payment type" />
+            </CounsellingSelectTrigger>
               <CounsellingSelectContent>
                 {paymentCoverageGroups.map((group) => (
                   <CounsellingSelectGroup key={group.key}>
@@ -144,21 +116,23 @@ export function CounsellingPaymentSection({
 
         {requiresInsuranceCompany(paymentType as CombinedPaymentType) && (
           <div className="min-w-[12rem] flex-1">
-            <CounsellingLabel className="mb-1 block text-xs font-medium">{counsellingCopy.insuranceCompany}</CounsellingLabel>
-              <CounsellingSelect
-                value={insuranceCompany || undefined}
-                onValueChange={(v) => {
-                  setInsuranceCompany(v);
-                  markDirty();
-                }}
-                disabled={isReadOnly}
+            <CounsellingLabel className="mb-1 block text-xs font-medium text-counselling-muted-foreground">
+              {counsellingCopy.insuranceCompany}
+            </CounsellingLabel>
+            <CounsellingSelect
+              value={insuranceCompany || undefined}
+              onValueChange={(v) => {
+                setInsuranceCompany(v);
+                markDirty();
+              }}
+              disabled={isReadOnly}
+            >
+              <CounsellingSelectTrigger
+                className={`${counsellingSessionTokens.catalogInput} w-full`}
+                data-testid="counselling-insurance-company"
               >
-                <CounsellingSelectTrigger
-                  className="h-11 w-full"
-                  data-testid="counselling-insurance-company"
-                >
-                  <CounsellingSelectValue placeholder="Select insurer" />
-                </CounsellingSelectTrigger>
+                <CounsellingSelectValue placeholder="Select insurer" />
+              </CounsellingSelectTrigger>
                 <CounsellingSelectContent>
                   {insuranceProviderOptions.map((o) => (
                     <CounsellingSelectItem key={o.value} value={o.label}>
@@ -216,7 +190,6 @@ export interface CounsellingDecisionSectionProps {
   setFollowUpReason: (v: string) => void;
   followUpDate: string;
   setFollowUpDate: (v: string) => void;
-  schedule: ScheduleData | null;
   isReadOnly: boolean;
   markDirty: () => void;
 }
@@ -225,129 +198,56 @@ export function CounsellingDecisionSection({
   embedded = false,
   decision,
   setDecision,
-  followUpReason,
-  setFollowUpReason,
-  followUpDate,
-  setFollowUpDate,
-  schedule,
+  followUpReason: _followUpReason,
+  setFollowUpReason: _setFollowUpReason,
+  followUpDate: _followUpDate,
+  setFollowUpDate: _setFollowUpDate,
   isReadOnly,
   markDirty,
 }: CounsellingDecisionSectionProps) {
-  const followUpMinDate = useMemo(() => startOfDay(new Date()), []);
-
   const body = (
-    <>
-      <CounsellingRadioGroup
-        value={decision || undefined}
-        onValueChange={(v) => {
-          if (!isReadOnly && v) {
-            setDecision(v as DecisionType);
-            markDirty();
-          }
-        }}
-        disabled={isReadOnly}
-        className="grid gap-2 sm:grid-cols-2"
-      >
-        {DECISION_OPTIONS.map(({ value, label, icon: Icon }) => {
-          const selected = decision === value;
-          return (
-            <label
-              key={value}
-              htmlFor={`counselling-decision-${value}`}
-              className={cn('block cursor-pointer', isReadOnly && 'cursor-not-allowed opacity-60')}
+    <CounsellingRadioGroup
+      value={decision || undefined}
+      onValueChange={(v) => {
+        if (!isReadOnly && v) {
+          setDecision(v as DecisionType);
+          markDirty();
+        }
+      }}
+      disabled={isReadOnly}
+      className="space-y-1"
+      aria-label={counsellingCopy.patientDecisionTitle}
+    >
+      {DECISION_OPTIONS.map(({ value, label }) => {
+        const selected = decision === value;
+        return (
+          <label
+            key={value}
+            htmlFor={`counselling-decision-${value}`}
+            data-testid={counsellingTestIds.decisionOption(value)}
+            className={cn(
+              counsellingSessionTokens.notesOptionRow,
+              selected && counsellingSessionTokens.notesOptionRowSelected,
+              isReadOnly && 'cursor-not-allowed opacity-60',
+            )}
+          >
+            <CounsellingRadioGroupItem
+              id={`counselling-decision-${value}`}
+              value={value}
+              className="shrink-0"
+            />
+            <span
+              className={cn(
+                'min-w-0 flex-1 text-left text-sm',
+                selected ? 'font-semibold text-counselling-foreground' : 'text-counselling-foreground',
+              )}
             >
-              <CounsellingCard
-                className={cn(
-                  'flex items-start gap-3 p-3 transition-colors shadow-none',
-                  selected
-                    ? 'border-counselling-primary bg-counselling-accent/80 ring-1 ring-counselling-primary/25'
-                    : 'border-counselling-border bg-counselling-card hover:border-counselling-border hover:bg-counselling-muted',
-                )}
-              >
-                <CounsellingRadioGroupItem
-                  id={`counselling-decision-${value}`}
-                  value={value}
-                  className="mt-1 shrink-0"
-                />
-                <Icon
-                  size={18}
-                  className={`mt-0.5 shrink-0 ${selected ? 'text-counselling-primary' : 'text-counselling-muted-foreground/80'}`}
-                />
-                <div className="min-w-0 flex-1 text-left">
-                  <p className={`text-sm font-semibold ${selected ? 'text-counselling-accent-foreground' : 'text-counselling-foreground'}`}>
-                    {label}
-                  </p>
-                </div>
-              </CounsellingCard>
-            </label>
-          );
-        })}
-      </CounsellingRadioGroup>
-
-      {(decision === 'NotInterested' || decision === 'NeedsTime') && (
-        <div className="mt-4 space-y-3 border-t border-counselling-border pt-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
-              {counsellingCopy.followUpRequired}
+              {label}
             </span>
-            <span className="text-xs text-counselling-muted-foreground">
-              {decision === 'NeedsTime'
-                ? 'Patient needs more time before deciding'
-                : 'Patient will be tagged for follow-up'}
-            </span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <CounsellingLabel className="mb-1 block text-xs font-medium">{counsellingCopy.followUpReason}</CounsellingLabel>
-              <CounsellingSelect
-                value={followUpReason || undefined}
-                onValueChange={(v) => {
-                  setFollowUpReason(v);
-                  markDirty();
-                }}
-                disabled={isReadOnly}
-              >
-                <CounsellingSelectTrigger className="h-11 w-full">
-                  <CounsellingSelectValue placeholder="Select reason…" />
-                </CounsellingSelectTrigger>
-                <CounsellingSelectContent>
-                  {FOLLOW_UP_REASONS.map((r) => (
-                    <CounsellingSelectItem key={r} value={r}>
-                      {r}
-                    </CounsellingSelectItem>
-                  ))}
-                </CounsellingSelectContent>
-              </CounsellingSelect>
-            </div>
-            <div>
-              <CounsellingLabel className="mb-1 block text-xs font-medium">{counsellingCopy.followUpDate}</CounsellingLabel>
-              <SessionDatePicker
-                variant="compact"
-                value={followUpDate}
-                minDate={followUpMinDate}
-                disabled={isReadOnly}
-                data-testid={counsellingTestIds.followUpDate}
-                onChange={(v) => {
-                  setFollowUpDate(v);
-                  markDirty();
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {decision === 'DateForSurgery' && !schedule && (
-        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Surgery schedule required — add date and doctor below.
-        </p>
-      )}
-      {decision === 'Interested' && !schedule && (
-        <p className="mt-3 text-xs text-counselling-muted-foreground">
-          Add a tentative surgery schedule below (optional).
-        </p>
-      )}
-    </>
+          </label>
+        );
+      })}
+    </CounsellingRadioGroup>
   );
 
   if (embedded) {
@@ -369,57 +269,160 @@ export function CounsellingDecisionSection({
   );
 }
 
+const FOLLOW_UP_REASONS = [
+  'Discuss with Family',
+  'Financial Planning',
+  'Fear of Surgery',
+  'Wants Second Opinion',
+  'Travel Plans',
+  'Medical Hold',
+  'Other',
+] as const;
+
+export interface CounsellingFollowUpSectionProps {
+  embedded?: boolean;
+  followUpReason: string;
+  setFollowUpReason: (v: string) => void;
+  followUpDate: string;
+  setFollowUpDate: (v: string) => void;
+  isReadOnly: boolean;
+  markDirty: () => void;
+}
+
+export function CounsellingFollowUpSection({
+  embedded = false,
+  followUpReason,
+  setFollowUpReason,
+  followUpDate,
+  setFollowUpDate,
+  isReadOnly,
+  markDirty,
+}: CounsellingFollowUpSectionProps) {
+  const followUpMinDate = useMemo(() => startOfDay(new Date()), []);
+
+  const body = (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div>
+        <CounsellingLabel className="mb-1 block text-xs font-medium text-counselling-muted-foreground">
+          {counsellingCopy.followUpReason}
+        </CounsellingLabel>
+        <CounsellingSelect
+          value={followUpReason || undefined}
+          onValueChange={(v) => {
+            setFollowUpReason(v);
+            markDirty();
+          }}
+          disabled={isReadOnly}
+        >
+          <CounsellingSelectTrigger className={`${counsellingSessionTokens.catalogInput} w-full`}>
+            <CounsellingSelectValue placeholder="Select reason…" />
+          </CounsellingSelectTrigger>
+          <CounsellingSelectContent>
+            {FOLLOW_UP_REASONS.map((r) => (
+              <CounsellingSelectItem key={r} value={r}>
+                {r}
+              </CounsellingSelectItem>
+            ))}
+          </CounsellingSelectContent>
+        </CounsellingSelect>
+      </div>
+      <div>
+        <CounsellingLabel className="mb-1 block text-xs font-medium text-counselling-muted-foreground">
+          {counsellingCopy.followUpDate}
+        </CounsellingLabel>
+        <SessionDatePicker
+          variant="compact"
+          value={followUpDate}
+          minDate={followUpMinDate}
+          disabled={isReadOnly}
+          data-testid={counsellingTestIds.followUpDate}
+          onChange={(v) => {
+            setFollowUpDate(v);
+            markDirty();
+          }}
+        />
+      </div>
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        id="counselling-decision-follow-up"
+        data-testid={counsellingTestIds.decisionFollowUpSection}
+        className="scroll-mt-24"
+      >
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <section className="scroll-mt-24 p-4">
+      <SectionHeader step={4} title={counsellingCopy.followUpRequired} />
+      {body}
+    </section>
+  );
+}
+
 export interface CounsellingScheduleSectionProps {
   embedded?: boolean;
+  compact?: boolean;
+  required?: boolean;
+  optional?: boolean;
   schedule: ScheduleData | null;
   setIsScheduleModalOpen: (open: boolean) => void;
 }
 
 export function CounsellingScheduleSection({
   embedded = false,
+  compact = false,
+  required: _required = false,
+  optional: _optional = false,
   schedule,
   setIsScheduleModalOpen,
 }: CounsellingScheduleSectionProps) {
   const body = schedule ? (
-    <div className="flex min-h-[44px] flex-wrap items-center justify-between gap-3 rounded-xl border border-counselling-primary/30 bg-counselling-accent/60 p-3">
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-1.5 text-counselling-accent-foreground">
-          <Calendar className="h-4 w-4" />
-          <span className="text-sm font-medium">
-            {new Date(schedule.selectedDate + 'T00:00:00').toLocaleDateString('en-IN', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-            })}
+    <div className="flex min-h-9 flex-wrap items-center justify-between gap-3 rounded-md bg-counselling-accent/40 px-3 py-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-counselling-foreground">
+        <span className="inline-flex items-center gap-1.5 font-medium">
+          <Calendar className="h-3.5 w-3.5 shrink-0 text-counselling-muted-foreground" aria-hidden />
+          {formatCounsellingDateDisplay(schedule.selectedDate) ?? 'Date not set'}
+        </span>
+        {schedule.surgeryStartTime ? (
+          <span className="inline-flex items-center gap-1.5 font-medium">
+            <Clock className="h-3.5 w-3.5 shrink-0 text-counselling-muted-foreground" aria-hidden />
+            {formatTime(schedule.surgeryStartTime)}
           </span>
-        </div>
-        <div className="flex items-center gap-1.5 text-counselling-accent-foreground">
-          <Clock className="h-4 w-4" />
-          <span className="text-sm font-medium">{formatTime(schedule.surgeryStartTime)}</span>
-        </div>
-        <span className="text-xs text-counselling-primary">
+        ) : null}
+        <span className="text-xs text-counselling-muted-foreground">
           {schedule.operationTheatre} · {schedule.doctor}
         </span>
       </div>
       <CounsellingButton
         type="button"
         variant="outline"
+        size="sm"
         onClick={() => setIsScheduleModalOpen(true)}
-        className="border-counselling-primary/50 text-counselling-primary hover:bg-counselling-card"
+        className="h-8 shrink-0"
       >
-        Update schedule
+        {counsellingCopy.changeSchedule}
       </CounsellingButton>
     </div>
   ) : (
-    <CounsellingButton
-      type="button"
-      variant="outline"
-      onClick={() => setIsScheduleModalOpen(true)}
-      className="h-auto w-full flex-col gap-2 border-2 border-dashed border-counselling-primary/40 py-3 text-sm font-semibold text-counselling-primary hover:bg-counselling-accent/50"
-    >
-      <Calendar className="h-4 w-4" />
-      Select a schedule
-    </CounsellingButton>
+    <div className="space-y-1.5">
+      <CounsellingButton
+        type="button"
+        variant="outline"
+        onClick={() => setIsScheduleModalOpen(true)}
+        className={cn(
+          `${counsellingSessionTokens.catalogInput} w-full justify-start gap-2 text-sm font-medium sm:w-auto`,
+        )}
+      >
+        <Calendar className="h-4 w-4 shrink-0 text-counselling-muted-foreground" aria-hidden />
+        Select a schedule
+      </CounsellingButton>
+    </div>
   );
 
   if (embedded) {
@@ -590,20 +593,52 @@ export function CounsellingAdditionalOptionsSection({
   ];
 
   const body = (
-    <div className="space-y-1">
+    <div
+      className="space-y-1.5"
+      role="group"
+      aria-label={counsellingCopy.additionalOptions}
+    >
       {options.map(({ label, value, set }) => (
-        <CounsellingSelectableRow
+        <button
           key={label}
-          selected={value}
+          type="button"
           disabled={isReadOnly}
-          showCheckbox
-          checkboxLabel={label}
+          aria-pressed={value}
           onClick={() => {
             if (!isReadOnly) set(!value);
           }}
+          className={cn(
+            counsellingSessionTokens.notesOptionRow,
+            value && counsellingSessionTokens.notesOptionRowSelected,
+            isReadOnly && 'cursor-not-allowed opacity-60',
+            'outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
+          )}
         >
-          <span className="min-w-0 flex-1 text-left text-sm text-counselling-foreground">{label}</span>
-        </CounsellingSelectableRow>
+          <span
+            aria-hidden
+            className={cn(
+              'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border',
+              value
+                ? 'border-counselling-primary bg-counselling-primary text-white'
+                : 'border-counselling-border bg-counselling-card',
+            )}
+          >
+            {value ? (
+              <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" aria-hidden>
+                <path
+                  d="M2.5 6.2 4.8 8.5 9.5 3.5"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : null}
+          </span>
+          <span className="min-w-0 flex-1 text-sm font-medium text-counselling-foreground">
+            {label}
+          </span>
+        </button>
       ))}
     </div>
   );

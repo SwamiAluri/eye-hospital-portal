@@ -5,11 +5,15 @@ import { Pencil } from 'lucide-react';
 import type { EstimateLine } from '@/lib/counsellors-desk/estimate-engine';
 import { formatInr, hasQuotedProcedureOverride } from '@/lib/counsellors-desk/package-preview';
 import { sanitizeVariantName } from '@/lib/utils/sanitize-names';
+import type { CounsellingEyeOption } from '@/lib/counsellors-desk/counselling-eye';
+import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { CounsellingBadge, CounsellingButton } from '@/components/counsellors-desk/session/primitives';
+import { CounsellingEyeBadge } from '@/components/counsellors-desk/session/CounsellingEyeBadge';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 
 const KIND_LABEL: Record<EstimateLine['kind'], string> = {
   procedure: 'Procedure',
-  iol: 'IOL',
+  iol: 'Lens / IOL',
   investigation: 'Investigation',
 };
 
@@ -18,9 +22,9 @@ export interface EstimateLineItemRowProps {
   catalogAmount?: number;
   showInternalPricing?: boolean;
   showKindBadge?: boolean;
-  /** e.g. "RE · per eye" — shown bold beside procedure name */
+  /** Unit pricing hint e.g. "per eye" — eye badge shown separately via `eye` */
   eyePricingLabel?: string;
-  /** Hide Lab/Imaging/Scan type subtitle when lines are grouped by section */
+  eye?: CounsellingEyeOption;
   hideTypeDetail?: boolean;
   onEditPrice?: () => void;
   isReadOnly?: boolean;
@@ -33,6 +37,7 @@ export const EstimateLineItemRow = memo(function EstimateLineItemRow({
   showInternalPricing = false,
   showKindBadge = false,
   eyePricingLabel,
+  eye,
   hideTypeDetail = false,
   onEditPrice,
   isReadOnly = false,
@@ -52,13 +57,25 @@ export const EstimateLineItemRow = memo(function EstimateLineItemRow({
         ? line.detail
         : undefined;
 
+  const showEyeRow = line.kind === 'procedure' && (eye || eyePricingLabel);
+
   return (
-    <div className={`flex items-start justify-between gap-2 text-sm ${className}`.trim()}>
-      <div className="min-w-0 flex-1">
-        {line.kind === 'procedure' && eyePricingLabel ? (
+    <div
+      className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-0.5 text-sm ${className}`.trim()}
+    >
+      <div className="min-w-0">
+        {showEyeRow ? (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium text-counselling-foreground">{displayLabel}</span>
-            <span className="text-sm font-bold text-counselling-foreground">{eyePricingLabel}</span>
+            {eye ? (
+              <CounsellingEyeBadge
+                eye={eye}
+                data-testid={counsellingTestIds.quoteEstimateEyeBadge}
+              />
+            ) : null}
+            {eyePricingLabel ? (
+              <span className="text-xs text-counselling-muted-foreground">{eyePricingLabel}</span>
+            ) : null}
             {isAdjusted && (
               <CounsellingBadge
                 variant="outline"
@@ -75,7 +92,7 @@ export const EstimateLineItemRow = memo(function EstimateLineItemRow({
               <span className="text-[10px] text-counselling-muted-foreground/80">{KIND_LABEL[line.kind]}</span>
             )}
             {line.kind === 'iol' && !showKindBadge && (
-              <span className="text-[10px] text-counselling-muted-foreground/80">IOL</span>
+              <span className="text-[10px] text-counselling-muted-foreground/80">Lens / IOL</span>
             )}
             {isAdjusted && (
               <CounsellingBadge
@@ -91,7 +108,7 @@ export const EstimateLineItemRow = memo(function EstimateLineItemRow({
           <span className="block text-[10px] text-counselling-muted-foreground/80">{subline}</span>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center justify-end gap-1 self-start">
         {line.kind === 'procedure' && onEditPrice && !isReadOnly && (
           <CounsellingButton
             type="button"
@@ -105,8 +122,10 @@ export const EstimateLineItemRow = memo(function EstimateLineItemRow({
             <Pencil size={12} />
           </CounsellingButton>
         )}
-        <span className="font-semibold tabular-nums text-counselling-foreground">
-          {formatInr(line.amount)}
+        <span className="text-right font-semibold tabular-nums text-counselling-foreground">
+          {line.kind === 'iol' && line.amount <= 0
+            ? counsellingCopy.included
+            : formatInr(line.amount)}
         </span>
       </div>
     </div>

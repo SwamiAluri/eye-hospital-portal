@@ -10,6 +10,13 @@ describe('sessionTypeCodeToDb', () => {
     expect(sessionTypeCodeToDb('FOLLOW_UP')).toBe('Followup');
   });
 
+  it('maps repeat Start Session payload codes used by the Follow-Up dropdown', () => {
+    // POST /Counseling/sessions/{id}/start must send DB values, not master codes.
+    expect(sessionTypeCodeToDb('FOLLOW_UP')).toBe('Followup');
+    expect(sessionTypeCodeToDb('INITIAL')).toBe('Initial');
+    expect(sessionTypeCodeToDb('URGENT')).toBe('Urgent');
+  });
+
   it('passes through already-valid DB values', () => {
     expect(sessionTypeCodeToDb('Initial')).toBe('Initial');
     expect(sessionTypeCodeToDb('Urgent')).toBe('Urgent');

@@ -79,6 +79,46 @@ export async function shareCounsellingEstimatePdf(
   return true;
 }
 
+const PRINT_STYLES = `
+  * { box-sizing: border-box; }
+  @page { size: A4; margin: 12mm; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #111827;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .telugu { font-family: 'Noto Sans Telugu', sans-serif; line-height: 1.6; }
+  table.counselling-print-table,
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  th, td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
+  th { background: #f0fdfa; }
+  thead { display: table-header-group; }
+  tr, img { break-inside: avoid; page-break-inside: avoid; }
+  .counselling-print-avoid-break,
+  .counselling-print-totals {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .counselling-print-section-title {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .text-right { text-align: right; }
+  .font-bold { font-weight: 700; }
+  img { max-width: 100%; height: auto; }
+  @media print {
+    body { padding: 0; }
+  }
+`;
+
 export function printCounsellingEstimateDocument(elementId: string): void {
   const element = document.getElementById(elementId);
   if (!element) return;
@@ -90,22 +130,11 @@ export function printCounsellingEstimateDocument(elementId: string): void {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Counselling Estimate</title>
+  <title>Counselling Summary &amp; Cost Estimate</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;600&display=swap" rel="stylesheet" />
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 16px; font-family: system-ui, -apple-system, sans-serif; font-size: 12px; color: #111827; }
-    .telugu { font-family: 'Noto Sans Telugu', sans-serif; line-height: 1.6; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
-    th { background: #f0fdfa; }
-    .text-right { text-align: right; }
-    .font-bold { font-weight: 700; }
-    .text-teal { color: #0f766e; }
-    img { max-width: 100%; height: auto; }
-  </style>
+  <style>${PRINT_STYLES}</style>
 </head>
 <body>${element.innerHTML}</body>
 </html>`);

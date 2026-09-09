@@ -22,13 +22,26 @@ export interface CounsellorOutpatientChecklistProps {
   readOnly?: boolean;
   integrationContext?: OutpatientIntegrationContext;
   showRollup?: boolean;
+  /** cards = session KPI tiles; readback = compact finalize-modal strip. */
+  rollupVariant?: 'cards' | 'readback';
+  /** Flat checklist rows without nested card chrome (finalize modal). */
+  flatList?: boolean;
+  checklistTitle?: string;
 }
 
 export const CounsellorOutpatientChecklist = forwardRef<
   OutpatientChecklistHandle,
   CounsellorOutpatientChecklistProps
 >(function CounsellorOutpatientChecklist(
-  { counselingSessionId, readOnly = false, integrationContext, showRollup = false },
+  {
+    counselingSessionId,
+    readOnly = false,
+    integrationContext,
+    showRollup = false,
+    rollupVariant = 'cards',
+    flatList = false,
+    checklistTitle = 'Outpatient Safety Checklist',
+  },
   ref,
 ) {
   const [checklist, setChecklist] = useState<CounsellorOutpatientChecklistDto | null>(null);
@@ -145,6 +158,7 @@ export const CounsellorOutpatientChecklist = forwardRef<
       {showRollup && rollupCards.length > 0 && (
         <OutpatientChecklistRollup
           cards={rollupCards}
+          variant={rollupVariant}
           onCardClick={(key) => {
             const targetKey = ROLLUP_DRILLDOWN_TARGETS[key];
             const el = document.querySelector(`[data-outpatient-item="${targetKey}"]`);
@@ -153,13 +167,21 @@ export const CounsellorOutpatientChecklist = forwardRef<
         />
       )}
 
-      <div className="flex items-center justify-between rounded-lg border border-counselling-border bg-counselling-muted px-3 py-2">
+      <div
+        className={
+          flatList
+            ? 'flex items-center justify-between gap-2 pt-1'
+            : 'flex items-center justify-between rounded-lg border border-counselling-border bg-counselling-muted px-3 py-2'
+        }
+      >
         <span className="text-sm font-semibold text-counselling-foreground">
-          Outpatient Safety Checklist
+          {checklistTitle}
         </span>
         <span className="text-sm font-medium text-counselling-muted-foreground">
           {completedItems}/{totalItems} complete
-          <span className="ml-1 text-counselling-muted-foreground/70">({pct}%)</span>
+          {!flatList && (
+            <span className="ml-1 text-counselling-muted-foreground/70">({pct}%)</span>
+          )}
         </span>
       </div>
 
@@ -177,7 +199,13 @@ export const CounsellorOutpatientChecklist = forwardRef<
         </button>
       )}
 
-      <ul className="divide-y divide-counselling-border overflow-hidden rounded-2xl border border-counselling-border">
+      <ul
+        className={
+          flatList
+            ? 'divide-y divide-counselling-border/60'
+            : 'divide-y divide-counselling-border overflow-hidden rounded-2xl border border-counselling-border'
+        }
+      >
         {checklist.items.map((item) => {
           const done = item.isCompleted || item.isBypassed;
           const isSaving = savingItemId === item.itemId;
@@ -188,8 +216,15 @@ export const CounsellorOutpatientChecklist = forwardRef<
               key={item.itemId}
               data-outpatient-item={item.itemKey}
               className={[
-                'flex items-start gap-3 px-3 py-2.5 transition-colors',
-                done ? 'bg-counselling-accent/50' : 'bg-counselling-card',
+                'flex items-start gap-3 py-2.5 transition-colors',
+                flatList ? 'px-0' : 'px-3',
+                flatList
+                  ? done
+                    ? 'opacity-80'
+                    : ''
+                  : done
+                    ? 'bg-counselling-accent/50'
+                    : 'bg-counselling-card',
               ].join(' ')}
             >
               <button

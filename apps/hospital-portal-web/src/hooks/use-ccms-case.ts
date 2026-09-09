@@ -32,7 +32,7 @@ import {
   listCommunications,
   type CcmsCommunicationLog,
 } from '@/lib/api/ccms/ccms-communications.api';
-import { listCaseDocuments, type CaseDocument } from '@/lib/api/ccms/ccms-documents.api';
+import { fetchCaseDocumentsFromApi, type CaseDocument } from '@/lib/api/ccms/ccms-documents.api';
 import {
   getEligibilityChecks,
   getLatestPolicyCapture,
@@ -234,7 +234,7 @@ export function useCcmsCaseCommunications(caseId?: string | null, enabled = true
 export function useCcmsCaseDocuments(caseId?: string | null, enabled = true) {
   return useQuery({
     queryKey: ccmsKeys.documents(caseId ?? ''),
-    queryFn: () => listCaseDocuments(caseId!),
+    queryFn: () => fetchCaseDocumentsFromApi(caseId!),
     enabled: !!caseId && enabled,
     staleTime: CCMS_STALE,
   });
@@ -338,7 +338,7 @@ export function useCcmsInvalidate() {
       claims: () => getClaimByCaseId(caseId),
       settlements: () => getSettlementsByCaseId(caseId),
       communications: () => listCommunications(caseId),
-      documents: () => listCaseDocuments(caseId),
+      documents: () => fetchCaseDocumentsFromApi(caseId),
       eligibility: () => getEligibilityChecks(caseId).catch(() => [] as EligibilityCheck[]),
       events: () => getEventStream(caseId),
     };

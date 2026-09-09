@@ -18,6 +18,55 @@ export function resolvePatientMrn(
   return mrn || null;
 }
 
+/**
+ * Safe patient display name — never stringifies `undefined`/`null`.
+ * Prefer first+last, then fallback, then neutral "Patient".
+ */
+export function formatPatientDisplayName(
+  patient?: Pick<Patient, 'firstName' | 'lastName'> | null,
+  fallbackName?: string | null,
+): string {
+  const fromParts = [patient?.firstName, patient?.lastName]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+    .join(' ');
+
+  const fallback = typeof fallbackName === 'string' ? fallbackName.trim() : '';
+  const fallbackWordCount = fallback ? fallback.split(/\s+/).filter(Boolean).length : 0;
+  const partsWordCount = fromParts ? fromParts.split(/\s+/).filter(Boolean).length : 0;
+
+  // Prefer authoritative multi-word display name when API only returned a single part.
+  if (fromParts && !(partsWordCount < 2 && fallbackWordCount >= 2)) {
+    return fromParts;
+  }
+  if (fallback) return fallback;
+  if (fromParts) return fromParts;
+
+  return 'Patient';
+}
+
+/**
+ * Normalize patientApi.getById / mock responses to a Patient or null.
+ * Accepts both Axios `{ data: Patient }` and an already-unwrapped Patient.
+ */
+export function unwrapPatientApiResponse(
+  response: unknown,
+): Patient | null {
+  if (!response || typeof response !== 'object') return null;
+
+  const maybeWrapped = response as { data?: unknown };
+  const candidate =
+    maybeWrapped.data !== undefined ? maybeWrapped.data : response;
+
+  if (!candidate || typeof candidate !== 'object') return null;
+
+  const record = candidate as Record<string, unknown>;
+  // Require an id so empty `{}` / non-patient objects are rejected.
+  if (typeof record.id !== 'string' || !record.id.trim()) return null;
+
+  return candidate as Patient;
+}
+
 /** Absolute URL for patient photos (handles relative paths from API). */
 export function resolvePatientPhotoUrl(photoUrl?: string | null): string | null {
   if (!photoUrl?.trim()) return null;
@@ -39,9 +88,56 @@ export function getPatientInitials(
   const first = firstName?.trim()?.[0];
   const last = lastName?.trim()?.[0];
   if (first && last) return `${first}${last}`.toUpperCase();
+
+  const displayParts =
+    fallbackName
+      ?.trim()
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean) ?? [];
+
+  if (first && displayParts.length >= 2) {
+    const lastFromDisplay = displayParts[displayParts.length - 1]?.[0];
+    if (lastFromDisplay) return `${first}${lastFromDisplay}`.toUpperCase();
+  }
+
   if (first) return first.toUpperCase();
-  if (fallbackName?.trim()) return fallbackName.trim()[0]!.toUpperCase();
+
+  if (displayParts.length >= 2) {
+    const a = displayParts[0]?.[0];
+    const b = displayParts[displayParts.length - 1]?.[0];
+    if (a && b) return `${a}${b}`.toUpperCase();
+  }
+
+  if (displayParts[0]?.[0]) return displayParts[0][0]!.toUpperCase();
   return 'P';
+}
+
+/** Human-readable sex/gender for clinical display (never raw lowercase codes). */
+export function formatPatientSex(sex?: string | null): string | null {
+  const raw = sex?.trim();
+  if (!raw) return null;
+
+  const key = raw.toLowerCase();
+  const known: Record<string, string> = {
+    m: 'Male',
+    male: 'Male',
+    f: 'Female',
+    female: 'Female',
+    o: 'Other',
+    other: 'Other',
+    u: 'Unknown',
+    unknown: 'Unknown',
+  };
+  if (known[key]) return known[key];
+
+  return raw
+    .split(/([\s-_]+)/)
+    .map((token) => {
+      if (/^[\s-_]+$/.test(token)) return token;
+      return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+    })
+    .join('');
 }
 
 export function formatPatientDob(

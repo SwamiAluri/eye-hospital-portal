@@ -34,6 +34,8 @@ export interface CounsellingPackageAddonsBlob {
   estimateMode?: CounsellingEstimateMode;
   packageTemplateId?: string;
   selectedIolId?: string;
+  /** Lens / sub-type label for procedures that use subOptions (not catalog IOL ids). */
+  variantSubOption?: string;
   discountType?: CounsellingDiscountType | null;
   discountValue?: number;
   discountReason?: string;

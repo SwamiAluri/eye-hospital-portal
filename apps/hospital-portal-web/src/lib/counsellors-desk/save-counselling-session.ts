@@ -1,7 +1,7 @@
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { counsellingAzureApi, mapDecision } from '@/lib/api/counselling-azure.api';
-import { COVERAGE_PAYMENT_TYPES } from '@/lib/counsellors-desk/session-utils';
+import { COVERAGE_PAYMENT_TYPES, toCounsellingDateOnly } from '@/lib/counsellors-desk/session-utils';
 import { buildCounsellingFieldSnapshot } from '@/lib/counsellors-desk/counselling-field-snapshot';
 import { mergeEstimateIntoBlob } from '@/lib/counsellors-desk/package-addons-blob';
 import type { CounsellingEstimateState } from '@/types/counselling-estimate';
@@ -107,6 +107,10 @@ export function buildCounsellingSessionPayload(params: CounsellingPersistenceInp
     isDoneState,
   } = params;
 
+  const normalizedSchedule = schedule
+    ? { ...schedule, selectedDate: toCounsellingDateOnly(schedule.selectedDate) }
+    : null;
+
   const currentSnapshot = buildCounsellingFieldSnapshot({
     paymentType,
     insuranceCompany,
@@ -123,7 +127,7 @@ export function buildCounsellingSessionPayload(params: CounsellingPersistenceInp
     selectedEye,
     packageName,
     packageRate,
-    scheduleDate: schedule?.selectedDate ?? '',
+    scheduleDate: normalizedSchedule?.selectedDate ?? '',
     mergedEstimate,
   });
 
@@ -167,7 +171,7 @@ export function buildCounsellingSessionPayload(params: CounsellingPersistenceInp
                 ? packageRate
                 : undefined,
           ...(followUpDate && { followUpDate }),
-          ...(schedule && { schedule }),
+          ...(normalizedSchedule && { schedule: normalizedSchedule }),
           ...(patientRemarks && { patientRemarks }),
           ...(doctorNotes && { doctorNotes }),
           wantToSeeDoctor,
@@ -185,8 +189,8 @@ export function buildCounsellingSessionPayload(params: CounsellingPersistenceInp
     pendingDecision: decision === 'NeedsTime',
     reasonsForDelay: followUpReason || undefined,
     decisionDate: followUpDate || undefined,
-    surgeryTentativeDate: schedule?.selectedDate || undefined,
-    surgeryTentativeTimeSlot: schedule?.surgeryStartTime || undefined,
+    surgeryTentativeDate: normalizedSchedule?.selectedDate || undefined,
+    surgeryTentativeTimeSlot: normalizedSchedule?.surgeryStartTime || undefined,
     surgeryTentativeEye: selectedEye || undefined,
     packageAmount:
       mergedEstimate.finalPayableAmount > 0
@@ -231,7 +235,6 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     wantToSeeDoctor,
     interestedToUpgrade,
     notRequiredPreAuth,
-    schedule,
     selectedInvestigations,
     mergedEstimate,
     savedSnapshot,
@@ -242,8 +245,12 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     invalidateSession,
   } = params;
 
+  const schedule = params.schedule
+    ? { ...params.schedule, selectedDate: toCounsellingDateOnly(params.schedule.selectedDate) }
+    : null;
+
   const { payload, currentSnapshot, fieldChanges, isPackageUpgrade, prevPackageName, prevPackageAmount } =
-    buildCounsellingSessionPayload(params);
+    buildCounsellingSessionPayload({ ...params, schedule });
 
   await counsellorsDeskApi.saveSession(sessionId, {
     ...payload,

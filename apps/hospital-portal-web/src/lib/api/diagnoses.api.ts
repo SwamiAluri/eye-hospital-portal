@@ -21,33 +21,66 @@ export async function searchDiagnosisCodes(
   maxResults: number = 20
 ): Promise<DiagnosisSearchResult[]> {
   const api = getApi();
-  const response = await api.get<DiagnosisCode[]>('/diagnoses/search', {
+  const response = await api.get<DiagnosisCode[] | { data?: DiagnosisCode[] }>('/diagnoses/search', {
     params: { query, limit: maxResults },
   });
-  
-  // Transform backend response to frontend format with match type
+
+  const payload = response.data;
+  const rawList: unknown[] = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as { data?: unknown })?.data)
+      ? ((payload as { data: unknown[] }).data)
+      : [];
+
   const queryLower = query.toLowerCase();
-  return response.data.map((code) => {
+  const mapped = rawList
+    .map((row) => normalizeDiagnosisCode(row))
+    .filter((code): code is DiagnosisCode => !!code?.code);
+
+  const filtered = ophthalmologyOnly
+    ? mapped.filter((c) => c.isOphthalmology !== false)
+    : mapped;
+
+  return filtered.map((code) => {
     const codeLower = code.code.toLowerCase();
-    const descLower = code.description.toLowerCase();
-    
-    // Determine match type
+    const descLower = (code.description ?? '').toLowerCase();
+
     let matchType: 'exact' | 'partial' | 'fuzzy' = 'fuzzy';
     if (codeLower === queryLower || descLower === queryLower) {
       matchType = 'exact';
     } else if (codeLower.startsWith(queryLower) || descLower.startsWith(queryLower)) {
       matchType = 'partial';
     }
-    
-    // Calculate simple score
+
     const score = matchType === 'exact' ? 100 : matchType === 'partial' ? 75 : 50;
-    
+
     return {
       code,
       score,
       matchType,
     };
   });
+}
+
+function normalizeDiagnosisCode(row: unknown): DiagnosisCode | null {
+  if (!row || typeof row !== 'object') return null;
+  const r = row as Record<string, unknown>;
+  const code = String(r.code ?? r.Code ?? '').trim();
+  if (!code) return null;
+  const description = String(r.description ?? r.Description ?? '').trim();
+  const isOphthalmologyRaw = r.isOphthalmology ?? r.IsOphthalmology;
+  return {
+    id: String(r.id ?? r.Id ?? code),
+    code,
+    description,
+    category: String(r.category ?? r.Category ?? ''),
+    icdVersion: String(r.icdVersion ?? r.IcdVersion ?? 'ICD-10'),
+    isOphthalmology:
+      typeof isOphthalmologyRaw === 'boolean' ? isOphthalmologyRaw : true,
+    laterality: (r.laterality ?? r.Laterality ?? null) as DiagnosisCode['laterality'],
+    commonUsage: (r.commonUsage ?? r.CommonUsage) as string | undefined,
+    clinicalNotes: (r.clinicalNotes ?? r.ClinicalNotes) as string | undefined,
+  };
 }
 
 /**

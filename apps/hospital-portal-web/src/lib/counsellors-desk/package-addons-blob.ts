@@ -25,6 +25,24 @@ export function parseEstimateFromBlob(
   };
 }
 
+function trimOrNull(value: string | null | undefined): string | null {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || null;
+}
+
+/** Restore lens / sub-type and catalog IOL selection from the counsellor blob. */
+export function restoreLensSelectionFromBlob(
+  blob: CounsellingPackageAddonsBlob | null | undefined,
+): { variantSubOption: string | null; selectedIolId: string | null } {
+  if (!blob) {
+    return { variantSubOption: null, selectedIolId: null };
+  }
+  return {
+    variantSubOption: trimOrNull(blob.variantSubOption),
+    selectedIolId: trimOrNull(blob.selectedIolId),
+  };
+}
+
 /** Merge estimate fields into an existing package addons blob for save. */
 export function mergeEstimateIntoBlob(
   base: CounsellingPackageAddonsBlob,

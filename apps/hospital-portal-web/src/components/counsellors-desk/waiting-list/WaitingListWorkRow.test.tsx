@@ -1,0 +1,320 @@
+import {
+  isValidElement,
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+
+import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { WAITING_LIST_WORK_GRID } from '@/lib/counsellors-desk/waiting-list-layout';
+import type { WaitingListPatient } from '@/types/counsellors-desk';
+
+import {
+  WaitingListWorkRow,
+  type WaitingListWorkRowProps,
+} from './WaitingListWorkRow';
+
+function basePatient(
+  overrides: Partial<WaitingListPatient> = {},
+): WaitingListPatient {
+  return {
+    id: 'p-1',
+    slNo: 3,
+    uhid: 'UHID-1001',
+    patientName: 'Anita Rao',
+    eye: 'RE',
+    type: 'Surgery',
+    surgeryName: 'Phacoemulsification',
+    patientType: 'Cash',
+    age: 58,
+    gender: 'Female',
+    doctor: 'Dr. Mehta',
+    time: '10:30',
+    remarks: '',
+    status: 'Pending',
+    ...overrides,
+  };
+}
+
+function baseProps(
+  overrides: Partial<WaitingListWorkRowProps> = {},
+): WaitingListWorkRowProps {
+  return {
+    patient: basePatient(),
+    isSelected: false,
+    activeTab: 'All',
+    hasCcmsCase: false,
+    onRowClick: vi.fn(),
+    onDemographics: vi.fn(),
+    onPreAuth: vi.fn(),
+    ...overrides,
+  };
+}
+
+function walkElements(
+  node: ReactNode,
+  visit: (el: ReactElement) => void,
+): void {
+  if (node == null || typeof node === 'boolean') return;
+  if (Array.isArray(node)) {
+    for (const child of node) walkElements(child, visit);
+    return;
+  }
+  if (!isValidElement(node)) return;
+  visit(node);
+  const { children } = node.props as { children?: ReactNode };
+  walkElements(children, visit);
+}
+
+/** Expand memo-wrapped presentational row (no hooks) for prop walks. */
+function expandRow(props: WaitingListWorkRowProps): ReactElement {
+  const Comp = (
+    WaitingListWorkRow as unknown as {
+      type: (p: WaitingListWorkRowProps) => ReactElement;
+    }
+  ).type;
+  return Comp(props);
+}
+
+function findButtonsByLabel(
+  root: ReactNode,
+  label: string,
+): ReactElement[] {
+  const matches: ReactElement[] = [];
+  walkElements(root, (el) => {
+    const props = el.props as {
+      children?: ReactNode;
+      'aria-label'?: string;
+      onClick?: (e: MouseEvent) => void;
+    };
+    if (props.children === label || props['aria-label'] === label) {
+      matches.push(el);
+    }
+  });
+  return matches;
+}
+
+describe('WaitingListWorkRow', () => {
+  it('renders patient name and UHID', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow {...baseProps()} />,
+    );
+
+    expect(html).toContain('Anita Rao');
+    expect(html).toContain('UHID-1001');
+    expect(html).toContain(WAITING_LIST_WORK_GRID);
+  });
+
+  it('renders age when available', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow {...baseProps()} />,
+    );
+
+    expect(html).toContain('58 yrs');
+  });
+
+  it('renders procedure and eye together in one cell', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow {...baseProps()} />,
+    );
+
+    expect(html).toContain('Phacoemulsification · RE');
+  });
+
+  it('shows Processing badge label for Processed status', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow
+        {...baseProps({
+          patient: basePatient({ status: 'Processed' }),
+        })}
+      />,
+    );
+
+    expect(html).toContain('Processing');
+    // statusPill token is applied; cn() may drop text-[11px] when text-[12px] wins
+    expect(html).toMatch(
+      /rounded-full[^>]*>Processing</,
+    );
+    expect(counsellingSessionTokens.statusPill).toContain('rounded-full');
+  });
+
+  it('renders attention as plain amber text, not a status pill', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow
+        {...baseProps({
+          patient: basePatient({ patientType: 'Insurance' }),
+        })}
+      />,
+    );
+
+    expect(html).toContain('Pre-Auth Required');
+    expect(html).toMatch(/text-amber-800[^>]*>Pre-Auth Required</);
+    // Attention must not reuse the status pill token on its own wrapper
+    expect(html).not.toMatch(
+      new RegExp(
+        `${counsellingSessionTokens.statusPill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^>]*>Pre-Auth Required<`,
+      ),
+    );
+  });
+
+  it('does not render View/Open/Start/Continue nav buttons; row is the navigation target', () => {
+    const pendingHtml = renderToStaticMarkup(
+      <WaitingListWorkRow
+        {...baseProps({
+          patient: basePatient({ status: 'Pending' }),
+          activeTab: 'Pending',
+        })}
+      />,
+    );
+    expect(pendingHtml).not.toMatch(/>Start</);
+    expect(pendingHtml).not.toMatch(/>Continue</);
+    expect(pendingHtml).not.toMatch(/>View</);
+    expect(pendingHtml).not.toMatch(/>Open</);
+    expect(pendingHtml).toContain('role="button"');
+    expect(pendingHtml).toContain('cursor-pointer');
+    expect(pendingHtml).toContain('Activate to open counselling session');
+
+    const preAuthHtml = renderToStaticMarkup(
+      <WaitingListWorkRow
+        {...baseProps({
+          patient: basePatient({ patientType: 'Insurance', status: 'Pending' }),
+          activeTab: 'PreAuthQueue',
+        })}
+      />,
+    );
+    expect(preAuthHtml).toContain('>Pre-Auth<');
+    expect(preAuthHtml).not.toMatch(/>View</);
+    expect(preAuthHtml).not.toMatch(/>Start</);
+  });
+
+  it('shows secondary Pre-Auth without a nav button when coverage on All tab', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow
+        {...baseProps({
+          patient: basePatient({ patientType: 'CGHS' }),
+          activeTab: 'All',
+        })}
+      />,
+    );
+
+    expect(html).not.toMatch(/>Start</);
+    expect(html).toContain('>Pre-Auth<');
+    expect(html).toContain('aria-label="Start or view pre-authorization"');
+  });
+
+  it('activates onRowClick from the row surface', () => {
+    const onRowClick = vi.fn();
+    const tree = expandRow(baseProps({ onRowClick }));
+    const root = tree;
+    expect((root.props as { role?: string }).role).toBe('button');
+    (root.props as { onClick: () => void }).onClick();
+    expect(onRowClick).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'p-1', patientName: 'Anita Rao' }),
+    );
+  });
+
+  it('activates on Enter and Space keydown', () => {
+    const onRowClick = vi.fn();
+    const tree = expandRow(baseProps({ onRowClick }));
+    const onKeyDown = (tree.props as {
+      onKeyDown: (e: { key: string; preventDefault: () => void }) => void;
+    }).onKeyDown;
+    const preventDefault = vi.fn();
+    onKeyDown({ key: 'Enter', preventDefault });
+    onKeyDown({ key: ' ', preventDefault });
+    expect(onRowClick).toHaveBeenCalledTimes(2);
+    expect(preventDefault).toHaveBeenCalledTimes(2);
+  });
+
+  it('exposes demographics control with aria-label Patient details', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow {...baseProps()} />,
+    );
+
+    expect(html).toContain('aria-label="Patient details"');
+  });
+
+  it('collapses repeated Dr. prefix via formatWaitingListDoctorDisplay', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow
+        {...baseProps({
+          patient: basePatient({ doctor: 'Dr. Dr. Sharma' }),
+        })}
+      />,
+    );
+
+    expect(html).toContain('Dr. Sharma');
+    expect(html).not.toContain('Dr. Dr. Sharma');
+  });
+
+  it('renders safely when optional fields are missing', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow
+        {...baseProps({
+          patient: basePatient({
+            surgeryName: '',
+            eye: '',
+            doctor: '',
+            age: 0,
+            time: '',
+            slNo: 0,
+          }),
+        })}
+      />,
+    );
+
+    expect(html).toContain('Anita Rao');
+    expect(html).toContain('UHID-1001');
+    expect(html).toContain('—');
+    expect(html).not.toContain('0 yrs');
+    expect(html).not.toContain('Dr. Dr.');
+  });
+
+  it('stops propagation on nested Pre-Auth click and calls onPreAuth', () => {
+    const onPreAuth = vi.fn();
+    const onRowClick = vi.fn();
+    const tree = expandRow(
+      baseProps({
+        patient: basePatient({ patientType: 'Insurance' }),
+        activeTab: 'All',
+        onPreAuth,
+        onRowClick,
+      }),
+    );
+
+    const preAuthButtons = findButtonsByLabel(tree, 'Pre-Auth').filter(
+      (el) =>
+        (el.props as { 'aria-label'?: string })['aria-label'] ===
+        'Start or view pre-authorization',
+    );
+    expect(preAuthButtons.length).toBe(1);
+
+    const stopPropagation = vi.fn();
+    const mockEvent = { stopPropagation } as unknown as MouseEvent;
+    (preAuthButtons[0].props as { onClick: (e: MouseEvent) => void }).onClick(
+      mockEvent,
+    );
+
+    expect(onPreAuth).toHaveBeenCalledWith('p-1');
+    expect(stopPropagation).toHaveBeenCalled();
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('uses V2 density without left status accent bar', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListWorkRow
+        {...baseProps({
+          patient: basePatient({ status: 'Pending' }),
+        })}
+      />,
+    );
+
+    expect(html).toContain('min-h-14');
+    expect(html).toContain('text-sm font-semibold');
+    expect(html).toContain('!min-h-8');
+    expect(html).not.toContain('border-l-2');
+    expect(html).not.toContain('border-l-amber-400');
+  });
+});
