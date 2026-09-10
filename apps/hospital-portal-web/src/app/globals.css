@@ -46,10 +46,46 @@
   --background-rgb:        255, 255, 255; /* white */
   --background-secondary:  249, 250, 251; /* gray-50 */
 
-  /* ── Layout ─────────────────────────────────────── */
+  /* ── Layout / responsive density (Waves 1–3) ─────
+     LARGE_DESKTOP (≥1600 CSS px): values = audited SoT.
+     WORKSTATION (<1600): overrides in media query below.
+     Do not change desktop values to “clean up” tokens. */
+  --shell-pad: 12px;
+  --shell-gap: 12px;
+
   --sidebar-collapsed-width: 64px;
-  --sidebar-expanded-width:  240px;
-  --topnav-height:           56px;
+  --sidebar-expanded-width: 240px;
+  --sidebar-logo-size: 36px;
+  --sidebar-section-icon-size: 20px;
+  --sidebar-icon-size: 16px;
+  --sidebar-item-pad-y: 10px;
+
+  --topnav-height: 56px;
+  --topnav-pad-x: 20px;
+  --topnav-gap: 16px;
+  --topnav-icon-size: 24px;
+  --topnav-avatar-size: 32px;
+}
+
+/* WORKSTATION density — CSS viewport width only (no DPR / zoom / transform) */
+@media (max-width: 1599.98px) {
+  :root {
+    --shell-pad: 8px;
+    --shell-gap: 8px;
+
+    --sidebar-collapsed-width: 64px;
+    --sidebar-expanded-width: 240px;
+    --sidebar-logo-size: 32px;
+    --sidebar-section-icon-size: 18px;
+    --sidebar-icon-size: 16px;
+    --sidebar-item-pad-y: 8px;
+
+    --topnav-height: 48px;
+    --topnav-pad-x: 16px;
+    --topnav-gap: 12px;
+    --topnav-icon-size: 20px;
+    --topnav-avatar-size: 28px;
+  }
 }
 
 /* WCAG 2.4.1 — skip link hidden until keyboard focus */

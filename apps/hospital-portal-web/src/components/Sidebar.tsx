@@ -5,7 +5,18 @@ import { usePathname } from 'next/navigation';
 import { useHasPermission } from '@/lib/permission-cache';
 import { logoutEverywhere } from '@/lib/logout-everywhere';
 import { SIDEBAR_MENU_SECTIONS } from '@/lib/navigation/sidebar-menu-sections';
-import { useState, useEffect, useMemo, memo, type ComponentType } from 'react';
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  memo,
+  type ComponentType,
+} from 'react';
+
+/** Expanded sidebar SoT at this CSS viewport and above; collapse by default below. */
+const SIDEBAR_EXPANDED_MIN_WIDTH_MQ = '(min-width: 1600px)';
 import {
   ChevronDown,
   ChevronRight,
@@ -38,8 +49,33 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
   const [openSection, setOpenSection] = useState<string | null>('Dashboard');
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [expandedSubsections, setExpandedSubsections] = useState<string[]>([]);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !window.matchMedia(SIDEBAR_EXPANDED_MIN_WIDTH_MQ).matches;
+  });
+  /** When true, ignore responsive defaults until the 1600px density boundary is crossed. */
+  const manualOverrideRef = useRef(false);
   const [collapsedPopover, setCollapsedPopover] = useState<string | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia(SIDEBAR_EXPANDED_MIN_WIDTH_MQ);
+    const applyResponsiveDefault = () => {
+      manualOverrideRef.current = false;
+      setIsCollapsed(!mq.matches);
+    };
+    // Sync after mount (hydration / first paint).
+    if (!manualOverrideRef.current) {
+      setIsCollapsed(!mq.matches);
+    }
+    const onViewportBandChange = () => applyResponsiveDefault();
+    mq.addEventListener('change', onViewportBandChange);
+    return () => mq.removeEventListener('change', onViewportBandChange);
+  }, []);
+
+  const toggleCollapsed = useCallback(() => {
+    manualOverrideRef.current = true;
+    setIsCollapsed((prev) => !prev);
+  }, []);
 
   const handleLogout = () => {
     void logoutEverywhere('user');
@@ -116,30 +152,40 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
     <>
     {/* Desktop sidebar � hidden below lg (1024px) */}
     {!drawerOnly && (
-    <nav className={`hidden lg:flex ${isCollapsed ? 'lg:w-16' : 'lg:w-60'} flex-col h-full font-sans transition-all duration-300 overflow-hidden bg-navy-900`} aria-label="Main navigation">
+    <nav
+      data-testid="app-sidebar"
+      className="hidden lg:flex flex-col h-full font-sans transition-all duration-300 overflow-hidden bg-navy-900"
+      style={{
+        width: isCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-expanded-width)',
+      }}
+      aria-label="Main navigation"
+    >
       {/* Header */}
       <div className={`${isCollapsed ? 'p-3' : 'px-4 py-4'} border-b flex-shrink-0`} style={{borderColor:'rgba(255,255,255,0.1)'}}>
         {isCollapsed ? (
           <div className="flex flex-col items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500">
-              <Building2 className="h-5 w-5 text-white" />
+            <div className="rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500 h-[var(--sidebar-logo-size)] w-[var(--sidebar-logo-size)]">
+              <Building2 className="h-[var(--sidebar-section-icon-size)] w-[var(--sidebar-section-icon-size)] text-white" />
             </div>
             <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
+              type="button"
+              onClick={toggleCollapsed}
               className="p-1.5 rounded-md transition-colors"
               style={{color:'rgba(255,255,255,0.5)'}}
               onMouseEnter={e => (e.currentTarget.style.backgroundColor='rgba(255,255,255,0.1)')}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor='transparent')}
               title="Expand sidebar"
+              aria-label="Expand sidebar"
+              data-testid="sidebar-expand"
             >
-              <Menu className="h-4 w-4" />
+              <Menu className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
             </button>
           </div>
         ) : (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500">
-                <Building2 className="h-5 w-5 text-white" />
+              <div className="rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500 h-[var(--sidebar-logo-size)] w-[var(--sidebar-logo-size)]">
+                <Building2 className="h-[var(--sidebar-section-icon-size)] w-[var(--sidebar-section-icon-size)] text-white" />
               </div>
               <div className="min-w-0">
                 <h1 className="font-semibold text-sm text-white truncate">Hospital Portal</h1>
@@ -147,14 +193,17 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
               </div>
             </div>
             <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
+              type="button"
+              onClick={toggleCollapsed}
               className="p-1.5 rounded-md transition-colors flex-shrink-0"
               style={{color:'rgba(255,255,255,0.5)'}}
               onMouseEnter={e => (e.currentTarget.style.backgroundColor='rgba(255,255,255,0.1)')}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor='transparent')}
+              aria-label="Collapse sidebar"
+              data-testid="sidebar-collapse"
               title="Collapse sidebar"
             >
-              <Menu className="h-4 w-4" />
+              <Menu className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
             </button>
           </div>
         )}
@@ -178,7 +227,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                     toggleSection(section.title);
                   }
                 }}
-                className="w-full flex items-center justify-between px-3 py-2.5 transition-colors group"
+                className="w-full flex items-center justify-between px-3 py-[var(--sidebar-item-pad-y)] transition-colors group"
                 style={{color: isOpen ? 'white' : 'rgba(255,255,255,0.65)'}}
                 onMouseEnter={e => { if(!isOpen) e.currentTarget.style.backgroundColor='rgba(255,255,255,0.07)'; }}
                 onMouseLeave={e => { if(!isOpen) e.currentTarget.style.backgroundColor='transparent'; }}
@@ -186,7 +235,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
               >
                 <div className={`flex items-center ${isCollapsed ? 'justify-center w-full' : 'gap-2.5'}`}>
                   <span className="flex-shrink-0">
-                    <SidebarIcon icon={section.icon} className="h-5 w-5" />
+                    <SidebarIcon icon={section.icon} className="h-[var(--sidebar-section-icon-size)] w-[var(--sidebar-section-icon-size)]" />
                   </span>
                   {!isCollapsed && <span className="text-xs font-semibold uppercase tracking-wider">{section.title}</span>}
                 </div>
@@ -223,7 +272,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                         return (
                           <div key={item.label}>
                             <div className="px-4 py-2 text-xs font-semibold text-gray-600 mt-2 flex items-center gap-2">
-                              <SidebarIcon icon={item.icon} className="h-4 w-4" />
+                              <SidebarIcon icon={item.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                               <span>{item.label}</span>
                             </div>
                             {item.subItems.map((subItem) => {
@@ -243,7 +292,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                   `}
                                 >
                                   <span className={`text-xs ${subActive ? 'text-teal-600' : 'text-gray-600'}`}>
-                                    <SidebarIcon icon={subItem.icon} className="h-4 w-4" />
+                                    <SidebarIcon icon={subItem.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                                   </span>
                                   <span className="text-sm">{subItem.label}</span>
                                 </Link>
@@ -269,7 +318,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                           `}
                         >
                           <span className={`${active ? 'text-teal-600' : 'text-gray-600'}`}>
-                            <SidebarIcon icon={item.icon} className="h-4 w-4" />
+                            <SidebarIcon icon={item.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                           </span>
                           <span className="text-sm">{item.label}</span>
                         </Link>
@@ -321,10 +370,10 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                   const isSubsectionItem = !!lastSubsection;
                   
                   const baseClass = item.isChild 
-                    ? "pl-12 pr-4 py-2.5" 
+                    ? "pl-12 pr-4 py-[var(--sidebar-item-pad-y)]" 
                     : isSubsectionItem
-                    ? "pl-6 pr-4 py-2.5"
-                    : "pl-4 pr-4 py-2.5";
+                    ? "pl-6 pr-4 py-[var(--sidebar-item-pad-y)]"
+                    : "pl-4 pr-4 py-[var(--sidebar-item-pad-y)]";
                   
                   // Render expandable menu item with submenu
                   if (item.isExpandable && item.subItems) {
@@ -337,7 +386,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                           <button
                             onClick={() => setCollapsedPopover(showPopover ? null : item.label)}
                             className={`
-                              w-full flex items-center justify-center py-2.5 rounded-md transition-all duration-150
+                              w-full flex items-center justify-center py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150
                               ${active
                                 ? 'text-primary-400'
                                 : 'hover:text-white'
@@ -347,7 +396,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                             title={item.label}
                           >
                             <span className={`font-bold ${active ? 'text-teal-600' : 'text-gray-600'}`}>
-                              <SidebarIcon icon={item.icon} className="h-4 w-4" />
+                              <SidebarIcon icon={item.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                             </span>
                           </button>
                           {showPopover && item.subItems && (
@@ -372,7 +421,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                     `}
                                   >
                                     <span className={`font-bold ${subActive ? 'text-teal-600' : 'text-gray-600'}`}>
-                                      <SidebarIcon icon={subItem.icon} className="h-4 w-4" />
+                                      <SidebarIcon icon={subItem.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                                     </span>
                                     <span className="font-bold text-sm">{subItem.label}</span>
                                   </Link>
@@ -398,7 +447,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                         >
                           <div className="flex items-center gap-3">
                             <span className={`font-bold ${active ? 'text-teal-600' : 'text-gray-600'}`}>
-                              <SidebarIcon icon={item.icon} className="h-4 w-4" />
+                              <SidebarIcon icon={item.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                             </span>
                             <span className="font-bold text-sm">{item.label}</span>
                           </div>
@@ -414,7 +463,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                               href={subItem.href}
                               prefetch={false}
                               className={`
-                                flex items-center gap-3 pl-12 pr-4 py-2.5 rounded-md transition-all duration-150
+                                flex items-center gap-3 pl-12 pr-4 py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150
                                 ${subActive
                                   ? 'text-white'
                                   : ''
@@ -423,7 +472,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                               style={{color: subActive ? 'white' : 'rgba(255,255,255,0.6)', backgroundColor: subActive ? 'rgba(16,185,129,0.15)' : undefined}}
                             >
                               <span className={`font-bold ${subActive ? 'text-teal-600' : 'text-gray-600'}`}>
-                                <SidebarIcon icon={subItem.icon} className="h-4 w-4" />
+                                <SidebarIcon icon={subItem.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                               </span>
                               <span className="font-bold text-sm">{subItem.label}</span>
                             </Link>
@@ -442,11 +491,11 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                           href={item.href}
                           prefetch={false}
                           className={`
-                            flex items-center justify-center py-2.5 rounded-md transition-all duration-150
+                            flex items-center justify-center py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150
                           `}
                           style={{color: active ? '#34d399' : 'rgba(255,255,255,0.55)', backgroundColor: active ? 'rgba(16,185,129,0.15)' : undefined}}
                         >
-                          <SidebarIcon icon={item.icon} className="h-4 w-4" />
+                          <SidebarIcon icon={item.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                         </Link>
                       </div>
                     );
@@ -465,7 +514,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                         onMouseLeave={e => { if(!active) e.currentTarget.style.backgroundColor='transparent'; }}
                       >
                         <span className="flex-shrink-0">
-                          <SidebarIcon icon={item.icon} className="h-4 w-4" />
+                          <SidebarIcon icon={item.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
                         </span>
                         <span className="text-sm flex-1 truncate">{item.label}</span>
                         {item.badge}
@@ -491,7 +540,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
           onMouseLeave={e => { e.currentTarget.style.backgroundColor='transparent'; e.currentTarget.style.color='rgba(255,255,255,0.55)'; }}
           title={isCollapsed ? "Settings" : ""}
         >
-          <Settings className="h-4 w-4 flex-shrink-0" />
+          <Settings className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)] flex-shrink-0" />
           {!isCollapsed && <span className="text-sm">Settings</span>}
         </Link>
         <button
@@ -502,7 +551,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
           onMouseLeave={e => { e.currentTarget.style.backgroundColor='transparent'; e.currentTarget.style.color='rgba(239,68,68,0.75)'; }}
           title={isCollapsed ? "Logout" : ""}
         >
-          <LogOut className="h-4 w-4 flex-shrink-0" />
+          <LogOut className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)] flex-shrink-0" />
           {!isCollapsed && <span className="text-sm">Logout</span>}
         </button>
       </div>
@@ -526,8 +575,8 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
           {/* Drawer header */}
           <div className="px-4 py-4 flex items-center justify-between flex-shrink-0" style={{borderBottom:'1px solid rgba(255,255,255,0.1)'}}>
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500">
-                <Building2 className="h-5 w-5 text-white" />
+              <div className="rounded-lg flex items-center justify-center flex-shrink-0 bg-primary-500 h-[var(--sidebar-logo-size)] w-[var(--sidebar-logo-size)]">
+                <Building2 className="h-[var(--sidebar-section-icon-size)] w-[var(--sidebar-section-icon-size)] text-white" />
               </div>
               <div>
                 <h1 className="font-semibold text-sm text-white">Hospital Portal</h1>
@@ -540,7 +589,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
               style={{color:'rgba(255,255,255,0.5)'}}
               aria-label="Close menu"
             >
-              <Menu className="h-4 w-4" />
+              <Menu className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" />
             </button>
           </div>
 
@@ -553,11 +602,11 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                 <div key={section.title} className="mb-0.5">
                   <button
                     onClick={() => toggleSection(section.title)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-[var(--sidebar-item-pad-y)] transition-colors"
                     style={{color: isOpen ? 'white' : 'rgba(255,255,255,0.65)'}}
                   >
                     <div className="flex items-center gap-2.5">
-                      <span className="flex-shrink-0"><SidebarIcon icon={section.icon} className="h-5 w-5" /></span>
+                      <span className="flex-shrink-0"><SidebarIcon icon={section.icon} className="h-[var(--sidebar-section-icon-size)] w-[var(--sidebar-section-icon-size)]" /></span>
                       <span className="text-xs font-semibold uppercase tracking-wider">{section.title}</span>
                     </div>
                     <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} style={{color:'rgba(255,255,255,0.4)'}} />
@@ -579,11 +628,11 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                             <div key={item.label} className="mx-2">
                               <button
                                 onClick={() => toggleSubmenu(item.label)}
-                                className={`w-full flex items-center justify-between pl-4 pr-4 py-2.5 rounded-md transition-all duration-150`}
+                                className={`w-full flex items-center justify-between pl-4 pr-4 py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150`}
                                 style={{color: active ? 'white' : 'rgba(255,255,255,0.7)', backgroundColor: active ? 'rgba(16,185,129,0.15)' : undefined}}
                               >
                                 <div className="flex items-center gap-3">
-                                  <span className={`font-bold ${active ? 'text-teal-600' : 'text-gray-600'}`}><SidebarIcon icon={item.icon} className="h-4 w-4" /></span>
+                                  <span className={`font-bold ${active ? 'text-teal-600' : 'text-gray-600'}`}><SidebarIcon icon={item.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" /></span>
                                   <span className="font-bold text-sm">{item.label}</span>
                                 </div>
                                 <ChevronRight className={`h-3.5 w-3.5 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
@@ -596,12 +645,12 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                     href={subItem.href}
                                     prefetch={false}
                                     onClick={onClose}
-                                    className={`flex items-center gap-3 pl-12 pr-4 py-2.5 rounded-md transition-all duration-150 ${
+                                    className={`flex items-center gap-3 pl-12 pr-4 py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150 ${
                                       subActive ? 'border-l-2 border-primary-400' : ''
                                     }`}
                                     style={{color: subActive ? 'white' : 'rgba(255,255,255,0.65)', backgroundColor: subActive ? 'rgba(16,185,129,0.15)' : undefined}}
                                   >
-                                    <span><SidebarIcon icon={subItem.icon} className="h-4 w-4" /></span>
+                                    <span><SidebarIcon icon={subItem.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" /></span>
                                     <span className="text-sm">{subItem.label}</span>
                                   </Link>
                                 );
@@ -615,12 +664,12 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                               href={item.href}
                               prefetch={false}
                               onClick={onClose}
-                              className={`flex items-center gap-3 pl-4 pr-4 py-2.5 rounded-md transition-all duration-150 ${
+                              className={`flex items-center gap-3 pl-4 pr-4 py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150 ${
                                 active ? 'border-l-2 border-primary-400' : ''
                               }`}
                               style={{color: active ? 'white' : 'rgba(255,255,255,0.7)', backgroundColor: active ? 'rgba(16,185,129,0.15)' : undefined}}
                             >
-                              <span className="flex-shrink-0"><SidebarIcon icon={item.icon} className="h-4 w-4" /></span>
+                              <span className="flex-shrink-0"><SidebarIcon icon={item.icon} className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)]" /></span>
                               <span className="text-sm flex-1 truncate">{item.label}</span>
                               {item.badge}
                             </Link>
@@ -645,7 +694,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
               onMouseEnter={e => { e.currentTarget.style.backgroundColor='rgba(255,255,255,0.08)'; e.currentTarget.style.color='white'; }}
               onMouseLeave={e => { e.currentTarget.style.backgroundColor='transparent'; e.currentTarget.style.color='rgba(255,255,255,0.55)'; }}
             >
-              <Settings className="h-4 w-4 flex-shrink-0" />
+              <Settings className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)] flex-shrink-0" />
               <span className="text-sm">Settings</span>
             </Link>
             <button
@@ -655,7 +704,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
               onMouseEnter={e => { e.currentTarget.style.backgroundColor='rgba(239,68,68,0.12)'; e.currentTarget.style.color='#ef4444'; }}
               onMouseLeave={e => { e.currentTarget.style.backgroundColor='transparent'; e.currentTarget.style.color='rgba(239,68,68,0.75)'; }}
             >
-              <LogOut className="h-4 w-4 flex-shrink-0" />
+              <LogOut className="h-[var(--sidebar-icon-size)] w-[var(--sidebar-icon-size)] flex-shrink-0" />
               <span className="text-sm">Logout</span>
             </button>
           </div>

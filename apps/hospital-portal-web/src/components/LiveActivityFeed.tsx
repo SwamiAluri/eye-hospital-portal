@@ -63,11 +63,13 @@ export default function LiveActivityFeed() {
     <div className="relative">
       <button
         type="button"
+        data-testid="topnav-notifications"
         onClick={toggleOpen}
         className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors"
         title="Activity Feed"
+        aria-label="Activity Feed"
       >
-        <Bell className="w-6 h-6" />
+        <Bell className="h-[var(--topnav-icon-size)] w-[var(--topnav-icon-size)]" />
         {notifications.length > 0 && (
           <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full">
             {notifications.length > 99 ? '99+' : notifications.length}

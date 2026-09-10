@@ -105,14 +105,17 @@ export default function DashboardLayout({
         <Sidebar isMobileOpen onClose={closeSidebar} drawerOnly />
       )}
 
-      <div className="flex h-screen min-h-0 min-w-0 overflow-hidden bg-gray-100 p-3 gap-3">
+      <div
+        data-testid="app-shell"
+        className="flex h-screen min-h-0 min-w-0 overflow-hidden bg-gray-100 p-[var(--shell-pad)] gap-[var(--shell-gap)]"
+      >
         {/* Nav Sidebar card — desktop only (hidden below lg / 1024px) */}
         <div className="hidden lg:flex flex-shrink-0 rounded-2xl overflow-hidden shadow-md">
           <Sidebar />
         </div>
 
         {/* Right column: TopNav + main content */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--shell-gap)] overflow-hidden">
           {!isImmersive && (
             <div className="rounded-2xl overflow-hidden shadow-md flex-shrink-0">
               <TopNav onMenuClick={openSidebar} />

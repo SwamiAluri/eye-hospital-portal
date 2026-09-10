@@ -53,14 +53,17 @@ export default function AdminLayout({
       {/* Mobile/tablet drawer */}
       <Sidebar isMobileOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} drawerOnly />
 
-      <div className="flex h-screen bg-gray-100 p-3 gap-3 overflow-hidden">
+      <div
+        data-testid="app-shell"
+        className="flex h-screen min-h-0 min-w-0 overflow-hidden bg-gray-100 p-[var(--shell-pad)] gap-[var(--shell-gap)]"
+      >
         {/* Sidebar card — desktop only */}
         <div className="hidden lg:flex flex-shrink-0 rounded-2xl overflow-hidden shadow-md">
           <Sidebar />
         </div>
 
         {/* Right column: TopNav + main content */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 gap-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--shell-gap)] overflow-hidden">
           <div className="rounded-2xl overflow-hidden shadow-md flex-shrink-0">
             <TopNav onMenuClick={() => setSidebarOpen(true)} />
           </div>

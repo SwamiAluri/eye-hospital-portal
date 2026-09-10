@@ -15,7 +15,7 @@ const LiveActivityFeed = dynamic(() => import('@/components/LiveActivityFeed'), 
       aria-label="Activity Feed"
       disabled
     >
-      <Bell className="w-6 h-6" />
+      <Bell className="h-[var(--topnav-icon-size)] w-[var(--topnav-icon-size)]" />
     </button>
   ),
 });
@@ -32,7 +32,10 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
     : '?';
 
   return (
-    <div className="h-14 px-5 flex items-center justify-between bg-white">
+    <div
+      data-testid="app-topnav"
+      className="flex items-center justify-between bg-white h-[var(--topnav-height)] px-[var(--topnav-pad-x)]"
+    >
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
@@ -44,13 +47,14 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
         {user && <BranchSwitcher />}
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-[var(--topnav-gap)]">
         <LiveActivityFeed />
 
         {user && (
           <div className="flex items-center gap-2.5">
             <div
-              className="w-8 h-8 rounded-full bg-navy-900 flex items-center justify-center text-white text-xs font-semibold select-none flex-shrink-0"
+              data-testid="topnav-avatar"
+              className="rounded-full bg-navy-900 flex items-center justify-center text-white text-xs font-semibold select-none flex-shrink-0 h-[var(--topnav-avatar-size)] w-[var(--topnav-avatar-size)]"
               title={`${user.firstName} ${user.lastName}`}
             >
               {initials}
