@@ -8,6 +8,7 @@ import TopNav from '@/components/TopNav';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLoadingSkeleton } from '@/components/DashboardLoadingSkeleton';
 import { Toaster } from 'react-hot-toast';
+import { useDensityBandAttribute } from '@/lib/layout/use-density-band';
 
 export default function DashboardLayout({
   children,
@@ -20,6 +21,7 @@ export default function DashboardLayout({
   const [isClient, setIsClient] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useDensityBandAttribute();
 
   const openSidebar = useCallback(() => setSidebarOpen(true), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);

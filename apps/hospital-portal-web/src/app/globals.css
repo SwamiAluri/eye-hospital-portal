@@ -106,6 +106,26 @@
   }
 }
 
+/*
+ * Wave 4.1 — CSS-first sidebar WIDTH (auto mode).
+ * Prevents hydration/JS from leaving an expanded 240px rail when CSS viewport < 1600.
+ * Manual expand/collapse uses data-sidebar-mode="expanded"|"collapsed".
+ */
+[data-testid='app-sidebar'][data-sidebar-mode='auto'] {
+  width: var(--sidebar-collapsed-width);
+}
+@media (min-width: 1600px) {
+  [data-testid='app-sidebar'][data-sidebar-mode='auto'] {
+    width: var(--sidebar-expanded-width);
+  }
+}
+[data-testid='app-sidebar'][data-sidebar-mode='expanded'] {
+  width: var(--sidebar-expanded-width);
+}
+[data-testid='app-sidebar'][data-sidebar-mode='collapsed'] {
+  width: var(--sidebar-collapsed-width);
+}
+
 /* WCAG 2.4.1 — skip link hidden until keyboard focus */
 .skip-to-content {
   position: absolute;

@@ -9,14 +9,10 @@ import {
   useState,
   useEffect,
   useMemo,
-  useRef,
   useCallback,
   memo,
   type ComponentType,
 } from 'react';
-
-/** Expanded sidebar SoT at this CSS viewport and above; collapse by default below. */
-const SIDEBAR_EXPANDED_MIN_WIDTH_MQ = '(min-width: 1600px)';
 import {
   ChevronDown,
   ChevronRight,
@@ -26,6 +22,18 @@ import {
   Menu,
 } from 'lucide-react';
 
+/** Expanded sidebar SoT at this CSS viewport and above; collapse by default below. */
+const SIDEBAR_EXPANDED_MIN_WIDTH_MQ = '(min-width: 1600px)';
+
+type SidebarMode = 'auto' | 'expanded' | 'collapsed';
+
+function readBandCollapsed(): boolean {
+  if (typeof window === 'undefined') {
+    // SSR: prefer collapsed so workstation never hydrates as a 240px rail.
+    return true;
+  }
+  return !window.matchMedia(SIDEBAR_EXPANDED_MIN_WIDTH_MQ).matches;
+}
 
 interface SidebarProps {
   isMobileOpen?: boolean;
@@ -49,32 +57,29 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
   const [openSection, setOpenSection] = useState<string | null>('Dashboard');
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [expandedSubsections, setExpandedSubsections] = useState<string[]>([]);
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return !window.matchMedia(SIDEBAR_EXPANDED_MIN_WIDTH_MQ).matches;
-  });
-  /** When true, ignore responsive defaults until the 1600px density boundary is crossed. */
-  const manualOverrideRef = useRef(false);
+  /** auto = CSS media query owns width; expanded/collapsed = manual override until band change. */
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('auto');
+  const [isCollapsed, setIsCollapsed] = useState(readBandCollapsed);
   const [collapsedPopover, setCollapsedPopover] = useState<string | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia(SIDEBAR_EXPANDED_MIN_WIDTH_MQ);
-    const applyResponsiveDefault = () => {
-      manualOverrideRef.current = false;
+    const syncFromBand = () => {
+      setSidebarMode('auto');
       setIsCollapsed(!mq.matches);
     };
-    // Sync after mount (hydration / first paint).
-    if (!manualOverrideRef.current) {
-      setIsCollapsed(!mq.matches);
-    }
-    const onViewportBandChange = () => applyResponsiveDefault();
-    mq.addEventListener('change', onViewportBandChange);
-    return () => mq.removeEventListener('change', onViewportBandChange);
+    // Sync after mount (hydration / first paint) and whenever the 1600px band is crossed.
+    syncFromBand();
+    mq.addEventListener('change', syncFromBand);
+    return () => mq.removeEventListener('change', syncFromBand);
   }, []);
 
   const toggleCollapsed = useCallback(() => {
-    manualOverrideRef.current = true;
-    setIsCollapsed((prev) => !prev);
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      setSidebarMode(next ? 'collapsed' : 'expanded');
+      return next;
+    });
   }, []);
 
   const handleLogout = () => {
@@ -154,10 +159,9 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
     {!drawerOnly && (
     <nav
       data-testid="app-sidebar"
+      data-sidebar-mode={sidebarMode}
+      data-sidebar-collapsed={isCollapsed ? 'true' : 'false'}
       className="hidden lg:flex flex-col h-full font-sans transition-all duration-300 overflow-hidden bg-navy-900"
-      style={{
-        width: isCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-expanded-width)',
-      }}
       aria-label="Main navigation"
     >
       {/* Header */}

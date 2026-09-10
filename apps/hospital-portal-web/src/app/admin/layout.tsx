@@ -7,6 +7,7 @@ import Sidebar from '@/components/Sidebar';
 import TopNav from '@/components/TopNav';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Toaster } from 'react-hot-toast';
+import { useDensityBandAttribute } from '@/lib/layout/use-density-band';
 
 export default function AdminLayout({
   children,
@@ -17,6 +18,7 @@ export default function AdminLayout({
   const { token } = useAuthStore();
   const [isClient, setIsClient] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useDensityBandAttribute();
 
   useEffect(() => {
     setIsClient(true);
