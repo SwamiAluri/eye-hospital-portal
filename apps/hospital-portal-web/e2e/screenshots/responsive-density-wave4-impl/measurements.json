@@ -1,0 +1,206 @@
+[
+  {
+    "profile": "1920x1080",
+    "route": "dashboard-fixture",
+    "tokens": {
+      "widgetPad": "24px",
+      "tableHeader": "48px",
+      "tableCell": "16px",
+      "controlWs": "40px",
+      "controlPadWs": "16px"
+    },
+    "cardHeader": {
+      "h": 72,
+      "padT": "24px",
+      "padL": "24px",
+      "padR": "24px",
+      "padB": "24px"
+    },
+    "cardComfortable": {
+      "h": 72,
+      "padT": "24px",
+      "padL": "24px",
+      "padR": "24px",
+      "padB": "24px"
+    },
+    "th": {
+      "h": 48,
+      "padT": "0px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "0px"
+    },
+    "td": {
+      "h": 56,
+      "padT": "16px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "16px"
+    },
+    "btnDefault": {
+      "h": 40,
+      "padT": "0px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "0px"
+    },
+    "btnWs": {
+      "h": 40,
+      "padT": "0px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "0px"
+    },
+    "inputDefault": {
+      "h": 40,
+      "padT": "8px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "8px"
+    },
+    "inputWs": {
+      "h": 40,
+      "padT": "8px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "8px"
+    },
+    "pageHOverflow": 0
+  },
+  {
+    "profile": "1600x900",
+    "route": "dashboard-fixture",
+    "tokens": {
+      "widgetPad": "24px",
+      "tableHeader": "48px",
+      "tableCell": "16px",
+      "controlWs": "40px",
+      "controlPadWs": "16px"
+    },
+    "cardHeader": {
+      "h": 72,
+      "padT": "24px",
+      "padL": "24px",
+      "padR": "24px",
+      "padB": "24px"
+    },
+    "cardComfortable": {
+      "h": 72,
+      "padT": "24px",
+      "padL": "24px",
+      "padR": "24px",
+      "padB": "24px"
+    },
+    "th": {
+      "h": 48,
+      "padT": "0px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "0px"
+    },
+    "td": {
+      "h": 56,
+      "padT": "16px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "16px"
+    },
+    "btnDefault": {
+      "h": 40,
+      "padT": "0px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "0px"
+    },
+    "btnWs": {
+      "h": 40,
+      "padT": "0px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "0px"
+    },
+    "inputDefault": {
+      "h": 40,
+      "padT": "8px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "8px"
+    },
+    "inputWs": {
+      "h": 40,
+      "padT": "8px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "8px"
+    },
+    "pageHOverflow": 0
+  },
+  {
+    "profile": "1536x864-dpr1.25",
+    "route": "dashboard-fixture",
+    "tokens": {
+      "widgetPad": "16px",
+      "tableHeader": "40px",
+      "tableCell": "12px",
+      "controlWs": "36px",
+      "controlPadWs": "12px"
+    },
+    "cardHeader": {
+      "h": 56,
+      "padT": "16px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "16px"
+    },
+    "cardComfortable": {
+      "h": 72,
+      "padT": "24px",
+      "padL": "24px",
+      "padR": "24px",
+      "padB": "24px"
+    },
+    "th": {
+      "h": 40,
+      "padT": "0px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "0px"
+    },
+    "td": {
+      "h": 48,
+      "padT": "12px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "12px"
+    },
+    "btnDefault": {
+      "h": 40,
+      "padT": "0px",
+      "padL": "16px",
+      "padR": "16px",
+      "padB": "0px"
+    },
+    "btnWs": {
+      "h": 36,
+      "padT": "0px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "0px"
+    },
+    "inputDefault": {
+      "h": 40,
+      "padT": "8px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "8px"
+    },
+    "inputWs": {
+      "h": 36,
+      "padT": "8px",
+      "padL": "12px",
+      "padR": "12px",
+      "padB": "8px"
+    },
+    "pageHOverflow": 0
+  }
+]

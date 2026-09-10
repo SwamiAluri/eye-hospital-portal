@@ -52,13 +52,13 @@ export {
   AlertDialogCancel as CounsellingAlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 export {
-  Card as CounsellingCard,
-  CardHeader as CounsellingCardHeader,
-  CardTitle as CounsellingCardTitle,
-  CardDescription as CounsellingCardDescription,
-  CardContent as CounsellingCardContent,
-  CardFooter as CounsellingCardFooter,
-} from '@/components/ui/card';
+  CounsellingCard,
+  CounsellingCardHeader,
+  CounsellingCardTitle,
+  CounsellingCardDescription,
+  CounsellingCardContent,
+  CounsellingCardFooter,
+} from './CounsellingCard';
 export { EmptyState as CounsellingEmptyState } from '@/components/ui/EmptyState';
 export { CounsellingTextarea, type CounsellingTextareaProps } from './CounsellingTextarea';
 export { CounsellingPhaseTrigger, type CounsellingPhaseTriggerProps } from './CounsellingPhaseTrigger';

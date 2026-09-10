@@ -65,6 +65,17 @@
   --topnav-gap: 16px;
   --topnav-icon-size: 24px;
   --topnav-avatar-size: 32px;
+
+  /* ── Wave 4: Card / table / opt-in controls ───────
+     Card + ui/table respond by band.
+     Control defaults stay 40px; --control-height-workstation
+     is only consumed when density="workstation" is opted in. */
+  --widget-pad: 24px;
+  --table-header-height: 48px;
+  --table-cell-pad: 16px;
+  --control-height-workstation: 40px;
+  --control-pad-x-workstation: 16px;
+  --control-height-compact: 36px;
 }
 
 /* WORKSTATION density — CSS viewport width only (no DPR / zoom / transform) */
@@ -85,6 +96,13 @@
     --topnav-gap: 12px;
     --topnav-icon-size: 20px;
     --topnav-avatar-size: 28px;
+
+    --widget-pad: 16px;
+    --table-header-height: 40px;
+    --table-cell-pad: 12px;
+    --control-height-workstation: 36px;
+    --control-pad-x-workstation: 12px;
+    --control-height-compact: 36px;
   }
 }
 

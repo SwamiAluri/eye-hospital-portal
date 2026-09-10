@@ -60,6 +60,7 @@ export function CounsellingPricingCard({
 
   return (
     <Card
+      density="comfortable"
       data-testid={testId}
       className={cn(
         counsellingSessionTokens.card,

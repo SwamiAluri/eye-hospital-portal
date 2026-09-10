@@ -5,6 +5,10 @@ import * as SelectPrimitive from '@radix-ui/react-select'
 import { Check, ChevronDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import {
+  controlDensityFieldClass,
+  type ControlDensity,
+} from '@/lib/layout/control-density'
 
 const Select = SelectPrimitive.Root
 const SelectGroup = SelectPrimitive.Group
@@ -12,16 +16,21 @@ const SelectValue = SelectPrimitive.Value
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
+    /** Opt-in workstation height token; default remains h-10. */
+    density?: ControlDensity
+  }
+>(({ className, children, density = 'default', ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
+    data-control-density={density}
     className={cn(
       'flex h-10 w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900',
       'ring-offset-white placeholder:text-gray-400',
       'focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400',
       'disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-gray-50',
       'transition-colors duration-200',
+      controlDensityFieldClass(density),
       className
     )}
     {...props}

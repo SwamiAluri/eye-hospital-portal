@@ -4,6 +4,10 @@ import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  controlDensityButtonClass,
+  type ControlDensity,
+} from '@/lib/layout/control-density'
 
 const buttonVariants = cva(
   'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 focus-ring disabled:opacity-50 disabled:pointer-events-none',
@@ -45,14 +49,39 @@ export interface ButtonProps
   leftIcon?: React.ReactNode
   rightIcon?: React.ReactNode
   'aria-label'?: string
+  /**
+   * Opt-in only. `workstation` uses --control-height-workstation (40px ≥1600, 36px <1600)
+   * for md/default sizes. Does not change default Button md globally.
+   */
+  density?: ControlDensity
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, loading, leftIcon, rightIcon, children, disabled, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      density = 'default',
+      asChild = false,
+      loading,
+      leftIcon,
+      rightIcon,
+      children,
+      disabled,
+      ...props
+    },
+    ref,
+  ) => {
     return (
       <button
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={cn(
+          buttonVariants({ variant, size }),
+          controlDensityButtonClass(density, size),
+          className,
+        )}
         ref={ref}
+        data-control-density={density}
         disabled={disabled || loading}
         aria-busy={loading}
         aria-disabled={disabled || loading}

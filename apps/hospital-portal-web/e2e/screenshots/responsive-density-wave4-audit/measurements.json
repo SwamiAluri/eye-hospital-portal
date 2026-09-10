@@ -1,0 +1,2543 @@
+[
+  {
+    "profile": "1920x1080",
+    "route": "dashboard",
+    "innerWidth": 1920,
+    "dpr": 1,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 20,
+      "w": 126,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "14px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 56,
+      "w": 1644,
+      "padT": "0px",
+      "padR": "20px",
+      "padB": "0px",
+      "padL": "20px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 1080,
+      "w": 1920,
+      "padT": "12px",
+      "padR": "12px",
+      "padB": "12px",
+      "padL": "12px",
+      "fontSize": "16px",
+      "gap": "12px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Dashboard",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "OPD & Registration",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Doctor's Desk",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Optometry",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Counsellor",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Coverage & Claims",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Ward & Inpatient",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "div",
+        "h": 110,
+        "w": 315,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 110,
+        "w": 315,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 110,
+        "w": 315,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 110,
+        "w": 315,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 5,
+      "36": 1,
+      "40": 19,
+      "52": 1
+    },
+    "inputHeightHistogram": {}
+  },
+  {
+    "profile": "1920x1080",
+    "route": "waiting-list",
+    "innerWidth": 1920,
+    "dpr": 1,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 20,
+      "w": 126,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "14px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 56,
+      "w": 1644,
+      "padT": "0px",
+      "padR": "20px",
+      "padB": "0px",
+      "padL": "20px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 1080,
+      "w": 1920,
+      "padT": "12px",
+      "padR": "12px",
+      "padB": "12px",
+      "padL": "12px",
+      "fontSize": "16px",
+      "gap": "12px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Dashboard",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "OPD & Registration",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Doctor's Desk",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Optometry",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Counsellor",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Coverage & Claims",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Ward & Inpatient",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [
+      {
+        "type": "search",
+        "tag": "input",
+        "h": 36,
+        "w": 1211,
+        "padT": "8px",
+        "padR": "32px",
+        "padB": "8px",
+        "padL": "32px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "select-one",
+        "tag": "select",
+        "h": 32,
+        "w": 73,
+        "padT": "8px",
+        "padR": "8px",
+        "padB": "8px",
+        "padL": "8px",
+        "fontSize": "12px",
+        "gap": "normal"
+      }
+    ],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "div",
+        "h": 65,
+        "w": 1612,
+        "padT": "10px",
+        "padR": "16px",
+        "padB": "10px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "section",
+        "h": 803,
+        "w": 1612,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 39,
+      "36": 1,
+      "40": 19,
+      "52": 1
+    },
+    "inputHeightHistogram": {
+      "32": 3,
+      "36": 1
+    }
+  },
+  {
+    "profile": "1920x1080",
+    "route": "finalize-surgery",
+    "innerWidth": 1920,
+    "dpr": 1,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 20,
+      "w": 126,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "14px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 56,
+      "w": 1644,
+      "padT": "0px",
+      "padR": "20px",
+      "padB": "0px",
+      "padL": "20px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 1080,
+      "w": 1920,
+      "padT": "12px",
+      "padR": "12px",
+      "padB": "12px",
+      "padL": "12px",
+      "fontSize": "16px",
+      "gap": "12px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Dashboard",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "OPD & Registration",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Doctor's Desk",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Optometry",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Counsellor",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Coverage & Claims",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Ward & Inpatient",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "text",
+        "tag": "input",
+        "h": 32,
+        "w": 136,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "text",
+        "tag": "input",
+        "h": 32,
+        "w": 1112,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "select-one",
+        "tag": "select",
+        "h": 32,
+        "w": 73,
+        "padT": "8px",
+        "padR": "8px",
+        "padB": "8px",
+        "padL": "8px",
+        "fontSize": "12px",
+        "gap": "normal"
+      }
+    ],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "div",
+        "h": 65,
+        "w": 1612,
+        "padT": "10px",
+        "padR": "16px",
+        "padB": "10px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "section",
+        "h": 797,
+        "w": 1612,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 33,
+      "36": 1,
+      "38": 2,
+      "40": 19,
+      "52": 1
+    },
+    "inputHeightHistogram": {
+      "32": 4
+    }
+  },
+  {
+    "profile": "1920x1080",
+    "route": "admin-inventory",
+    "innerWidth": 1920,
+    "dpr": 1,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 20,
+      "w": 126,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "14px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 56,
+      "w": 1644,
+      "padT": "0px",
+      "padR": "20px",
+      "padB": "0px",
+      "padL": "20px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 1080,
+      "w": 1920,
+      "padT": "12px",
+      "padR": "12px",
+      "padB": "12px",
+      "padL": "12px",
+      "fontSize": "16px",
+      "gap": "12px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Dashboard",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "OPD & Registration",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Doctor's Desk",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Optometry",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Counsellor",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Coverage & Claims",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Ward & Inpatient",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "div",
+        "h": 96,
+        "w": 251,
+        "padT": "16px",
+        "padR": "16px",
+        "padB": "16px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 96,
+        "w": 251,
+        "padT": "16px",
+        "padR": "16px",
+        "padB": "16px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 96,
+        "w": 251,
+        "padT": "16px",
+        "padR": "16px",
+        "padB": "16px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 96,
+        "w": 251,
+        "padT": "16px",
+        "padR": "16px",
+        "padB": "16px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 1,
+      "36": 1,
+      "38": 1,
+      "40": 19,
+      "52": 1
+    },
+    "inputHeightHistogram": {}
+  },
+  {
+    "profile": "1600x900",
+    "route": "dashboard",
+    "innerWidth": 1600,
+    "dpr": 1,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 20,
+      "w": 126,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "14px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 56,
+      "w": 1324,
+      "padT": "0px",
+      "padR": "20px",
+      "padB": "0px",
+      "padL": "20px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 900,
+      "w": 1600,
+      "padT": "12px",
+      "padR": "12px",
+      "padB": "12px",
+      "padL": "12px",
+      "fontSize": "16px",
+      "gap": "12px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Dashboard",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "OPD & Registration",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Doctor's Desk",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Optometry",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Counsellor",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Coverage & Claims",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Ward & Inpatient",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "div",
+        "h": 876,
+        "w": 240,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "main",
+        "h": 808,
+        "w": 1324,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 1,
+      "36": 1,
+      "40": 19,
+      "52": 1
+    },
+    "inputHeightHistogram": {}
+  },
+  {
+    "profile": "1600x900",
+    "route": "waiting-list",
+    "innerWidth": 1600,
+    "dpr": 1,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 20,
+      "w": 126,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "14px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 56,
+      "w": 1324,
+      "padT": "0px",
+      "padR": "20px",
+      "padB": "0px",
+      "padL": "20px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 900,
+      "w": 1600,
+      "padT": "12px",
+      "padR": "12px",
+      "padB": "12px",
+      "padL": "12px",
+      "fontSize": "16px",
+      "gap": "12px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Dashboard",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "OPD & Registration",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Doctor's Desk",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Optometry",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Counsellor",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Coverage & Claims",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Ward & Inpatient",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [
+      {
+        "type": "search",
+        "tag": "input",
+        "h": 36,
+        "w": 891,
+        "padT": "8px",
+        "padR": "32px",
+        "padB": "8px",
+        "padL": "32px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "select-one",
+        "tag": "select",
+        "h": 32,
+        "w": 73,
+        "padT": "8px",
+        "padR": "8px",
+        "padB": "8px",
+        "padL": "8px",
+        "fontSize": "12px",
+        "gap": "normal"
+      }
+    ],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "div",
+        "h": 876,
+        "w": 240,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "main",
+        "h": 808,
+        "w": 1324,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 65,
+        "w": 1292,
+        "padT": "10px",
+        "padR": "16px",
+        "padB": "10px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "section",
+        "h": 623,
+        "w": 1292,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 39,
+      "36": 1,
+      "40": 19,
+      "52": 1
+    },
+    "inputHeightHistogram": {
+      "32": 3,
+      "36": 1
+    }
+  },
+  {
+    "profile": "1600x900",
+    "route": "finalize-surgery",
+    "innerWidth": 1600,
+    "dpr": 1,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 20,
+      "w": 126,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "14px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 56,
+      "w": 1324,
+      "padT": "0px",
+      "padR": "20px",
+      "padB": "0px",
+      "padL": "20px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 900,
+      "w": 1600,
+      "padT": "12px",
+      "padR": "12px",
+      "padB": "12px",
+      "padL": "12px",
+      "fontSize": "16px",
+      "gap": "12px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Dashboard",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "OPD & Registration",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Doctor's Desk",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Optometry",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Counsellor",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Coverage & Claims",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Ward & Inpatient",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "text",
+        "tag": "input",
+        "h": 32,
+        "w": 136,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "text",
+        "tag": "input",
+        "h": 32,
+        "w": 792,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "select-one",
+        "tag": "select",
+        "h": 32,
+        "w": 73,
+        "padT": "8px",
+        "padR": "8px",
+        "padB": "8px",
+        "padL": "8px",
+        "fontSize": "12px",
+        "gap": "normal"
+      }
+    ],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "div",
+        "h": 876,
+        "w": 240,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "main",
+        "h": 808,
+        "w": 1324,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 65,
+        "w": 1292,
+        "padT": "10px",
+        "padR": "16px",
+        "padB": "10px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "section",
+        "h": 617,
+        "w": 1292,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 33,
+      "36": 1,
+      "38": 2,
+      "40": 19,
+      "52": 1
+    },
+    "inputHeightHistogram": {
+      "32": 4
+    }
+  },
+  {
+    "profile": "1600x900",
+    "route": "admin-inventory",
+    "innerWidth": 1600,
+    "dpr": 1,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 20,
+      "w": 126,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "14px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 56,
+      "w": 1324,
+      "padT": "0px",
+      "padR": "20px",
+      "padB": "0px",
+      "padL": "20px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 900,
+      "w": 1600,
+      "padT": "12px",
+      "padR": "12px",
+      "padB": "12px",
+      "padL": "12px",
+      "fontSize": "16px",
+      "gap": "12px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Dashboard",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "OPD & Registration",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Doctor's Desk",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Optometry",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Counsellor",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Coverage & Claims",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "Ward & Inpatient",
+        "tag": "button",
+        "h": 40,
+        "w": 240,
+        "padT": "10px",
+        "padR": "12px",
+        "padB": "10px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "div",
+        "h": 876,
+        "w": 240,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "main",
+        "h": 808,
+        "w": 1324,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 492,
+        "w": 612,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 492,
+        "w": 612,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 1,
+      "36": 1,
+      "38": 1,
+      "40": 19,
+      "52": 1
+    },
+    "inputHeightHistogram": {}
+  },
+  {
+    "profile": "1536x864-dpr1.25",
+    "route": "dashboard",
+    "innerWidth": 1536,
+    "dpr": 1.25,
+    "pageTitle": null,
+    "topnav": {
+      "tag": "div",
+      "h": 48,
+      "w": 1448,
+      "padT": "0px",
+      "padR": "16px",
+      "padB": "0px",
+      "padL": "16px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 864,
+      "w": 1536,
+      "padT": "8px",
+      "padR": "8px",
+      "padB": "8px",
+      "padL": "8px",
+      "fontSize": "16px",
+      "gap": "8px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "main",
+        "h": 792,
+        "w": 1448,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 110,
+        "w": 266,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 110,
+        "w": 266,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 110,
+        "w": 266,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 2,
+      "34": 19,
+      "36": 1
+    },
+    "inputHeightHistogram": {}
+  },
+  {
+    "profile": "1536x864-dpr1.25",
+    "route": "waiting-list",
+    "innerWidth": 1536,
+    "dpr": 1.25,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 28,
+      "w": 1420,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "22px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 48,
+      "w": 1448,
+      "padT": "0px",
+      "padR": "16px",
+      "padB": "0px",
+      "padL": "16px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 864,
+      "w": 1536,
+      "padT": "8px",
+      "padR": "8px",
+      "padB": "8px",
+      "padL": "8px",
+      "fontSize": "16px",
+      "gap": "8px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [
+      {
+        "type": "search",
+        "tag": "input",
+        "h": 36,
+        "w": 1031,
+        "padT": "8px",
+        "padR": "32px",
+        "padB": "8px",
+        "padL": "32px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "select-one",
+        "tag": "select",
+        "h": 32,
+        "w": 73,
+        "padT": "8px",
+        "padR": "8px",
+        "padB": "8px",
+        "padL": "8px",
+        "fontSize": "12px",
+        "gap": "normal"
+      }
+    ],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "main",
+        "h": 792,
+        "w": 1448,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 61,
+        "w": 1424,
+        "padT": "8px",
+        "padR": "16px",
+        "padB": "8px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "section",
+        "h": 637,
+        "w": 1424,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 40,
+      "34": 19,
+      "36": 1
+    },
+    "inputHeightHistogram": {
+      "32": 3,
+      "36": 1
+    }
+  },
+  {
+    "profile": "1536x864-dpr1.25",
+    "route": "finalize-surgery",
+    "innerWidth": 1536,
+    "dpr": 1.25,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 28,
+      "w": 1420,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "22px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 48,
+      "w": 1448,
+      "padT": "0px",
+      "padR": "16px",
+      "padB": "0px",
+      "padL": "16px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 864,
+      "w": 1536,
+      "padT": "8px",
+      "padR": "8px",
+      "padB": "8px",
+      "padL": "8px",
+      "fontSize": "16px",
+      "gap": "8px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [
+      {
+        "type": "date",
+        "tag": "input",
+        "h": 32,
+        "w": 152,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "text",
+        "tag": "input",
+        "h": 32,
+        "w": 136,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "text",
+        "tag": "input",
+        "h": 32,
+        "w": 932,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "14px",
+        "gap": "normal"
+      },
+      {
+        "type": "select-one",
+        "tag": "select",
+        "h": 32,
+        "w": 73,
+        "padT": "8px",
+        "padR": "8px",
+        "padB": "8px",
+        "padL": "8px",
+        "fontSize": "12px",
+        "gap": "normal"
+      }
+    ],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "main",
+        "h": 792,
+        "w": 1448,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 61,
+        "w": 1424,
+        "padT": "8px",
+        "padR": "16px",
+        "padB": "8px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "section",
+        "h": 631,
+        "w": 1424,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 34,
+      "34": 19,
+      "36": 1,
+      "38": 2
+    },
+    "inputHeightHistogram": {
+      "32": 4
+    }
+  },
+  {
+    "profile": "1536x864-dpr1.25",
+    "route": "admin-inventory",
+    "innerWidth": 1536,
+    "dpr": 1.25,
+    "pageTitle": {
+      "tag": "h1",
+      "h": 32,
+      "w": 320,
+      "padT": "0px",
+      "padR": "0px",
+      "padB": "0px",
+      "padL": "0px",
+      "fontSize": "24px",
+      "gap": "normal"
+    },
+    "topnav": {
+      "tag": "div",
+      "h": 48,
+      "w": 1448,
+      "padT": "0px",
+      "padR": "16px",
+      "padB": "0px",
+      "padL": "16px",
+      "fontSize": "16px",
+      "gap": "normal"
+    },
+    "shell": {
+      "tag": "div",
+      "h": 864,
+      "w": 1536,
+      "padT": "8px",
+      "padR": "8px",
+      "padB": "8px",
+      "padL": "8px",
+      "fontSize": "16px",
+      "gap": "8px"
+    },
+    "sampleBtn": [
+      {
+        "text": "",
+        "tag": "button",
+        "h": 28,
+        "w": 28,
+        "padT": "6px",
+        "padR": "6px",
+        "padB": "6px",
+        "padL": "6px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "text": "",
+        "tag": "button",
+        "h": 34,
+        "w": 64,
+        "padT": "8px",
+        "padR": "12px",
+        "padB": "8px",
+        "padL": "12px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "sampleInputs": [],
+    "tableMetrics": [],
+    "cards": [
+      {
+        "tag": "main",
+        "h": 792,
+        "w": 1448,
+        "padT": "0px",
+        "padR": "0px",
+        "padB": "0px",
+        "padL": "0px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 96,
+        "w": 218,
+        "padT": "16px",
+        "padR": "16px",
+        "padB": "16px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 96,
+        "w": 218,
+        "padT": "16px",
+        "padR": "16px",
+        "padB": "16px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      },
+      {
+        "tag": "div",
+        "h": 96,
+        "w": 218,
+        "padT": "16px",
+        "padR": "16px",
+        "padB": "16px",
+        "padL": "16px",
+        "fontSize": "16px",
+        "gap": "normal"
+      }
+    ],
+    "pageHOverflow": 0,
+    "btnHeightHistogram": {
+      "28": 1,
+      "32": 2,
+      "34": 19,
+      "36": 1,
+      "38": 1
+    },
+    "inputHeightHistogram": {}
+  }
+]
