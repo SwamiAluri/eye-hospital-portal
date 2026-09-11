@@ -76,6 +76,23 @@
   --control-height-workstation: 40px;
   --control-pad-x-workstation: 16px;
   --control-height-compact: 36px;
+
+  /* ── Wave 5: staff page composition (spacing first) ─
+     Desktop values match current common p-6 / space-y-6 / py-4 patterns.
+     Workstation reduces chrome whitespace without global type collapse. */
+  --page-pad: 24px;
+  --page-section-gap: 24px;
+  --page-header-pad-y: 16px;
+  --page-header-pad-x: 24px;
+  --page-content-pad: 16px;
+  --kpi-pad: 20px;
+  --kpi-gap: 16px;
+  --toolbar-gap: 12px;
+  --worklist-row-min-h: 56px;
+  --worklist-row-pad-y: 10px;
+  --page-title-size: 1.25rem;
+  --page-title-leading: 1.75rem;
+  --kpi-value-size: 1.5rem;
 }
 
 /* WORKSTATION density — CSS viewport width only (no DPR / zoom / transform) */
@@ -103,6 +120,20 @@
     --control-height-workstation: 36px;
     --control-pad-x-workstation: 12px;
     --control-height-compact: 36px;
+
+    --page-pad: 12px;
+    --page-section-gap: 12px;
+    --page-header-pad-y: 10px;
+    --page-header-pad-x: 16px;
+    --page-content-pad: 12px;
+    --kpi-pad: 12px;
+    --kpi-gap: 10px;
+    --toolbar-gap: 8px;
+    --worklist-row-min-h: 48px;
+    --worklist-row-pad-y: 8px;
+    --page-title-size: 1.125rem;
+    --page-title-leading: 1.5rem;
+    --kpi-value-size: 1.25rem;
   }
 }
 
@@ -124,6 +155,89 @@
 }
 [data-testid='app-sidebar'][data-sidebar-mode='collapsed'] {
   width: var(--sidebar-collapsed-width);
+}
+
+/* Wave 5 — reusable staff page composition utilities (token-driven) */
+@layer components {
+  .staff-page {
+    padding: var(--page-pad);
+  }
+  .staff-page-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-section-gap);
+  }
+  .staff-page-header {
+    padding: var(--page-header-pad-y) var(--page-header-pad-x);
+  }
+  .staff-page-title {
+    font-size: var(--page-title-size);
+    line-height: var(--page-title-leading);
+  }
+  .staff-kpi-pad {
+    padding: var(--kpi-pad);
+  }
+  .staff-kpi-grid {
+    gap: var(--kpi-gap);
+  }
+  .staff-toolbar-gap {
+    gap: var(--toolbar-gap);
+  }
+  .staff-worklist-row {
+    min-height: var(--worklist-row-min-h);
+    padding-top: var(--worklist-row-pad-y);
+    padding-bottom: var(--worklist-row-pad-y);
+  }
+  .staff-kpi-value {
+    font-size: var(--kpi-value-size);
+    line-height: 1.2;
+  }
+  .staff-section-mb {
+    margin-bottom: var(--page-section-gap);
+  }
+
+  /*
+   * Wave 7.2 — global staff page viewport-fit contract.
+   * Page = flex column; workspace receives remaining height; scroll is explicit.
+   * Desktop ≥1600 keeps existing token/spacing SoT via the same utilities.
+   */
+  .staff-page-fit {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    flex: 1 1 auto;
+    height: 100%;
+    overflow: hidden;
+  }
+  .staff-page-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-section-gap);
+    min-height: 0;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+  .staff-page-workspace {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+  .staff-page-workspace-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .staff-page-footer {
+    flex-shrink: 0;
+  }
 }
 
 /* WCAG 2.4.1 — skip link hidden until keyboard focus */

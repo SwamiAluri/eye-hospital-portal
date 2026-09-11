@@ -1,5 +1,19 @@
 import type { WaitingListFilters } from '@/types/counsellors-desk';
 
+export type FollowupQueryFilters = {
+  branchId?: string | null;
+  q?: string;
+  intention?: string | null;
+  page: number;
+  pageSize: number;
+};
+
+export type FollowupStatsQueryFilters = {
+  branchId?: string | null;
+  q?: string;
+  intention?: string | null;
+};
+
 /** Stable query keys for counsellor desk data — shared across pages. */
 export const counsellorsDeskKeys = {
   all: ['counsellors-desk'] as const,
@@ -13,12 +27,43 @@ export const counsellorsDeskKeys = {
   surgeons: () => [...counsellorsDeskKeys.all, 'surgeons'] as const,
   finalizeList: (filters: { date?: string; uhid?: string; name?: string }) =>
     [...counsellorsDeskKeys.all, 'finalize-list', filters] as const,
-  activeFollowups: (page: number, pageSize: number) =>
-    [...counsellorsDeskKeys.all, 'followups', 'active', page, pageSize] as const,
-  coldLeads: (page: number, pageSize: number) =>
-    [...counsellorsDeskKeys.all, 'followups', 'cold', page, pageSize] as const,
-  postSurgeryFollowups: (page: number, pageSize: number) =>
-    [...counsellorsDeskKeys.all, 'followups', 'post-surgery', page, pageSize] as const,
+  followups: () => [...counsellorsDeskKeys.all, 'followups'] as const,
+  activeFollowups: (filters: FollowupQueryFilters) =>
+    [
+      ...counsellorsDeskKeys.followups(),
+      'active',
+      filters.branchId ?? '',
+      filters.q ?? '',
+      filters.intention ?? '',
+      filters.page,
+      filters.pageSize,
+    ] as const,
+  coldLeads: (filters: FollowupQueryFilters) =>
+    [
+      ...counsellorsDeskKeys.followups(),
+      'cold',
+      filters.branchId ?? '',
+      filters.q ?? '',
+      filters.page,
+      filters.pageSize,
+    ] as const,
+  postSurgeryFollowups: (filters: FollowupQueryFilters) =>
+    [
+      ...counsellorsDeskKeys.followups(),
+      'post-surgery',
+      filters.branchId ?? '',
+      filters.q ?? '',
+      filters.page,
+      filters.pageSize,
+    ] as const,
+  followupStats: (filters: FollowupStatsQueryFilters) =>
+    [
+      ...counsellorsDeskKeys.followups(),
+      'stats',
+      filters.branchId ?? '',
+      filters.q ?? '',
+      filters.intention ?? '',
+    ] as const,
 };
 
 export const CATALOG_STALE_MS = 30 * 60 * 1000;

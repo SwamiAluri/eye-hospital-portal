@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
+import { finalizeMutationErrorMessage } from '@/lib/counsellors-desk/finalize-mutation-error';
 import type {
   OtScheduleDetail,
   UpdateOtDetailsPayload,
@@ -18,7 +19,13 @@ import { useAnesthesiaTypeMaster } from '@/hooks/use-anesthesia-type-master';
 import { CounsellorOutpatientChecklist } from '@/components/counsellors-desk/CounsellorOutpatientChecklist';
 import { AnesthetistSelect } from '@/components/counsellors-desk/AnesthetistSelect';
 import { SearchableMasterSelect } from '@/components/counsellors-desk/SearchableMasterSelect';
+import { useHasPermission } from '@/hooks/use-permissions';
 import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
+import {
+  FINALIZE_OT_MUTATE_PERMISSION,
+  resolveFinalizeChecklistReadOnly,
+  resolveFinalizeOtFormLocked,
+} from '@/lib/counsellors-desk/finalize-ot-authorization';
 import { biometryMissingEyePhrase } from '@/lib/ip-management/iol-diopter';
 import {
   hasUnresolvedAnesthetistNameConflict,
@@ -294,6 +301,7 @@ const EMPTY_FORM: UpdateOtDetailsPayload = {
 };
 
 export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }: FinalizeOtModalProps) {
+  const canMutateOt = useHasPermission(FINALIZE_OT_MUTATE_PERMISSION);
   const { canEditCounsellorOutpatient } = useIpChecklistPermissions();
   const {
     options: anesthesiaMasterOptions,
@@ -322,8 +330,15 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const isLocked = detail ? LOCKED_STATUSES.includes(detail.status) : false;
-  const cannotFinalize = !canEditCounsellorOutpatient;
-  const formLocked = isLocked || cannotFinalize;
+  const cannotFinalize = !canMutateOt;
+  const formLocked = resolveFinalizeOtFormLocked({
+    isStatusLocked: isLocked,
+    canMutateOt,
+  });
+  const checklistReadOnly = resolveFinalizeChecklistReadOnly({
+    isStatusLocked: isLocked,
+    canEditChecklist: canEditCounsellorOutpatient,
+  });
   const isEdited  = detail
     ? (
         LOCKED_STATUSES.includes(detail.status) === false &&
@@ -472,8 +487,8 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
       setDetail((d) => d ? { ...d, ...updated } : d);
       onStatusChange(updated);
       toast.success('Details saved');
-    } catch {
-      toast.error('Failed to save details');
+    } catch (err: unknown) {
+      toast.error(finalizeMutationErrorMessage(err, 'Failed to save details'));
     } finally {
       setIsSaving(false);
     }
@@ -509,10 +524,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
       onStatusChange(updated);
       toast.success(`Status updated to ${updated.status}`);
     } catch (err: unknown) {
-      const msg = err && typeof err === 'object' && 'response' in err
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-        : undefined;
-      toast.error(msg ?? 'Action failed');
+      toast.error(finalizeMutationErrorMessage(err, 'Action failed'));
     } finally {
       setIsActioning(false);
     }
@@ -530,7 +542,8 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
       <div
         className={cn(
           counsellingSessionTokens.sessionWidget,
-          'relative z-10 flex max-h-[85vh] w-full max-w-[960px] flex-col overflow-hidden bg-gray-100 shadow-xl',
+          /* Viewport-safe width: approved max 960px, never exceed viewport */
+          'relative z-10 flex max-h-[85vh] w-[min(960px,calc(100vw-2rem))] flex-col overflow-hidden bg-gray-100 shadow-xl',
         )}
         role="dialog"
         aria-modal="true"
@@ -614,7 +627,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
             <strong className="mx-0.5">Not Confirmed</strong>.
           </div>
         )}
-        {!isLoading && !canEditCounsellorOutpatient && (
+        {!isLoading && cannotFinalize && (
           <div className="flex shrink-0 items-center gap-2 border-b border-counselling-border/60 bg-counselling-muted/30 px-4 py-2 text-xs text-counselling-foreground sm:px-5">
             <LockKeyhole className="h-4 w-4 shrink-0" />
             <span>
@@ -845,7 +858,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                 {detail?.counsellingSessionId ? (
                   <CounsellorOutpatientChecklist
                     counselingSessionId={detail.counsellingSessionId}
-                    readOnly={formLocked}
+                    readOnly={checklistReadOnly}
                     showRollup
                     rollupVariant="readback"
                     flatList
@@ -896,7 +909,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
         </div>
 
         {!isLoading && (
-          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-counselling-border/60 bg-counselling-card px-4 py-2.5 sm:px-5 sm:py-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-counselling-border/60 bg-counselling-card px-4 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
             <CounsellingButton
               type="button"
               variant="outline"
@@ -907,7 +920,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
               Close
             </CounsellingButton>
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {status === 'NotConfirmed' && (
                 <>
                   <CounsellingButton

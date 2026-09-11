@@ -36,6 +36,7 @@ export default function DashboardLayout({
     '/dashboard/optometrist/exam',
     '/dashboard/counsellors-desk/waiting-list',
     '/dashboard/counsellors-desk/finalize-surgery',
+    '/dashboard/counsellors-desk/surgery-followup',
   ];
   const isCounsellingSessionPage =
     /^\/dashboard\/counsellors-desk\/[^/]+$/.test(pathname) &&
@@ -45,7 +46,10 @@ export default function DashboardLayout({
   /** Counsellor ops worklists share the grey counselling canvas (no white padded shell). */
   const isCounsellingOpsCanvas =
     pathname === '/dashboard/counsellors-desk/waiting-list' ||
-    pathname === '/dashboard/counsellors-desk/finalize-surgery';
+    pathname === '/dashboard/counsellors-desk/finalize-surgery' ||
+    pathname === '/dashboard/counsellors-desk/surgery-followup' ||
+    pathname === '/dashboard/counselor/analytics' ||
+    pathname.startsWith('/dashboard/counselor/analytics/');
   const isNoPad =
     noPadRoutes.some((r) => pathname.startsWith(r)) || isCounsellingSessionPage;
 
@@ -138,8 +142,13 @@ export default function DashboardLayout({
           >
             {isNoPad
               ? children
-              : <div className={isImmersive ? '' : 'p-4'}>{children}</div>
-            }
+              : (
+                  <div
+                    className={isImmersive ? '' : 'p-[var(--page-content-pad)]'}
+                  >
+                    {children}
+                  </div>
+                )}
           </main>
         </div>
       </div>

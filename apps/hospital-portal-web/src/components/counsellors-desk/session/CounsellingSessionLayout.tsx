@@ -31,10 +31,11 @@ export function CounsellingSessionLayout({
 }: CounsellingSessionLayoutProps) {
   const showQuoteRail = quotePanel != null;
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row lg:items-stretch lg:gap-4">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row lg:items-stretch lg:gap-3 min-[1600px]:lg:gap-4">
       <div
+        data-testid="counselling-session-workspace"
         className={cn(
-          'counselling-hidden-scroll flex min-h-0 min-w-0 flex-1 max-lg:pb-[144px] lg:min-h-0',
+          'staff-page-workspace-scroll flex min-h-0 min-w-0 flex-1 max-lg:pb-[144px] lg:min-h-0',
           showQuoteRail ? 'lg:flex-[1_1_58%]' : 'lg:flex-1',
           workspaceScroll
             ? 'overflow-y-auto overscroll-y-contain'

@@ -90,7 +90,7 @@ describe('WaitingListOtReturnedRow', () => {
     expect(html).toContain('Equipment delay');
     expect(html).toContain('Ravi Kumar');
     expect(html).toContain('UHID-9001');
-    expect(html).toContain('min-h-14');
+    expect(html).toContain('staff-worklist-row');
     expect(html).toContain('Re-plan');
     expect(html).toContain('waiting-list-ot-action-replan');
     expect(html).not.toContain('border-l-2');

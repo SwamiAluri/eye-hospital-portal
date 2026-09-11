@@ -183,7 +183,7 @@ export default function QueueDashboard() {
             waitingItems.map((item) => (
               <div
                 key={item.id}
-                className={`p-3 hover:bg-slate-50 transition-colors ${
+                className={`staff-worklist-row px-3 hover:bg-slate-50 transition-colors ${
                   item.priority === 'emergency' ? 'bg-red-50 border-l-4 border-red-500' : ''
                 }`}
               >
@@ -267,12 +267,12 @@ export default function QueueDashboard() {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto">
+    <div className="max-w-[1600px] mx-auto staff-page-stack">
       <ConfirmationComponent />
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-[var(--toolbar-gap)]">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 mb-1">Queue Management</h1>
+          <h1 className="text-2xl font-semibold text-slate-900 mb-1 max-[1599px]:[font-size:var(--page-title-size)] max-[1599px]:[line-height:var(--page-title-leading)]">Queue Management</h1>
           <p className="text-sm text-slate-600">
             Live visit queues by station (optometry, doctor, billing, pharmacy)
           </p>
@@ -287,12 +287,12 @@ export default function QueueDashboard() {
       </div>
 
       {/* Overall Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 staff-kpi-grid">
+          <div className="bg-white rounded-lg border border-slate-200 staff-kpi-pad">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-medium text-slate-600">Total Waiting</p>
-                <p className="text-2xl font-semibold text-slate-900 mt-1">
+                <p className="staff-kpi-value font-semibold text-slate-900 mt-1">
                   {Object.values(stats).reduce((sum, s) => sum + s.totalWaiting, 0)}
                 </p>
               </div>
@@ -301,11 +301,11 @@ export default function QueueDashboard() {
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="bg-white rounded-lg border border-slate-200 staff-kpi-pad">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-medium text-slate-600">Avg Wait Time</p>
-                <p className="text-2xl font-semibold text-slate-900 mt-1">
+                <p className="staff-kpi-value font-semibold text-slate-900 mt-1">
                   {Math.round(
                     Object.values(stats).reduce((sum, s) => sum + s.averageWaitTime, 0) /
                       Object.values(stats).length
@@ -318,11 +318,11 @@ export default function QueueDashboard() {
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="bg-white rounded-lg border border-slate-200 staff-kpi-pad">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-medium text-slate-600">Completed Today</p>
-                <p className="text-2xl font-semibold text-emerald-600 mt-1">
+                <p className="staff-kpi-value font-semibold text-emerald-600 mt-1">
                   {Object.values(stats).reduce((sum, s) => sum + s.totalCompleted, 0)}
                 </p>
               </div>
@@ -331,11 +331,11 @@ export default function QueueDashboard() {
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="bg-white rounded-lg border border-slate-200 staff-kpi-pad">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-medium text-slate-600">Absent</p>
-                <p className="text-2xl font-semibold text-red-600 mt-1">
+                <p className="staff-kpi-value font-semibold text-red-600 mt-1">
                   {Object.values(stats).reduce((sum, s) => sum + s.totalAbsent, 0)}
                 </p>
               </div>
@@ -347,7 +347,7 @@ export default function QueueDashboard() {
         </div>
 
         {/* Queue Sections */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 staff-kpi-grid">
           <QueueSection
             title="Optometry Queue"
             queueType="Optometry"

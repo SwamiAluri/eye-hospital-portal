@@ -819,6 +819,8 @@ try
     builder.Services.AddScoped<ICounsellingPackageTemplateService, CounsellingPackageTemplateService>();
     builder.Services.AddScoped<ICounselingWorkflowService, CounselingWorkflowService>();
     builder.Services.AddScoped<ICounselorCommunicationService, CounselorCommunicationService>(); // Comm logs, callbacks, overdue (Phase B)
+    builder.Services.AddScoped<IFollowupListService, FollowupListService>(); // Follow-up Center list/search/stats (Phase 2B)
+    builder.Services.AddScoped<ICounselingAnalyticsService, CounselingAnalyticsService>(); // Analytics summary/trends/aging (Phase 2D)
     builder.Services.AddScoped<IDeptCoordinationService, DeptCoordinationService>(); // Dept coordination requests (Mar 16, 2026)
     builder.Services.AddScoped<IPatientTypeConfigurationsService, PatientTypeConfigurationsService>(); // Patient type configs (Mar 1, 2026)
     builder.Services.AddScoped<ITranscriptionService, TranscriptionService>(); // Audio transcription & translation

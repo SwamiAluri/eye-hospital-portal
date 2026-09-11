@@ -23,6 +23,7 @@ import { useCounsellingSession } from '@/components/counsellors-desk/session/Cou
 
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { resolveProcedureOverridePrice } from '@/lib/counsellors-desk/package-preview';
+import { recommendedSurgeryName } from '@/lib/counsellors-desk/recommended-surgery-name';
 
 import { CounsellingButton, CounsellingInfoAlert } from '@/components/counsellors-desk/session/primitives';
 
@@ -247,11 +248,7 @@ export function CounsellingTabPanel() {
 
 
   const doctorRecommendation = useMemo(() => {
-
-    const rec = sess?.surgeries?.find((s) => s.isRecommended);
-
-    return rec?.name ?? null;
-
+    return recommendedSurgeryName(sess?.surgeries);
   }, [sess?.surgeries]);
 
   const workspace = useMemo(() => {

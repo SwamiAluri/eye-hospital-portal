@@ -840,7 +840,7 @@ function OpdBillingPageInner() {
   };
 
   return (
-    <div className="ip-target p-3 sm:p-4 md:p-6 space-y-6">
+    <div className="ip-target staff-page staff-page-stack">
       {/* Header */}
       <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-start">
         <div className="min-w-0">
@@ -993,48 +993,48 @@ function OpdBillingPageInner() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 staff-kpi-grid">
         <Card>
-          <CardContent className="p-4 flex items-center gap-4">
+          <CardContent className="staff-kpi-pad flex items-center gap-4">
             <div className="p-3 bg-blue-100 rounded-lg">
               <FileText className="h-6 w-6 text-blue-600" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Unbilled Today</p>
-              <p className="text-2xl font-bold">{todayAppointments.length}</p>
+              <p className="staff-kpi-value font-bold">{todayAppointments.length}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4 flex items-center gap-4">
+          <CardContent className="staff-kpi-pad flex items-center gap-4">
             <div className="p-3 bg-yellow-100 rounded-lg">
               <Clock className="h-6 w-6 text-yellow-600" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Pending Payment</p>
-              <p className="text-2xl font-bold">{pendingBills.length}</p>
+              <p className="staff-kpi-value font-bold">{pendingBills.length}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4 flex items-center gap-4">
+          <CardContent className="staff-kpi-pad flex items-center gap-4">
             <div className="p-3 bg-green-100 rounded-lg">
               <CheckCircle className="h-6 w-6 text-green-600" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Paid Today</p>
-              <p className="text-2xl font-bold">{paidBills.length}</p>
+              <p className="staff-kpi-value font-bold">{paidBills.length}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4 flex items-center gap-4">
+          <CardContent className="staff-kpi-pad flex items-center gap-4">
             <div className="p-3 bg-purple-100 rounded-lg">
               <IndianRupee className="h-6 w-6 text-purple-600" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Today's Collection</p>
-              <p className="text-2xl font-bold">
+              <p className="staff-kpi-value font-bold">
                 ₹{paidBills.reduce((sum, b) => sum + b.amountPaid, 0).toLocaleString()}
               </p>
             </div>

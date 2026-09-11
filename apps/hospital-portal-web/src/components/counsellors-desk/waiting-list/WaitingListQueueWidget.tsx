@@ -35,7 +35,7 @@ function WorklistSkeleton({ mode }: { mode: 'counselling' | 'ot-returned' }) {
         <div
           key={i}
           className={cn(
-            'min-h-14 items-center px-1 py-2.5',
+            'staff-worklist-row items-center px-1',
             mode === 'ot-returned' ? WAITING_LIST_OT_GRID : WAITING_LIST_WORK_GRID,
           )}
         >
@@ -55,7 +55,8 @@ const OT_CUES = ['UHID / Patient', 'Procedure', 'Return Reason', 'Surgery Date',
 
 /**
  * Queue Workspace — the single Waiting List functional surface.
- * Toolbar + Patient Queue + rows + footer are flat content inside one widget.
+ * Height model: shrink-0 chrome (toolbar / title / cues / pagination) +
+ * flex-1 min-h-0 scrollable worklist body. Page does not scroll rows.
  */
 export function WaitingListQueueWidget({
   title = 'Patient Queue',
@@ -88,16 +89,16 @@ export function WaitingListQueueWidget({
     >
       {toolbar ? (
         <div
-          className="shrink-0 border-b border-counselling-border/50 px-4 py-3 sm:px-5"
+          className="shrink-0 border-b border-counselling-border/50 px-2.5 py-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:py-3"
           data-testid="waiting-list-queue-toolbar"
         >
           {toolbar}
         </div>
       ) : null}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-3 pt-3 sm:px-5">
-        <div className="flex shrink-0 items-center justify-between gap-2 pb-2">
-          <h2 className={counsellingSessionTokens.sessionWidgetTitle}>{title}</h2>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-2.5 pb-1 pt-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:pb-3 min-[1600px]:pt-3">
+        <div className="flex shrink-0 items-center justify-between gap-2 pb-0.5 min-[1600px]:pb-2">
+          <h2 className={cn(counsellingSessionTokens.sessionWidgetTitle, 'max-[1599px]:text-sm max-[1599px]:leading-5')}>{title}</h2>
           <span className="text-xs font-medium text-counselling-muted-foreground">
             <span className="tabular-nums text-counselling-foreground">{count}</span>
             {' '}
@@ -109,7 +110,7 @@ export function WaitingListQueueWidget({
           <div
             className={cn(
               gridClass,
-              'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-2 max-md:hidden',
+              'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-0.5 max-md:hidden min-[1600px]:py-2',
             )}
             aria-hidden
             data-testid="waiting-list-queue-column-cues"
@@ -128,7 +129,11 @@ export function WaitingListQueueWidget({
           </div>
         ) : null}
 
-        <div className="counselling-hidden-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {/* Flexible work area — owns vertical scroll; pagination stays outside */}
+        <div
+          data-testid="waiting-list-worklist-body"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]"
+        >
           {isLoading ? (
             <WorklistSkeleton mode={mode} />
           ) : isEmpty ? (
@@ -148,7 +153,10 @@ export function WaitingListQueueWidget({
         </div>
 
         {showFooter ? (
-          <div className="mt-2 shrink-0 border-t border-counselling-border/50 pt-2">
+          <div
+            data-testid="waiting-list-queue-footer"
+            className="mt-1 shrink-0 border-t border-counselling-border/50 pt-1 min-[1600px]:mt-2 min-[1600px]:pt-2"
+          >
             {footer ?? (
               <div className="flex items-center justify-between px-1 text-xs text-counselling-muted-foreground">
                 <span>{footerLabel}</span>

@@ -67,13 +67,13 @@ describe('WaitingListQueueWidget', () => {
     expect(html).not.toContain('Procedure / Eye');
   });
 
-  it('renders loading skeleton with work grid and min-h-14 rows', () => {
+  it('renders loading skeleton with work grid and staff-worklist-row rows', () => {
     const html = renderToStaticMarkup(
       <WaitingListQueueWidget count={0} isLoading />,
     );
 
     expect(html).toContain(WAITING_LIST_WORK_GRID);
-    expect(html).toContain('min-h-14');
+    expect(html).toContain('staff-worklist-row');
     expect(html).toContain('animate-pulse');
     expect(html).not.toContain('Procedure / Eye');
   });

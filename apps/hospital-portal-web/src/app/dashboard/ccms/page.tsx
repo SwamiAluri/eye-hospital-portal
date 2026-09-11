@@ -28,13 +28,13 @@ function KpiTile({
   icon: React.ElementType; iconBg: string; valueClass?: string; accent: string;
 }) {
   return (
-    <div className={`bg-white border border-gray-200 rounded-2xl p-4 flex items-start gap-3 hover:shadow-md transition-all border-l-4 ${accent}`}>
+    <div className={`bg-white border border-gray-200 rounded-2xl staff-kpi-pad flex items-start gap-3 hover:shadow-md transition-all border-l-4 ${accent}`}>
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>
         <Icon className="w-5 h-5" />
       </div>
       <div className="min-w-0">
         <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-widest leading-none mb-1">{label}</p>
-        <p className={`text-2xl font-bold leading-none ${valueClass}`}>{value}</p>
+        <p className={`staff-kpi-value font-bold leading-none ${valueClass}`}>{value}</p>
         {sub && <p className="text-[10px] text-gray-400 mt-1">{sub}</p>}
       </div>
     </div>
@@ -45,12 +45,12 @@ function FinanceTile({ label, value, icon: Icon, gradient }: {
   label: string; value: string; icon: React.ElementType; gradient: string;
 }) {
   return (
-    <div className={`rounded-2xl p-4 text-white ${gradient}`}>
+    <div className={`rounded-2xl staff-kpi-pad text-white ${gradient}`}>
       <div className="flex items-center justify-between mb-2">
         <p className="text-[10px] font-semibold uppercase tracking-widest opacity-80">{label}</p>
         <Icon className="w-4 h-4 opacity-60" />
       </div>
-      <p className="text-2xl font-bold">{value}</p>
+      <p className="staff-kpi-value font-bold">{value}</p>
     </div>
   );
 }
@@ -84,14 +84,14 @@ export default function CcmsDashboardPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50/60">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
+      <div className="staff-page-header flex items-center justify-between bg-white border-b border-gray-200">
         <div>
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-[11px] text-gray-400 font-medium">CCMS</span>
             <span className="text-gray-300">/</span>
             <span className="text-[11px] text-gray-600 font-semibold">Dashboard</span>
           </div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="staff-page-title font-bold text-gray-900 flex items-center gap-2">
             <FileCheck className="w-5 h-5 text-indigo-600" />
             Coverage &amp; Claims
           </h1>
@@ -109,7 +109,7 @@ export default function CcmsDashboardPage() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-5">
+      <div className="flex-1 overflow-y-auto staff-page staff-page-stack">
         {error && (
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -118,7 +118,7 @@ export default function CcmsDashboardPage() {
         )}
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 staff-kpi-grid">
           {loading ? (
             Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="rounded-2xl p-4 bg-white border border-gray-200 animate-pulse h-24" />
@@ -152,7 +152,7 @@ export default function CcmsDashboardPage() {
 
         {/* Financial Strip */}
         {!loading && summary && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 staff-kpi-grid">
             <FinanceTile
               label="Approved MTD"
               value={inr(summary.totalApprovedAmountMtd ?? 0)}

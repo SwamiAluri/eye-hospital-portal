@@ -13,12 +13,13 @@ import {
 import { cn } from '@/lib/utils';
 import type { AnalyticsSummary } from '@/hooks/use-counselor-analytics';
 
+/** Funnel stages map 1:1 to GetAnalyticsSummary fields — do not invent stages. */
 const STAGES = [
-  { key: 'totalSessions',  label: 'Total',     color: '#3b82f6' },
-  { key: 'agreedCount',    label: 'Agreed',    color: '#22c55e' },
-  { key: 'undecidedCount', label: 'Undecided', color: '#f59e0b' },
-  { key: 'declinedCount',  label: 'Declined',  color: '#ef4444' },
-] as const;
+  { key: 'totalSessions' as const, label: 'Total', color: '#0f766e' },
+  { key: 'agreedCount' as const, label: 'Agreed', color: '#059669' },
+  { key: 'undecidedCount' as const, label: 'Undecided', color: '#d97706' },
+  { key: 'declinedCount' as const, label: 'Declined', color: '#b91c1c' },
+];
 
 interface TooltipPayload {
   payload?: { stage: string; count: number; pct: number };
@@ -28,11 +29,11 @@ function FunnelTooltip({ active, payload }: { active?: boolean; payload?: Toolti
   if (!active || !payload?.[0]?.payload) return null;
   const { stage, count, pct } = payload[0].payload;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2 text-xs">
-      <p className="font-semibold text-gray-800">{stage}</p>
-      <p className="text-gray-500 mt-0.5">
+    <div className="rounded-lg border border-counselling-border bg-counselling-card px-3 py-2 text-xs shadow-sm">
+      <p className="font-semibold text-counselling-foreground">{stage}</p>
+      <p className="mt-0.5 text-counselling-muted-foreground">
         {count} sessions&nbsp;
-        <span className="font-medium text-gray-700">({pct}%)</span>
+        <span className="font-medium text-counselling-foreground">({pct}%)</span>
       </p>
     </div>
   );
@@ -46,13 +47,19 @@ interface Props {
 export function ConversionFunnelChart({ data, className }: Props) {
   if (data.totalSessions === 0) {
     return (
-      <div className={cn('flex items-center justify-center h-36 text-sm text-gray-400', className)}>
+      <div
+        className={cn(
+          'flex h-36 items-center justify-center text-sm text-counselling-muted-foreground',
+          className,
+        )}
+        data-testid="analytics-funnel-empty"
+      >
         No session data for this period
       </div>
     );
   }
 
-  const chartData = STAGES.map(s => ({
+  const chartData = STAGES.map((s) => ({
     stage: s.label,
     count: data[s.key],
     pct: Math.round((data[s.key] / data.totalSessions) * 100),
@@ -60,7 +67,7 @@ export function ConversionFunnelChart({ data, className }: Props) {
   }));
 
   return (
-    <div className={className}>
+    <div className={cn('min-w-0', className)} data-testid="analytics-funnel-chart">
       <ResponsiveContainer width="100%" height={148}>
         <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
           <XAxis
@@ -77,21 +84,20 @@ export function ConversionFunnelChart({ data, className }: Props) {
           />
           <Tooltip content={<FunnelTooltip />} cursor={{ fill: '#f3f4f6' }} />
           <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={52}>
-            {chartData.map((entry, i) => (
-              <Cell key={i} fill={entry.color} />
+            {chartData.map((entry) => (
+              <Cell key={entry.stage} fill={entry.color} />
             ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
 
-      {/* Pct legend row */}
-      <div className="flex items-center justify-around mt-1">
-        {chartData.map(entry => (
+      <div className="mt-1 flex items-center justify-around">
+        {chartData.map((entry) => (
           <div key={entry.stage} className="flex flex-col items-center gap-0.5">
-            <span className="text-[10px] font-semibold" style={{ color: entry.color }}>
+            <span className="text-[10px] font-semibold tabular-nums" style={{ color: entry.color }}>
               {entry.pct}%
             </span>
-            <span className="text-[10px] text-gray-400">{entry.stage}</span>
+            <span className="text-[10px] text-counselling-muted-foreground">{entry.stage}</span>
           </div>
         ))}
       </div>

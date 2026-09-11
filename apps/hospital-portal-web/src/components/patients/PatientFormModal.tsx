@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, User, Phone, Mail, Calendar, Droplet, MapPin, Camera, FileText } from 'lucide-react';
 import { patientApi, getApi } from '@/lib/api';
 import PhoneInput from 'react-phone-input-2';
@@ -305,24 +306,42 @@ export default function PatientFormModal({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-3 min-[1600px]:p-4"
+      data-testid="patient-form-modal-overlay"
+    >
+      <div
+        className="flex max-h-[min(92dvh,calc(100dvh-1rem))] w-full max-w-[min(56rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg bg-white shadow-xl min-[1600px]:max-h-[min(90vh,calc(100dvh-2rem))] min-[1600px]:max-w-4xl"
+        role="dialog"
+        aria-modal="true"
+        data-testid="patient-form-modal"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b sticky top-0 bg-white">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+        <div
+          className="flex shrink-0 items-center justify-between border-b bg-white px-4 py-3 sm:px-5 min-[1600px]:p-6"
+          data-testid="patient-form-modal-header"
+        >
+          <h2 className="text-lg font-bold text-gray-900 min-[1600px]:text-2xl">
             {patient ? 'Edit Patient' : 'Add New Patient'}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
+            type="button"
+            aria-label="Close"
+            data-testid="patient-form-modal-close"
           >
             <X size={24} />
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        {/* Form — scroll body + sticky footer (same workflow, viewport-fit) */}
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            data-testid="patient-form-modal-body"
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:space-y-4 sm:p-4 min-[1600px]:space-y-6 min-[1600px]:p-6"
+          >
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
               {error}
@@ -330,12 +349,12 @@ export default function PatientFormModal({
           )}
 
           {/* Basic Information */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+          <div className="bg-gray-50 p-3 rounded-lg min-[1600px]:p-4">
+            <h3 className="text-base font-medium text-gray-900 mb-3 flex items-center min-[1600px]:mb-4 min-[1600px]:text-lg">
               <User className="w-5 h-5 mr-2" />
               Basic Information
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 min-[1600px]:gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   First Name *
@@ -691,9 +710,13 @@ export default function PatientFormModal({
               placeholder="Any additional notes or special instructions"
             />
           </div>
+          </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4 border-t">
+          {/* Actions — sticky footer */}
+          <div
+            className="flex shrink-0 justify-end gap-3 border-t bg-white px-4 py-3 sm:px-6 sm:py-4"
+            data-testid="patient-form-modal-footer"
+          >
             <button
               type="button"
               onClick={() => {
@@ -710,7 +733,7 @@ export default function PatientFormModal({
             {!savedPatient && (
               <button
                 type="submit"
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-called"
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={loading}
               >
                 {loading ? 'Saving...' : (patient ? 'Update Patient' : 'Create Patient')}
@@ -735,6 +758,7 @@ export default function PatientFormModal({
           email: formData.email
         }}
       />
-    </div>
+    </div>,
+    document.body,
   );
 }

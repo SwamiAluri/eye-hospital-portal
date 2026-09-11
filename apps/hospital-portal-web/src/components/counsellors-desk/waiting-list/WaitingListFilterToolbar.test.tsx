@@ -118,7 +118,11 @@ describe('WaitingListFilterToolbar', () => {
     );
 
     expect(html).toContain('data-testid="waiting-list-filter-toolbar"');
-    expect(html).toContain('lg:flex-row');
+    expect(html).toContain('min-[1600px]:flex-nowrap');
+    // Workstation search uses grid minmax(12rem,1fr); not a fixed max-[1599px] width cap.
+    expect(html).toContain('grid-cols-[minmax(12rem,1fr)_auto_auto]');
+    expect(html).toContain('waiting-list-filter-toolbar__search');
+    expect(html).not.toContain('max-[1599px]:max-w-[min(100%,20rem)]');
     expect(html).toContain('data-testid="waiting-list-quick-search"');
     expect(html).toContain('data-testid="waiting-list-add-patient"');
     expect(html).toContain('data-testid="waiting-list-date-filters"');

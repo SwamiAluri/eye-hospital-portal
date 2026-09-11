@@ -124,9 +124,16 @@
 }
 
 /**
- * Waiting List worklist grids — real CSS (not Tailwind arbitrary vars from src/lib).
- * Tailwind content paths do not scan `src/lib`, and imported class-string constants
- * are invisible to JIT, so five-column tracks must live here.
+ * Waiting List / Finalize Surgery worklist grids — real CSS (not Tailwind
+ * arbitrary vars from src/lib). Tailwind content paths do not scan `src/lib`,
+ * and imported class-string constants are invisible to JIT, so tracks live here.
+ *
+ * SAME design language at every viewport. Tracks adapt continuously:
+ * - <768: single column (safe stack)
+ * - 768–1599.98: workstation fluid five-zone tracks (information parity)
+ * - ≥1600: approved Large Desktop SoT (frozen)
+ *
+ * Hierarchy: identity > procedure > status > warning/schedule > action
  */
 .counselling-session .waiting-list-work-grid,
 .counselling-session .waiting-list-ot-grid,
@@ -139,51 +146,209 @@
   align-items: start;
 }
 
-@media (min-width: 768px) {
+/* Workstation — fluid tracks; denser floors, same five-zone IA */
+@media (min-width: 768px) and (max-width: 1599.98px) {
   .counselling-session .waiting-list-work-grid {
     /* Patient | Procedure·Eye | Status | Attention | Action */
     grid-template-columns:
-      minmax(14rem, 1.6fr)
-      minmax(10rem, 1.2fr)
-      minmax(7rem, 8.5rem)
-      minmax(7rem, 0.85fr)
-      minmax(9.5rem, 11rem);
+      minmax(0, 1.65fr)
+      minmax(0, 1.2fr)
+      minmax(5.25rem, 7.25rem)
+      minmax(0, 0.8fr)
+      minmax(7rem, 9.25rem);
     align-items: center;
-    column-gap: 0.75rem;
+    column-gap: clamp(0.4rem, 0.85vw, 0.75rem);
     row-gap: 0;
   }
 
   .counselling-session .waiting-list-ot-grid {
     /* #/UHID+Patient | Procedure | Return Reason | Surgery Date | Action */
     grid-template-columns:
-      minmax(12rem, 1.35fr)
-      minmax(9rem, 1fr)
-      minmax(9rem, 1.1fr)
-      minmax(6.5rem, 0.7fr)
-      minmax(8.5rem, 10rem);
+      minmax(0, 1.4fr)
+      minmax(0, 1fr)
+      minmax(0, 1.05fr)
+      minmax(5.25rem, 0.7fr)
+      minmax(7rem, 9rem);
     align-items: center;
-    column-gap: 0.75rem;
+    column-gap: clamp(0.4rem, 0.85vw, 0.75rem);
     row-gap: 0;
   }
 
   .counselling-session .finalize-surgery-work-grid {
     /* Patient | Surgery | Status | Schedule | Action */
     grid-template-columns:
+      minmax(0, 1.55fr)
+      minmax(0, 1.2fr)
+      minmax(5.25rem, 7.25rem)
+      minmax(0, 1.05fr)
+      minmax(7rem, 9.25rem);
+    align-items: center;
+    column-gap: clamp(0.4rem, 0.85vw, 0.75rem);
+    row-gap: 0;
+  }
+}
+
+/* Large Desktop SoT — frozen (>=1600 CSS px) */
+@media (min-width: 1600px) {
+  .counselling-session .waiting-list-work-grid {
+    grid-template-columns:
+      minmax(14rem, 1.6fr)
+      minmax(10rem, 1.2fr)
+      minmax(7rem, 8.5rem)
+      minmax(7rem, 0.85fr)
+      minmax(9.5rem, 11rem);
+    column-gap: 1rem;
+    align-items: center;
+    row-gap: 0;
+  }
+
+  .counselling-session .waiting-list-ot-grid {
+    grid-template-columns:
+      minmax(12rem, 1.35fr)
+      minmax(9rem, 1fr)
+      minmax(9rem, 1.1fr)
+      minmax(6.5rem, 0.7fr)
+      minmax(8.5rem, 10rem);
+    column-gap: 1rem;
+    align-items: center;
+    row-gap: 0;
+  }
+
+  .counselling-session .finalize-surgery-work-grid {
+    grid-template-columns:
       minmax(13rem, 1.5fr)
       minmax(10rem, 1.2fr)
       minmax(7rem, 8.5rem)
       minmax(9rem, 1.1fr)
       minmax(8.5rem, 10rem);
+    column-gap: 1rem;
     align-items: center;
-    column-gap: 0.75rem;
     row-gap: 0;
   }
 }
 
-@media (min-width: 1024px) {
-  .counselling-session .waiting-list-work-grid,
-  .counselling-session .waiting-list-ot-grid,
-  .counselling-session .finalize-surgery-work-grid {
-    column-gap: 1rem;
+/*
+ * Wave 6 — workstation chrome density for counsellor ops (same IA).
+ * Scoped to counselling-session; Large Desktop strip/pill pad unchanged.
+ */
+@media (max-width: 1599.98px) {
+  .counselling-session [data-testid='waiting-list-stats'],
+  .counselling-session [data-testid='finalize-surgery-summary'] {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .counselling-session [data-testid='waiting-list-stats'] dd,
+  .counselling-session [data-testid='finalize-surgery-summary'] dd {
+    font-size: 1rem;
+    line-height: 1.25rem;
+  }
+
+  .counselling-session [data-testid='waiting-list-summary-strip'] button[role='tab'],
+  .counselling-session [data-testid='finalize-surgery-status-nav'] button[role='tab'] {
+    min-height: 1.75rem;
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .counselling-session [data-testid='finalize-surgery-status-nav'] {
+    padding-top: 0.375rem;
+  }
+
+  .counselling-session [data-testid='finalize-surgery-status-nav'] > div {
+    padding-bottom: 0.5rem;
+  }
+}
+
+/*
+ * Wave 7 — adaptive viewport fit (height + width). Same IA; reclaim chrome
+ * for complete worklist rows. Large Desktop ≥1600 unchanged.
+ */
+@media (max-width: 1599.98px) {
+  /* KPI — further compact vertical footprint without dropping metrics */
+  .counselling-session [data-testid='waiting-list-stats'],
+  .counselling-session [data-testid='finalize-surgery-summary'] {
+    padding: 0.375rem 0.625rem;
+  }
+
+  .counselling-session [data-testid='waiting-list-stats'] dd,
+  .counselling-session [data-testid='finalize-surgery-summary'] dd {
+    font-size: 0.9375rem;
+    line-height: 1.125rem;
+  }
+
+  .counselling-session [data-testid='waiting-list-stats'] dt,
+  .counselling-session [data-testid='finalize-surgery-summary'] dt {
+    font-size: 0.625rem;
+    line-height: 0.875rem;
+  }
+
+  /* Status strip — compact + internal horizontal scroll only */
+  .counselling-session [data-testid='waiting-list-summary-strip'] > div,
+  .counselling-session [data-testid='finalize-surgery-status-nav'] > div {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+
+  .counselling-session [data-testid='waiting-list-summary-strip'] button[role='tab'],
+  .counselling-session [data-testid='finalize-surgery-status-nav'] button[role='tab'] {
+    min-height: 1.5rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    padding-top: 0.125rem;
+    padding-bottom: 0.125rem;
+    font-size: 0.75rem;
+  }
+
+  /* Worklist rows — denser pad; identity still two readable lines */
+  .counselling-session [data-testid='waiting-list-work-row'].staff-worklist-row,
+  .counselling-session .staff-worklist-row {
+    min-height: 2.75rem; /* 44px floor; content may grow slightly */
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .counselling-session [data-testid='waiting-list-queue-column-cues'] p {
+    font-size: 0.625rem;
+    line-height: 0.875rem;
+  }
+
+  .counselling-session [data-testid='waiting-list-queue-toolbar'] {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .counselling-session [data-testid='waiting-list-filter-toolbar'] {
+    gap: 0.25rem;
+  }
+}
+
+/*
+ * Wave 7.2 - counselling session viewport-fit (same Quote-Finish IA).
+ * Large Desktop >=1600 unchanged (token min-[1600px] classes).
+ */
+@media (max-width: 1599.98px) {
+  .counselling-session [data-testid='counselling-session-workspace'] {
+    scrollbar-width: thin;
+  }
+
+  .counselling-session [data-testid='counselling-session-workspace'] [style*='--widget-pad'] {
+    --widget-pad: 12px !important;
+  }
+}
+/* Phase 1 � Counsellor analytics print: hide chrome, keep widgets readable */
+@media print {
+  [data-testid='app-shell'] > div:first-child,
+  [data-testid='app-shell'] header {
+    display: none !important;
+  }
+
+  [data-testid='analytics-page'],
+  [data-testid='analytics-workspace'] {
+    overflow: visible !important;
+    height: auto !important;
+    background: white !important;
   }
 }

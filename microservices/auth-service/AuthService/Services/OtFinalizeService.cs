@@ -451,7 +451,13 @@ namespace AuthService.Services
         public async Task PrepareOtListAsync(PrepareOtListRequest request,
                                              Guid tenantId, Guid userId)
         {
+            // FS-02: never treat missing/default date as "all Finalised across dates".
+            if (request.Date == default || request.Date.Year < 1900)
+                throw new ArgumentException("Surgery date is required to prepare OT.");
+
             var targetDate = request.Date.Date;
+            var targetDateStart = targetDate;
+            var targetDateEnd = targetDate.AddDays(1);
 
             var scheduleIds = request.Items.Select(i => i.ScheduleId).ToList();
 
@@ -460,6 +466,19 @@ namespace AuthService.Services
                             s.TenantId == tenantId &&
                             s.DeletedAt == null)
                 .ToListAsync();
+
+            // Defense-in-depth: every submitted schedule must belong to the requested surgery date.
+            // Half-open [date, date+1) matches GetOtList / conflict-check conventions (StartTime has time).
+            var outOfScope = entities
+                .Where(s => !s.StartTime.HasValue ||
+                            s.StartTime.Value < targetDateStart ||
+                            s.StartTime.Value >= targetDateEnd)
+                .Select(s => string.IsNullOrWhiteSpace(s.PatientName) ? s.Id.ToString() : s.PatientName)
+                .ToList();
+
+            if (outOfScope.Count > 0)
+                throw new ArgumentException(
+                    $"Cannot prepare — the following records are not on the selected surgery date: {string.Join(", ", outOfScope)}");
 
             // Validate: every record must be 'Finalised'
             var notFinalised = entities
@@ -487,8 +506,6 @@ namespace AuthService.Services
             // an OTPrepared record that is NOT part of this batch (i.e. a genuine slot collision).
             // Pull all OTPrepared records for this date into memory, then compare in-process
             // to avoid EF Core DateTime translation issues with Npgsql.
-            var targetDateStart = targetDate;
-            var targetDateEnd   = targetDate.AddDays(1);
 
             var existingPrepared = await _db.OtFinalizeSchedules
                 .Where(s =>

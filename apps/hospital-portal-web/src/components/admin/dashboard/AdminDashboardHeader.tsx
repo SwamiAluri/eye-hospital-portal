@@ -28,14 +28,14 @@ export function AdminDashboardHeader({
   const HealthIcon = cfg.icon;
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-6 py-4 bg-white border-b border-gray-200">
+    <div className="staff-page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-[var(--toolbar-gap)] bg-white border-b border-gray-200">
       <div>
         <div className="flex items-center gap-2 mb-0.5">
           <span className="text-[11px] text-gray-400 font-medium">Administration</span>
           <span className="text-gray-300">/</span>
           <span className="text-[11px] text-gray-600 font-semibold">Overview</span>
         </div>
-        <h1 className="text-xl font-bold text-gray-900">Hospital Command Center</h1>
+        <h1 className="staff-page-title font-bold text-gray-900">Hospital Command Center</h1>
         <p className="text-xs text-gray-400 mt-0.5">
           System overview ·{' '}
           {new Date().toLocaleDateString('en-IN', {
@@ -45,7 +45,7 @@ export function AdminDashboardHeader({
           })}
         </p>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-[var(--toolbar-gap)]">
         <div className={`flex items-center gap-2 text-sm font-medium ${cfg.className}`}>
           <HealthIcon className="h-4 w-4" />
           <span>System {healthLabel}</span>

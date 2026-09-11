@@ -92,6 +92,7 @@ import {
 } from '@/lib/counsellors-desk/counselling-progress';
 import { resolveSessionBackTarget } from '@/lib/counsellors-desk/counselling-session-navigation';
 import { isCounsellingTerminalOutcome, shouldAutoOpenFinishSummary } from '@/lib/counsellors-desk/counselling-finish-outcome';
+import { resolveCounsellingPrintDisabledReason } from '@/lib/counsellors-desk/counselling-print-gate';
 
 type MasterCatalogShape = {
   imaging: MasterCatalogItem[];
@@ -547,11 +548,15 @@ export function useCounsellingSessionController({
     return null;
   }, [isSurgeryDoneState, isSaving, isSavingDraft, isRepeatState]);
 
-  const printDisabledReason = useMemo((): string | null => {
-    if (isRepeatState) return 'Start repeat session to continue';
-    if (canPrintEstimate) return null;
-    return 'Select a procedure or package to print an estimate';
-  }, [canPrintEstimate, isRepeatState]);
+  const printDisabledReason = useMemo(
+    (): string | null =>
+      resolveCounsellingPrintDisabledReason({
+        isRepeatState,
+        finishSummaryActive,
+        canPrintEstimate,
+      }),
+    [canPrintEstimate, isRepeatState, finishSummaryActive],
+  );
 
   const showCoverageWorkflow = useMemo(
     () => isCoveragePaymentType(paymentType as string) && !notRequiredPreAuth,
@@ -1454,9 +1459,20 @@ export function useCounsellingSessionController({
         // Locked coverage (Waiting for TPA): skip silently — counselling session already saved.
       }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data
+      // Prefer explicit Error.message (e.g. FS-01 OT handoff) over nested axios payloads.
+      const plain =
+        err instanceof Error && err.message.trim() ? err.message.trim() : undefined;
+      const axiosMsg = (err as { response?: { data?: { message?: string } } })?.response?.data
         ?.message;
-      toast.error(msg ? `Save failed: ${msg}` : 'Failed to save session — check network tab');
+      if (
+        plain?.startsWith('Counselling details were saved') ||
+        plain?.startsWith('Counselling details were saved, but the')
+      ) {
+        toast.error(plain);
+      } else {
+        const msg = axiosMsg || plain;
+        toast.error(msg ? `Save failed: ${msg}` : 'Failed to save session — check network tab');
+      }
     } finally {
       setIsSaving(false);
     }

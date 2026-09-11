@@ -48,7 +48,7 @@ export function WaitingListQueuePagination({
     <div
       data-testid={testId}
       className={cn(
-        'flex flex-col gap-2 text-xs text-counselling-muted-foreground sm:flex-row sm:items-center sm:justify-between',
+        'flex flex-col gap-1 text-xs text-counselling-muted-foreground sm:flex-row sm:items-center sm:justify-between max-[1599px]:gap-1',
         className,
       )}
     >

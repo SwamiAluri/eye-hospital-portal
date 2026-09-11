@@ -48,7 +48,7 @@ function WaitingListOtReturnedRowComponent({
       data-testid={testId}
       data-journey-id={row.id}
       className={cn(
-        'min-h-14 bg-transparent px-1 py-2.5 transition-colors',
+        'staff-worklist-row bg-transparent px-1 transition-colors',
         'hover:bg-rose-50/30',
         className,
       )}

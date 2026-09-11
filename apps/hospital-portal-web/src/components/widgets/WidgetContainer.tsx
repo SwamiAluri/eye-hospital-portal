@@ -75,7 +75,7 @@ export function WidgetContainer({
       }}
     >
       {/* Widget Header */}
-      <div className="widget-header flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+      <div className="widget-header flex items-center justify-between px-[var(--page-content-pad)] py-2.5 max-[1599px]:py-2 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <div className="flex-shrink-0">
             <Icon className="h-4 w-4 text-gray-600" />
@@ -172,7 +172,7 @@ export function WidgetContainer({
 
       {/* Widget Content */}
       {!config.isMinimized && (
-        <div className="widget-content flex-1 overflow-auto p-4">
+        <div className="widget-content flex-1 overflow-auto p-[var(--page-content-pad)]">
           {children}
         </div>
       )}

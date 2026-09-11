@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, CheckCircle2, Loader2, Search, UserPlus } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import type { AddPatientFormData } from '@/types/counsellors-desk';
@@ -211,23 +212,28 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
     debouncedQuery.length >= 2 &&
     (searchLoading || hits.length > 0 || (!searchLoading && hits.length === 0));
 
-  return (
+  return createPortal(
     <>
       <div
-        className="fixed inset-0 z-40 flex items-center justify-center"
+        className="fixed inset-0 z-40 flex items-center justify-center p-3 min-[1600px]:p-4"
+        data-testid="add-patient-modal-overlay"
         onClick={(e) => {
           if (e.target === e.currentTarget && !registerOpen) onClose();
         }}
       >
-        <div className="absolute inset-0 bg-black/40" />
+        <div className="absolute inset-0 bg-black/40" aria-hidden />
 
         <div
-          className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+          className="relative flex max-h-[min(92dvh,calc(100dvh-1.5rem))] w-full max-w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl min-[1600px]:max-h-[min(90vh,calc(100dvh-2rem))] min-[1600px]:max-w-md"
           role="dialog"
           aria-modal="true"
           aria-labelledby="add-patient-title"
+          data-testid="add-patient-modal"
         >
-          <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600">
+          <div
+            className="flex shrink-0 items-center justify-between px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 min-[1600px]:px-6 min-[1600px]:py-4"
+            data-testid="add-patient-modal-header"
+          >
             <h2 id="add-patient-title" className="text-base font-semibold text-white">
               Schedule Counselling
             </h2>
@@ -236,12 +242,16 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
               onClick={onClose}
               className="text-white/80 hover:text-white transition-colors"
               aria-label="Close"
+              data-testid="add-patient-modal-close"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="p-6 space-y-4">
+          <div
+            data-testid="add-patient-modal-body"
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 min-[1600px]:space-y-4 min-[1600px]:px-6 min-[1600px]:py-6"
+          >
             <div ref={searchRootRef} className="relative">
               <label htmlFor="add-patient-search" className="block text-sm font-medium text-gray-700 mb-1">
                 Patient <span className="text-red-500">*</span>
@@ -342,7 +352,7 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2">
               <div>
                 <label htmlFor="add-patient-eye" className="block text-sm font-medium text-gray-700 mb-1">
                   Eye <span className="text-red-500">*</span>
@@ -450,7 +460,10 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+          <div
+            className="flex shrink-0 items-center justify-end gap-2 border-t bg-gray-50 px-4 py-2.5 min-[1600px]:gap-3 min-[1600px]:px-6 min-[1600px]:py-4"
+            data-testid="add-patient-modal-footer"
+          >
             <button
               type="button"
               onClick={onClose}
@@ -500,6 +513,7 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
           }}
         />
       )}
-    </>
+    </>,
+    document.body,
   );
 }

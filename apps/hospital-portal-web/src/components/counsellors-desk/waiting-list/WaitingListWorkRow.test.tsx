@@ -311,7 +311,7 @@ describe('WaitingListWorkRow', () => {
       />,
     );
 
-    expect(html).toContain('min-h-14');
+    expect(html).toContain('staff-worklist-row');
     expect(html).toContain('text-sm font-semibold');
     expect(html).toContain('!min-h-8');
     expect(html).not.toContain('border-l-2');

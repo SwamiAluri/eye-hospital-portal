@@ -98,32 +98,100 @@ export function useStaffDirectoryQuery(enabled = false) {
   });
 }
 
-const PAGE_SIZE = 20;
+export const FOLLOWUP_PAGE_SIZE = 20;
 
-export function useActiveFollowupsQuery(page: number, enabled = true) {
+export type FollowupListHookFilters = {
+  page: number;
+  pageSize?: number;
+  branchId?: string | null;
+  q?: string;
+  intention?: string | null;
+  enabled?: boolean;
+};
+
+function normalizeFollowupListFilters(filters: FollowupListHookFilters) {
+  const pageSize = filters.pageSize ?? FOLLOWUP_PAGE_SIZE;
+  const q = filters.q?.trim() || undefined;
+  const intention = filters.intention?.trim() || undefined;
+  const branchId = filters.branchId?.trim() || undefined;
+  return {
+    page: filters.page,
+    pageSize,
+    q,
+    intention,
+    branchId,
+    enabled: filters.enabled ?? true,
+  };
+}
+
+export function useActiveFollowupsQuery(filters: FollowupListHookFilters) {
+  const normalized = normalizeFollowupListFilters(filters);
   return useQuery({
-    queryKey: counsellorsDeskKeys.activeFollowups(page, PAGE_SIZE),
-    queryFn: () => counsellorsDeskApi.getActiveFollowups({ page, pageSize: PAGE_SIZE }),
+    queryKey: counsellorsDeskKeys.activeFollowups(normalized),
+    queryFn: () =>
+      counsellorsDeskApi.getActiveFollowups({
+        page: normalized.page,
+        pageSize: normalized.pageSize,
+        branchId: normalized.branchId,
+        q: normalized.q,
+        intention: normalized.intention,
+      }),
     staleTime: LIST_STALE_MS,
-    enabled,
+    enabled: normalized.enabled,
   });
 }
 
-export function useColdLeadsQuery(page: number, enabled = true) {
+export function useColdLeadsQuery(filters: FollowupListHookFilters) {
+  const normalized = normalizeFollowupListFilters(filters);
   return useQuery({
-    queryKey: counsellorsDeskKeys.coldLeads(page, PAGE_SIZE),
-    queryFn: () => counsellorsDeskApi.getColdLeads({ page, pageSize: PAGE_SIZE }),
+    queryKey: counsellorsDeskKeys.coldLeads(normalized),
+    queryFn: () =>
+      counsellorsDeskApi.getColdLeads({
+        page: normalized.page,
+        pageSize: normalized.pageSize,
+        branchId: normalized.branchId,
+        q: normalized.q,
+      }),
     staleTime: LIST_STALE_MS,
-    enabled,
+    enabled: normalized.enabled,
   });
 }
 
-export function usePostSurgeryFollowupsQuery(page: number, enabled = true) {
+export function usePostSurgeryFollowupsQuery(filters: FollowupListHookFilters) {
+  const normalized = normalizeFollowupListFilters(filters);
   return useQuery({
-    queryKey: counsellorsDeskKeys.postSurgeryFollowups(page, PAGE_SIZE),
-    queryFn: () => counsellorsDeskApi.getPostSurgeryFollowups({ page, pageSize: PAGE_SIZE }),
+    queryKey: counsellorsDeskKeys.postSurgeryFollowups(normalized),
+    queryFn: () =>
+      counsellorsDeskApi.getPostSurgeryFollowups({
+        page: normalized.page,
+        pageSize: normalized.pageSize,
+        branchId: normalized.branchId,
+        q: normalized.q,
+      }),
     staleTime: LIST_STALE_MS,
-    enabled,
+    enabled: normalized.enabled,
+  });
+}
+
+export function useFollowupStatsQuery(filters: {
+  branchId?: string | null;
+  q?: string;
+  intention?: string | null;
+  enabled?: boolean;
+}) {
+  const q = filters.q?.trim() || undefined;
+  const intention = filters.intention?.trim() || undefined;
+  const branchId = filters.branchId?.trim() || undefined;
+  return useQuery({
+    queryKey: counsellorsDeskKeys.followupStats({ branchId, q, intention }),
+    queryFn: () =>
+      counsellorsDeskApi.getFollowupStats({
+        branchId,
+        q,
+        intention,
+      }),
+    staleTime: LIST_STALE_MS,
+    enabled: filters.enabled ?? true,
   });
 }
 
@@ -136,6 +204,8 @@ export function useInvalidateCounsellorsDesk() {
       queryClient.invalidateQueries({ queryKey: [...counsellorsDeskKeys.all, 'finalize-list'] }),
     invalidateSession: (sessionId: string) =>
       queryClient.invalidateQueries({ queryKey: counsellorsDeskKeys.session(sessionId) }),
+    invalidateFollowups: () =>
+      queryClient.invalidateQueries({ queryKey: counsellorsDeskKeys.followups() }),
     patchFinalizeRecord: (filters: FinalizeListFilters, id: string, patch: Partial<FinalizeSurgeryRecord>) => {
       queryClient.setQueryData<FinalizeSurgeryRecord[]>(
         counsellorsDeskKeys.finalizeList(filters),

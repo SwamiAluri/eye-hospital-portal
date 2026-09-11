@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi, mapOtRecord } from '@/lib/api/counsellors-desk.api';
+import { finalizeMutationErrorMessage } from '@/lib/counsellors-desk/finalize-mutation-error';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import {
   useFinalizeListQuery,
@@ -45,6 +46,17 @@ import type {
   FinalizeStatus,
   PrepareOtListItem,
 } from '@/types/counsellors-desk';
+import {
+  isValidPrepareOtSurgeryDate,
+  selectFinalisedForPrepareDate,
+} from '@/lib/counsellors-desk/prepare-ot-date-scope';
+import {
+  FINALIZE_OT_MUTATE_PERMISSION,
+  resolveFinalizeQueuePrimaryAction,
+} from '@/lib/counsellors-desk/finalize-ot-authorization';
+import { COUNSELLING_SESSIONS_READ_PERMISSION } from '@/lib/counsellors-desk/counselling-auth';
+import { useHasPermission } from '@/hooks/use-permissions';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { cn } from '@/lib/utils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -72,26 +84,16 @@ function formatScheduleDate(raw?: string): string {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function primaryActionForStatus(status: FinalizeStatus): {
+function primaryActionForStatus(
+  status: FinalizeStatus,
+  canMutateOt: boolean,
+): {
   label: string;
   action?: ActionKey;
   openModal?: boolean;
   variant?: 'primary' | 'outline' | 'ghost';
 } {
-  switch (status) {
-    case 'NotConfirmed':
-      return { label: 'Confirm', action: 'confirm', variant: 'primary' };
-    case 'Confirmed':
-      return { label: 'Finalise', action: 'finalise', variant: 'primary' };
-    case 'Cancelled':
-      return { label: 'Reopen', action: 'reopen', variant: 'outline' };
-    case 'OTPrepared':
-      return { label: 'Reopen', action: 'reopen', variant: 'outline' };
-    case 'Finalised':
-    case 'SurgeryDone':
-    default:
-      return { label: 'Open', openModal: true, variant: 'ghost' };
-  }
+  return resolveFinalizeQueuePrimaryAction(status, canMutateOt);
 }
 
 // ─── Prepare OT List Modal ────────────────────────────────────────────────────
@@ -164,8 +166,13 @@ function PrepareOtListModal({ finalisedRecords, prepareDate, onClose, onSubmit }
           setConflictingIds(finalisedRecords.map((r) => r.id));
           setEditedTimes({});
         }
+      } else if (response?.status === 400) {
+        toast.error(response.data?.message || 'Surgery date is required to prepare OT.');
       } else {
-        throw err;
+        toast.error(
+          response?.data?.message ||
+            (err instanceof Error ? err.message : 'Failed to prepare OT list'),
+        );
       }
     } finally {
       setSubmitting(false);
@@ -308,6 +315,7 @@ function FinalizeWorkRow({
   rec,
   isDuplicate,
   isSelected,
+  canMutateOt,
   onOpen,
   onAction,
   onPrint,
@@ -315,11 +323,12 @@ function FinalizeWorkRow({
   rec: FinalizeSurgeryRecord;
   isDuplicate: boolean;
   isSelected: boolean;
+  canMutateOt: boolean;
   onOpen: () => void;
   onAction: (action: ActionKey) => void;
   onPrint: () => void;
 }) {
-  const primary = primaryActionForStatus(rec.status);
+  const primary = primaryActionForStatus(rec.status, canMutateOt);
   const doctor = formatWaitingListDoctorDisplay(rec.surgeon);
   const typeLabel =
     rec.patientType === 'Insurance' ? 'Insurance / TPA' : rec.patientType || null;
@@ -367,7 +376,7 @@ function FinalizeWorkRow({
       onClick={onOpen}
       onKeyDown={onKeyDown}
       className={cn(
-        'group min-h-14 cursor-pointer bg-transparent px-1 py-2.5 transition-colors',
+        'group staff-worklist-row cursor-pointer bg-transparent px-1 transition-colors',
         'hover:bg-counselling-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/40',
         isSelected && 'bg-counselling-accent/35',
         rec.isLocked && 'bg-counselling-accent/15',
@@ -392,11 +401,14 @@ function FinalizeWorkRow({
               />
             ) : null}
           </div>
-          <p className="mt-0.5 truncate text-[13px] font-medium leading-4 text-counselling-muted-foreground">
-            {identityLine || '—'}
+          <p className="mt-0 truncate text-[13px] font-medium leading-4 text-counselling-muted-foreground max-[1599px]:leading-[1.125rem]">
+            <span>{identityLine || '—'}</span>
+            {quietMeta ? (
+              <span className="min-[1600px]:hidden">{` · ${quietMeta}`}</span>
+            ) : null}
           </p>
           {quietMeta ? (
-            <p className="mt-0.5 truncate text-xs leading-4 text-counselling-muted-foreground">
+            <p className="mt-0.5 hidden truncate text-xs leading-4 text-counselling-muted-foreground min-[1600px]:block">
               {quietMeta}
             </p>
           ) : null}
@@ -478,7 +490,7 @@ function WorklistSkeleton() {
   return (
     <div className="divide-y divide-counselling-border/40" aria-hidden>
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className={cn(WORK_GRID, 'min-h-14 items-center px-1 py-2.5')}>
+        <div key={i} className={cn(WORK_GRID, 'staff-worklist-row items-center px-1')}>
           <div className="h-3 max-w-[80%] animate-pulse rounded-full bg-counselling-muted" />
           <div className="hidden h-3 max-w-[70%] animate-pulse rounded-full bg-counselling-muted sm:block" />
           <div className="hidden h-3 w-16 animate-pulse rounded-full bg-counselling-muted sm:block" />
@@ -493,7 +505,16 @@ function WorklistSkeleton() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function FinalizeSurgeryPage() {
+  return (
+    <ProtectedRoute requiredPermission={COUNSELLING_SESSIONS_READ_PERMISSION}>
+      <FinalizeSurgeryPageContent />
+    </ProtectedRoute>
+  );
+}
+
+function FinalizeSurgeryPageContent() {
   const { invalidateFinalizeList, patchFinalizeRecord } = useInvalidateCounsellorsDesk();
+  const canMutateOt = useHasPermission(FINALIZE_OT_MUTATE_PERMISSION);
   const [activeTab, setActiveTab] = useState('All');
   const [filters, setFilters] = useState<FinalizeListFilters>({ date: '', uhid: '', name: '' });
   const debouncedFilters = useDebouncedValue(filters, 300);
@@ -580,9 +601,26 @@ export default function FinalizeSurgeryPage() {
   }, [records]);
 
   const finalisedForDate = useMemo(() => {
-    return records.filter((r) => r.status === 'Finalised');
-  }, [records]);
+    // Prepare OT scope = selected Finalize date filter (not "all Finalised in the loaded list").
+    return selectFinalisedForPrepareDate(records, filters.date);
+  }, [records, filters.date]);
 
+  const finalisedForOtListDate = useMemo(
+    () => selectFinalisedForPrepareDate(records, otListDate),
+    [records, otListDate],
+  );
+
+  const canPrepareOt =
+    canMutateOt && isValidPrepareOtSurgeryDate(filters.date) && finalisedForDate.length > 0;
+  const canPrepareOtFromOtWorkspace =
+    canMutateOt &&
+    isValidPrepareOtSurgeryDate(otListDate) &&
+    finalisedForOtListDate.length > 0;
+
+  const prepareModalRecords = useMemo(
+    () => selectFinalisedForPrepareDate(records, prepareDate),
+    [records, prepareDate],
+  );
   const statsBar = useMemo(() => {
     const pendingActions = records.filter(
       (r) => r.status === 'NotConfirmed' || r.status === 'Confirmed',
@@ -654,6 +692,10 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
   };
 
   const handleAction = async (action: ActionKey, rec: FinalizeSurgeryRecord) => {
+    if (!canMutateOt) {
+      toast.error('You do not have permission to update surgery finalization.');
+      return;
+    }
     const patch = (p: Partial<FinalizeSurgeryRecord>) =>
       patchFinalizeRecord(debouncedFilters, rec.id, p);
 
@@ -679,13 +721,21 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
         toast.success(`${rec.patientName} reopened for editing`);
       }
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Action failed');
+      toast.error(finalizeMutationErrorMessage(err, 'Action failed'));
     }
   };
 
   const handleSubmitPrepareOtList = async (items: PrepareOtListItem[]) => {
+    if (!canMutateOt) {
+      toast.error('You do not have permission to prepare OT.');
+      return;
+    }
+    if (!isValidPrepareOtSurgeryDate(prepareDate)) {
+      toast.error('Surgery date is required to prepare OT.');
+      return;
+    }
     await counsellorsDeskApi.submitPrepareOtList({
-      date: prepareDate || new Date().toISOString().slice(0, 10),
+      date: prepareDate.slice(0, 10),
       items,
     });
     toast.success('OT list locked and prepared');
@@ -719,8 +769,17 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
   };
 
   const openPrepareFlow = (dateSource: string) => {
+    if (!canMutateOt) {
+      toast.error('You do not have permission to prepare OT.');
+      return;
+    }
+    if (!isValidPrepareOtSurgeryDate(dateSource)) {
+      toast.error('Select a surgery date before preparing OT.');
+      return;
+    }
+    const day = dateSource.slice(0, 10);
     setActiveWorkspace('ot-preparation');
-    setPrepareDate(dateSource || new Date().toISOString().slice(0, 10));
+    setPrepareDate(day);
     setPrepareModalOpen(true);
   };
 
@@ -728,7 +787,8 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
     <div
       className={cn(
         counsellingSessionTokens.shellPage,
-        'gap-2 overflow-hidden px-4 pb-4 pt-2.5 sm:gap-2.5',
+        'staff-page-fit overflow-hidden gap-0.5 px-2.5 pb-1 pt-0.5 h-full',
+        'min-[1600px]:gap-2.5 min-[1600px]:px-4 min-[1600px]:pb-4 min-[1600px]:pt-2.5',
       )}
     >
       <FinalizeOtModal
@@ -742,51 +802,54 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
       />
       {prepareModalOpen && (
         <PrepareOtListModal
-          finalisedRecords={finalisedForDate}
+          finalisedRecords={prepareModalRecords}
           prepareDate={prepareDate}
           onClose={() => setPrepareModalOpen(false)}
           onSubmit={handleSubmitPrepareOtList}
         />
       )}
 
-      <header className="flex shrink-0 flex-col justify-center px-0.5 py-0.5">
-        <h1 className="text-xl font-semibold tracking-tight text-counselling-foreground sm:text-[1.375rem]">
+      <header className="flex shrink-0 flex-col justify-center px-0.5 py-0 min-[1600px]:py-0.5">
+        <h1 className="staff-page-title font-semibold tracking-tight text-counselling-foreground min-[1600px]:text-[1.375rem]">
           Surgery Finalization
         </h1>
       </header>
 
       {/* ONE compact stats widget — counselling sessionStatusStrip */}
       <div
-        className={cn(counsellingSessionTokens.sessionStatusStrip, 'shrink-0')}
+        className={cn(
+          counsellingSessionTokens.sessionStatusStrip,
+          'shrink-0',
+        )}
         data-testid="finalize-surgery-summary"
         aria-label="Schedule summary"
       >
         <dl
           className={cn(
             counsellingSessionTokens.sessionStatusDetails,
-            'grid-cols-2 sm:grid-cols-4',
+            'grid-cols-2 gap-x-2 gap-y-1 sm:grid-cols-4 min-[1600px]:gap-x-4 min-[1600px]:gap-y-2',
           )}
         >
           <div className="min-w-0" data-testid="finalize-stat-scheduled">
-            <dd className="text-lg font-semibold leading-6 tabular-nums text-counselling-foreground sm:text-xl">
+            <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
               {statsBar.total}
             </dd>
             <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Scheduled</dt>
           </div>
           <div className="min-w-0" data-testid="finalize-stat-needs-attention">
-            <dd className="text-lg font-semibold leading-6 tabular-nums text-counselling-foreground sm:text-xl">
+            <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
               {statsBar.pendingActions}
             </dd>
             <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Needs Attention</dt>
           </div>
           <div className="min-w-0" data-testid="finalize-stat-surgery-done">
-            <dd className="text-lg font-semibold leading-6 tabular-nums text-counselling-foreground sm:text-xl">
+            <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
               {statsBar.surgeryDone}
             </dd>
             <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Surgery Done</dt>
           </div>
           <div className="min-w-0" data-testid="finalize-stat-avg-wait">
-            <dd className="text-lg font-semibold leading-6 tabular-nums text-counselling-foreground sm:text-xl">
+            <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
               {statsBar.avgWait}{' '}
               <span className="text-sm font-semibold text-counselling-muted-foreground">days</span>
             </dd>
@@ -799,7 +862,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
       <nav
         aria-label="Surgery finalization workspaces"
         data-testid="finalize-surgery-workspace-nav"
-        className="flex min-w-0 shrink-0 flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain px-0.5"
+        className="flex min-w-0 shrink-0 flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain px-0.5 max-[1599px]:gap-1.5"
       >
         <button
           type="button"
@@ -843,7 +906,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             )}
           >
             <div
-              className="shrink-0 border-b border-counselling-border/50 px-4 pt-3 sm:px-5"
+              className="shrink-0 border-b border-counselling-border/50 px-2.5 pt-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:pt-3"
               data-testid="finalize-surgery-status-nav"
               data-status-style="pill-tab"
               role="tablist"
@@ -852,7 +915,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
               <div
                 className={cn(
                   counsellingSessionTokens.pillTabTrack,
-                  'flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain pb-3',
+                  'flex-nowrap gap-1 overflow-x-auto overscroll-x-contain pb-1 min-[1600px]:gap-1.5 min-[1600px]:pb-3',
                 )}
               >
                 {STATUS_TABS.map(({ key, label }) => {
@@ -888,12 +951,12 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             </div>
 
             <div
-              className="shrink-0 border-b border-counselling-border/50 px-4 py-3 sm:px-5"
+              className="shrink-0 border-b border-counselling-border/50 px-2.5 py-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:py-3"
               data-testid="finalize-surgery-toolbar"
             >
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[9.5rem_8.5rem_minmax(0,1fr)_auto] lg:items-end lg:gap-3">
-              <div className="min-w-0">
-                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 sm:gap-2 max-[1599px]:lg:grid-cols-[minmax(7.5rem,9rem)_minmax(6.5rem,8rem)_minmax(0,1fr)_auto] lg:grid-cols-[9.5rem_8.5rem_minmax(0,1fr)_auto] lg:items-end min-[1600px]:gap-3">
+              <div className="flex min-w-0 items-center gap-1.5 min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
+                <label className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal">
                   <Calendar className="h-3 w-3" aria-hidden />
                   Date
                 </label>
@@ -905,8 +968,8 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
                   aria-label="Schedule date"
                 />
               </div>
-              <div className="min-w-0">
-                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+              <div className="flex min-w-0 items-center gap-1.5 min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
+                <label className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal">
                   <Search className="h-3 w-3" aria-hidden />
                   UHID
                 </label>
@@ -919,8 +982,8 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
                   aria-label="UHID"
                 />
               </div>
-              <div className="min-w-0 sm:col-span-2 lg:col-span-1">
-                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+              <div className="flex min-w-0 items-center gap-1.5 sm:col-span-2 lg:col-span-1 min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
+                <label className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal">
                   <Users className="h-3 w-3" aria-hidden />
                   Patient Name
                 </label>
@@ -929,11 +992,11 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
                   placeholder="Search by patient name…"
                   value={filters.name}
                   onChange={(e) => setFilters((f) => ({ ...f, name: e.target.value }))}
-                  className="h-8"
+                  className="h-8 min-w-0 flex-1"
                   aria-label="Patient name"
                 />
               </div>
-              <div className="flex items-end justify-stretch sm:justify-end">
+              <div className="flex items-center justify-stretch sm:justify-end min-[1600px]:items-end">
                 <CounsellingButton
                   type="button"
                   size="sm"
@@ -941,10 +1004,8 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
                     denseBtn,
                     'h-8 w-full bg-counselling-primary text-white hover:bg-counselling-primary/90 sm:w-auto',
                   )}
-                  disabled={finalisedForDate.length === 0}
-                  onClick={() =>
-                    openPrepareFlow(filters.date || new Date().toISOString().slice(0, 10))
-                  }
+                  disabled={!canPrepareOt}
+                  onClick={() => openPrepareFlow(filters.date)}
                 >
                   <ClipboardList className="h-3.5 w-3.5" aria-hidden />
                   Prepare OT List
@@ -953,8 +1014,8 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             </div>
             </div>
 
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-3 pt-2.5 sm:px-5">
-            <div className="mb-1.5 flex shrink-0 items-center justify-between gap-2">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col px-2.5 pb-1.5 pt-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:pb-3 min-[1600px]:pt-2.5">
+            <div className="mb-0.5 flex shrink-0 items-center justify-between gap-2 min-[1600px]:mb-1.5">
               <h2 className={counsellingSessionTokens.sessionWidgetTitle}>Surgery Queue</h2>
               <span className="text-xs font-medium text-counselling-muted-foreground">
                 <span className="tabular-nums text-counselling-foreground">{filtered.length}</span>{' '}
@@ -969,7 +1030,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             </div>
 
             {duplicateIds.size > 0 && (
-              <div className="mb-2 flex shrink-0 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+              <div className="mb-1.5 flex shrink-0 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800">
                 <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
                 <span>
                   <strong>
@@ -984,7 +1045,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
               <div
                 className={cn(
                   WORK_GRID,
-                  'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-2 max-md:hidden',
+                  'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-1 max-md:hidden min-[1600px]:py-2',
                 )}
                 aria-hidden
               >
@@ -1003,7 +1064,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             ) : null}
 
             <div
-              className="counselling-hidden-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]"
               data-testid="finalize-surgery-table-viewport"
             >
               {isLoading ? (
@@ -1023,6 +1084,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
                       rec={rec}
                       isDuplicate={duplicateIds.has(rec.id)}
                       isSelected={selectedId === rec.id}
+                      canMutateOt={canMutateOt}
                       onOpen={() => openRow(rec.id)}
                       onAction={(action) => void handleAction(action, rec)}
                       onPrint={() => printOtSlip(rec)}
@@ -1033,7 +1095,10 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             </div>
 
             {!isLoading && filtered.length > 0 ? (
-              <div className="mt-2.5 shrink-0 border-t border-counselling-border/50 pt-2.5">
+              <div
+                data-testid="finalize-surgery-queue-footer"
+                className="mt-1 shrink-0 border-t border-counselling-border/50 pt-1 min-[1600px]:mt-2.5 min-[1600px]:pt-2.5"
+              >
                 <WaitingListQueuePagination
                   page={page}
                   pageSize={pageSize}
@@ -1058,7 +1123,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
           )}
         >
           <div
-            className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-3 sm:px-5"
+            className="flex min-h-0 min-w-0 flex-1 flex-col px-3 py-2.5 sm:px-4 min-[1600px]:px-5 min-[1600px]:py-3"
             data-testid="finalize-prepared-ot-list"
           >
             <div className="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3">
@@ -1105,7 +1170,7 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
                   denseBtn,
                   'h-8 bg-counselling-primary text-white hover:bg-counselling-primary/90',
                 )}
-                disabled={finalisedForDate.length === 0}
+                disabled={!canPrepareOtFromOtWorkspace}
                 onClick={() => openPrepareFlow(otListDate)}
               >
                 Prepare New List
@@ -1166,18 +1231,20 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
                             .join(' · ')}
                         </p>
                       </div>
-                      <CounsellingButton
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className={cn(
-                          denseBtn,
-                          'border-amber-300 text-amber-800 hover:bg-amber-50',
-                        )}
-                        onClick={() => void handleAction('reopen', row)}
-                      >
-                        Reopen
-                      </CounsellingButton>
+                      {canMutateOt ? (
+                        <CounsellingButton
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className={cn(
+                            denseBtn,
+                            'border-amber-300 text-amber-800 hover:bg-amber-50',
+                          )}
+                          onClick={() => void handleAction('reopen', row)}
+                        >
+                          Reopen
+                        </CounsellingButton>
+                      ) : null}
                     </div>
                   ))}
                 </div>

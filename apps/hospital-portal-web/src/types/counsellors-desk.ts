@@ -375,6 +375,8 @@ export interface WaitingListFilters {
   mrd: string;
   type: 'All' | 'Procedure' | 'Surgery';
   status: string;
+  /** Optional branch scope — matches WaitingListFiltersRequest.BranchId when set. */
+  branchId?: string;
 }
 
 export interface SessionAuditEntry {
@@ -473,6 +475,50 @@ export interface FollowupPagedResponse<T> {
   page: number;
   pageSize: number;
   items: T[];
+}
+
+/** GET /Counseling/followups/stats — filtered population aggregates (never page-scoped). */
+export interface FollowupStatsFilters {
+  branchId: string | null;
+  intention: string | null;
+  q: string | null;
+  scope: string;
+}
+
+export interface FollowupActiveStats {
+  total: number;
+  urgentHigh: number;
+  neverContacted: number;
+  averageAttempts: number | null;
+}
+
+export interface FollowupColdStats {
+  total: number;
+  declined: number;
+  referredElsewhere: number;
+  averageAttempts: number | null;
+}
+
+export interface FollowupPostSurgeryStats {
+  total: number;
+  over30Days: number;
+  pendingPostOpVisits: number;
+  averageDaysSinceDischarge: number | null;
+}
+
+export interface FollowupStatsResponse {
+  filters: FollowupStatsFilters;
+  active: FollowupActiveStats;
+  cold: FollowupColdStats;
+  postSurgery: FollowupPostSurgeryStats;
+}
+
+export interface FollowupListQueryParams {
+  branchId?: string;
+  intention?: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface ReQueuePayload {

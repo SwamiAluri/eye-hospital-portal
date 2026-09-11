@@ -75,7 +75,7 @@ export default function AdminLayout({
             role="main"
             aria-label="Main content"
           >
-            <div className="p-4">{children}</div>
+            <div className="p-[var(--page-content-pad)]">{children}</div>
           </main>
         </div>
       </div>

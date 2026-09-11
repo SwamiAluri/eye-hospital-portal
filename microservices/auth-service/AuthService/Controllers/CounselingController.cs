@@ -24,6 +24,8 @@ namespace AuthService.Controllers
     {
         private readonly ICounselingWorkflowService _counselingService;
         private readonly ICounselorCommunicationService _communicationService;
+        private readonly IFollowupListService _followupListService;
+        private readonly ICounselingAnalyticsService _analyticsService;
         private readonly ILogger<CounselingController> _logger;
         private readonly IEmailService _emailService;
         private readonly ISmsService _smsService;
@@ -34,6 +36,8 @@ namespace AuthService.Controllers
         public CounselingController(
             ICounselingWorkflowService counselingService,
             ICounselorCommunicationService communicationService,
+            IFollowupListService followupListService,
+            ICounselingAnalyticsService analyticsService,
             ILogger<CounselingController> logger,
             IEmailService emailService,
             ISmsService smsService,
@@ -43,6 +47,8 @@ namespace AuthService.Controllers
         {
             _counselingService = counselingService;
             _communicationService = communicationService;
+            _followupListService = followupListService;
+            _analyticsService = analyticsService;
             _logger = logger;
             _emailService = emailService;
             _smsService = smsService;
@@ -1257,77 +1263,29 @@ namespace AuthService.Controllers
         }
 
         // ============================================================================
-        // FOLLOW-UP CENTER  — Phase F
+        // FOLLOW-UP CENTER  — Phase F + Phase 2B (search / filtered total / stats)
         // Active Follow-ups, Cold Leads, Post-Surgery tracking
         // ============================================================================
 
-        /// <summary>GET /api/Counseling/followups/active — patients with pending intention awaiting surgery decision.</summary>
+        /// <summary>
+        /// GET /api/Counseling/followups/active — Active PatientIntention allowlist.
+        /// Query: branchId?, intention?, q?, page, pageSize.
+        /// total = count after population + branch + intention + q (not page size).
+        /// </summary>
         [HttpGet("followups/active")]
         [RequirePermission("counseling_sessions.read")]
         public async Task<IActionResult> GetActiveFollowups(
             [FromQuery] Guid? branchId,
             [FromQuery] string? intention,
+            [FromQuery] string? q,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
             try
             {
-                var tenantId = GetTenantId();
-                var today    = DateTime.UtcNow.Date;
-
-                // Active follow-up intentions = not declined / referred elsewhere
-                var activeIntentions = new[] { "WillingWeek", "WillingMonth", "WillingQuarter",
-                                               "WillingCallToConfirm", "Undecided",
-                                               "WaitingFinancial", "WaitingFear" };
-
-                var query = _context.CounselingSession
-                    .Where(s => s.TenantId == tenantId
-                             && s.DeletedAt == null
-                             && activeIntentions.Contains(s.PatientIntention ?? "")
-                             && (branchId == null || s.BranchId == branchId)
-                             && (intention == null || s.PatientIntention == intention));
-
-                var total = await query.CountAsync();
-                var sessions = await query
-                    .OrderBy(s => s.LastContactDate == null ? 0 : 1)
-                    .ThenBy(s => s.LastContactDate)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                var patientIds = sessions.Select(s => s.PatientId).Distinct().ToList();
-                var patients = await _context.Patients
-                    .Where(p => patientIds.Contains(p.Id) && p.TenantId == tenantId)
-                    .ToDictionaryAsync(p => p.Id);
-
-                var items = sessions.Select(s =>
-                {
-                    patients.TryGetValue(s.PatientId, out var pt);
-                    return new
-                    {
-                        sessionId           = s.Id,
-                        patientId           = s.PatientId,
-                        patientName         = pt != null ? (pt.FirstName + " " + pt.LastName).Trim() : "Unknown",
-                        uhid                = pt?.MedicalRecordNumber,
-                        phone               = pt?.ContactNumber,
-                        branchId            = s.BranchId,
-                        recommendedSurgery  = s.RecommendedSurgery,
-                        patientIntention    = s.PatientIntention,
-                        sessionDate         = s.SessionDate,
-                        lastContactDate     = s.LastContactDate,
-                        contactAttemptCount = s.ContactAttemptCount,
-                        lastContactOutcome  = s.LastContactOutcome,
-                        escalationStatus    = s.EscalationStatus,
-                        overdueSinceDate    = s.OverdueSinceDate,
-                        alertLevel          = s.EscalationStatus == "SupervisorAlert" ? "Critical"
-                                            : s.EscalationStatus == "Escalated" ? "High"
-                                            : s.EscalationStatus == "Overdue"   ? "Medium"
-                                            : s.LastContactDate == null          ? "Medium"
-                                            : "Normal"
-                    };
-                }).ToList();
-
-                return Ok(new { total, page, pageSize, items });
+                var result = await _followupListService.GetActiveAsync(
+                    GetTenantId(), branchId, intention, q, page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
@@ -1336,59 +1294,23 @@ namespace AuthService.Controllers
             }
         }
 
-        /// <summary>GET /api/Counseling/followups/cold-leads — patients who declined or were referred elsewhere.</summary>
+        /// <summary>
+        /// GET /api/Counseling/followups/cold-leads — Declined / ReferredElsewhere.
+        /// Query: branchId?, q?, page, pageSize.
+        /// </summary>
         [HttpGet("followups/cold-leads")]
         [RequirePermission("counseling_sessions.read")]
         public async Task<IActionResult> GetColdLeads(
             [FromQuery] Guid? branchId,
+            [FromQuery] string? q,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
             try
             {
-                var tenantId = GetTenantId();
-                var coldIntentions = new[] { "Declined", "ReferredElsewhere" };
-
-                var query = _context.CounselingSession
-                    .Where(s => s.TenantId == tenantId
-                             && s.DeletedAt == null
-                             && coldIntentions.Contains(s.PatientIntention ?? "")
-                             && (branchId == null || s.BranchId == branchId));
-
-                var total = await query.CountAsync();
-                var sessions = await query
-                    .OrderByDescending(s => s.UpdatedAt ?? s.CreatedAt)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                var patientIds = sessions.Select(s => s.PatientId).Distinct().ToList();
-                var patients = await _context.Patients
-                    .Where(p => patientIds.Contains(p.Id) && p.TenantId == tenantId)
-                    .ToDictionaryAsync(p => p.Id);
-
-                var items = sessions.Select(s =>
-                {
-                    patients.TryGetValue(s.PatientId, out var pt);
-                    return new
-                    {
-                        sessionId           = s.Id,
-                        patientId           = s.PatientId,
-                        patientName         = pt != null ? (pt.FirstName + " " + pt.LastName).Trim() : "Unknown",
-                        uhid                = pt?.MedicalRecordNumber,
-                        phone               = pt?.ContactNumber,
-                        branchId            = s.BranchId,
-                        recommendedSurgery  = s.RecommendedSurgery,
-                        patientIntention    = s.PatientIntention,
-                        sessionDate         = s.SessionDate,
-                        lastContactDate     = s.LastContactDate,
-                        contactAttemptCount = s.ContactAttemptCount,
-                        lastContactOutcome  = s.LastContactOutcome,
-                        additionalNotes     = s.AdditionalNotes
-                    };
-                }).ToList();
-
-                return Ok(new { total, page, pageSize, items });
+                var result = await _followupListService.GetColdLeadsAsync(
+                    GetTenantId(), branchId, q, page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
@@ -1397,100 +1319,54 @@ namespace AuthService.Controllers
             }
         }
 
-        /// <summary>GET /api/Counseling/followups/post-surgery — patients discharged from ward for wellness follow-up.</summary>
+        /// <summary>
+        /// GET /api/Counseling/followups/post-surgery — discharged patient_journey rows.
+        /// Query: branchId?, q?, page, pageSize.
+        /// </summary>
         [HttpGet("followups/post-surgery")]
         [RequirePermission("counseling_sessions.read")]
         public async Task<IActionResult> GetPostSurgeryFollowups(
             [FromQuery] Guid? branchId,
+            [FromQuery] string? q,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
             try
             {
-                var tenantId = GetTenantId();
-
-                var journeyQuery = _context.PatientJourneys
-                    .Include(j => j.Patient)
-                    .Where(j => j.TenantId == tenantId
-                             && j.IsDischarged == true
-                             && j.DeletedAt == null
-                             && (branchId == null || j.BranchId == branchId));
-
-                var total = await journeyQuery.CountAsync();
-                var journeys = await journeyQuery
-                    .OrderByDescending(j => j.DischargedAt)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                var journeyIds = journeys.Select(j => j.Id).ToList();
-
-                var discharges = await _context.DischargeSummaries
-                    .Where(d => journeyIds.Contains(d.PatientJourneyId) && d.DeletedAt == null)
-                    .ToDictionaryAsync(d => d.PatientJourneyId);
-
-                // Pending post-op visit count per patient via care schedule join
-                var patientIds = journeys.Select(j => j.PatientId).Distinct().ToList();
-                var scheduleIds = await _context.PostOpCareSchedules
-                    .Where(s => patientIds.Contains(s.PatientId)
-                             && s.TenantId == tenantId
-                             && s.DeletedAt == null)
-                    .Select(s => new { s.Id, s.PatientId })
-                    .ToListAsync();
-
-                var schedulePatientMap = scheduleIds.ToDictionary(s => s.Id, s => s.PatientId);
-                var scheduleIdList = scheduleIds.Select(s => s.Id).ToList();
-
-                var incompleteVisits = await _context.PostOpVisits
-                    .Where(v => scheduleIdList.Contains(v.PostOpCareScheduleId)
-                             && !v.Completed
-                             && v.DeletedAt == null)
-                    .Select(v => v.PostOpCareScheduleId)
-                    .ToListAsync();
-
-                var pendingVisits = incompleteVisits
-                    .Where(sid => schedulePatientMap.ContainsKey(sid))
-                    .GroupBy(sid => schedulePatientMap[sid])
-                    .ToDictionary(g => g.Key, g => g.Count());
-
-                // Latest counseling session per patient (for Log Contact modal)
-                var latestSessions = await _context.CounselingSession
-                    .Where(s => patientIds.Contains(s.PatientId) && s.TenantId == tenantId && s.DeletedAt == null)
-                    .GroupBy(s => s.PatientId)
-                    .Select(g => new { PatientId = g.Key, SessionId = g.OrderByDescending(s => s.CreatedAt).First().Id })
-                    .ToDictionaryAsync(x => x.PatientId, x => x.SessionId);
-
-                var items = journeys.Select(j =>
-                {
-                    discharges.TryGetValue(j.Id, out var ds);
-                    pendingVisits.TryGetValue(j.PatientId, out var visitCount);
-                    latestSessions.TryGetValue(j.PatientId, out var latestSessionId);
-                    return new
-                    {
-                        journeyId              = j.Id,
-                        patientId              = j.PatientId,
-                        patientName            = j.Patient != null ? (j.Patient.FirstName + " " + j.Patient.LastName).Trim() : "Unknown",
-                        uhid                   = j.Uhid ?? j.Patient?.MedicalRecordNumber,
-                        phone                  = j.Patient != null ? j.Patient.ContactNumber : null,
-                        branchId               = j.BranchId,
-                        sessionId              = latestSessionId == Guid.Empty ? (Guid?)null : latestSessionId,
-                        surgeryType            = j.ProcedureName,
-                        dischargedAt           = j.DischargedAt,
-                        daysSinceDischarge     = j.DischargedAt.HasValue
-                                                    ? (int)(DateTime.UtcNow - j.DischargedAt.Value).TotalDays
-                                                    : (int?)null,
-                        conditionAtDischarge   = ds?.ConditionAtDischarge,
-                        dischargeDate          = ds?.DischargeDate,
-                        pendingPostOpVisits    = visitCount
-                    };
-                }).ToList();
-
-                return Ok(new { total, page, pageSize, items });
+                var result = await _followupListService.GetPostSurgeryAsync(
+                    GetTenantId(), branchId, q, page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving post-surgery follow-ups");
                 return StatusCode(500, new { message = "Error retrieving post-surgery follow-ups", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/Counseling/followups/stats — server aggregates for Follow-up Center KPIs.
+        /// Filters: branchId?, intention? (Active only), q?.
+        /// Scope is always the filtered population (same predicates as list endpoints), never the current page.
+        /// Does not implement due-date windows.
+        /// </summary>
+        [HttpGet("followups/stats")]
+        [RequirePermission("counseling_sessions.read")]
+        public async Task<IActionResult> GetFollowupStats(
+            [FromQuery] Guid? branchId,
+            [FromQuery] string? intention,
+            [FromQuery] string? q)
+        {
+            try
+            {
+                var result = await _followupListService.GetStatsAsync(
+                    GetTenantId(), branchId, intention, q);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving follow-up stats");
+                return StatusCode(500, new { message = "Error retrieving follow-up stats", error = ex.Message });
             }
         }
 
@@ -1629,84 +1505,27 @@ namespace AuthService.Controllers
         }
 
         // ============================================================================
-        // ANALYTICS SUMMARY  — Phase E
+        // ANALYTICS — Phase E + Phase 2D (shared date window, counselorId, from/to)
         // ============================================================================
 
         [HttpGet("analytics/summary")]
         [RequirePermission("counseling_sessions.read")]
         public async Task<IActionResult> GetAnalyticsSummary(
             [FromQuery] Guid? branchId,
-            [FromQuery] int period = 30)
+            [FromQuery] Guid? counselorId,
+            [FromQuery] int period = 30,
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? to = null)
         {
             try
             {
-                var tenantId = GetTenantId();
-                var cutoff = DateTime.UtcNow.AddDays(-period);
-
-                var sessions = await _context.CounselingSession
-                    .Where(s => s.TenantId == tenantId
-                             && s.DeletedAt == null
-                             && s.SessionDate >= cutoff
-                             && (branchId == null || s.BranchId == branchId))
-                    .ToListAsync();
-
-                var totalSessions   = sessions.Count;
-                var agreedCount     = sessions.Count(s => s.PatientAgreedToSurgery == true);
-                var declinedCount   = sessions.Count(s => s.PatientAgreedToSurgery == false && s.PendingDecision == false);
-                var undecidedCount  = sessions.Count(s => s.PendingDecision == true);
-                var decisionRate    = totalSessions > 0 ? Math.Round((agreedCount + declinedCount) * 100.0 / totalSessions, 1) : 0;
-                var conversionRate  = totalSessions > 0 ? Math.Round(agreedCount * 100.0 / totalSessions, 1) : 0;
-
-                var avgDaysToDecision = sessions
-                    .Where(s => s.DecisionDate.HasValue)
-                    .Select(s => (s.DecisionDate!.Value - s.SessionDate).TotalDays)
-                    .DefaultIfEmpty(0)
-                    .Average();
-
-                var bySurgeryType = sessions
-                    .Where(s => !string.IsNullOrEmpty(s.RecommendedSurgery))
-                    .GroupBy(s => s.RecommendedSurgery!)
-                    .Select(g => new { surgeryType = g.Key, count = g.Count(), agreedCount = g.Count(s => s.PatientAgreedToSurgery == true) })
-                    .OrderByDescending(g => g.count)
-                    .Take(8)
-                    .ToList();
-
-                var bySessionType = sessions
-                    .GroupBy(s => s.SessionType)
-                    .Select(g => new { sessionType = g.Key, count = g.Count() })
-                    .OrderByDescending(g => g.count)
-                    .ToList();
-
-                // Callbacks in period
-                var callbacks = await _context.CounselorCallbackRequests
-                    .Where(c => c.TenantId == tenantId
-                             && c.DeletedAt == null
-                             && c.CallbackDate >= cutoff
-                             && (branchId == null || c.BranchId == branchId))
-                    .ToListAsync();
-
-                var callbackTotal       = callbacks.Count;
-                var callbackCompleted   = callbacks.Count(c => c.CallbackStatus == "Completed");
-                var callbackCompletionRate = callbackTotal > 0
-                    ? Math.Round(callbackCompleted * 100.0 / callbackTotal, 1) : 0;
-
-                return Ok(new
-                {
-                    period,
-                    totalSessions,
-                    agreedCount,
-                    declinedCount,
-                    undecidedCount,
-                    decisionRate,
-                    conversionRate,
-                    avgDaysToDecision = Math.Round(avgDaysToDecision, 1),
-                    bySurgeryType,
-                    bySessionType,
-                    callbackTotal,
-                    callbackCompleted,
-                    callbackCompletionRate,
-                    generatedAt = DateTime.UtcNow,
-                });
+                var result = await _analyticsService.GetSummaryAsync(
+                    GetTenantId(), branchId, counselorId, period, from, to);
+                return Ok(result);
+            }
+            catch (CounselingAnalyticsDateWindowException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -1721,33 +1540,20 @@ namespace AuthService.Controllers
         [RequirePermission("counseling_sessions.read")]
         public async Task<IActionResult> GetAnalyticsTrends(
             [FromQuery] Guid? branchId,
-            [FromQuery] int period = 30)
+            [FromQuery] Guid? counselorId,
+            [FromQuery] int period = 30,
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? to = null)
         {
             try
             {
-                var tenantId = GetTenantId();
-                var cutoff = DateTime.UtcNow.Date.AddDays(-period);
-
-                var sessions = await _context.CounselingSession
-                    .Where(s => s.TenantId == tenantId
-                             && s.DeletedAt == null
-                             && s.SessionDate >= cutoff
-                             && (branchId == null || s.BranchId == branchId))
-                    .Select(s => new { s.SessionDate, s.PatientAgreedToSurgery })
-                    .ToListAsync();
-
-                var trend = sessions
-                    .GroupBy(s => s.SessionDate.Date)
-                    .OrderBy(g => g.Key)
-                    .Select(g => new
-                    {
-                        date = g.Key.ToString("yyyy-MM-dd"),
-                        count = g.Count(),
-                        agreedCount = g.Count(s => s.PatientAgreedToSurgery == true),
-                    })
-                    .ToList();
-
-                return Ok(new { period, trend });
+                var result = await _analyticsService.GetTrendsAsync(
+                    GetTenantId(), branchId, counselorId, period, from, to);
+                return Ok(result);
+            }
+            catch (CounselingAnalyticsDateWindowException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -1756,58 +1562,27 @@ namespace AuthService.Controllers
             }
         }
 
-        // ── Analytics: followup aging buckets ────────────────────────────────
-
+        /// <summary>
+        /// PendingDecision aging buckets — NOT Follow-up Center Active (PatientIntention allowlist).
+        /// </summary>
         [HttpGet("analytics/followup-aging")]
         [RequirePermission("counseling_sessions.read")]
-        public async Task<IActionResult> GetFollowupAging([FromQuery] Guid? branchId)
+        public async Task<IActionResult> GetFollowupAging(
+            [FromQuery] Guid? branchId,
+            [FromQuery] Guid? counselorId,
+            [FromQuery] int? period = null,
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? to = null)
         {
             try
             {
-                var tenantId = GetTenantId();
-                var today = DateTime.UtcNow.Date;
-
-                var pendingSessions = await _context.CounselingSession
-                    .Where(s => s.TenantId == tenantId
-                             && s.DeletedAt == null
-                             && s.PendingDecision == true
-                             && (branchId == null || s.BranchId == branchId))
-                    .Join(_context.Patients,
-                          s => s.PatientId,
-                          p => p.Id,
-                          (s, p) => new
-                          {
-                              s.Id,
-                              DisplayName = p.FirstName + " " + p.LastName,
-                              s.SessionDate,
-                              RecommendedSurgery = s.RecommendedSurgery ?? "—",
-                              ContactPhone = s.AttenderPhone,
-                          })
-                    .ToListAsync();
-
-                var aged = pendingSessions.Select(s => new
-                {
-                    s.Id,
-                    patientName = s.DisplayName,
-                    s.RecommendedSurgery,
-                    phone = s.ContactPhone,
-                    daysSinceSession = (today - s.SessionDate.Date).Days,
-                }).ToList();
-
-                var buckets = new
-                {
-                    bucket_0_3  = aged.Where(s => s.daysSinceSession <= 3).ToList(),
-                    bucket_4_7  = aged.Where(s => s.daysSinceSession >= 4 && s.daysSinceSession <= 7).ToList(),
-                    bucket_8_14 = aged.Where(s => s.daysSinceSession >= 8 && s.daysSinceSession <= 14).ToList(),
-                    bucket_15_plus = aged.Where(s => s.daysSinceSession >= 15).ToList(),
-                };
-
-                return Ok(new
-                {
-                    totalPending = pendingSessions.Count,
-                    buckets,
-                    generatedAt = DateTime.UtcNow,
-                });
+                var result = await _analyticsService.GetFollowupAgingAsync(
+                    GetTenantId(), branchId, counselorId, period, from, to);
+                return Ok(result);
+            }
+            catch (CounselingAnalyticsDateWindowException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -2058,6 +1833,10 @@ namespace AuthService.Controllers
                 var userId   = GetCurrentUserId();
                 await _otFinalizeService.PrepareOtListAsync(request, tenantId, userId);
                 return Ok(new { message = "OT list prepared and locked successfully" });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (OtPrepareConflictException ex)
             {

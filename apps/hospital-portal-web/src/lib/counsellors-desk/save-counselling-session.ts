@@ -1,6 +1,7 @@
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { counsellingAzureApi, mapDecision } from '@/lib/api/counselling-azure.api';
+import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import { COVERAGE_PAYMENT_TYPES, toCounsellingDateOnly } from '@/lib/counsellors-desk/session-utils';
 import { buildCounsellingFieldSnapshot } from '@/lib/counsellors-desk/counselling-field-snapshot';
 import { mergeEstimateIntoBlob } from '@/lib/counsellors-desk/package-addons-blob';
@@ -13,6 +14,43 @@ import type {
   ScheduleData,
   WaitingListStatus,
 } from '@/types/counsellors-desk';
+
+/** OT Finalize handoff is required when agreeing to surgery with a scheduled date (not package-upgrade-only). */
+export function isOtScheduleRequiredForSave(params: {
+  isPackageUpgrade: boolean;
+  selectedDate?: string | null;
+  decision: DecisionType | '';
+}): boolean {
+  return (
+    !params.isPackageUpgrade &&
+    !!params.selectedDate &&
+    (params.decision === 'DateForSurgery' || params.decision === 'Interested')
+  );
+}
+
+/** User-facing message when counselling session persisted but OT schedule did not. */
+export function buildOtHandoffFailureMessage(error: unknown): string {
+  const detail = getApiErrorMessage(error, '');
+  const base =
+    'Counselling details were saved, but the OT schedule could not be saved. Retry save or verify the patient on Finalize Surgery.';
+  if (!detail || detail === 'Request failed') return base;
+  return `${base} (${detail})`;
+}
+
+/** User-facing message when session persisted but queue complete/add-on failed (CS-01). */
+export function buildQueueTransitionFailureMessage(
+  error: unknown,
+  kind: 'complete' | 'addon',
+): string {
+  const detail = getApiErrorMessage(error, '');
+  const action =
+    kind === 'addon'
+      ? 'add-on surgery queue status'
+      : 'session completion / waiting-list status';
+  const base = `Counselling details were saved, but the ${action} could not be updated. Retry save or refresh the Waiting List.`;
+  if (!detail || detail === 'Request failed') return base;
+  return `${base} (${detail})`;
+}
 
 export interface SaveCounsellingSessionParams {
   sessionId: string;
@@ -264,12 +302,64 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     );
   }
 
-  if (isPackageUpgrade) {
-    counsellorsDeskApi.markAddOnSurgery(sessionId);
-  } else {
-    counsellorsDeskApi.completeSession(sessionId);
+  const otRequired = isOtScheduleRequiredForSave({
+    isPackageUpgrade,
+    selectedDate: schedule?.selectedDate,
+    decision,
+  });
+
+  // FS-01: required OT handoff must succeed before complete/success UI.
+  if (otRequired && schedule) {
+    try {
+      const startTimeIso = schedule.surgeryStartTime
+        ? `${schedule.selectedDate}T${schedule.surgeryStartTime}:00`
+        : schedule.selectedDate;
+      if (isDoneState && existingOtScheduleId) {
+        await counsellorsDeskApi.editOtScheduleSlot(existingOtScheduleId, {
+          doctorName: schedule.doctor || '',
+          theatreName: schedule.operationTheatre || '',
+          startTime: startTimeIso,
+        });
+      } else {
+        await counsellorsDeskApi.upsertOtSchedule({
+          patientId: session.patientId,
+          uhid: session.uhid,
+          patientName: session.patientName,
+          surgeryName:
+            session?.surgeries?.find((s) => s.id === selectedSurgeryId)?.surgeryName ||
+            session?.surgeries?.find((s) => s.isRecommended)?.surgeryName ||
+            packageName ||
+            '',
+          eyes: selectedEye,
+          patientType: paymentType || '',
+          paymentMode: paymentType || '',
+          surgeon: schedule.doctor || '',
+          startTime: startTimeIso,
+          theaterName: schedule.operationTheatre || '',
+          packageName: packageName || '',
+          packageRate: typeof packageRate === 'number' ? packageRate : undefined,
+          counsellingSessionId: sessionId,
+        });
+      }
+    } catch (otErr) {
+      throw new Error(buildOtHandoffFailureMessage(otErr));
+    }
   }
 
+  // CS-01: queue complete / add-on is required for Waiting List Done status — await + propagate.
+  try {
+    if (isPackageUpgrade) {
+      await counsellorsDeskApi.markAddOnSurgery(sessionId);
+    } else {
+      await counsellorsDeskApi.completeSession(sessionId);
+    }
+  } catch (queueErr) {
+    throw new Error(
+      buildQueueTransitionFailureMessage(queueErr, isPackageUpgrade ? 'addon' : 'complete'),
+    );
+  }
+
+  // CounsellingApi Azure Functions — best-effort secondary sync (OPTIONAL). Offline must not block.
   if (decision) {
     const mappedDecision = mapDecision(decision);
     if (decision === 'NeedsTime') {
@@ -316,47 +406,6 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     paymentType: paymentType || undefined,
     insuranceCompany: insuranceCompany || undefined,
   });
-
-  if (
-    !isPackageUpgrade &&
-    schedule?.selectedDate &&
-    (decision === 'DateForSurgery' || decision === 'Interested')
-  ) {
-    try {
-      const startTimeIso = schedule.surgeryStartTime
-        ? `${schedule.selectedDate}T${schedule.surgeryStartTime}:00`
-        : schedule.selectedDate;
-      if (isDoneState && existingOtScheduleId) {
-        await counsellorsDeskApi.editOtScheduleSlot(existingOtScheduleId, {
-          doctorName: schedule.doctor || '',
-          theatreName: schedule.operationTheatre || '',
-          startTime: startTimeIso,
-        });
-      } else {
-        await counsellorsDeskApi.upsertOtSchedule({
-          patientId: session.patientId,
-          uhid: session.uhid,
-          patientName: session.patientName,
-          surgeryName:
-            session?.surgeries?.find((s) => s.id === selectedSurgeryId)?.surgeryName ||
-            session?.surgeries?.find((s) => s.isRecommended)?.surgeryName ||
-            packageName ||
-            '',
-          eyes: selectedEye,
-          patientType: paymentType || '',
-          paymentMode: paymentType || '',
-          surgeon: schedule.doctor || '',
-          startTime: startTimeIso,
-          theaterName: schedule.operationTheatre || '',
-          packageName: packageName || '',
-          packageRate: typeof packageRate === 'number' ? packageRate : undefined,
-          counsellingSessionId: sessionId,
-        });
-      }
-    } catch {
-      /* non-fatal */
-    }
-  }
 
   const nextStatus: WaitingListStatus = isPackageUpgrade
     ? 'AddOnSurgery'

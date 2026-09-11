@@ -118,7 +118,7 @@ export function CounsellingActionBar({
       data-testid={counsellingTestIds.actionBar}
       className={cn(
         counsellingSessionTokens.shellActionBar,
-        'flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between',
+        'staff-page-footer flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between min-[1600px]:gap-1.5',
         className,
       )}
     >

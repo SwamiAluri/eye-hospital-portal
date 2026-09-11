@@ -138,6 +138,7 @@ export const counsellorsDeskApi = {
       if (filters?.mrd) params.mrd = filters.mrd;
       if (filters?.type && filters.type !== 'All') params.type = filters.type;
       if (filters?.status) params.status = filters.status;
+      if (filters?.branchId?.trim()) params.branchId = filters.branchId.trim();
       const response = await getApi().get('/Counseling/waiting-list', { params });
       return response.data ?? [];
     } catch (err) {
@@ -394,26 +395,20 @@ export const counsellorsDeskApi = {
    * queueItem.Status = 'Completed'. The waiting list then maps:
    *   Completed + PatientAgreedToSurgery=true  → 'Done'
    *   Completed + PatientAgreedToSurgery=false → 'RepeatCounselling'
+   * CS-01: must propagate failure — queue status is required for Finish/Done.
    */
   async completeSession(id: string): Promise<void> {
-    try {
-      await getApi().post(`/Counseling/sessions/${id}/complete`);
-    } catch {
-      // fire-and-forget — silent
-    }
+    await getApi().post(`/Counseling/sessions/${id}/complete`);
   },
 
   /**
    * Marks the counselling queue item for this session as "AddOnSurgery".
    * Called when a counsellor upgrades the package on a Done session so the
    * waiting list immediately shows the violet Add-On Surgery badge.
+   * CS-01: must propagate failure — queue badge transition is required.
    */
   async markAddOnSurgery(id: string): Promise<void> {
-    try {
-      await getApi().post(`/Counseling/sessions/${id}/addon-surgery`);
-    } catch {
-      // fire-and-forget — silent
-    }
+    await getApi().post(`/Counseling/sessions/${id}/addon-surgery`);
   },
 
   async getSessionHistory(id: string): Promise<SessionAuditEntry[]> {
@@ -667,7 +662,7 @@ export const counsellorsDeskApi = {
       throw new Error('Select or register a patient before adding to the waiting list.');
     }
 
-    const existingRows = await this.getWaitingList({ type: 'All' });
+    const existingRows = await this.getWaitingList({ type: 'All', branchId });
     const duplicate =
       findActiveWaitingListDuplicate({
         uhid: displayUhid,
@@ -733,30 +728,35 @@ export const counsellorsDeskApi = {
   // FOLLOW-UP CENTER ENDPOINTS
   // ============================================================================
 
-  async getActiveFollowups(params?: {
-    branchId?: string;
-    intention?: string;
-    page?: number;
-    pageSize?: number;
-  }) {
+  async getActiveFollowups(params?: import('@/types/counsellors-desk').FollowupListQueryParams) {
     const res = await getApi().get('/Counseling/followups/active', { params });
     return res.data as import('@/types/counsellors-desk').FollowupPagedResponse<
       import('@/types/counsellors-desk').ActiveFollowupRecord
     >;
   },
 
-  async getColdLeads(params?: { branchId?: string; page?: number; pageSize?: number }) {
+  async getColdLeads(params?: import('@/types/counsellors-desk').FollowupListQueryParams) {
     const res = await getApi().get('/Counseling/followups/cold-leads', { params });
     return res.data as import('@/types/counsellors-desk').FollowupPagedResponse<
       import('@/types/counsellors-desk').ColdLeadRecord
     >;
   },
 
-  async getPostSurgeryFollowups(params?: { branchId?: string; page?: number; pageSize?: number }) {
+  async getPostSurgeryFollowups(params?: import('@/types/counsellors-desk').FollowupListQueryParams) {
     const res = await getApi().get('/Counseling/followups/post-surgery', { params });
     return res.data as import('@/types/counsellors-desk').FollowupPagedResponse<
       import('@/types/counsellors-desk').PostSurgeryFollowupRecord
     >;
+  },
+
+  /** Filtered population KPIs — not derived from the current list page. */
+  async getFollowupStats(params?: {
+    branchId?: string;
+    intention?: string;
+    q?: string;
+  }) {
+    const res = await getApi().get('/Counseling/followups/stats', { params });
+    return res.data as import('@/types/counsellors-desk').FollowupStatsResponse;
   },
 
   async reQueueSession(sessionId: string, payload: import('@/types/counsellors-desk').ReQueuePayload) {

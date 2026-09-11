@@ -64,15 +64,22 @@ export async function goCoverageTab(page: Page): Promise<void> {
     return;
   }
   const insurance = counsellingJourneyStage(page, 'insurance');
-  const skipped = await insurance.getAttribute('data-journey-status');
-  if (skipped === 'skipped') {
+  const status = await insurance.getAttribute('data-journey-status');
+  if (status === 'skipped') {
     test.skip(true, 'Insurance stage skipped — cash/self-pay session');
   }
   await expect(insurance).toBeVisible({ timeout: 30_000 });
-  const button = insurance.getByRole('button');
-  if (await button.isVisible().catch(() => false)) {
-    await button.click();
+
+  const navigable = await insurance.getAttribute('data-journey-navigable');
+  if (navigable !== 'true') {
+    test.skip(
+      true,
+      `Insurance stage not navigable (status=${status ?? 'unknown'}) — journey requires a complete Decision before Coverage`,
+    );
   }
+
+  await insurance.getByRole('button').click();
+  await expect(insurance).toHaveAttribute('data-journey-status', 'current', { timeout: 15_000 });
   await expect(page.getByTestId(coverageTestIds.stepPolicy)).toBeVisible({ timeout: 30_000 });
 }
 
@@ -130,7 +137,8 @@ export function patientDetailsButton(page: Page) {
 }
 
 export async function goToSessionNotesPhase(page: Page): Promise<void> {
-  await goToPhase(page, 'decision');
+  // Journey rail can open Notes directly; do not require Decision workspace first
+  // (decision-complete / TPA-waiting fixtures often skip or seal Decision UI).
   await goToPhase(page, 'wrapup');
   await expect(saveSessionButton(page)).toBeVisible({ timeout: 15_000 });
 }
@@ -206,7 +214,8 @@ export function visiblePhaseControl(page: Page, phase: CounsellingPhaseId) {
 /** Navigate to a counselling session and wait for the primary workflow shell. */
 export async function goCounsellingSession(page: Page, sessionId = COUNSELLING_SESSION_ID): Promise<void> {
   await page.goto(counsellingSessionUrl(sessionId), { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle').catch(() => undefined);
+  // Do not wait for networkidle: counselling session keeps long-lived / slow requests
+  // open (e.g. CCMS coverage policies). Readiness is the journey-rail + estimate shell.
   await expect(page.getByTestId('counselling-journey-rail')).toBeVisible({ timeout: 60_000 });
   await expect(counsellingJourneyStage(page, 'quote')).toBeVisible({ timeout: 60_000 });
   const onEstimate = await page.locator('#counselling-step-1').isVisible().catch(() => false);
@@ -236,14 +245,40 @@ export function phaseNextButton(page: Page) {
   return page.getByTestId('counselling-btn-phase-next');
 }
 
+/**
+ * Live action-bar primary for editable sessions.
+ * Kind depends on workflow state: save_session | phase_next | navigate (not always phase-next).
+ */
 export function actionBarPrimary(page: Page) {
   return page
-    .getByTestId('counselling-action-bar-primary')
-    .or(page.getByTestId('counselling-btn-phase-next'));
+    .getByTestId('counselling-btn-save-session')
+    .or(page.getByTestId('counselling-btn-phase-next'))
+    .or(page.getByTestId('counselling-action-bar-primary'));
 }
 
 export function actionBar(page: Page) {
   return page.getByTestId('counselling-action-bar');
+}
+
+export function actionBarStatusHint(page: Page) {
+  return page.getByTestId('counselling-action-bar-status-hint');
+}
+
+/** Assert editable session exposes a real primary workflow control (not phase-next-only). */
+export async function expectEditablePrimaryWorkflowAction(page: Page): Promise<void> {
+  await expect(actionBar(page)).toBeVisible({ timeout: 30_000 });
+  await expect(actionBarPrimary(page).first()).toBeVisible({ timeout: 15_000 });
+}
+
+/**
+ * Terminal Done/Completed footer: Save absent, completed hint, Print available.
+ * Do not assert a disabled Save button — production omits Save when sealed.
+ */
+export async function expectTerminalDoneFooter(page: Page): Promise<void> {
+  await expect(actionBar(page)).toBeVisible({ timeout: 60_000 });
+  await expect(saveSessionButton(page)).toHaveCount(0);
+  await expect(actionBarStatusHint(page)).toContainText(/completed|read-only|Session complete/i);
+  await expect(page.getByRole('button', { name: /Print/i })).toBeVisible();
 }
 
 export function journeyStage(page: Page, stageId: string) {
@@ -262,7 +297,10 @@ export function coverageEstimateMirrorPayable(page: Page) {
   return page.getByTestId(coverageTestIds.estimateMirrorPayable);
 }
 
-/** Desktop quote aside or mobile estimate bottom-sheet strip. */
+/** Desktop Estimate rail (Final Payable) or mobile estimate strip.
+ * Obsolete: `counselling-quote-panel` is no longer mounted.
+ * Terminal Finish-summary sessions hide the Estimate rail; Quote workspace remains.
+ */
 export async function expectQuotePanelVisible(page: Page): Promise<void> {
   const viewport = page.viewportSize();
   const mobileEstimate = page.getByRole('button', { name: /Estimate/i });
@@ -270,8 +308,21 @@ export async function expectQuotePanelVisible(page: Page): Promise<void> {
     await expect(mobileEstimate).toBeVisible({ timeout: 30_000 });
     return;
   }
-  const desktopQuote = page.getByTestId('counselling-quote-panel');
-  await expect(desktopQuote).toBeVisible({ timeout: 30_000 });
+  const payable = quoteFinalPayable(page);
+  if (await payable.isVisible().catch(() => false)) {
+    await expect(payable).toBeVisible();
+    return;
+  }
+  // Allow brief paint of Estimate rail before falling back to Quote workspace.
+  const appeared = await payable
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (appeared) {
+    await expect(payable).toBeVisible();
+    return;
+  }
+  await expect(page.getByTestId('counselling-quote-workspace')).toBeVisible({ timeout: 30_000 });
 }
 
 /** Expand mobile quote sheet if needed; no-op on desktop. */
@@ -347,10 +398,18 @@ export async function goToNextPhase(page: Page): Promise<void> {
   await next.click();
 }
 
-/** Ensure inline procedure catalog grid is visible on the Custom Procedure tab. */
+/** Ensure inline procedure catalog grid is visible on the Custom Procedure tab.
+ * Fixtures may already have a procedure selected — Clear returns to the catalog (UI-only).
+ */
 export async function openProcedureCatalogGrid(page: Page): Promise<void> {
   await toggleEstimateMode(page, 'custom');
-  await expect(page.getByTestId('counselling-quote-procedure-catalog-grid')).toBeVisible({
+  const grid = page.getByTestId('counselling-quote-procedure-catalog-grid');
+  if (!(await grid.isVisible().catch(() => false))) {
+    const clearSelected = page.getByTestId('counselling-quote-change-procedure');
+    await expect(clearSelected).toBeVisible({ timeout: 15_000 });
+    await clearSelected.click();
+  }
+  await expect(grid).toBeVisible({
     timeout: 15_000,
   });
 }

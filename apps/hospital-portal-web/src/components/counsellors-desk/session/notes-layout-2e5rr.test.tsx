@@ -10,7 +10,9 @@ describe('CounsellingSessionLayout (Wave 2E-5RR)', () => {
       <CounsellingSessionLayout workspace={<div>ws</div>} quotePanel={<div>q</div>} />,
     );
     expect(html).toContain('overflow-y-auto');
-    expect(html).toContain('counselling-hidden-scroll');
+    // Canonical staff workstation scroll (replaces counselling-hidden-scroll on this layout).
+    expect(html).toContain('staff-page-workspace-scroll');
+    expect(html).not.toContain('counselling-hidden-scroll');
   });
 
   it('disables left-column scroll on desktop when workspaceScroll is false (Notes)', () => {

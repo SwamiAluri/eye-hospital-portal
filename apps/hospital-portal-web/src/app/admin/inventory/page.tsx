@@ -93,12 +93,12 @@ export default function InventoryDashboard() {
   }, [refreshKey]);
 
   return (
-    <div className="min-h-screen bg-gray-50/60 p-4 sm:p-6 space-y-6">
+    <div className="min-h-screen bg-gray-50/60 staff-page staff-page-stack">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-[var(--toolbar-gap)]">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900 max-[1599px]:[font-size:var(--page-title-size)] max-[1599px]:[line-height:var(--page-title-leading)]">Inventory Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">Real-time overview across all inventory modules</p>
         </div>
         <button
@@ -113,14 +113,14 @@ export default function InventoryDashboard() {
 
       {/* Procurement Summary Cards */}
       {loading && !summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 staff-kpi-grid">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 animate-pulse h-24" />
+            <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm staff-kpi-pad animate-pulse h-24" />
           ))}
         </div>
       )}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 staff-kpi-grid">
           {[
             { label: 'Pending Requisitions', value: summary.pendingRequisitions, icon: ClipboardList, color: 'text-amber-600',  bg: 'bg-amber-50',  href: '/admin/inventory/requisitions' },
             { label: 'Open RFQs',            value: summary.openRfqs,            icon: FileText,      color: 'text-blue-600',   bg: 'bg-blue-50',   href: '/admin/inventory/rfq' },
@@ -130,12 +130,12 @@ export default function InventoryDashboard() {
             { label: 'On-Time Delivery',     value: `${summary.onTimeDeliveryRate}%`, icon: TrendingUp, color: summary.onTimeDeliveryRate >= 80 ? 'text-green-600' : 'text-red-600', bg: summary.onTimeDeliveryRate >= 80 ? 'bg-green-50' : 'bg-red-50', href: '/admin/inventory/vendor-performance' },
           ].map(card => (
             <Link key={card.label} href={card.href}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md hover:border-blue-100 transition-all"
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm staff-kpi-pad hover:shadow-md hover:border-blue-100 transition-all"
             >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${card.bg} mb-3`}>
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${card.bg} mb-2.5 max-[1599px]:mb-2`}>
                 <card.icon size={16} className={card.color} />
               </div>
-              <p className={`text-2xl font-bold ${card.color}`}>{card.value}</p>
+              <p className={`staff-kpi-value font-bold ${card.color}`}>{card.value}</p>
               <p className="text-[11px] text-gray-500 mt-1 leading-tight">{card.label}</p>
             </Link>
           ))}

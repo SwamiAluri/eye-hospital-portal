@@ -9,6 +9,7 @@ import { counsellingAzureApi } from '@/lib/api/counselling-azure.api';
 import { ipManagementApi } from '@/lib/api/ip-management.api';
 import type { PatientJourneyRowDto } from '@/lib/api/ip-management.api';
 import { useAuthStore } from '@/lib/auth-store';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { WaitingListSummaryWidget } from '@/components/counsellors-desk/waiting-list/WaitingListSummaryWidget';
 import {
   WaitingListFilterToolbar,
@@ -35,6 +36,7 @@ import {
   type WaitingListPageSize,
 } from '@/lib/counsellors-desk/waiting-list-pagination';
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { COUNSELLING_SESSIONS_READ_PERMISSION } from '@/lib/counsellors-desk/counselling-auth';
 import type { WaitingListPatient, WaitingListFilters, AddPatientFormData } from '@/types/counsellors-desk';
 import { cn } from '@/lib/utils';
 
@@ -49,8 +51,17 @@ function ccmsPropsFromBadge(badge: DeferredCcmsBadge | undefined) {
 }
 
 export default function CounsellorWaitingListPage() {
+  return (
+    <ProtectedRoute requiredPermission={COUNSELLING_SESSIONS_READ_PERMISSION}>
+      <CounsellorWaitingListPageContent />
+    </ProtectedRoute>
+  );
+}
+
+function CounsellorWaitingListPageContent() {
   const router = useRouter();
   const { invalidateWaitingList } = useInvalidateCounsellorsDesk();
+  const { user, selectedBranchId } = useAuthStore();
 
   const [otReturnedRows, setOtReturnedRows]  = useState<PatientJourneyRowDto[]>([]);
   const [otReturnedLoading, setOtReturnedLoading] = useState(false);
@@ -75,8 +86,9 @@ export default function CounsellorWaitingListPage() {
     (): WaitingListFilters => ({
       ...appliedFilters,
       type: 'All',
+      branchId: selectedBranchId ?? user?.branchId ?? undefined,
     }),
-    [appliedFilters],
+    [appliedFilters, selectedBranchId, user?.branchId],
   );
 
   const waitingListQuery = useWaitingListQuery(apiFilters);
@@ -84,7 +96,6 @@ export default function CounsellorWaitingListPage() {
   const isLoading = waitingListQuery.isLoading && patients.length === 0;
   const isRefreshing = waitingListQuery.isFetching && patients.length > 0;
 
-  const { user, selectedBranchId } = useAuthStore();
   const branchId = selectedBranchId ?? user?.branchId;
 
   // §8 — fetch OT Returned only after branchId is available (auth hydrate race on mount).
@@ -305,12 +316,12 @@ export default function CounsellorWaitingListPage() {
     <div
       className={cn(
         counsellingSessionTokens.shellPage,
-        /* Plain chrome + one Queue Workspace */
-        'gap-2 overflow-hidden px-4 pb-4 pt-2.5 sm:gap-2.5',
+        'staff-page-fit h-full overflow-hidden gap-0.5 px-2.5 pb-1 pt-0.5',
+        'min-[1600px]:gap-2.5 min-[1600px]:px-4 min-[1600px]:pb-4 min-[1600px]:pt-2.5',
       )}
     >
-      <header className="flex shrink-0 flex-col justify-center px-0.5 py-0.5">
-        <h1 className="text-xl font-semibold tracking-tight text-counselling-foreground sm:text-[1.375rem]">
+      <header className="flex shrink-0 flex-col justify-center px-0.5 py-0 leading-none min-[1600px]:py-0.5">
+        <h1 className="staff-page-title font-semibold tracking-tight text-counselling-foreground max-[1599px]:text-base max-[1599px]:leading-5 min-[1600px]:text-[1.375rem]">
           Waiting List
         </h1>
       </header>

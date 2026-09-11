@@ -1,4 +1,4 @@
-/* Visual language from docs/mockups/ip-target/mockup.css (§20.8).
+/* Visual language from docs/mockups/ip-target/mockup.css (Â§20.8).
    Scoped to .ip-target so dashboard chrome (sidebar / TopNav) is unchanged. */
 
 .ip-target {
@@ -328,7 +328,7 @@
   color: var(--ip-muted);
   white-space: nowrap;
 }
-.ip-target .badge::before { content: "●"; font-size: 9px; }
+.ip-target .badge::before { content: "â"; font-size: 9px; }
 .ip-target .badge.no-dot::before { content: none; }
 .ip-target .badge.ok { color: var(--ip-ok); background: var(--ip-ok-weak); border-color: #a7f3d0; }
 .ip-target .badge.ot { color: var(--ip-ot); background: var(--ip-ot-weak); border-color: #fde68a; }
@@ -792,7 +792,7 @@
   .ip-target .split.docked { grid-template-columns: 1fr; }
 }
 
-/* Ward board pilot chrome — layout only; tokens unchanged. */
+/* Ward board pilot chrome â layout only; tokens unchanged. */
 .ip-target .seg {
   display: inline-flex;
   border: 1px solid var(--ip-line-strong);
@@ -925,4 +925,27 @@
   color: var(--ip-muted);
   background: var(--ip-accent-weak);
   border-bottom: 1px solid var(--ip-line);
+}
+
+/* Wave 5 - workstation density for IP/Ward chrome (desktop SoT unchanged) */
+@media (max-width: 1599.98px) {
+  .ip-target .app-header {
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  .ip-target .kpis {
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  .ip-target .kpi {
+    padding: 8px 10px;
+  }
+  .ip-target .filters {
+    gap: 8px 10px;
+    padding: 8px 14px;
+  }
+  .ip-target .row {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
 }

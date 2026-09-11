@@ -8,29 +8,30 @@ export const counsellingSessionTokens = {
   shellPage:
     'counselling-session flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gray-100',
   shellPageGrid:
-    'grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-3 overflow-hidden',
+    'grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-1.5 overflow-hidden min-[1600px]:gap-3',
   /** Shared floating widget surface (header, patient, status, Notes, Estimate) */
   sessionWidget:
     'rounded-xl border border-counselling-border/70 bg-counselling-card shadow-sm',
-  sessionWidgetPad: 'px-4 py-3 sm:px-5 sm:py-3.5',
+  sessionWidgetPad: 'px-3 py-2 min-[1600px]:px-4 min-[1600px]:py-3 sm:min-[1600px]:px-5 sm:min-[1600px]:py-3.5',
   sessionWidgetTitle:
     'flex items-center gap-2 text-sm font-semibold text-counselling-foreground',
-  shellChromeStack: 'flex shrink-0 flex-col gap-3 bg-transparent px-4 pb-1 pt-3',
+  shellChromeStack:
+    'flex shrink-0 flex-col gap-1.5 bg-transparent px-2.5 pb-0.5 pt-1.5 min-[1600px]:gap-3 min-[1600px]:px-4 min-[1600px]:pb-1 min-[1600px]:pt-3',
   shellHeader: '',
   /** Workflow nav stays on plain background — not a widget */
-  shellWorkflow: 'shrink-0 bg-transparent px-0 py-1',
-  shellModuleHost: 'flex min-h-0 min-w-0 flex-col overflow-hidden bg-transparent',
+  shellWorkflow: 'shrink-0 bg-transparent px-0 py-0.5 min-[1600px]:py-1',
+  shellModuleHost: 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-transparent',
   shellModuleTabs:
     'flex-shrink-0 border-b border-counselling-border/60 bg-counselling-muted/20 px-4 pt-1.5',
-  shellModuleBodyPadding: 'p-4',
-  /** Floating footer widget — grey gutter from shellPageGrid gap-3 */
+  shellModuleBodyPadding: 'p-2.5 min-[1600px]:p-4',
+  /** Floating footer widget — grey gutter from shellPageGrid gap */
   shellActionBar:
-    'z-[60] mx-4 mb-3 shrink-0 rounded-xl border border-counselling-border/70 bg-counselling-card px-4 py-2.5 shadow-sm',
+    'z-[60] mx-2.5 mb-1.5 shrink-0 rounded-xl border border-counselling-border/70 bg-counselling-card px-3 py-1.5 shadow-sm min-[1600px]:mx-4 min-[1600px]:mb-3 min-[1600px]:px-4 min-[1600px]:py-2.5',
   actionBarLabel: 'text-sm font-semibold',
   patientLabel:
     'text-[12px] font-semibold uppercase leading-4 tracking-wide text-counselling-muted-foreground',
   patientName:
-    'truncate text-[20px] font-semibold leading-6 text-counselling-foreground max-sm:text-[18px] max-sm:leading-6',
+    'truncate text-base font-semibold leading-5 text-counselling-foreground min-[1600px]:text-[20px] min-[1600px]:leading-6 max-sm:text-[15px]',
   shellMeta:
     'text-sm font-medium leading-5 tabular-nums text-counselling-foreground/80 max-sm:text-[13px]',
   shellSecondaryMeta:
@@ -38,11 +39,13 @@ export const counsellingSessionTokens = {
   patientDetailsAction:
     'text-sm font-semibold leading-5 text-counselling-primary',
   patientStatusPill: 'text-[13px] font-semibold leading-[18px]',
-  patientHeaderPad: 'px-4 py-3 sm:px-5 sm:py-3.5',
-  patientHeaderPhoto: 'h-14 w-14 max-sm:h-12 max-sm:w-12 ring-2 ring-counselling-accent/90',
-  patientHeaderGap: 'gap-3 sm:gap-3.5',
+  patientHeaderPad:
+    'px-3 py-2 min-[1600px]:px-4 min-[1600px]:py-3 sm:min-[1600px]:px-5 sm:min-[1600px]:py-3.5',
+  patientHeaderPhoto:
+    'h-10 w-10 ring-2 ring-counselling-accent/90 min-[1600px]:h-14 min-[1600px]:w-14 max-sm:h-10 max-sm:w-10',
+  patientHeaderGap: 'gap-2 min-[1600px]:gap-3 sm:min-[1600px]:gap-3.5',
   patientHeaderStack: 'flex flex-col gap-0.5',
-  patientHeaderZones: 'gap-3 sm:gap-4',
+  patientHeaderZones: 'gap-2 min-[1600px]:gap-3 sm:min-[1600px]:gap-4',
   shellStatusLine: 'text-xs font-medium leading-snug text-counselling-foreground',
   /** Wave 2E-4R — primary workflow step navigation (connected full-width strip) */
   workflowStepTrack:
@@ -69,9 +72,9 @@ export const counsellingSessionTokens = {
   workflowStepCheck: 'h-3.5 w-3.5 shrink-0 text-counselling-primary',
   /** Wave 2E-5RR-W — status read-back as a compact widget */
   sessionStatusStrip:
-    'rounded-xl border border-counselling-border/70 bg-counselling-card px-3 py-2.5 shadow-sm sm:px-4',
+    'rounded-xl border border-counselling-border/70 bg-counselling-card px-2.5 py-1.5 shadow-sm min-[1600px]:px-3 min-[1600px]:py-2.5 sm:min-[1600px]:px-4',
   sessionStatusDetails:
-    'grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4',
+    'grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 min-[1600px]:gap-x-4 min-[1600px]:gap-y-2',
   sessionStatusDetailLabel:
     'text-[10px] font-semibold uppercase tracking-wide text-counselling-muted-foreground',
   sessionStatusDetailValue: 'text-xs font-medium leading-snug text-counselling-foreground',
@@ -191,9 +194,9 @@ export const counsellingSessionTokens = {
   quoteSummaryRail:
     'min-h-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-counselling-border/70 bg-counselling-card shadow-sm lg:self-stretch',
   quoteSummaryInner:
-    'flex min-h-0 w-full flex-1 flex-col overflow-hidden px-5 py-4 sm:px-6 sm:pb-5 lg:min-h-[12rem]',
+    'flex min-h-0 w-full flex-1 flex-col overflow-hidden px-3 py-2.5 sm:px-4 min-[1600px]:px-5 min-[1600px]:py-4 sm:min-[1600px]:px-6 sm:min-[1600px]:pb-5 min-[1600px]:lg:min-h-[12rem]',
   quoteSummaryPanel:
-    'counselling-estimate-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1',
+    'counselling-estimate-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 [scrollbar-width:thin]',
   quoteSummaryTitle:
     'flex items-center gap-2 text-sm font-semibold text-counselling-foreground',
   quoteSummaryMode: 'mt-0.5 text-xs font-medium text-counselling-foreground',
@@ -208,11 +211,11 @@ export const counsellingSessionTokens = {
   quoteModeTabItem: 'min-w-0 border-r border-counselling-border last:border-r-0',
   /** Wave 2K — waiting-list / dense pill patterns */
   pillTabTrack: 'flex min-w-0 flex-wrap items-center gap-1.5',
-  /** Wave 2E-5RR-W — journey rail: wide gaps + larger bold labels */
+  /** Wave 2E-5RR-W — journey rail: wide gaps + larger bold labels (desktop); denser below 1600 */
   journeyTabTrack:
-    'flex min-w-0 flex-nowrap items-center gap-6 sm:gap-8 lg:gap-10',
+    'flex min-w-0 flex-nowrap items-center gap-3 overflow-x-auto overscroll-x-contain [scrollbar-width:thin] min-[1600px]:gap-6 sm:min-[1600px]:gap-8 lg:min-[1600px]:gap-10',
   journeyTab:
-    'inline-flex min-h-9 items-center gap-1.5 rounded-full border border-transparent px-3.5 py-2 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
+    'inline-flex min-h-7 shrink-0 items-center gap-1 rounded-full border border-transparent px-2.5 py-1 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40 min-[1600px]:min-h-9 min-[1600px]:gap-1.5 min-[1600px]:px-3.5 min-[1600px]:py-2 min-[1600px]:text-sm',
   pillTab:
     'inline-flex min-h-8 items-center gap-1.5 rounded-full border border-transparent bg-counselling-muted/70 px-3 py-1.5 text-xs font-semibold text-counselling-foreground transition-colors hover:bg-counselling-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
   pillTabCurrent:

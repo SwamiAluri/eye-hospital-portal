@@ -112,11 +112,11 @@ export function CounsellingSessionChrome({
       />
 
       <div
-        className={cn(counsellingSessionTokens.sessionStatusStrip, 'mt-3')}
+        className={cn(counsellingSessionTokens.sessionStatusStrip, 'mt-1.5 min-[1600px]:mt-3')}
         data-testid={counsellingTestIds.sessionSummaryBar}
         aria-label={summary.statusLine}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 min-[1600px]:gap-3">
           <div className="min-w-0 flex-1">
             {summary.chips.length > 0 ? (
               <dl

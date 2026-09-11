@@ -4,6 +4,9 @@ import {
   WAITING_LIST_OT_GRID_TRACKS,
   WAITING_LIST_WORK_GRID,
   WAITING_LIST_WORK_GRID_TRACKS,
+  WAITING_LIST_WORK_GRID_TRACKS_COMPRESSED,
+  WAITING_LIST_WORK_GRID_TRACKS_LAPTOP,
+  WAITING_LIST_WORK_GRID_TRACKS_WORKSTATION,
   formatWaitingListDoctorDisplay,
 } from './waiting-list-layout';
 
@@ -29,6 +32,13 @@ describe('WAITING_LIST_WORK_GRID', () => {
     expect(WAITING_LIST_WORK_GRID_TRACKS).toContain('1.6fr');
     expect(WAITING_LIST_WORK_GRID_TRACKS).toContain('8.5rem');
     expect(WAITING_LIST_WORK_GRID_TRACKS.split('minmax(').length - 1).toBe(5);
+  });
+
+  it('documents workstation fluid tracks (five zones, flexible mins)', () => {
+    expect(WAITING_LIST_WORK_GRID_TRACKS_COMPRESSED.split('minmax(').length - 1).toBe(5);
+    expect(WAITING_LIST_WORK_GRID_TRACKS_LAPTOP.split('minmax(').length - 1).toBe(5);
+    expect(WAITING_LIST_WORK_GRID_TRACKS_COMPRESSED).toContain('minmax(0,');
+    expect(WAITING_LIST_WORK_GRID_TRACKS_WORKSTATION).toBe(WAITING_LIST_WORK_GRID_TRACKS_COMPRESSED);
   });
 });
 

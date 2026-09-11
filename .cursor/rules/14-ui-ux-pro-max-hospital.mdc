@@ -1,0 +1,66 @@
+---
+description: Constrains ui-ux-pro-max skill for this hospital portal — UX polish and checklists only; never replace the existing design system, stack, or clinical/financial safety rules.
+globs:
+  - apps/hospital-portal-web/src/**/*.tsx
+  - apps/hospital-portal-web/src/**/*.css
+  - design-system/**/*.md
+alwaysApply: false
+---
+
+# UI/UX Pro Max — Hospital Portal override
+
+When `ui-ux-pro-max` (or any UI/UX polish / design / layout request) is active, this rule **overrides** generated palettes, fonts, stacks, and visual styles.
+
+Canonical companion docs: `01-design-system`, `02-healthcare-ux`, `10-accessibility`, `00-hospital-architecture`, and `design-system/hospitalportal/MASTER.md`.
+
+## Priority (highest wins)
+
+1. Patient safety / clinical correctness  
+2. Privacy / security / permissions  
+3. Financial integrity  
+4. Backend source of truth  
+5. Existing design system + stack freeze  
+6. ui-ux-pro-max UX guidelines and pre-delivery checklist  
+
+Never sacrifice (1)–(5) for visual consistency from the skill.
+
+## Allowed uses of ui-ux-pro-max
+
+- Pre-delivery checklist (contrast, focus, keyboard, reduced motion, wrapping chips/badges, truncated labels)
+- UX domain searches: empty/error/loading, form validation visibility, resilient text, cancellable interactions
+- Density / hierarchy / spacing polish **within** existing layouts
+- Stack tips for **Next.js 14 + React 18 + Tailwind 3 + shadcn/ui + Lucide** already in use
+- Page-level notes under `design-system/hospitalportal/pages/` (deviations only)
+
+## Forbidden (unless user explicitly approves a redesign)
+
+- New color systems, primary hues, or “Soft UI / Glass / Bento / marketing hero” restyles of staff worklists
+- New font families or Google Fonts imports that replace current typography
+- New UI frameworks, toast libraries, icon packs (no Phosphor, MUI, Ant, etc.)
+- New global token files or a fourth “primary”
+- Replacing SignalR, auth, or inventing mock clinical/financial rows to “look complete”
+- Merging patient-portal / kiosk patterns into staff desktop workstations
+
+## Tokens and primitives (SoT)
+
+| Need | Use |
+|---|---|
+| Staff chrome | Navy sidebar + emerald `primary-*` (`globals.css` / Tailwind) |
+| Components | `apps/hospital-portal-web/src/components/ui/*` (shadcn) |
+| Icons | Lucide only |
+| Toasts | `react-hot-toast` |
+| Overlays | Dialog / Sheet / `IpOverlayDialog` — no third overlay stack |
+| Scoped themes | Keep `.ip-target`, `.counselling-session`, `.auth-oc`, patient portal — do not unify |
+
+## Workflow prompts (preferred)
+
+- “Review this screen with ui-ux-pro-max checklist; keep navy/emerald and existing domain badges.”
+- “Apply resilient chip/badge and focus rules using current components.”
+- “Improve empty/error/loading states only.”
+
+## Persisted design system
+
+- Master SoT for agent UX guidance: `design-system/hospitalportal/MASTER.md` (hand-constrained; not raw generator output)
+- Page overrides: `design-system/hospitalportal/pages/<page>.md` only for real deviations
+- If MASTER and the skill disagree, **MASTER + `.cursor/rules` win**
+---

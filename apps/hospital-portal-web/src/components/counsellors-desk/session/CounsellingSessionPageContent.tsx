@@ -28,6 +28,7 @@ import {
   clarifySaveDraftHint,
   clarifySaveSessionHint,
 } from '@/lib/counsellors-desk/counselling-action-hints';
+import { recommendedSurgeryName } from '@/lib/counsellors-desk/recommended-surgery-name';
 
 const ScheduleSurgeryModal = dynamic(
   () =>
@@ -51,7 +52,7 @@ export function CounsellingSessionPageContent() {
   const doctorRecommendation = useMemo(() => {
     const surgeries = (ctx.session as { surgeries?: Array<{ name?: string; isRecommended?: boolean }> })
       ?.surgeries;
-    return surgeries?.find((s) => s.isRecommended)?.name ?? null;
+    return recommendedSurgeryName(surgeries);
   }, [ctx.session]);
 
   if (ctx.isLoading) {
@@ -194,7 +195,7 @@ export function CounsellingSessionPageContent() {
           />
         </div>
 
-      <div className={cn(counsellingSessionTokens.shellModuleHost, 'min-h-0 flex-1')}>
+      <div className={cn(counsellingSessionTokens.shellModuleHost, 'staff-page-workspace min-h-0 flex-1')}>
         {isRepeatGateActive ? (
           <CounsellingRepeatSessionBanner
             sessionTypeCode={ctx.repeatSessionTypeCode}

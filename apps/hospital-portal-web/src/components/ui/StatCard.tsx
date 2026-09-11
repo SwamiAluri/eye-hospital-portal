@@ -35,7 +35,7 @@ export function StatCard({
 
   return (
     <div
-      className={`bg-white rounded-xl border border-gray-100 shadow-sm p-5 transition-shadow ${
+      className={`bg-white rounded-xl border border-gray-100 shadow-sm staff-kpi-pad transition-shadow ${
         onClick ? 'cursor-pointer hover:shadow-md' : ''
       }`}
       onClick={onClick}
@@ -44,7 +44,7 @@ export function StatCard({
         <div className="flex-1">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{title}</p>
           <div className="mt-2 flex items-baseline gap-2">
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="staff-kpi-value font-bold text-gray-900">{value}</p>
             {trend && (
               <span className={`text-xs font-semibold ${
                 trend.isPositive ? 'text-emerald-600' : 'text-red-500'

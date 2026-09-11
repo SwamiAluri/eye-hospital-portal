@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useAuthStore } from '@/lib/auth-store';
 import { counsellingAzureApi, type PriceOverrideRecord } from '@/lib/api/counselling-azure.api';
 import type { CounsellorProcedureVariant } from '@/lib/master-data/clinical-catalog-master';
@@ -8,6 +8,7 @@ import type { WaitingListStatus } from '@/types/counsellors-desk';
 import {
   packageOverrideVariantId,
 } from '@/lib/counsellors-desk/package-preview';
+import { applyPriceOverrideAddOnTransition } from '@/lib/counsellors-desk/apply-price-override-addon-transition';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import {
   CounsellingButton,
@@ -111,6 +112,8 @@ export function CounsellingPriceOverrideDialog({
   onRemoveOverride,
 }: CounsellingPriceOverrideDialogProps) {
   const isPackage = !!packageTarget;
+  /** PO-01: after override persisted but Auth Add-On failed, retry queue only (no duplicate override). */
+  const pendingAddOnQueueRetryRef = useRef(false);
 
   const targetKey = isPackage
     ? packageOverrideVariantId(packageTarget.id)
@@ -139,8 +142,36 @@ export function CounsellingPriceOverrideDialog({
     setOverrideError('');
   };
 
+  const completeAddOnQueueTransition = async (reason: string) => {
+    await applyPriceOverrideAddOnTransition(sessionId, reason);
+    pendingAddOnQueueRetryRef.current = false;
+    setQueueStatus('AddOnSurgery');
+    toast.success('Price override saved — session marked as Add-On Surgery');
+  };
+
   const handleSaveOverride = async () => {
     setOverrideError('');
+
+    // PO-01 retry: override already saved; only re-attempt Auth Add-On queue update.
+    if (pendingAddOnQueueRetryRef.current && isDoneState && !isPackage) {
+      setOverrideSaving(true);
+      try {
+        await completeAddOnQueueTransition(overrideReason.trim() || 'Price override');
+        resetForm();
+        onOpenChange(false);
+      } catch (queueErr) {
+        const message =
+          queueErr instanceof Error
+            ? queueErr.message
+            : 'Price override was saved, but the add-on surgery queue status could not be updated. Retry the operation or refresh the Waiting List.';
+        setOverrideError(message);
+        toast.error(message);
+      } finally {
+        setOverrideSaving(false);
+      }
+      return;
+    }
+
     const parsed = parseFloat(overridePrice);
     if (!overridePrice || Number.isNaN(parsed) || parsed <= 0) {
       setOverrideError('Enter a valid price.');
@@ -182,10 +213,21 @@ export function CounsellingPriceOverrideDialog({
         });
         const refreshed = await counsellingAzureApi.getPriceOverrides(sessionId);
         setSavedOverrides(refreshed);
+        // PO-01: Done + procedure override → Auth Add-On queue is REQUIRED before success.
         if (isDoneState && !isPackage) {
-          counsellingAzureApi.addOnSurgery(sessionId, overrideReason.trim());
-          setQueueStatus('AddOnSurgery');
-          toast.success('Price override saved — session marked as Add-On Surgery');
+          try {
+            await completeAddOnQueueTransition(overrideReason.trim());
+          } catch (queueErr) {
+            pendingAddOnQueueRetryRef.current = true;
+            const message =
+              queueErr instanceof Error
+                ? queueErr.message
+                : 'Price override was saved, but the add-on surgery queue status could not be updated. Retry the operation or refresh the Waiting List.';
+            setOverrideError(message);
+            toast.error(message);
+            // Override already persisted — leave dialog open for queue-only retry; do not claim Add-On success.
+            return;
+          }
         }
         resetForm();
       }
@@ -201,7 +243,10 @@ export function CounsellingPriceOverrideDialog({
     <CounsellingDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) resetForm();
+        if (!next) {
+          pendingAddOnQueueRetryRef.current = false;
+          resetForm();
+        }
         onOpenChange(next);
       }}
     >

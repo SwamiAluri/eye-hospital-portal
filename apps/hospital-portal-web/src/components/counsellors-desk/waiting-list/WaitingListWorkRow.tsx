@@ -131,29 +131,33 @@ function WaitingListWorkRowComponent({
       onClick={activateRow}
       onKeyDown={onKeyDown}
       className={cn(
-        'group min-h-14 cursor-pointer bg-transparent px-1 py-2.5 transition-colors',
+        'group staff-worklist-row cursor-pointer bg-transparent px-1 transition-colors',
         'hover:bg-counselling-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/40',
         isSelected && 'bg-counselling-accent/35',
         className,
       )}
     >
       <div className={cn(WAITING_LIST_WORK_GRID)}>
-        {/* Patient */}
-        <div className="flex min-w-0 items-start gap-2.5">
+        {/* Patient — same fields; workstation collapses secondary meta into identity line */}
+        <div className="flex min-w-0 items-center gap-2 min-[1600px]:items-start min-[1600px]:gap-2.5">
           <PatientAvatar
             displayName={patient.patientName}
             size="sm"
-            className="mt-0.5 !ring-counselling-border/50"
+            className="shrink-0 !ring-counselling-border/50 min-[1600px]:mt-0.5"
           />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold leading-5 text-counselling-foreground">
               {patient.patientName}
             </p>
-            <p className="mt-0.5 truncate text-[13px] font-medium leading-4 text-counselling-muted-foreground">
-              {identityLine || '—'}
+            <p className="mt-0 truncate text-[13px] font-medium leading-4 text-counselling-muted-foreground max-[1599px]:leading-[1.125rem]">
+              <span>{identityLine || '—'}</span>
+              {metaParts.length > 0 ? (
+                <span className="min-[1600px]:hidden">{` · ${metaParts.join(' · ')}`}</span>
+              ) : null}
             </p>
-            <p className="mt-0.5 truncate text-xs leading-4 text-counselling-muted-foreground">
-              {metaParts.join(' · ')}
+            {/* Desktop keeps a dedicated meta line (Large Desktop SoT) */}
+            <p className="mt-0.5 hidden truncate text-xs leading-4 text-counselling-muted-foreground min-[1600px]:block">
+              {metaParts.join(' · ') || '—'}
             </p>
           </div>
         </div>

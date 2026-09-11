@@ -41,9 +41,9 @@ export type WaitingListFilterToolbarProps = {
 };
 
 /**
- * Search / type / date / Add Patient — flat toolbar chrome.
- * Primary search covers patient / UHID / surgery / doctor.
- * Status navigation lives in WaitingListSummaryWidget.
+ * Search / type / date / Add Patient — same toolbar IA at every viewport.
+ * Workstation: CSS grid with capped search + compact inline date row.
+ * Desktop ≥1600: frozen spacious composition.
  */
 export function WaitingListFilterToolbar({
   quickSearch,
@@ -68,21 +68,38 @@ export function WaitingListFilterToolbar({
   return (
     <div
       data-testid={testId}
-      className={cn('flex shrink-0 flex-col gap-2 bg-transparent', className)}
+      className={cn(
+        'waiting-list-filter-toolbar flex shrink-0 flex-col gap-1 bg-transparent',
+        'min-[1600px]:gap-2',
+        className,
+      )}
       aria-label="Search and filters"
     >
-      <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+      <div
+        className={cn(
+          'waiting-list-filter-toolbar__primary grid min-w-0 items-center gap-x-2 gap-y-1',
+          /* Search takes remaining width; type + Add Patient stay auto */
+          'grid-cols-[minmax(12rem,1fr)_auto_auto]',
+          'min-[1600px]:flex min-[1600px]:flex-nowrap min-[1600px]:gap-3',
+        )}
+      >
         <CounsellingSearchInput
           value={quickSearch}
           onChange={onQuickSearchChange}
           placeholder="Search by patient, UHID, surgery, doctor…"
           density="catalog"
-          className="min-w-0 flex-1"
+          className={cn(
+            'waiting-list-filter-toolbar__search min-w-0 w-full',
+            'min-[1600px]:max-w-none min-[1600px]:flex-1',
+          )}
           data-testid="waiting-list-quick-search"
         />
 
         <div
-          className={cn(counsellingSessionTokens.pillTabTrack, 'shrink-0')}
+          className={cn(
+            counsellingSessionTokens.pillTabTrack,
+            'waiting-list-filter-toolbar__types shrink-0',
+          )}
           role="group"
           aria-label="Filter by type"
         >
@@ -107,7 +124,7 @@ export function WaitingListFilterToolbar({
           })}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="waiting-list-filter-toolbar__actions flex shrink-0 items-center justify-end gap-1.5">
           {(hasActiveFilters || quickSearch) && (
             <CounsellingButton
               type="button"
@@ -138,34 +155,46 @@ export function WaitingListFilterToolbar({
         </div>
       </div>
 
-      {/* Compact date range — existing API Apply semantics; no Filters panel */}
       <div
-        className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end"
+        className={cn(
+          'waiting-list-filter-toolbar__dates flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1',
+          'min-[1600px]:items-end min-[1600px]:gap-3',
+        )}
         data-testid="waiting-list-date-filters"
       >
-        <div className="min-w-0 sm:w-[9.5rem]">
-          <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+        <div className="flex min-w-0 items-center gap-1.5 min-[1600px]:w-[9.5rem] min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
+          <label
+            htmlFor="waiting-list-from-date"
+            className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal"
+          >
             <Calendar className="h-3 w-3" aria-hidden />
-            From Date
+            <span className="min-[1600px]:hidden">From</span>
+            <span className="hidden min-[1600px]:inline">From Date</span>
           </label>
           <CounsellingInput
+            id="waiting-list-from-date"
             type="date"
             value={filters.fromDate}
             onChange={(e) => patchFilters({ fromDate: e.target.value })}
-            className="h-8"
+            className="h-8 w-[8.75rem] min-[1600px]:w-full"
             data-testid="waiting-list-from-date"
           />
         </div>
-        <div className="min-w-0 sm:w-[9.5rem]">
-          <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+        <div className="flex min-w-0 items-center gap-1.5 min-[1600px]:w-[9.5rem] min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
+          <label
+            htmlFor="waiting-list-to-date"
+            className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal"
+          >
             <Calendar className="h-3 w-3" aria-hidden />
-            To Date
+            <span className="min-[1600px]:hidden">To</span>
+            <span className="hidden min-[1600px]:inline">To Date</span>
           </label>
           <CounsellingInput
+            id="waiting-list-to-date"
             type="date"
             value={filters.toDate}
             onChange={(e) => patchFilters({ toDate: e.target.value })}
-            className="h-8"
+            className="h-8 w-[8.75rem] min-[1600px]:w-full"
             data-testid="waiting-list-to-date"
           />
         </div>
