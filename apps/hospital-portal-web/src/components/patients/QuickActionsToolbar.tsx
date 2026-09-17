@@ -29,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useHasPermission } from '@/hooks/use-permissions';
 import { patientLookupTestIds } from '@/lib/patients/patient-lookup-test-ids';
 import { patientPrintSummaryUrl } from '@/lib/patients/patient-routes';
 
@@ -64,6 +65,7 @@ export const QuickActionsToolbar: React.FC<QuickActionsToolbarProps> = ({
 }) => {
   const router = useRouter();
   const [showActionModal, setShowActionModal] = useState<string | null>(null);
+  const canBookAppointment = useHasPermission('appointment.view');
 
   const runAction = (actionType: string, run: () => void) => {
     run();
@@ -100,12 +102,16 @@ export const QuickActionsToolbar: React.FC<QuickActionsToolbarProps> = ({
           'emergency-check-in',
         ),
     },
-    {
-      id: 'book-appointment',
-      label: 'Book appt',
-      icon: Calendar,
-      onClick: () => openScheduling('book-appointment'),
-    },
+    ...(canBookAppointment
+      ? ([
+          {
+            id: 'book-appointment',
+            label: 'Book appt',
+            icon: Calendar,
+            onClick: () => openScheduling('book-appointment'),
+          },
+        ] as QuickAction[])
+      : []),
   ];
 
   const moreActions: QuickAction[] = [

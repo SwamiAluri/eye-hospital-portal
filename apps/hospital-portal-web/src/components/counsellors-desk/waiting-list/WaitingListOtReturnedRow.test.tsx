@@ -118,7 +118,7 @@ describe('WaitingListOtReturnedRow', () => {
 
     expect(clicked).toBe(true);
     expect(onNavigate).toHaveBeenCalledWith(
-      '/dashboard/counsellors-desk/session-42',
+      '/dashboard/counsellors-desk/session-42?from=waiting-list',
     );
   });
 

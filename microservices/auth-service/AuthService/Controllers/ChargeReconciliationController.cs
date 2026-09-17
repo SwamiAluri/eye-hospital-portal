@@ -25,19 +25,19 @@ public class ChargeReconciliationController : ControllerBase
     }
 
     [HttpGet]
-    [RequirePermission("bill.view")]
+    [RequirePermission("bill.reconciliation.view")]
     public async Task<ActionResult<ChargeReconciliationReportDto>> Get(
         [FromQuery] DateTime? fromUtc, [FromQuery] DateTime? toUtc)
         => Ok(await _svc.GetReportAsync(GetTenantId(), fromUtc, toUtc));
 
     [HttpPost("run")]
-    [RequirePermission("bill.view")]
+    [RequirePermission("bill.reconciliation.view")]
     public async Task<ActionResult<ChargeReconciliationReportDto>> Run(
         [FromQuery] DateTime? fromUtc, [FromQuery] DateTime? toUtc)
         => Ok(await _svc.GetReportAsync(GetTenantId(), fromUtc, toUtc));
 
     [HttpGet("wastage")]
-    [RequirePermission("bill.view")]
+    [RequirePermission("bill.reconciliation.view")]
     public async Task<ActionResult<WastageReportDto>> Wastage(
         [FromQuery] DateTime? fromUtc, [FromQuery] DateTime? toUtc)
         => Ok(await _svc.GetWastageAsync(GetTenantId(), fromUtc, toUtc));

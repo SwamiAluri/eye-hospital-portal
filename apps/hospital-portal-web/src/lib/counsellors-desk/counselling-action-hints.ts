@@ -11,6 +11,8 @@ const SAVE_SESSION_HINTS: Record<string, string> = {
   'Please select a follow-up date': 'Set follow-up date',
   'Session is read-only': 'Session is read-only',
   'Saving session…': 'Saving…',
+  'Completing session…': 'Completing…',
+  'Saving…': 'Saving…',
 };
 
 const PHASE_HINTS: Record<string, string> = {

@@ -36,6 +36,8 @@ export interface CounsellingPackageWorkspaceProps {
   embedded?: boolean;
   estimate: UseCounsellingEstimateResult;
   packageTemplates: CounsellingPackageTemplate[];
+  /** True when user lacks package_templates.read — distinct from empty master-data catalog. */
+  packageTemplatesAccessDenied?: boolean;
   procedureVariants: CounsellorProcedureVariant[];
   masterCatalog: {
     imaging: MasterCatalogItem[];
@@ -79,6 +81,7 @@ export function CounsellingPackageWorkspace({
   embedded = false,
   estimate,
   packageTemplates,
+  packageTemplatesAccessDenied = false,
   procedureVariants,
   masterCatalog,
   recommendedVariantIds,
@@ -235,6 +238,27 @@ export function CounsellingPackageWorkspace({
       />
     );
   };
+
+  if (packageTemplatesAccessDenied) {
+    const denied = (
+      <CounsellingEmptyState
+        title={counsellingCopy.package}
+        description={counsellingCopy.packageTemplatesUnavailable}
+      />
+    );
+    if (embedded) {
+      return (
+        <p className="text-sm text-counselling-muted-foreground">
+          {counsellingCopy.packageTemplatesUnavailable}
+        </p>
+      );
+    }
+    return (
+      <section className="rounded-xl border border-dashed border-counselling-border bg-counselling-card p-4 shadow-sm">
+        {denied}
+      </section>
+    );
+  }
 
   if (packageTemplates.length === 0) {
     const empty = (

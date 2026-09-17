@@ -41,8 +41,10 @@ function WorklistSkeleton({ mode }: { mode: 'counselling' | 'ot-returned' }) {
         >
           <div className="h-3 max-w-[80%] animate-pulse rounded-full bg-counselling-muted" />
           <div className="hidden h-3 max-w-[70%] animate-pulse rounded-full bg-counselling-muted sm:block" />
+          <div className="hidden h-3 max-w-[70%] animate-pulse rounded-full bg-counselling-muted sm:block" />
+          <div className="hidden h-3 max-w-[55%] animate-pulse rounded-full bg-counselling-muted sm:block" />
+          <div className="hidden h-3 max-w-[55%] animate-pulse rounded-full bg-counselling-muted sm:block" />
           <div className="hidden h-3 w-14 animate-pulse rounded-full bg-counselling-muted sm:block" />
-          <div className="hidden h-3 max-w-[60%] animate-pulse rounded-full bg-counselling-muted sm:block" />
           <div className="hidden h-7 w-16 justify-self-end animate-pulse rounded-md bg-counselling-muted sm:block" />
         </div>
       ))}
@@ -50,7 +52,15 @@ function WorklistSkeleton({ mode }: { mode: 'counselling' | 'ot-returned' }) {
   );
 }
 
-const COUNSELLING_CUES = ['Patient', 'Procedure / Eye', 'Status', 'Attention', 'Action'] as const;
+const COUNSELLING_CUES = [
+  'Patient',
+  'Visit',
+  'Procedure / Eye',
+  'Owner',
+  'Payment / Coverage',
+  'Status',
+  'Action',
+] as const;
 const OT_CUES = ['UHID / Patient', 'Procedure', 'Return Reason', 'Surgery Date', 'Action'] as const;
 
 /**
@@ -110,16 +120,17 @@ export function WaitingListQueueWidget({
           <div
             className={cn(
               gridClass,
-              'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-0.5 max-md:hidden min-[1600px]:py-2',
+              'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-1 max-md:hidden min-[1600px]:py-2',
             )}
-            aria-hidden
+            role="row"
             data-testid="waiting-list-queue-column-cues"
           >
             {cues.map((cue) => (
               <p
                 key={cue}
+                role="columnheader"
                 className={cn(
-                  'text-[11px] font-medium tracking-wide text-counselling-muted-foreground',
+                  'text-sm font-semibold leading-5 tracking-normal text-counselling-foreground',
                   cue === 'Action' && 'text-right',
                 )}
               >

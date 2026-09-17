@@ -37,35 +37,54 @@ export function useBranchContext() {
 
   const branches: UserBranchAssignment[] = branchesQuery.data?.branches ?? [];
 
-  const branchDetailsQuery = useQuery({
-    queryKey: ['branch-details', selectedBranchId],
-    queryFn: async () => {
-      const { data } = await getApi().get(`/branches/${selectedBranchId}`);
-      return data as { branchName?: string; name?: string; branchCode?: string; code?: string };
-    },
-    staleTime: 5 * 60_000,
-    enabled: !!selectedBranchId && branches.length === 0 && !branchesQuery.isLoading,
-  });
-
-  const resolvedBranchName =
-    branches[0]?.branchName ??
-    branchDetailsQuery.data?.branchName ??
-    branchDetailsQuery.data?.name ??
-    null;
-
   const resolveDefaultBranchId = useCallback((): string | null => {
     if (branches.length === 0) return user?.branchId ?? null;
     const defaultBranch = branches.find((b) => b.isDefault);
     return defaultBranch?.branchId ?? branches[0]?.branchId ?? user?.branchId ?? null;
   }, [branches, user?.branchId]);
 
+  /** Prefer explicit selection; fall back to sole authorized branch or login/home branch. */
+  const effectiveBranchId =
+    selectedBranchId ??
+    (branches.length === 1 ? branches[0].branchId : null) ??
+    user?.branchId ??
+    null;
+
+  const branchDetailsQuery = useQuery({
+    queryKey: ['branch-details', effectiveBranchId],
+    queryFn: async () => {
+      const { data } = await getApi().get(`/branches/${effectiveBranchId}`);
+      return data as { branchName?: string; name?: string; branchCode?: string; code?: string };
+    },
+    staleTime: 5 * 60_000,
+    enabled: !!effectiveBranchId && branches.length === 0 && !branchesQuery.isLoading,
+  });
+
+  const resolvedBranchName =
+    branches.find((b) => b.branchId === effectiveBranchId)?.branchName ??
+    branches[0]?.branchName ??
+    branchDetailsQuery.data?.branchName ??
+    branchDetailsQuery.data?.name ??
+    null;
+
   useEffect(() => {
     if (!user) return;
 
     const stored = readStoredBranchId();
-    if (stored && branches.some((b) => b.branchId === stored)) {
-      if (selectedBranchId !== stored) setSelectedBranchId(stored);
-      return;
+    if (stored) {
+      const storedOk =
+        branches.some((b) => b.branchId === stored) ||
+        stored === user.branchId ||
+        (branches.length === 0 && !branchesQuery.isLoading && stored === user.branchId);
+      if (branches.length > 0 && branches.some((b) => b.branchId === stored)) {
+        if (selectedBranchId !== stored) setSelectedBranchId(stored);
+        return;
+      }
+      if (branches.length === 0 && user.branchId && stored === user.branchId) {
+        if (selectedBranchId !== stored) setSelectedBranchId(stored);
+        return;
+      }
+      void storedOk;
     }
 
     const fallback = resolveDefaultBranchId();
@@ -73,11 +92,18 @@ export function useBranchContext() {
       setSelectedBranchId(fallback);
       writeStoredBranchId(fallback);
     }
-  }, [user, branches, selectedBranchId, setSelectedBranchId, resolveDefaultBranchId]);
+  }, [
+    user,
+    branches,
+    branchesQuery.isLoading,
+    selectedBranchId,
+    setSelectedBranchId,
+    resolveDefaultBranchId,
+  ]);
 
   const activeBranch = useMemo(
-    () => branches.find((b) => b.branchId === selectedBranchId) ?? null,
-    [branches, selectedBranchId],
+    () => branches.find((b) => b.branchId === effectiveBranchId) ?? null,
+    [branches, effectiveBranchId],
   );
 
   const selectBranch = useCallback(
@@ -89,13 +115,13 @@ export function useBranchContext() {
   );
 
   return {
-    branchId: selectedBranchId,
+    branchId: effectiveBranchId,
     branches,
     activeBranch,
     branchName: resolvedBranchName,
     selectBranch,
-    isLoading: branchesQuery.isLoading,
-    isReady: !!selectedBranchId,
+    isLoading: branchesQuery.isLoading && !effectiveBranchId,
+    isReady: !!effectiveBranchId,
     error: branchesQuery.error,
   };
 }

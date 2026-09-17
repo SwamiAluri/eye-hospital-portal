@@ -1,7 +1,8 @@
 /**
  * Follow-up Center presentation helpers.
+ * Phase2Y (PD5/PD6): no generic DueDate/SLA; no formal priority / AlertLevel urgency chrome.
  * Due-date heuristics (+7 / +30 / +14) are intentionally not used —
- * server populations and stats are authoritative (Phase 2B / 2F).
+ * server populations and stats are authoritative (Phase 2B / 2F / 2X / 2Y).
  */
 
 import type { PatientIntention } from '@/types/counsellors-desk';
@@ -23,6 +24,9 @@ export const FOLLOWUP_TABS = [
   { id: 'cold' as const, label: 'Cold Leads' },
   { id: 'post-surgery' as const, label: 'Post-Surgery' },
 ] as const;
+
+/** Phase2Y: factual discharge aging KPI — not due/SLA/overdue/priority. */
+export const POST_DISCHARGE_AGING_KPI_LABEL = 'Discharged ≥30 days';
 
 export type FollowupTabId = (typeof FOLLOWUP_TABS)[number]['id'];
 
@@ -55,33 +59,6 @@ export function intentionPillClass(intention: string | null | undefined): string
       return 'bg-emerald-100 text-emerald-800';
     default:
       return 'bg-counselling-muted/70 text-counselling-foreground';
-  }
-}
-
-/** Backend alertLevel → counselling status treatment. Do not recalculate escalation. */
-export function alertPillClass(alertLevel: string): string {
-  switch (alertLevel) {
-    case 'Critical':
-      return 'bg-red-100 text-red-900';
-    case 'High':
-      return 'bg-orange-100 text-orange-900';
-    case 'Medium':
-      return 'bg-amber-100 text-amber-900';
-    default:
-      return 'bg-counselling-muted/70 text-counselling-muted-foreground';
-  }
-}
-
-export function alertBorderClass(alertLevel: string): string {
-  switch (alertLevel) {
-    case 'Critical':
-      return 'border-l-red-500';
-    case 'High':
-      return 'border-l-orange-400';
-    case 'Medium':
-      return 'border-l-amber-400';
-    default:
-      return 'border-l-counselling-border';
   }
 }
 

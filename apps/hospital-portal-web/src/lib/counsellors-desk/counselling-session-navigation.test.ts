@@ -5,21 +5,21 @@ import {
 } from './counselling-session-navigation';
 
 describe('resolveSessionBackTarget', () => {
-  it('leaves the session from quote', () => {
+  it('does not leave the session from quote — Close handles exit', () => {
     expect(
       resolveSessionBackTarget({
         activeMainTab: 'counselling',
         activePhase: 'estimate',
         showCoverageWorkflow: true,
       }),
-    ).toEqual({ leaveSession: true });
+    ).toBeNull();
     expect(
       shouldShowSessionBack({
         activeMainTab: 'counselling',
         activePhase: 'estimate',
         showCoverageWorkflow: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('goes from decision to quote', () => {

@@ -123,4 +123,18 @@ describe('buildCreateCounsellingSessionPayload', () => {
       additionalNotes: 'Walk-in',
     });
   });
+
+  it('Phase 3I: FE omits counselorId — BE establishes owner when actor is counsellor', () => {
+    const body = buildCreateCounsellingSessionPayload({
+      patientId: 'p1',
+      doctorId: 'd1',
+      sessionTypeCode: 'INITIAL',
+      surgeryType: 'Procedure',
+      surgeryName: '',
+      eye: '',
+      remarks: '',
+    });
+    expect('counselorId' in body).toBe(false);
+    expect(Object.keys(body)).not.toContain('counselorId');
+  });
 });

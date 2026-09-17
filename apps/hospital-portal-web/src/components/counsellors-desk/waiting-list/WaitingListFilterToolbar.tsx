@@ -5,6 +5,7 @@ import { CounsellingButton } from '@/components/counsellors-desk/session/primiti
 import { CounsellingInput } from '@/components/counsellors-desk/session/primitives/CounsellingInput';
 import { CounsellingSearchInput } from '@/components/counsellors-desk/session/primitives/CounsellingSearchInput';
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
+import type { WaitingListOwnerFilter } from '@/lib/counsellors-desk/waiting-list-client-filters';
 import type { WaitingListFilters } from '@/types/counsellors-desk';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +24,13 @@ export const WAITING_LIST_STATUS_TABS = [
 
 export const WAITING_LIST_TYPE_OPTIONS = ['All', 'Procedure', 'Surgery'] as const;
 
+export const WAITING_LIST_OWNER_FILTER_OPTIONS = [
+  { value: 'All', label: 'All' },
+  { value: 'Mine', label: 'My Sessions' },
+  { value: 'Unassigned', label: 'Unassigned' },
+  { value: 'Other', label: 'Other Counsellors' },
+] as const satisfies ReadonlyArray<{ value: WaitingListOwnerFilter; label: string }>;
+
 export type WaitingListStatusTab = (typeof WAITING_LIST_STATUS_TABS)[number];
 export type WaitingListTypeOption = (typeof WAITING_LIST_TYPE_OPTIONS)[number];
 
@@ -34,6 +42,9 @@ export type WaitingListFilterToolbarProps = {
   onApply: () => void;
   onReset: () => void;
   typeOptions?: ReadonlyArray<WaitingListTypeOption>;
+  /** Client-only Owner convenience filter — never sent to waiting-list API. */
+  ownerFilter?: WaitingListOwnerFilter;
+  onOwnerFilterChange?: (value: WaitingListOwnerFilter) => void;
   hasActiveFilters: boolean;
   onAddPatient: () => void;
   className?: string;
@@ -53,6 +64,8 @@ export function WaitingListFilterToolbar({
   onApply,
   onReset,
   typeOptions = WAITING_LIST_TYPE_OPTIONS,
+  ownerFilter = 'All',
+  onOwnerFilterChange,
   hasActiveFilters,
   onAddPatient,
   className,
@@ -78,15 +91,15 @@ export function WaitingListFilterToolbar({
       <div
         className={cn(
           'waiting-list-filter-toolbar__primary grid min-w-0 items-center gap-x-2 gap-y-1',
-          /* Search takes remaining width; type + Add Patient stay auto */
-          'grid-cols-[minmax(12rem,1fr)_auto_auto]',
+          /* Search takes remaining width; type + owner + Add Patient stay auto */
+          'grid-cols-[minmax(12rem,1fr)_auto_auto_auto]',
           'min-[1600px]:flex min-[1600px]:flex-nowrap min-[1600px]:gap-3',
         )}
       >
         <CounsellingSearchInput
           value={quickSearch}
           onChange={onQuickSearchChange}
-          placeholder="Search by patient, UHID, surgery, doctor…"
+          placeholder="Search patient, MRN, doctor, procedure, counsellor..."
           density="catalog"
           className={cn(
             'waiting-list-filter-toolbar__search min-w-0 w-full',
@@ -123,6 +136,33 @@ export function WaitingListFilterToolbar({
             );
           })}
         </div>
+
+        {onOwnerFilterChange ? (
+          <label className="waiting-list-filter-toolbar__owner flex shrink-0 items-center gap-1.5">
+            <span className="text-xs font-semibold text-counselling-foreground whitespace-nowrap">
+              Owner:
+            </span>
+            <select
+              value={ownerFilter}
+              onChange={(e) =>
+                onOwnerFilterChange(e.target.value as WaitingListOwnerFilter)
+              }
+              className={cn(
+                'h-8 max-w-[11rem] rounded-md border border-counselling-border bg-counselling-background',
+                'px-2 text-xs font-medium text-counselling-foreground',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
+              )}
+              aria-label="Filter by owner"
+              data-testid="waiting-list-owner-filter"
+            >
+              {WAITING_LIST_OWNER_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
         <div className="waiting-list-filter-toolbar__actions flex shrink-0 items-center justify-end gap-1.5">
           {(hasActiveFilters || quickSearch) && (

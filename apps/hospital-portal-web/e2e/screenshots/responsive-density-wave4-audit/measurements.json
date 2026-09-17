@@ -137,56 +137,11 @@
     ],
     "sampleInputs": [],
     "tableMetrics": [],
-    "cards": [
-      {
-        "tag": "div",
-        "h": 110,
-        "w": 315,
-        "padT": "20px",
-        "padR": "20px",
-        "padB": "20px",
-        "padL": "20px",
-        "fontSize": "16px",
-        "gap": "normal"
-      },
-      {
-        "tag": "div",
-        "h": 110,
-        "w": 315,
-        "padT": "20px",
-        "padR": "20px",
-        "padB": "20px",
-        "padL": "20px",
-        "fontSize": "16px",
-        "gap": "normal"
-      },
-      {
-        "tag": "div",
-        "h": 110,
-        "w": 315,
-        "padT": "20px",
-        "padR": "20px",
-        "padB": "20px",
-        "padL": "20px",
-        "fontSize": "16px",
-        "gap": "normal"
-      },
-      {
-        "tag": "div",
-        "h": 110,
-        "w": 315,
-        "padT": "20px",
-        "padR": "20px",
-        "padB": "20px",
-        "padL": "20px",
-        "fontSize": "16px",
-        "gap": "normal"
-      }
-    ],
+    "cards": [],
     "pageHOverflow": 0,
     "btnHeightHistogram": {
       "28": 1,
-      "32": 5,
+      "32": 1,
       "36": 1,
       "40": 19,
       "52": 1
@@ -383,7 +338,7 @@
     "cards": [
       {
         "tag": "div",
-        "h": 65,
+        "h": 61,
         "w": 1612,
         "padT": "10px",
         "padR": "16px",
@@ -394,7 +349,7 @@
       },
       {
         "tag": "section",
-        "h": 803,
+        "h": 783,
         "w": 1612,
         "padT": "0px",
         "padR": "0px",
@@ -581,7 +536,7 @@
       {
         "type": "text",
         "tag": "input",
-        "h": 32,
+        "h": 35,
         "w": 1112,
         "padT": "8px",
         "padR": "12px",
@@ -607,7 +562,7 @@
     "cards": [
       {
         "tag": "div",
-        "h": 65,
+        "h": 61,
         "w": 1612,
         "padT": "10px",
         "padR": "16px",
@@ -618,7 +573,7 @@
       },
       {
         "tag": "section",
-        "h": 797,
+        "h": 777,
         "w": 1612,
         "padT": "0px",
         "padR": "0px",
@@ -638,7 +593,8 @@
       "52": 1
     },
     "inputHeightHistogram": {
-      "32": 4
+      "32": 3,
+      "35": 1
     }
   },
   {
@@ -783,44 +739,44 @@
       {
         "tag": "div",
         "h": 96,
-        "w": 251,
-        "padT": "16px",
-        "padR": "16px",
-        "padB": "16px",
-        "padL": "16px",
+        "w": 247,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
         "fontSize": "16px",
         "gap": "normal"
       },
       {
         "tag": "div",
         "h": 96,
-        "w": 251,
-        "padT": "16px",
-        "padR": "16px",
-        "padB": "16px",
-        "padL": "16px",
+        "w": 247,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
         "fontSize": "16px",
         "gap": "normal"
       },
       {
         "tag": "div",
         "h": 96,
-        "w": 251,
-        "padT": "16px",
-        "padR": "16px",
-        "padB": "16px",
-        "padL": "16px",
+        "w": 247,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
         "fontSize": "16px",
         "gap": "normal"
       },
       {
         "tag": "div",
         "h": 96,
-        "w": 251,
-        "padT": "16px",
-        "padR": "16px",
-        "padB": "16px",
-        "padL": "16px",
+        "w": 247,
+        "padT": "20px",
+        "padR": "20px",
+        "padB": "20px",
+        "padL": "20px",
         "fontSize": "16px",
         "gap": "normal"
       }
@@ -1220,7 +1176,7 @@
       },
       {
         "tag": "div",
-        "h": 65,
+        "h": 61,
         "w": 1292,
         "padT": "10px",
         "padR": "16px",
@@ -1231,7 +1187,7 @@
       },
       {
         "tag": "section",
-        "h": 623,
+        "h": 603,
         "w": 1292,
         "padT": "0px",
         "padR": "0px",
@@ -1418,7 +1374,7 @@
       {
         "type": "text",
         "tag": "input",
-        "h": 32,
+        "h": 35,
         "w": 792,
         "padT": "8px",
         "padR": "12px",
@@ -1466,7 +1422,7 @@
       },
       {
         "tag": "div",
-        "h": 65,
+        "h": 61,
         "w": 1292,
         "padT": "10px",
         "padR": "16px",
@@ -1477,7 +1433,7 @@
       },
       {
         "tag": "section",
-        "h": 617,
+        "h": 597,
         "w": 1292,
         "padT": "0px",
         "padR": "0px",
@@ -1497,7 +1453,8 @@
       "52": 1
     },
     "inputHeightHistogram": {
-      "32": 4
+      "32": 3,
+      "35": 1
     }
   },
   {
@@ -1663,7 +1620,7 @@
       },
       {
         "tag": "div",
-        "h": 492,
+        "h": 82,
         "w": 612,
         "padT": "20px",
         "padR": "20px",
@@ -1674,7 +1631,7 @@
       },
       {
         "tag": "div",
-        "h": 492,
+        "h": 82,
         "w": 612,
         "padT": "20px",
         "padR": "20px",
@@ -1834,39 +1791,6 @@
         "padL": "0px",
         "fontSize": "16px",
         "gap": "normal"
-      },
-      {
-        "tag": "div",
-        "h": 110,
-        "w": 266,
-        "padT": "20px",
-        "padR": "20px",
-        "padB": "20px",
-        "padL": "20px",
-        "fontSize": "16px",
-        "gap": "normal"
-      },
-      {
-        "tag": "div",
-        "h": 110,
-        "w": 266,
-        "padT": "20px",
-        "padR": "20px",
-        "padB": "20px",
-        "padL": "20px",
-        "fontSize": "16px",
-        "gap": "normal"
-      },
-      {
-        "tag": "div",
-        "h": 110,
-        "w": 266,
-        "padT": "20px",
-        "padR": "20px",
-        "padB": "20px",
-        "padL": "20px",
-        "fontSize": "16px",
-        "gap": "normal"
       }
     ],
     "pageHOverflow": 0,
@@ -1885,13 +1809,13 @@
     "dpr": 1.25,
     "pageTitle": {
       "tag": "h1",
-      "h": 28,
-      "w": 1420,
+      "h": 20,
+      "w": 1424,
       "padT": "0px",
       "padR": "0px",
       "padB": "0px",
       "padL": "0px",
-      "fontSize": "22px",
+      "fontSize": "16px",
       "gap": "normal"
     },
     "topnav": {
@@ -2019,7 +1943,7 @@
         "type": "search",
         "tag": "input",
         "h": 36,
-        "w": 1031,
+        "w": 256,
         "padT": "8px",
         "padR": "32px",
         "padB": "8px",
@@ -2031,7 +1955,7 @@
         "type": "date",
         "tag": "input",
         "h": 32,
-        "w": 152,
+        "w": 140,
         "padT": "8px",
         "padR": "12px",
         "padB": "8px",
@@ -2043,7 +1967,7 @@
         "type": "date",
         "tag": "input",
         "h": 32,
-        "w": 152,
+        "w": 140,
         "padT": "8px",
         "padR": "12px",
         "padB": "8px",
@@ -2078,20 +2002,9 @@
         "gap": "normal"
       },
       {
-        "tag": "div",
-        "h": 61,
-        "w": 1424,
-        "padT": "8px",
-        "padR": "16px",
-        "padB": "8px",
-        "padL": "16px",
-        "fontSize": "16px",
-        "gap": "normal"
-      },
-      {
         "tag": "section",
-        "h": 637,
-        "w": 1424,
+        "h": 664,
+        "w": 1428,
         "padT": "0px",
         "padR": "0px",
         "padB": "0px",
@@ -2103,7 +2016,7 @@
     "pageHOverflow": 0,
     "btnHeightHistogram": {
       "28": 1,
-      "32": 40,
+      "32": 31,
       "34": 19,
       "36": 1
     },
@@ -2119,13 +2032,13 @@
     "dpr": 1.25,
     "pageTitle": {
       "tag": "h1",
-      "h": 28,
-      "w": 1420,
+      "h": 24,
+      "w": 1424,
       "padT": "0px",
       "padR": "0px",
       "padB": "0px",
       "padL": "0px",
-      "fontSize": "22px",
+      "fontSize": "18px",
       "gap": "normal"
     },
     "topnav": {
@@ -2253,7 +2166,7 @@
         "type": "date",
         "tag": "input",
         "h": 32,
-        "w": 152,
+        "w": 144,
         "padT": "8px",
         "padR": "12px",
         "padB": "8px",
@@ -2265,7 +2178,7 @@
         "type": "text",
         "tag": "input",
         "h": 32,
-        "w": 136,
+        "w": 80,
         "padT": "8px",
         "padR": "12px",
         "padB": "8px",
@@ -2277,7 +2190,7 @@
         "type": "text",
         "tag": "input",
         "h": 32,
-        "w": 932,
+        "w": 873,
         "padT": "8px",
         "padR": "12px",
         "padB": "8px",
@@ -2312,20 +2225,9 @@
         "gap": "normal"
       },
       {
-        "tag": "div",
-        "h": 61,
-        "w": 1424,
-        "padT": "8px",
-        "padR": "16px",
-        "padB": "8px",
-        "padL": "16px",
-        "fontSize": "16px",
-        "gap": "normal"
-      },
-      {
         "tag": "section",
-        "h": 631,
-        "w": 1424,
+        "h": 644,
+        "w": 1428,
         "padT": "0px",
         "padR": "0px",
         "padB": "0px",
@@ -2337,7 +2239,7 @@
     "pageHOverflow": 0,
     "btnHeightHistogram": {
       "28": 1,
-      "32": 34,
+      "32": 27,
       "34": 19,
       "36": 1,
       "38": 2
@@ -2353,13 +2255,13 @@
     "dpr": 1.25,
     "pageTitle": {
       "tag": "h1",
-      "h": 32,
+      "h": 24,
       "w": 320,
       "padT": "0px",
       "padR": "0px",
       "padB": "0px",
       "padL": "0px",
-      "fontSize": "24px",
+      "fontSize": "18px",
       "gap": "normal"
     },
     "topnav": {
@@ -2499,33 +2401,33 @@
       {
         "tag": "div",
         "h": 96,
-        "w": 218,
-        "padT": "16px",
-        "padR": "16px",
-        "padB": "16px",
-        "padL": "16px",
+        "w": 225,
+        "padT": "12px",
+        "padR": "12px",
+        "padB": "12px",
+        "padL": "12px",
         "fontSize": "16px",
         "gap": "normal"
       },
       {
         "tag": "div",
         "h": 96,
-        "w": 218,
-        "padT": "16px",
-        "padR": "16px",
-        "padB": "16px",
-        "padL": "16px",
+        "w": 225,
+        "padT": "12px",
+        "padR": "12px",
+        "padB": "12px",
+        "padL": "12px",
         "fontSize": "16px",
         "gap": "normal"
       },
       {
         "tag": "div",
         "h": 96,
-        "w": 218,
-        "padT": "16px",
-        "padR": "16px",
-        "padB": "16px",
-        "padL": "16px",
+        "w": 225,
+        "padT": "12px",
+        "padR": "12px",
+        "padB": "12px",
+        "padL": "12px",
         "fontSize": "16px",
         "gap": "normal"
       }

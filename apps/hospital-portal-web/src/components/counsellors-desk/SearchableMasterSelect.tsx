@@ -21,6 +21,8 @@ export interface SearchableMasterSelectProps {
   value: string;
   options: { id: string; name: string }[];
   onChange: (value: string) => void;
+  /** When 'id', onChange emits option.id (for foreign keys). Default 'name' preserves master-label fields. */
+  emit?: 'id' | 'name';
   placeholder?: string;
   loading?: boolean;
   error?: string | null;
@@ -44,6 +46,7 @@ export function SearchableMasterSelect({
   value,
   options,
   onChange,
+  emit = 'name',
   placeholder = 'Select…',
   loading,
   error,
@@ -120,7 +123,7 @@ export function SearchableMasterSelect({
                     key={o.id}
                     value={o.name}
                     onSelect={() => {
-                      onChange(o.name);
+                      onChange(emit === 'id' ? o.id : o.name);
                       setOpen(false);
                     }}
                   >

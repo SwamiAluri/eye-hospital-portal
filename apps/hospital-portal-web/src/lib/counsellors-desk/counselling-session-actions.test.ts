@@ -42,7 +42,7 @@ describe('counselling-session-actions', () => {
     expect(model.showSaveDraft).toBe(true);
   });
 
-  it('shows save session on wrap-up when coverage not pending', () => {
+  it('shows Complete Session on wrap-up when coverage not pending', () => {
     const model = buildSessionActionBarModel({
       ...baseInput,
       showCoverageWorkflow: false,
@@ -55,7 +55,7 @@ describe('counselling-session-actions', () => {
       phaseAdvanceError: null,
     });
     expect(model.primary?.kind).toBe('save_session');
-    expect(model.primary?.label).toBe('Save session');
+    expect(model.primary?.label).toBe('Complete Session');
   });
 
   it('shows submit to claims on coverage tab when ready', () => {
@@ -97,13 +97,14 @@ describe('counselling-session-actions', () => {
     expect(model.showPhaseBack).toBe(true);
   });
 
-  it('shows Back on quote estimate step (leave session)', () => {
+  it('shows Close on quote estimate step (not Back — Close leaves session)', () => {
     const model = buildSessionActionBarModel({
       ...baseInput,
       canAdvancePhase: true,
       phaseAdvanceError: null,
     });
-    expect(model.showPhaseBack).toBe(true);
+    expect(model.showPhaseBack).toBe(false);
+    expect(model.showClose).toBe(true);
   });
 
   it('shows Back on decision step', () => {
@@ -116,7 +117,7 @@ describe('counselling-session-actions', () => {
     });
     expect(model.showPhaseBack).toBe(true);
   });
-  it('shows Save session on Quote after decision when waiting for TPA', () => {
+  it('shows Complete Session on Quote after decision when waiting for TPA', () => {
     const model = buildSessionActionBarModel({
       ...baseInput,
       activeMainTab: 'counselling',
@@ -134,7 +135,7 @@ describe('counselling-session-actions', () => {
       phaseAdvanceError: null,
     });
     expect(model.primary?.kind).toBe('save_session');
-    expect(model.primary?.label).toBe('Save session');
+    expect(model.primary?.label).toBe('Complete Session');
   });
 
   it('avoids misleading next action after pre-auth submit', () => {
@@ -181,6 +182,31 @@ describe('counselling-session-actions', () => {
     expect(model.showSaveDraft).toBe(false);
   });
 
+  it('PD-PENDING-READONLY-01: Pending hides Save Draft and mutation CTAs', () => {
+    const model = buildSessionActionBarModel({
+      ...baseInput,
+      queueStatus: 'Pending',
+      canAdvancePhase: true,
+      phaseAdvanceError: null,
+      saveDraftDisabledReason: null,
+    });
+    expect(model.primary).toBeNull();
+    expect(model.showSaveDraft).toBe(false);
+    expect(model.showClose).toBe(true);
+    expect(model.statusHint).toMatch(/start counselling/i);
+  });
+
+  it('PD-PENDING-READONLY-01: Processing keeps Save Draft and Next: Patient Decision', () => {
+    const model = buildSessionActionBarModel({
+      ...baseInput,
+      queueStatus: 'Processed',
+      canAdvancePhase: true,
+      phaseAdvanceError: null,
+    });
+    expect(model.showSaveDraft).toBe(true);
+    expect(model.primary?.label).toBe('Next: Patient Decision');
+  });
+
   it('after repeat start (Processed, finish sealed off) does not show Counselling completed', () => {
     const model = buildSessionActionBarModel({
       ...baseInput,
@@ -196,15 +222,52 @@ describe('counselling-session-actions', () => {
     expect(model.showSaveDraft).toBe(true);
   });
 
-  it('does not offer patient decision after decision is complete on estimate step', () => {
+  it('after decision complete on Quote still offers Next: Patient Decision', () => {
     const model = buildSessionActionBarModel({
       ...baseInput,
       phaseCompletion: { estimate: true, decision: true, wrapup: false },
       decision: 'DateForSurgery',
       canAdvancePhase: true,
       phaseAdvanceError: null,
+      coverageTabAvailable: true,
     });
-    expect(model.primary?.label).not.toBe('Next: Patient Decision');
+    expect(model.primary?.label).toBe('Next: Patient Decision');
+    expect(model.primary?.kind).toBe('phase_next');
+  });
+
+  it('after decision complete on Decision offers Next: Insurance', () => {
+    const model = buildSessionActionBarModel({
+      ...baseInput,
+      activePhase: 'decision',
+      phaseCompletion: { estimate: true, decision: true, wrapup: false },
+      decision: 'DateForSurgery',
+      canAdvancePhase: true,
+      phaseAdvanceError: null,
+      coverageTabAvailable: true,
+    });
     expect(model.primary?.label).toBe('Next: Insurance');
+    expect(model.primary?.navigateTab).toBe('coverage');
+  });
+
+  it('Insurance → Notes with incomplete required docs (not blocked)', () => {
+    const model = buildSessionActionBarModel({
+      ...baseInput,
+      activeMainTab: 'coverage',
+      activePhase: 'decision',
+      phaseCompletion: { estimate: true, decision: true, wrapup: false },
+      decision: 'DateForSurgery',
+      coverageProgress: {
+        uploadedDocCount: 1,
+        requiredDocCount: 4,
+        ccmsState: 'POLICY_CAPTURED',
+        preAuthSubmitted: false,
+      },
+      canSubmitToClaims: false,
+      saveDisabledReason: null,
+      coverageTabAvailable: true,
+    });
+    expect(model.primary?.kind).toBe('navigate');
+    expect(model.primary?.label).toBe('Next: Notes');
+    expect(model.showSaveDraft).toBe(true);
   });
 });

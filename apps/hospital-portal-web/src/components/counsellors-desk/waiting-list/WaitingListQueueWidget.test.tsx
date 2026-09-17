@@ -18,14 +18,21 @@ describe('WaitingListQueueWidget', () => {
 
     expect(html).toContain(WAITING_LIST_WORK_GRID);
     expect(html).toContain('Patient');
+    expect(html).toContain('Visit');
     expect(html).toContain('Procedure / Eye');
+    expect(html).toContain('Owner');
+    expect(html).toContain('Payment / Coverage');
     expect(html).toContain('Status');
-    expect(html).toContain('Attention');
+    expect(html).not.toContain('Attention');
     expect(html).toContain('Action');
     expect(html).toContain('>3<');
     expect(html).toContain('Patient Queue');
     expect(html).toContain('overflow-y-auto');
     expect(html).toContain('aria-label="Queue workspace"');
+    // Stronger column header hierarchy (table headers, not page titles)
+    expect(html).toContain('text-sm font-semibold');
+    expect(html).toContain('role="columnheader"');
+    expect(html).not.toContain('text-[11px] font-medium');
   });
 
   it('renders flat toolbar inside the single workspace surface', () => {

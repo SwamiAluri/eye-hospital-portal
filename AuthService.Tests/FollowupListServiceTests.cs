@@ -21,6 +21,7 @@ public class FollowupListServiceTests : IDisposable
     private readonly Guid _otherTenant = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private readonly Guid _branchA = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly Guid _branchB = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private Guid[] _allBranches => new[] { _branchA, _branchB };
 
     public FollowupListServiceTests()
     {
@@ -213,7 +214,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Active_Population_ExcludesOrphansColdAndDeleted()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, null, null, 1, 50);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, null, null, 1, 50);
         Assert.Equal(5, result.Total);
         Assert.All(result.Items, i => Assert.Contains(i.PatientIntention!, FollowupQueryContracts.ActiveIntentions));
         Assert.DoesNotContain(result.Items, i => i.PatientIntention == "WillingNow");
@@ -223,7 +224,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Cold_Population_OnlyDeclinedAndReferred()
     {
-        var result = await _svc.GetColdLeadsAsync(_tenant, null, null, 1, 50);
+        var result = await _svc.GetColdLeadsAsync(_tenant, _allBranches, null, 1, 50);
         Assert.Equal(2, result.Total);
         Assert.All(result.Items, i => Assert.Contains(i.PatientIntention!, FollowupQueryContracts.ColdIntentions));
     }
@@ -231,7 +232,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task PostSurgery_OnlyDischargedJourneys()
     {
-        var result = await _svc.GetPostSurgeryAsync(_tenant, null, null, 1, 50);
+        var result = await _svc.GetPostSurgeryAsync(_tenant, _allBranches, null, 1, 50);
         Assert.Equal(2, result.Total);
         Assert.DoesNotContain(result.Items, i => i.SurgeryType == "Not discharged");
     }
@@ -241,7 +242,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Search_ByPatientName_IsCaseInsensitive()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, null, "alice", 1, 20);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, null, "alice", 1, 20);
         Assert.Equal(1, result.Total);
         Assert.Single(result.Items);
         Assert.Contains("Alice", result.Items[0].PatientName);
@@ -250,7 +251,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Search_ByUhidMrn()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, null, "UHID-EVE", 1, 20);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, null, "UHID-EVE", 1, 20);
         Assert.Equal(1, result.Total);
         Assert.Equal("UHID-EVE", result.Items[0].Uhid);
     }
@@ -258,7 +259,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Search_ByPhone()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, null, "9111222333", 1, 20);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, null, "9111222333", 1, 20);
         Assert.Equal(1, result.Total);
         Assert.Equal("9111222333", result.Items[0].Phone);
     }
@@ -266,7 +267,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Search_ByRecommendedSurgery()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, null, "phacoemulsification", 1, 20);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, null, "phacoemulsification", 1, 20);
         Assert.Equal(1, result.Total);
         Assert.Equal("Phacoemulsification", result.Items[0].RecommendedSurgery);
     }
@@ -274,7 +275,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Search_EmptyResult_TotalZero()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, null, "ZZZ-NO-MATCH", 1, 20);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, null, "ZZZ-NO-MATCH", 1, 20);
         Assert.Empty(result.Items);
         Assert.Equal(0, result.Total);
     }
@@ -283,12 +284,12 @@ public class FollowupListServiceTests : IDisposable
     public async Task Search_PlusPagination_FilteredTotal()
     {
         // Seed enough matching actives? We have 5 actives; search "UHID" matches all with UHID-
-        var page1 = await _svc.GetActiveAsync(_tenant, null, null, "uhid", 1, 2);
+        var page1 = await _svc.GetActiveAsync(_tenant, _allBranches, null, "uhid", 1, 2);
         Assert.True(page1.Total >= 5);
         Assert.Equal(2, page1.Items.Count);
         Assert.True(page1.Items.Count <= page1.Total);
 
-        var page2 = await _svc.GetActiveAsync(_tenant, null, null, "uhid", 2, 2);
+        var page2 = await _svc.GetActiveAsync(_tenant, _allBranches, null, "uhid", 2, 2);
         Assert.Equal(page1.Total, page2.Total);
         Assert.Equal(2, page2.Items.Count);
         Assert.DoesNotContain(page2.Items, i => page1.Items.Any(p => p.SessionId == i.SessionId));
@@ -299,7 +300,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task BranchFilter_Active()
     {
-        var result = await _svc.GetActiveAsync(_tenant, _branchB, null, null, 1, 50);
+        var result = await _svc.GetActiveAsync(_tenant, new[] { _branchB }, null, null, 1, 50);
         Assert.Equal(1, result.Total);
         Assert.All(result.Items, i => Assert.Equal(_branchB, i.BranchId));
     }
@@ -307,7 +308,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task IntentionFilter_Active()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, "Undecided", null, 1, 50);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, "Undecided", null, 1, 50);
         Assert.Equal(1, result.Total);
         Assert.All(result.Items, i => Assert.Equal("Undecided", i.PatientIntention));
     }
@@ -315,7 +316,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Combined_BranchIntentionAndQ()
     {
-        var result = await _svc.GetActiveAsync(_tenant, _branchA, "WaitingFinancial", "grace", 1, 20);
+        var result = await _svc.GetActiveAsync(_tenant, new[] { _branchA }, "WaitingFinancial", "grace", 1, 20);
         Assert.Equal(1, result.Total);
         Assert.Single(result.Items);
         Assert.Equal("WaitingFinancial", result.Items[0].PatientIntention);
@@ -325,19 +326,19 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task BranchFilter_ColdAndPost()
     {
-        var cold = await _svc.GetColdLeadsAsync(_tenant, _branchA, null, 1, 50);
+        var cold = await _svc.GetColdLeadsAsync(_tenant, new[] { _branchA }, null, 1, 50);
         Assert.Equal(2, cold.Total);
 
-        var postA = await _svc.GetPostSurgeryAsync(_tenant, _branchA, null, 1, 50);
+        var postA = await _svc.GetPostSurgeryAsync(_tenant, new[] { _branchA }, null, 1, 50);
         Assert.Equal(1, postA.Total);
-        var postB = await _svc.GetPostSurgeryAsync(_tenant, _branchB, null, 1, 50);
+        var postB = await _svc.GetPostSurgeryAsync(_tenant, new[] { _branchB }, null, 1, 50);
         Assert.Equal(1, postB.Total);
     }
 
     [Fact]
     public async Task PostSurgery_SearchByProcedure()
     {
-        var result = await _svc.GetPostSurgeryAsync(_tenant, null, "cataract", 1, 20);
+        var result = await _svc.GetPostSurgeryAsync(_tenant, _allBranches, "cataract", 1, 20);
         Assert.Equal(1, result.Total);
         Assert.Contains("Cataract", result.Items[0].SurgeryType!);
     }
@@ -347,14 +348,14 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task PageSize_ClampedToMax100()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, null, null, 1, 500);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, null, null, 1, 500);
         Assert.Equal(100, result.PageSize);
     }
 
     [Fact]
     public async Task Page_LessThanOne_BecomesOne()
     {
-        var result = await _svc.GetActiveAsync(_tenant, null, null, null, 0, 20);
+        var result = await _svc.GetActiveAsync(_tenant, _allBranches, null, null, 0, 20);
         Assert.Equal(1, result.Page);
     }
 
@@ -363,11 +364,11 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Stats_MatchActiveListTotal_AndAreNotPageScoped()
     {
-        var listPage = await _svc.GetActiveAsync(_tenant, null, null, null, 1, 1);
+        var listPage = await _svc.GetActiveAsync(_tenant, _allBranches, null, null, 1, 1);
         Assert.Equal(1, listPage.Items.Count);
         Assert.True(listPage.Total > 1);
 
-        var stats = await _svc.GetStatsAsync(_tenant, null, null, null);
+        var stats = await _svc.GetStatsAsync(_tenant, _allBranches, null, null, null);
         Assert.Equal(listPage.Total, stats.Active.Total);
         Assert.Equal("filtered", stats.Filters.Scope);
 
@@ -381,8 +382,8 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Stats_HonorSearchFilter_SameAsList()
     {
-        var list = await _svc.GetActiveAsync(_tenant, null, null, "eve", 1, 20);
-        var stats = await _svc.GetStatsAsync(_tenant, null, null, "eve");
+        var list = await _svc.GetActiveAsync(_tenant, _allBranches, null, "eve", 1, 20);
+        var stats = await _svc.GetStatsAsync(_tenant, _allBranches, null, null, "eve");
         Assert.Equal(list.Total, stats.Active.Total);
         Assert.Equal(1, stats.Active.UrgentHigh);
         Assert.Equal(0, stats.Active.NeverContacted);
@@ -391,7 +392,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Stats_ColdBreakdown_AndPostAggregates()
     {
-        var stats = await _svc.GetStatsAsync(_tenant, null, null, null);
+        var stats = await _svc.GetStatsAsync(_tenant, _allBranches, null, null, null);
         Assert.Equal(2, stats.Cold.Total);
         Assert.Equal(1, stats.Cold.Declined);
         Assert.Equal(1, stats.Cold.ReferredElsewhere);
@@ -405,7 +406,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task Stats_IntentionAppliesToActiveOnly()
     {
-        var stats = await _svc.GetStatsAsync(_tenant, null, "Undecided", null);
+        var stats = await _svc.GetStatsAsync(_tenant, _allBranches, null, "Undecided", null);
         Assert.Equal(1, stats.Active.Total);
         // Cold/post unchanged by intention
         Assert.Equal(2, stats.Cold.Total);
@@ -415,7 +416,7 @@ public class FollowupListServiceTests : IDisposable
     [Fact]
     public async Task NoDueDateFields_OnDtos()
     {
-        var active = await _svc.GetActiveAsync(_tenant, null, null, null, 1, 1);
+        var active = await _svc.GetActiveAsync(_tenant, _allBranches, null, null, 1, 1);
         var props = active.Items[0].GetType().GetProperties().Select(p => p.Name).ToHashSet();
         Assert.DoesNotContain("DueDate", props);
         Assert.DoesNotContain("FollowUpDueDate", props);
@@ -424,6 +425,25 @@ public class FollowupListServiceTests : IDisposable
         var statsProps = typeof(AuthService.Models.Counselor.FollowupStatsDto)
             .GetProperties().Select(p => p.Name);
         Assert.DoesNotContain("DueDate", statsProps);
+    }
+
+    [Fact]
+    public async Task Stats_OrphanAudit_CountsKnownOrphansOutsideActive()
+    {
+        var stats = await _svc.GetStatsAsync(_tenant, _allBranches, null, null, null);
+        Assert.True(stats.OrphanIntentions.Total >= 1);
+        Assert.Equal(1, stats.OrphanIntentions.WillingNow);
+        Assert.DoesNotContain(
+            (await _svc.GetActiveAsync(_tenant, _allBranches, null, null, 1, 50)).Items,
+            i => i.PatientIntention == "WillingNow");
+    }
+
+    [Fact]
+    public async Task EmptyBranchScope_ReturnsEmpty_NotTenantWide()
+    {
+        var result = await _svc.GetActiveAsync(_tenant, Array.Empty<Guid>(), null, null, 1, 50);
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
     }
 
     // ── Authorization attributes ─────────────────────────────────────────────

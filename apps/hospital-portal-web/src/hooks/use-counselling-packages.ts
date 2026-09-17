@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { counsellingPackageTemplatesApi } from '@/lib/api/counselling-package-templates.api';
+import { useHasPermission } from '@/hooks/use-permissions';
 import type {
   CounsellingPackageTemplate,
   CounsellingSettings,
@@ -7,15 +8,24 @@ import type {
   UpdateCounsellingPackageTemplateRequest,
 } from '@/types/counselling-estimate';
 
+/**
+ * Package template catalog requires package_templates.read.
+ * Counsellor baseline must not call GET /counselling-package-templates on session open —
+ * pass enabled:true only when Quote → Package (or package restore) requests the catalog.
+ */
 export function useCounsellingPackageTemplates(params?: {
   category?: string;
   isActive?: boolean;
+  enabled?: boolean;
 }) {
-  return useQuery<CounsellingPackageTemplate[]>({
+  const canReadPackageTemplates = useHasPermission('package_templates.read');
+  const query = useQuery<CounsellingPackageTemplate[]>({
     queryKey: ['counselling-package-templates', params?.category, params?.isActive],
     queryFn: () => counsellingPackageTemplatesApi.getAll(params),
     staleTime: 60_000,
+    enabled: (params?.enabled ?? true) && canReadPackageTemplates,
   });
+  return { ...query, canReadPackageTemplates };
 }
 
 export function useCounsellingPackageTemplate(id: string | null | undefined) {

@@ -75,4 +75,99 @@ describe('applyWaitingListClientFilters', () => {
     });
     expect(result.map((p) => p.id)).toEqual(['2']);
   });
+
+  it('quick search matches counsellor/owner name', () => {
+    const withOwner = [
+      ...patients,
+      row({
+        id: '4',
+        type: 'Surgery',
+        status: 'Pending',
+        patientName: 'Other',
+        uhid: 'D4',
+        doctor: 'Dr Z',
+        surgeryName: 'LASIK',
+        counselorId: 'c-1',
+        counselorName: 'Amelia Martinez',
+      }),
+    ];
+    const result = applyWaitingListClientFilters({
+      patients: withOwner,
+      type: 'All',
+      activeTab: 'All',
+      quickSearch: 'amelia',
+      patientName: '',
+      mrd: '',
+      isPreAuthQueueRow: () => false,
+    });
+    expect(result.map((p) => p.id)).toEqual(['4']);
+  });
+
+  it('filters by owner convenience scope without counselorId API keys', () => {
+    const owned = [
+      row({
+        id: 'mine',
+        type: 'Surgery',
+        status: 'Pending',
+        counselorId: 'me',
+        counselorName: 'Me',
+      }),
+      row({
+        id: 'peer',
+        type: 'Surgery',
+        status: 'Pending',
+        counselorId: 'peer',
+        counselorName: 'Peer',
+      }),
+      row({
+        id: 'free',
+        type: 'Surgery',
+        status: 'Pending',
+        counselorId: null,
+        counselorName: undefined,
+      }),
+    ];
+
+    expect(
+      applyWaitingListClientFilters({
+        patients: owned,
+        type: 'All',
+        activeTab: 'All',
+        quickSearch: '',
+        patientName: '',
+        mrd: '',
+        ownerFilter: 'Mine',
+        currentUserId: 'me',
+        isPreAuthQueueRow: () => false,
+      }).map((p) => p.id),
+    ).toEqual(['mine']);
+
+    expect(
+      applyWaitingListClientFilters({
+        patients: owned,
+        type: 'All',
+        activeTab: 'All',
+        quickSearch: '',
+        patientName: '',
+        mrd: '',
+        ownerFilter: 'Unassigned',
+        currentUserId: 'me',
+        isPreAuthQueueRow: () => false,
+      }).map((p) => p.id),
+    ).toEqual(['free']);
+
+    expect(
+      applyWaitingListClientFilters({
+        patients: owned,
+        type: 'All',
+        activeTab: 'All',
+        quickSearch: '',
+        patientName: '',
+        mrd: '',
+        ownerFilter: 'Other',
+        currentUserId: 'me',
+        isPreAuthQueueRow: () => false,
+      }).map((p) => p.id),
+    ).toEqual(['peer']);
+  });
 });

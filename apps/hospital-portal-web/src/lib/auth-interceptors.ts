@@ -3,7 +3,13 @@ import { useAuthStore } from './auth-store';
 import { isTokenNearExpiry, refreshAccessToken } from './token-refresh';
 import { logoutEverywhere } from './logout-everywhere';
 
-type RetryConfig = InternalAxiosRequestConfig & { _authRetry?: boolean };
+/** Per-request flag: keep 403 on the caller (toast/dialog) instead of hard-redirect. */
+export type AuthAxiosRequestConfig = InternalAxiosRequestConfig & {
+  _authRetry?: boolean;
+  skipForbiddenRedirect?: boolean;
+};
+
+type RetryConfig = AuthAxiosRequestConfig;
 
 /** Attach tenant + bearer token; proactively refresh when near expiry. */
 export function attachAuthRequestInterceptor(instance: AxiosInstance): void {
@@ -26,10 +32,15 @@ export function attachAuthRequestInterceptor(instance: AxiosInstance): void {
 /**
  * On 401: attempt one silent token refresh + retry.
  * Falls back to logout + redirect when refresh fails.
+ *
+ * On 403: by default hard-redirect to Access Denied (protected staff workflows).
+ * Callers that intentionally treat 403 as in-context (e.g. Assign dialog, Azure
+ * enrichment) may set instance `skipForbiddenRedirect` or per-request
+ * `config.skipForbiddenRedirect`.
  */
 export function attachAuthResponseInterceptor(
   instance: AxiosInstance,
-  options?: { skipLogoutUrls?: string[] },
+  options?: { skipLogoutUrls?: string[]; skipForbiddenRedirect?: boolean },
 ): void {
   instance.interceptors.response.use(
     (response) => response,
@@ -43,7 +54,14 @@ export function attachAuthResponseInterceptor(
       }
 
       if (status !== 401 || !config || config._authRetry) {
-        if (status === 403 && typeof window !== 'undefined') {
+        const skipForbidden =
+          options?.skipForbiddenRedirect === true ||
+          config?.skipForbiddenRedirect === true;
+        if (
+          status === 403 &&
+          typeof window !== 'undefined' &&
+          !skipForbidden
+        ) {
           window.location.href = '/dashboard/unauthorized';
         }
         return Promise.reject(error);

@@ -1,4 +1,8 @@
+import { resolveOwnershipRelation } from '@/lib/counsellors-desk/counselling-ownership';
 import type { WaitingListPatient } from '@/types/counsellors-desk';
+
+/** Client-only convenience Owner filter — does not change shared-queue API visibility. */
+export type WaitingListOwnerFilter = 'All' | 'Mine' | 'Unassigned' | 'Other';
 
 export interface WaitingListClientFilterInput {
   patients: WaitingListPatient[];
@@ -9,6 +13,9 @@ export interface WaitingListClientFilterInput {
   /** Expanded panel filters after Apply (name / MRD). */
   patientName: string;
   mrd: string;
+  /** Convenience owner scope — client-side only; never sent to waiting-list API. */
+  ownerFilter?: WaitingListOwnerFilter;
+  currentUserId?: string | null;
   isPreAuthQueueRow: (p: WaitingListPatient) => boolean;
 }
 
@@ -31,6 +38,16 @@ export function applyWaitingListClientFilters(
     list = list.filter((p) => p.type === input.type);
   }
 
+  const ownerFilter = input.ownerFilter ?? 'All';
+  if (ownerFilter !== 'All') {
+    list = list.filter((p) => {
+      const relation = resolveOwnershipRelation(p.counselorId, input.currentUserId);
+      if (ownerFilter === 'Mine') return relation === 'current';
+      if (ownerFilter === 'Unassigned') return relation === 'unassigned';
+      return relation === 'other';
+    });
+  }
+
   const q = input.quickSearch.trim().toLowerCase();
   if (q) {
     list = list.filter(
@@ -38,7 +55,8 @@ export function applyWaitingListClientFilters(
         p.patientName.toLowerCase().includes(q) ||
         p.uhid.toLowerCase().includes(q) ||
         p.surgeryName.toLowerCase().includes(q) ||
-        p.doctor.toLowerCase().includes(q),
+        p.doctor.toLowerCase().includes(q) ||
+        (p.counselorName?.toLowerCase().includes(q) ?? false),
     );
   }
 

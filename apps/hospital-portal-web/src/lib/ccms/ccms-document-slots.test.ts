@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatMissingDocumentsMessage,
+  formatOutstandingDocumentsMessage,
+  formatDocumentProgressReadiness,
+  isRequiredDocumentUploadComplete,
   requirementsToSlots,
   slotsFromMasterOrFallback,
   withBiometrySlot,
@@ -68,16 +71,56 @@ describe('ccms document slots from master', () => {
     expect(withBiometrySlot(withBio)).toHaveLength(withBio.length);
   });
 
-  it('formats the submit block copy', () => {
+  it('formats the submit block copy (claims/pre-auth gate only)', () => {
     expect(formatMissingDocumentsMessage(['Surgeon advice'])).toBe(
-      '1 document missing — upload required',
+      '1 document missing — upload required before submit',
     );
     expect(formatMissingDocumentsMessage(['Surgeon advice', 'Biometry print'])).toBe(
-      '2 documents missing — upload required',
+      '2 documents missing — upload required before submit',
     );
     expect(
       formatMissingDocumentsMessage(['Surgeon advice'], { uploaded: 3, required: 4 }),
-    ).toBe('3/4 documents — upload required');
+    ).toBe('3/4 documents — upload required before submit');
+  });
+
+  it('formats outstanding readiness copy without implying counselling is blocked', () => {
+    expect(formatOutstandingDocumentsMessage(3, { uploaded: 1, required: 4 })).toBe(
+      '3 required documents outstanding',
+    );
+    expect(formatOutstandingDocumentsMessage(1, { uploaded: 3, required: 4 })).toBe(
+      '1 required document outstanding',
+    );
+    expect(formatOutstandingDocumentsMessage(0, { uploaded: 4, required: 4 })).toBe(
+      '4 of 4 required uploaded',
+    );
+    expect(formatOutstandingDocumentsMessage(3)).toBe('3 required documents outstanding');
+    expect(formatOutstandingDocumentsMessage(3)).not.toMatch(/blocked|counselling|session/i);
+  });
+
+  it('formats Document Progress readiness for the insurance rail', () => {
+    expect(formatDocumentProgressReadiness(1, 4)).toEqual({
+      primary: '1 of 4 required',
+      outstanding: '3 outstanding',
+      complete: false,
+    });
+    expect(formatDocumentProgressReadiness(4, 4)).toEqual({
+      primary: '4 of 4 required',
+      outstanding: null,
+      complete: true,
+    });
+    expect(formatDocumentProgressReadiness(0, 0)).toEqual({
+      primary: 'No required documents',
+      outstanding: null,
+      complete: true,
+    });
+  });
+
+  it('keeps submit readiness gated on required document completeness', () => {
+    expect(isRequiredDocumentUploadComplete(0, 4)).toBe(false);
+    expect(isRequiredDocumentUploadComplete(1, 4)).toBe(false);
+    expect(isRequiredDocumentUploadComplete(3, 4)).toBe(false);
+    expect(isRequiredDocumentUploadComplete(4, 4)).toBe(true);
+    expect(isRequiredDocumentUploadComplete(0, 0)).toBe(true);
   });
 
   it('counts uploaded required documents against master slots', () => {

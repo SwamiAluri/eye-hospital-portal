@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
@@ -38,8 +38,7 @@ import {
   ACTIVE_FOLLOWUP_INTENTIONS,
   FOLLOWUP_TABS,
   FOLLOWUP_WORK_GRID,
-  alertBorderClass,
-  alertPillClass,
+  POST_DISCHARGE_AGING_KPI_LABEL,
   formatFollowupAverage,
   formatFollowupShortDate,
   intentionPillClass,
@@ -162,9 +161,11 @@ function ActionButtons({
   onReQueue,
   onReevaluate,
 }: {
-  onCall: () => void;
+  /** Session-bound; omit when no authoritative SessionId (Post-Surgery honesty). */
+  onCall?: () => void;
   onReminder: () => void;
-  onHistory: () => void;
+  /** Session-bound; omit when no authoritative SessionId. */
+  onHistory?: () => void;
   onReQueue?: () => void;
   onReevaluate?: () => void;
 }) {
@@ -185,18 +186,20 @@ function ActionButtons({
         </CounsellingButton>
       )}
       <PermissionGate permission="counseling_sessions.update">
-        <CounsellingButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="!min-h-8 h-8 w-8 px-0 text-counselling-muted-foreground"
-          title="Log contact"
-          aria-label="Log contact"
-          data-testid="followup-action-log-contact"
-          onClick={onCall}
-        >
-          <Phone className="h-3.5 w-3.5" />
-        </CounsellingButton>
+        {onCall && (
+          <CounsellingButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="!min-h-8 h-8 w-8 px-0 text-counselling-muted-foreground"
+            title="Log contact"
+            aria-label="Log contact"
+            data-testid="followup-action-log-contact"
+            onClick={onCall}
+          >
+            <Phone className="h-3.5 w-3.5" />
+          </CounsellingButton>
+        )}
         <CounsellingButton
           type="button"
           variant="ghost"
@@ -210,18 +213,20 @@ function ActionButtons({
           <Send className="h-3.5 w-3.5" />
         </CounsellingButton>
       </PermissionGate>
-      <CounsellingButton
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="!min-h-8 h-8 w-8 px-0 text-counselling-muted-foreground"
-        title="View history"
-        aria-label="View history"
-        data-testid="followup-action-history"
-        onClick={onHistory}
-      >
-        <History className="h-3.5 w-3.5" />
-      </CounsellingButton>
+      {onHistory && (
+        <CounsellingButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="!min-h-8 h-8 w-8 px-0 text-counselling-muted-foreground"
+          title="View history"
+          aria-label="View history"
+          data-testid="followup-action-history"
+          onClick={onHistory}
+        >
+          <History className="h-3.5 w-3.5" />
+        </CounsellingButton>
+      )}
       {onReQueue && (
         <PermissionGate permission="counseling_sessions.update">
           <CounsellingButton
@@ -376,9 +381,9 @@ function SurgeryFollowupPageContent() {
       ];
     }
     if (activeTab === 'active') {
+      // Phase2Y PD6: no High Priority KPI — no formal priority model.
       return [
         { label: 'Active', value: stats.active.total },
-        { label: 'High Priority', value: stats.active.urgentHigh },
         { label: 'Never Contacted', value: stats.active.neverContacted },
         { label: 'Avg Attempts', value: formatFollowupAverage(stats.active.averageAttempts) },
       ];
@@ -393,7 +398,8 @@ function SurgeryFollowupPageContent() {
     }
     return [
       { label: 'Post-Surgery', value: stats.postSurgery.total },
-      { label: 'Over 30 Days', value: stats.postSurgery.over30Days },
+      // Phase2Y: factual discharge aging — not due/SLA/overdue/priority.
+      { label: POST_DISCHARGE_AGING_KPI_LABEL, value: stats.postSurgery.over30Days },
       { label: 'Pending Visits', value: stats.postSurgery.pendingPostOpVisits },
       {
         label: 'Avg Days',
@@ -661,8 +667,7 @@ function SurgeryFollowupPageContent() {
                   data-testid="followup-worklist-row"
                   className={cn(
                     FOLLOWUP_WORK_GRID,
-                    'staff-worklist-row border-b border-counselling-border/40 border-l-4 px-1 hover:bg-counselling-muted/30',
-                    alertBorderClass(row.alertLevel),
+                    'staff-worklist-row border-b border-counselling-border/40 border-l-4 border-l-counselling-border px-1 hover:bg-counselling-muted/30',
                   )}
                 >
                   <div className="min-w-0">
@@ -672,6 +677,11 @@ function SurgeryFollowupPageContent() {
                     <p className="truncate text-xs tabular-nums text-counselling-muted-foreground">
                       {row.uhid ? `#${row.uhid}` : '—'}
                       {row.phone ? ` · ${row.phone}` : ''}
+                      {row.counselorName
+                        ? ` · Owner: ${row.counselorName}`
+                        : row.counselorId
+                          ? ' · Owner: Unresolved'
+                          : ' · Owner: Unassigned'}
                     </p>
                   </div>
                   <div className="hidden min-w-0 sm:block">
@@ -688,16 +698,6 @@ function SurgeryFollowupPageContent() {
                         )}
                       >
                         {INTENTION_LABEL[row.patientIntention] ?? row.patientIntention}
-                      </span>
-                    )}
-                    {row.alertLevel !== 'Normal' && (
-                      <span
-                        className={cn(
-                          counsellingSessionTokens.statusPill,
-                          alertPillClass(row.alertLevel),
-                        )}
-                      >
-                        {row.alertLevel}
                       </span>
                     )}
                   </div>
@@ -739,7 +739,7 @@ function SurgeryFollowupPageContent() {
                       setReQueueModal({ sessionId: row.sessionId, patientName: row.patientName })
                     }
                     onReevaluate={() =>
-                      router.push(`/dashboard/counsellors-desk/${row.sessionId}`)
+                      router.push(`/dashboard/counsellors-desk/${row.sessionId}?from=follow-up`)
                     }
                   />
                 </div>
@@ -761,6 +761,11 @@ function SurgeryFollowupPageContent() {
                     <p className="truncate text-xs tabular-nums text-counselling-muted-foreground">
                       {row.uhid ? `#${row.uhid}` : '—'}
                       {row.phone ? ` · ${row.phone}` : ''}
+                      {row.counselorName
+                        ? ` · Owner: ${row.counselorName}`
+                        : row.counselorId
+                          ? ' · Owner: Unresolved'
+                          : ' · Owner: Unassigned'}
                     </p>
                   </div>
                   <div className="hidden min-w-0 sm:block">
@@ -811,23 +816,21 @@ function SurgeryFollowupPageContent() {
                       setReQueueModal({ sessionId: row.sessionId, patientName: row.patientName })
                     }
                     onReevaluate={() =>
-                      router.push(`/dashboard/counsellors-desk/${row.sessionId}`)
+                      router.push(`/dashboard/counsellors-desk/${row.sessionId}?from=follow-up`)
                     }
                   />
                 </div>
               ))
             ) : (
               postItems.map((row) => {
-                const daysSince = row.daysSinceDischarge ?? 0;
-                const urgent = daysSince >= 30;
+                const daysSince = row.daysSinceDischarge;
                 return (
                   <div
                     key={row.journeyId}
                     data-testid="followup-worklist-row"
                     className={cn(
                       FOLLOWUP_WORK_GRID,
-                      'staff-worklist-row border-b border-counselling-border/40 border-l-4 px-1 hover:bg-counselling-muted/30',
-                      urgent ? 'border-l-amber-400' : 'border-l-emerald-500',
+                      'staff-worklist-row border-b border-counselling-border/40 border-l-4 border-l-counselling-border px-1 hover:bg-counselling-muted/30',
                     )}
                   >
                     <div className="min-w-0">
@@ -845,14 +848,14 @@ function SurgeryFollowupPageContent() {
                       </p>
                     </div>
                     <div className="hidden min-w-0 flex-wrap gap-1 sm:flex">
-                      {urgent && (
+                      {daysSince != null && (
                         <span
                           className={cn(
                             counsellingSessionTokens.statusPill,
-                            counsellingSessionTokens.statusPillRequired,
+                            'bg-counselling-muted/70 text-counselling-foreground',
                           )}
                         >
-                          {daysSince}d post-op
+                          {daysSince}d since discharge
                         </span>
                       )}
                       {row.conditionAtDischarge && (
@@ -879,12 +882,15 @@ function SurgeryFollowupPageContent() {
                         : ''}
                     </div>
                     <ActionButtons
-                      onCall={() =>
-                        setContactModal({
-                          sessionId: row.sessionId ?? row.journeyId,
-                          patientName: row.patientName,
-                          phone: row.phone,
-                        })
+                      onCall={
+                        row.sessionId
+                          ? () =>
+                              setContactModal({
+                                sessionId: row.sessionId!,
+                                patientName: row.patientName,
+                                phone: row.phone,
+                              })
+                          : undefined
                       }
                       onReminder={() =>
                         setReminderModal({
@@ -894,15 +900,18 @@ function SurgeryFollowupPageContent() {
                           journeyId: row.journeyId,
                         })
                       }
-                      onHistory={() =>
-                        setHistoryDrawer({
-                          sessionId: row.sessionId ?? row.journeyId,
-                          patientName: row.patientName,
-                        })
+                      onHistory={
+                        row.sessionId
+                          ? () =>
+                              setHistoryDrawer({
+                                sessionId: row.sessionId!,
+                                patientName: row.patientName,
+                              })
+                          : undefined
                       }
                       onReevaluate={
                         row.sessionId
-                          ? () => router.push(`/dashboard/counsellors-desk/${row.sessionId}`)
+                          ? () => router.push(`/dashboard/counsellors-desk/${row.sessionId}?from=follow-up`)
                           : undefined
                       }
                     />

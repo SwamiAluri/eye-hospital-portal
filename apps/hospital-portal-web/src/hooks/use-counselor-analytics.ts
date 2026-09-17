@@ -14,6 +14,10 @@ export interface AnalyticsSummary {
   agreedCount: number;
   declinedCount: number;
   undecidedCount: number;
+  pendingDecisionCount: number;
+  exceptionCount: number;
+  otherUnclassifiedCount: number;
+  eligibleOutcomeSessions: number;
   decisionRate: number;
   conversionRate: number;
   avgDaysToDecision: number;
@@ -87,7 +91,7 @@ export type CounselorAnalyticsFilters = {
   to?: string;
 };
 
-function buildAnalyticsParams(filters: CounselorAnalyticsFilters): URLSearchParams {
+export function buildAnalyticsParams(filters: CounselorAnalyticsFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.from && filters.to) {
     params.set('from', filters.from);

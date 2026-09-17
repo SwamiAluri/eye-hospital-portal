@@ -10,6 +10,7 @@ import type {
   PatientSuggestRow,
   PatientSummary,
 } from '@/types/patient-lookup';
+import type { PatientLookupSortBy } from '@/lib/patients/patient-lookup-filters';
 
 function toApiSortBy(sortBy?: PatientLookupSortBy): string {
   switch (sortBy) {
@@ -30,8 +31,9 @@ function toApiSortBy(sortBy?: PatientLookupSortBy): string {
 
 function lookupParams(filters: PatientLookupFilters) {
   const sortBy = toApiSortBy(filters.sortBy as PatientLookupSortBy | undefined);
+  const branchId = filters.branchId?.trim() || undefined;
   return {
-    branchId: filters.branchId,
+    ...(branchId ? { branchId } : {}),
     q: filters.q || undefined,
     tab: filters.tab ?? 'all',
     page: filters.page ?? 1,
@@ -63,7 +65,11 @@ function lookupParams(filters: PatientLookupFilters) {
 export const patientLookupApi = {
   suggest: async (branchId: string, q: string, limit = 10): Promise<PatientSuggestRow[]> => {
     const { data } = await getApi().get<PatientSuggestRow[]>('/patients/suggest', {
-      params: { branchId, q, limit },
+      params: {
+        ...(branchId?.trim() ? { branchId } : {}),
+        q,
+        limit,
+      },
     });
     return data ?? [];
   },
@@ -77,7 +83,9 @@ export const patientLookupApi = {
 
   stats: async (branchId: string): Promise<PatientLookupStats> => {
     const { data } = await getApi().get<PatientLookupStats>('/patients/lookup/stats', {
-      params: { branchId },
+      params: {
+        ...(branchId?.trim() ? { branchId } : {}),
+      },
     });
     return data;
   },

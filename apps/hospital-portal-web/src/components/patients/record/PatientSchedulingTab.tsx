@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Calendar, Plus } from 'lucide-react';
 import { appointmentsApi } from '@/lib/api/appointments.api';
+import { useHasPermission } from '@/hooks/use-permissions';
 
 interface AppointmentRow {
   id: string;
@@ -15,10 +16,17 @@ interface AppointmentRow {
 }
 
 export function PatientSchedulingTab({ patientId }: { patientId: string }) {
+  const canViewAppointments = useHasPermission('appointment.view');
   const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(canViewAppointments);
 
   useEffect(() => {
+    if (!canViewAppointments) {
+      setLoading(false);
+      setAppointments([]);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     appointmentsApi
@@ -35,7 +43,16 @@ export function PatientSchedulingTab({ patientId }: { patientId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [patientId]);
+  }, [patientId, canViewAppointments]);
+
+  if (!canViewAppointments) {
+    return (
+      <div className="py-8 text-sm text-gray-500 text-center">
+        Appointment scheduling requires appointment access. Use Counsellor Waiting List → Schedule
+        Counselling for counselling sessions.
+      </div>
+    );
+  }
 
   if (loading) {
     return <div className="py-8 text-sm text-gray-500">Loading appointments…</div>;

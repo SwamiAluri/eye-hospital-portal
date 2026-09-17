@@ -123,6 +123,24 @@ describe('WaitingListPatientDetailSheet', () => {
     expect(html).toContain('UHID-1001');
   });
 
+  it('renders compact Patient / Visit / Counselling / Clinical sections', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListPatientDetailSheet
+        patient={basePatient({
+          counselorId: 'amelia',
+          counselorName: 'Amelia Martinez',
+        })}
+        open
+        onClose={vi.fn()}
+      />,
+    );
+    expect(html).toContain('>Patient<');
+    expect(html).toContain('>Visit<');
+    expect(html).toContain('>Counselling<');
+    expect(html).toContain('>Clinical / Surgery<');
+    expect(html).toContain('Amelia Martinez');
+  });
+
   it('renders age when present', () => {
     const html = renderToStaticMarkup(
       <WaitingListPatientDetailSheet
@@ -173,7 +191,7 @@ describe('WaitingListPatientDetailSheet', () => {
     expect(html).not.toContain('Dr. Dr. Mehta');
   });
 
-  it('shows em dash for missing optional fields', () => {
+  it('omits empty optional contact/emergency noise from compact sheet', () => {
     const html = renderToStaticMarkup(
       <WaitingListPatientDetailSheet
         patient={basePatient({
@@ -186,10 +204,21 @@ describe('WaitingListPatientDetailSheet', () => {
         onClose={vi.fn()}
       />,
     );
-    expect(html).toContain('—');
-    expect(html).toContain('Contact Number');
-    expect(html).toContain('Blood Group');
-    expect(html).toContain('Address');
+    expect(html).not.toContain('Contact Number');
+    expect(html).not.toContain('Address');
+    expect(html).not.toContain('Emergency Contact');
+    expect(html).not.toContain('Blood Group');
+  });
+
+  it('shows Owner as Unassigned when counselorId is null', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListPatientDetailSheet
+        patient={basePatient({ counselorId: null, counselorName: undefined })}
+        open
+        onClose={vi.fn()}
+      />,
+    );
+    expect(html).toContain('Unassigned');
   });
 
   it('renders follow-up when present', () => {
@@ -273,5 +302,16 @@ describe('WaitingListPatientDetailSheet', () => {
     );
     expect(closed).toBe('');
     expect(nullPatient).toBe('');
+  });
+
+  it('declares read-only context in SheetDescription (no ownership mutation)', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListPatientDetailSheet
+        patient={basePatient()}
+        open
+        onClose={vi.fn()}
+      />,
+    );
+    expect(html).toContain('does not assign or claim ownership');
   });
 });

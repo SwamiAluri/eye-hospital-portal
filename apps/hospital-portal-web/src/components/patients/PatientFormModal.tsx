@@ -39,6 +39,8 @@ interface PatientFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (patient: Patient) => void;
+  /** Optional — server stamps authorized branch when omitted. */
+  branchId?: string | null;
 }
 
 const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -48,7 +50,8 @@ export default function PatientFormModal({
   patient,
   isOpen,
   onClose,
-  onSave
+  onSave,
+  branchId,
 }: PatientFormModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -197,10 +200,14 @@ export default function PatientFormModal({
 
     try {
       let response;
+      const writePayload = {
+        ...formData,
+        ...(branchId?.trim() ? { branchId: branchId.trim() } : {}),
+      };
       if (patient?.id) {
-        response = await patientApi.update(patient.id, formData);
+        response = await patientApi.update(patient.id, writePayload);
       } else {
-        response = await patientApi.create(formData);
+        response = await patientApi.create(writePayload);
       }
       
       const patientId = patient?.id || response.data.id;

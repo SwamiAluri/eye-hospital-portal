@@ -24,7 +24,8 @@ function getClient(): AxiosInstance {
   if (_client) return _client;
   _client = axios.create({ baseURL: COUNSELLING_API_URL });
   attachAuthRequestInterceptor(_client);
-  attachAuthResponseInterceptor(_client);
+  // Fire-and-forget enrichment: never bounce the counsellor desk to Access Denied.
+  attachAuthResponseInterceptor(_client, { skipForbiddenRedirect: true });
 
   return _client;
 }

@@ -6,6 +6,8 @@ import {
   type BuildSessionStatusSummaryInput,
   type SessionMainTab,
 } from '@/lib/counsellors-desk/session-status-summary';
+import { resolveCounsellingJourneyNext } from '@/lib/counsellors-desk/counselling-journey-navigation';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 
 export type ActionBarPrimaryKind =
   | 'phase_next'
@@ -27,6 +29,8 @@ export interface SessionActionBarModel {
   showSaveDraft: boolean;
   saveDraftDisabledReason: string | null;
   showPhaseBack: boolean;
+  /** Always leave the session workspace (navigation only). */
+  showClose: boolean;
   showPrint: boolean;
   printDisabledReason: string | null;
   /** Status-only line when no primary CTA (e.g. session complete). */
@@ -57,39 +61,31 @@ function isAtNavigationTarget(
   return true;
 }
 
-function phaseNextLabel(phase: CounsellingPhase): string {
-  if (phase === 'estimate') return 'Next: Patient Decision';
-  if (phase === 'decision') return 'Next: Session Notes';
-  return 'Next';
-}
-
-/** True when the footer should advance within the current counselling phase (not revisit a completed step). */
+/** True when the footer should advance within the current counselling phase. */
 export function shouldOfferPhaseNextAction(input: BuildSessionActionBarInput): boolean {
-  const decisionComplete = input.phaseCompletion.decision || Boolean(input.decision);
-  if (input.activeMainTab !== 'counselling' || input.activePhase === 'wrapup') {
-    return false;
-  }
-  if (input.activePhase === 'estimate') {
-    return !decisionComplete;
-  }
-  if (input.activePhase === 'decision') {
-    if (input.showCoverageWorkflow && decisionComplete) {
-      return false;
-    }
-    return !input.phaseCompletion.wrapup;
-  }
-  return false;
+  const next = resolveCounsellingJourneyNext({
+    activeMainTab: input.activeMainTab,
+    activePhase: input.activePhase,
+    phaseCompletion: input.phaseCompletion,
+    showCoverageWorkflow: input.showCoverageWorkflow,
+    coverageTabAvailable: input.coverageTabAvailable,
+    finishSummaryActive: input.finishSummaryActive,
+    decision: input.decision,
+    paymentType: input.paymentType,
+  });
+  return next?.kind === 'phase_next';
 }
 
 export function buildSessionActionBarModel(
   input: BuildSessionActionBarInput,
 ): SessionActionBarModel {
   const summary = buildSessionStatusSummary(input);
-  const decisionComplete = input.phaseCompletion.decision || Boolean(input.decision);
+  const decisionComplete = input.phaseCompletion.decision;
   const base = {
     showSaveDraft: true,
     saveDraftDisabledReason: input.saveDraftDisabledReason,
     showPhaseBack: false,
+    showClose: true,
     showPrint: true,
     printDisabledReason: input.printDisabledReason,
     statusHint: null as string | null,
@@ -109,6 +105,24 @@ export function buildSessionActionBarModel(
         finishSummaryActive: input.finishSummaryActive,
       }),
       statusHint: 'Session read-only',
+    };
+  }
+
+  // PD-PENDING-READONLY-01 — Pending is view-only until Waiting List Start Counseling.
+  if (input.queueStatus === 'Pending') {
+    return {
+      ...base,
+      primary: null,
+      showSaveDraft: false,
+      showPrint: false,
+      showPhaseBack: shouldShowSessionBack({
+        activeMainTab: input.activeMainTab,
+        activePhase: input.activePhase,
+        showCoverageWorkflow: input.showCoverageWorkflow,
+        coverageTabAvailable: input.coverageTabAvailable,
+        finishSummaryActive: input.finishSummaryActive,
+      }),
+      statusHint: 'Start counselling from the Waiting List to edit',
     };
   }
 
@@ -181,36 +195,23 @@ export function buildSessionActionBarModel(
     !preAuthSubmitted &&
     !isPreAuthSubmittedState(ccmsState);
 
-  if (
-    decisionComplete &&
-    input.showCoverageWorkflow &&
-    !awaitingInsurer &&
-    !isAtNavigationTarget(input, 'coverage', undefined)
-  ) {
+  if (awaitingInsurer) {
+    // Decision complete → allow Complete Session from any tab (incl. Quote) so counselling
+    // can close while coverage continues Waiting for TPA / post-submit.
+    if (decisionComplete) {
+      return {
+        ...base,
+        primary: {
+          kind: 'save_session',
+          label: counsellingCopy.completeSession,
+          disabledReason: input.saveDisabledReason,
+        },
+      };
+    }
     return {
       ...base,
-      primary: {
-        kind: 'navigate',
-        label: 'Next: Insurance',
-        navigateTab: 'coverage',
-      },
-    };
-  }
-
-  if (
-    decisionComplete &&
-    !input.showCoverageWorkflow &&
-    input.activeMainTab === 'counselling' &&
-    !isAtNavigationTarget(input, 'counselling', 'wrapup')
-  ) {
-    return {
-      ...base,
-      primary: {
-        kind: 'navigate',
-        label: 'Next: Notes',
-        navigateTab: 'counselling',
-        navigatePhase: 'wrapup',
-      },
+      primary: null,
+      showSaveDraft: true,
     };
   }
 
@@ -230,23 +231,41 @@ export function buildSessionActionBarModel(
     };
   }
 
-  if (awaitingInsurer) {
-    // Decision complete → allow Save session from any tab (incl. Quote) so counselling
-    // can close while coverage continues Waiting for TPA / post-submit.
-    if (decisionComplete) {
+  const journeyNext = resolveCounsellingJourneyNext({
+    activeMainTab: input.activeMainTab,
+    activePhase: input.activePhase,
+    phaseCompletion: input.phaseCompletion,
+    showCoverageWorkflow: input.showCoverageWorkflow,
+    coverageTabAvailable: input.coverageTabAvailable,
+    finishSummaryActive: input.finishSummaryActive,
+    decision: input.decision,
+    paymentType: input.paymentType,
+  });
+
+  if (journeyNext?.kind === 'navigate') {
+    if (
+      !isAtNavigationTarget(input, journeyNext.navigateTab, journeyNext.navigatePhase)
+    ) {
       return {
         ...base,
         primary: {
-          kind: 'save_session',
-          label: 'Save session',
-          disabledReason: input.saveDisabledReason,
+          kind: 'navigate',
+          label: journeyNext.label,
+          navigateTab: journeyNext.navigateTab,
+          navigatePhase: journeyNext.navigatePhase,
         },
       };
     }
+  }
+
+  if (journeyNext?.kind === 'phase_next') {
     return {
       ...base,
-      primary: null,
-      showSaveDraft: true,
+      primary: {
+        kind: 'phase_next',
+        label: journeyNext.label,
+        disabledReason: input.phaseAdvanceError,
+      },
     };
   }
 
@@ -266,17 +285,6 @@ export function buildSessionActionBarModel(
     };
   }
 
-  if (shouldOfferPhaseNextAction(input)) {
-    return {
-      ...base,
-      primary: {
-        kind: 'phase_next',
-        label: phaseNextLabel(input.activePhase),
-        disabledReason: input.phaseAdvanceError,
-      },
-    };
-  }
-
   if (
     input.activeMainTab === 'counselling' &&
     input.activePhase === 'wrapup' &&
@@ -286,19 +294,19 @@ export function buildSessionActionBarModel(
       ...base,
       primary: {
         kind: 'save_session',
-        label: 'Save session',
+        label: counsellingCopy.completeSession,
         disabledReason: input.saveDisabledReason,
       },
     };
   }
 
   if (input.activeMainTab === 'counselling' && input.activePhase === 'wrapup' && coveragePending) {
-    // Insurance is not required to complete counselling — Save session remains available on Notes.
+    // Insurance is not required to complete counselling — Complete Session remains available on Notes.
     return {
       ...base,
       primary: {
         kind: 'save_session',
-        label: 'Save session',
+        label: counsellingCopy.completeSession,
         disabledReason: input.saveDisabledReason,
       },
     };
@@ -317,7 +325,7 @@ export function buildSessionActionBarModel(
     primary: input.saveDisabledReason
       ? {
           kind: 'save_session',
-          label: 'Save session',
+          label: counsellingCopy.completeSession,
           disabledReason: input.saveDisabledReason,
         }
       : null,

@@ -14,8 +14,8 @@ describe('counselling finish outcome', () => {
     expect(isCounsellingTerminalOutcome('Processed')).toBe(false);
   });
 
-  it('does not auto-open Finish for RepeatCounselling (Start Session gate owns the flow)', () => {
-    expect(shouldAutoOpenFinishSummary('RepeatCounselling')).toBe(false);
+  it('auto-opens Finish for all terminal outcomes including RepeatCounselling', () => {
+    expect(shouldAutoOpenFinishSummary('RepeatCounselling')).toBe(true);
     expect(shouldAutoOpenFinishSummary('Done')).toBe(true);
     expect(shouldAutoOpenFinishSummary('AddOnSurgery')).toBe(true);
     expect(shouldAutoOpenFinishSummary('SurgeryDone')).toBe(true);

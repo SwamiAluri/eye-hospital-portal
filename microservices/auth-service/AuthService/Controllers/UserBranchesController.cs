@@ -87,35 +87,106 @@ namespace AuthService.Controllers
 
         private async Task<IActionResult> GetUserBranchesInternal(Guid tenantId, Guid userId)
         {
+            var now = DateTime.UtcNow;
             var userBranches = await _context.Set<UserBranch>()
-                .Where(ub => ub.UserId == userId && ub.TenantId == tenantId && ub.Status == "active")
+                .Where(ub => ub.UserId == userId && ub.TenantId == tenantId && ub.Status == "active"
+                          && ub.EffectiveFrom <= now
+                          && (ub.EffectiveUntil == null || ub.EffectiveUntil > now))
                 .Join(_context.Set<Branch>(),
                     ub => ub.BranchId,
                     b => b.Id,
-                    (ub, b) => new
+                    (ub, b) => new UserBranchListItem
                     {
-                        id = ub.Id,
-                        userId = ub.UserId,
-                        branchId = ub.BranchId,
-                        branchName = b.Name,
-                        branchCode = b.BranchCode,
-                        isDefault = ub.IsDefault,
-                        assignedAt = ub.AssignedAt,
-                        effectiveFrom = ub.EffectiveFrom,
-                        effectiveUntil = ub.EffectiveUntil,
-                        status = ub.Status,
-                        notes = ub.Notes
+                        Id = ub.Id,
+                        UserId = ub.UserId,
+                        BranchId = ub.BranchId,
+                        BranchName = b.Name,
+                        BranchCode = b.BranchCode,
+                        IsDefault = ub.IsDefault,
+                        AssignedAt = ub.AssignedAt,
+                        EffectiveFrom = ub.EffectiveFrom,
+                        EffectiveUntil = ub.EffectiveUntil,
+                        Status = ub.Status,
+                        Notes = ub.Notes
                     })
-                .OrderByDescending(ub => ub.isDefault)
-                .ThenBy(ub => ub.branchName)
+                .OrderByDescending(ub => ub.IsDefault)
+                .ThenBy(ub => ub.BranchName)
                 .ToListAsync();
+
+            // Align with FollowupBranchAccessService: include Users.BranchId when missing from assignments.
+            var primaryBranchId = await _userManager.Users
+                .AsNoTracking()
+                .Where(u => u.Id == userId && u.TenantId == tenantId)
+                .Select(u => u.BranchId)
+                .FirstOrDefaultAsync();
+
+            if (primaryBranchId.HasValue
+                && !userBranches.Any(b => b.BranchId == primaryBranchId.Value))
+            {
+                var branch = await _context.Set<Branch>()
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(b =>
+                        b.Id == primaryBranchId.Value
+                        && b.TenantId == tenantId
+                        && b.Status == "Active"
+                        && b.DeletedAt == null);
+                if (branch != null)
+                {
+                    userBranches.Add(new UserBranchListItem
+                    {
+                        Id = Guid.Empty,
+                        UserId = userId,
+                        BranchId = branch.Id,
+                        BranchName = branch.Name,
+                        BranchCode = branch.BranchCode,
+                        IsDefault = userBranches.Count == 0,
+                        AssignedAt = null,
+                        EffectiveFrom = null,
+                        EffectiveUntil = null,
+                        Status = "active",
+                        Notes = null
+                    });
+                    userBranches = userBranches
+                        .OrderByDescending(ub => ub.IsDefault)
+                        .ThenBy(ub => ub.BranchName)
+                        .ToList();
+                }
+            }
 
             return Ok(new
             {
                 userId,
                 count = userBranches.Count,
-                branches = userBranches
+                branches = userBranches.Select(ub => new
+                {
+                    id = ub.Id,
+                    userId = ub.UserId,
+                    branchId = ub.BranchId,
+                    branchName = ub.BranchName,
+                    branchCode = ub.BranchCode,
+                    isDefault = ub.IsDefault,
+                    assignedAt = ub.AssignedAt,
+                    effectiveFrom = ub.EffectiveFrom,
+                    effectiveUntil = ub.EffectiveUntil,
+                    status = ub.Status,
+                    notes = ub.Notes
+                })
             });
+        }
+
+        private sealed class UserBranchListItem
+        {
+            public Guid Id { get; set; }
+            public Guid UserId { get; set; }
+            public Guid BranchId { get; set; }
+            public string BranchName { get; set; } = "";
+            public string? BranchCode { get; set; }
+            public bool IsDefault { get; set; }
+            public DateTime? AssignedAt { get; set; }
+            public DateTime? EffectiveFrom { get; set; }
+            public DateTime? EffectiveUntil { get; set; }
+            public string Status { get; set; } = "active";
+            public string? Notes { get; set; }
         }
 
         /// <summary>

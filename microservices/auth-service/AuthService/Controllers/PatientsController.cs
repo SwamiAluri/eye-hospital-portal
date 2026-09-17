@@ -28,6 +28,7 @@ public class PatientsController : ControllerBase
     private readonly IPatientMergeService _patientMergeService;
     private readonly IPatientRecentViewsService _recentViewsService;
     private readonly AppDbContext _context;
+    private readonly IFollowupBranchAccessService _branchAccess;
 
     public PatientsController(
         IPatientService patientService,
@@ -42,7 +43,8 @@ public class PatientsController : ControllerBase
         IAuditService auditService,
         IPatientMergeService patientMergeService,
         IPatientRecentViewsService recentViewsService,
-        AppDbContext context)
+        AppDbContext context,
+        IFollowupBranchAccessService branchAccess)
     {
         _patientService = patientService;
         _blobStorageService = blobStorageService;
@@ -57,6 +59,7 @@ public class PatientsController : ControllerBase
         _patientMergeService = patientMergeService;
         _recentViewsService = recentViewsService;
         _context = context;
+        _branchAccess = branchAccess;
     }
 
     private static List<string> ParseCsvList(string? value) =>
@@ -121,26 +124,38 @@ public class PatientsController : ControllerBase
         return true;
     }
 
-    /// <summary>Patient Hub — typeahead suggest (branch-scoped).</summary>
+    /// <summary>Patient Hub — typeahead suggest (branch-scoped). Branch may be omitted when the caller has exactly one authorized branch.</summary>
     [HttpGet("suggest")]
     [RequirePermission("patient.view")]
     public async Task<ActionResult<List<PatientSuggestRowDto>>> SuggestPatients(
-        [FromQuery] Guid branchId,
+        [FromQuery] Guid? branchId,
         [FromQuery] string q,
         [FromQuery] int limit = 10)
     {
         if (!TryGetTenantAndUser(out var tenantId, out var userId))
             return Unauthorized();
 
-        var rows = await _patientLookupService.SuggestAsync(tenantId, branchId, userId, q, limit);
-        return Ok(rows);
+        try
+        {
+            var effectiveBranchId = await _branchAccess.ResolveEffectiveBranchAsync(tenantId, userId, branchId);
+            var rows = await _patientLookupService.SuggestAsync(tenantId, effectiveBranchId, userId, q, limit);
+            return Ok(rows);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>Patient Hub — multi-scope omnisearch (Ctrl+K).</summary>
     [HttpGet("omni-search")]
     [RequirePermission("patient.view")]
     public async Task<ActionResult<List<PatientOmniSearchHitDto>>> OmniSearch(
-        [FromQuery] Guid branchId,
+        [FromQuery] Guid? branchId,
         [FromQuery] string scope = "patients",
         [FromQuery] string? q = null,
         [FromQuery] int limit = 15)
@@ -148,21 +163,33 @@ public class PatientsController : ControllerBase
         if (!TryGetTenantAndUser(out var tenantId, out var userId))
             return Unauthorized();
 
-        var rows = await _patientOmniSearchService.SearchAsync(
-            tenantId,
-            branchId,
-            userId,
-            scope,
-            q ?? "",
-            limit);
-        return Ok(rows);
+        try
+        {
+            var effectiveBranchId = await _branchAccess.ResolveEffectiveBranchAsync(tenantId, userId, branchId);
+            var rows = await _patientOmniSearchService.SearchAsync(
+                tenantId,
+                effectiveBranchId,
+                userId,
+                scope,
+                q ?? "",
+                limit);
+            return Ok(rows);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>Patient Hub — paginated lookup list.</summary>
     [HttpGet("lookup")]
     [RequirePermission("patient.view")]
     public async Task<ActionResult<PatientLookupPageDto>> LookupPatients(
-        [FromQuery] Guid branchId,
+        [FromQuery] Guid? branchId,
         [FromQuery] string? q = null,
         [FromQuery] string tab = "all",
         [FromQuery] int page = 1,
@@ -192,12 +219,24 @@ public class PatientsController : ControllerBase
         if (!TryGetTenantAndUser(out var tenantId, out var userId))
             return Unauthorized();
 
-        var result = await _patientLookupService.LookupAsync(BuildLookupQuery(
-            tenantId, branchId, userId, q, tab, page, pageSize, sortBy, sortDir,
-            favoritesOnly, assignedToMe, engagementTypes, programCodes, patientTypes,
-            gender, mrn, phone, dobFrom, dobTo, appointmentFrom, appointmentTo,
-            name, diagnosis, providerId, departmentId, wardName, admissionFrom, admissionTo));
-        return Ok(result);
+        try
+        {
+            var effectiveBranchId = await _branchAccess.ResolveEffectiveBranchAsync(tenantId, userId, branchId);
+            var result = await _patientLookupService.LookupAsync(BuildLookupQuery(
+                tenantId, effectiveBranchId, userId, q, tab, page, pageSize, sortBy, sortDir,
+                favoritesOnly, assignedToMe, engagementTypes, programCodes, patientTypes,
+                gender, mrn, phone, dobFrom, dobTo, appointmentFrom, appointmentTo,
+                name, diagnosis, providerId, departmentId, wardName, admissionFrom, admissionTo));
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>Patient Hub — CSV export for current filters.</summary>
@@ -250,13 +289,25 @@ public class PatientsController : ControllerBase
     /// <summary>Patient Hub — classification tab counts.</summary>
     [HttpGet("lookup/stats")]
     [RequirePermission("patient.view")]
-    public async Task<ActionResult<PatientLookupStatsDto>> LookupStats([FromQuery] Guid branchId)
+    public async Task<ActionResult<PatientLookupStatsDto>> LookupStats([FromQuery] Guid? branchId)
     {
         if (!TryGetTenantAndUser(out var tenantId, out var userId))
             return Unauthorized();
 
-        var stats = await _patientLookupService.GetStatsAsync(tenantId, branchId, userId);
-        return Ok(stats);
+        try
+        {
+            var effectiveBranchId = await _branchAccess.ResolveEffectiveBranchAsync(tenantId, userId, branchId);
+            var stats = await _patientLookupService.GetStatsAsync(tenantId, effectiveBranchId, userId);
+            return Ok(stats);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>Patient Hub — recently viewed patients for current user.</summary>
@@ -490,8 +541,24 @@ public class PatientsController : ControllerBase
     [RequirePermission("patient.create")]
     public async Task<ActionResult<PatientResponse>> CreatePatient([FromBody] CreatePatientRequest request)
     {
-        var tenantId = User.FindFirst("TenantId")?.Value;
-        if (string.IsNullOrEmpty(tenantId)) return Unauthorized();
+        if (!TryGetTenantAndUser(out var tenantGuid, out var userId))
+            return Unauthorized();
+        var tenantId = tenantGuid.ToString();
+
+        Guid effectiveBranchId;
+        try
+        {
+            effectiveBranchId = await _branchAccess.ResolveEffectiveBranchAsync(
+                tenantGuid, userId, request.BranchId);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
 
         // Check for duplicates BEFORE creating patient
         var duplicateCheck = await _duplicateDetectionService.CheckDuplicatesAsync(
@@ -503,7 +570,7 @@ public class PatientsController : ControllerBase
                 ContactNumber = request.ContactNumber,
                 Email = request.Email
             },
-            Guid.Parse(tenantId)
+            tenantGuid
         );
 
         // If high-confidence duplicate found (>= 95%), reject creation
@@ -519,7 +586,8 @@ public class PatientsController : ControllerBase
 
         var patient = new Patient
         {
-            TenantId = Guid.Parse(tenantId),
+            TenantId = tenantGuid,
+            BranchId = effectiveBranchId,
             MedicalRecordNumber = GenerateMedicalRecordNumber(),
             
             // Phase 6: Extended Demographics
@@ -598,7 +666,8 @@ public class PatientsController : ControllerBase
             InsuranceValidFrom = request.InsuranceValidFrom,
             InsuranceValidTo = request.InsuranceValidTo,
             
-            Status = "Active"
+            Status = "Active",
+            CreatedByUserId = userId
         };
 
         var createdPatient = await _patientService.CreatePatientAsync(patient);

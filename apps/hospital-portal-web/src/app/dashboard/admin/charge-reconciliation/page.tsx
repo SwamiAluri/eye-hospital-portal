@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useAuthStore } from '@/lib/auth-store';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 import {
   chargeReconciliationApi,
   type ChargeReconciliationReport,
@@ -11,8 +11,8 @@ import {
   type WastageReport,
 } from '@/lib/api/charge-reconciliation.api';
 import {
+  BILL_RECONCILIATION_VIEW_PERMISSION,
   BUCKET_COPY,
-  canViewChargeReconciliation,
   localDateToUtcRange,
   reconciliationCsv,
 } from '@/lib/billing/charge-reconciliation';
@@ -41,8 +41,14 @@ function defaultFrom(): string {
 }
 
 export default function ChargeReconciliationPage() {
-  const permissions = useAuthStore((s) => s.permissions);
-  const allowed = canViewChargeReconciliation(permissions);
+  return (
+    <ProtectedRoute requiredPermission={BILL_RECONCILIATION_VIEW_PERMISSION}>
+      <ChargeReconciliationPageBody />
+    </ProtectedRoute>
+  );
+}
+
+function ChargeReconciliationPageBody() {
   const searchParams = useSearchParams();
   const [fromDate, setFromDate] = useState(() => {
     const raw = searchParams.get('fromUtc');
@@ -81,20 +87,8 @@ export default function ChargeReconciliationPage() {
   }, [range.fromUtc, range.toUtc]);
 
   useEffect(() => {
-    if (!allowed) return;
     void load();
-  }, [allowed, load]);
-
-  if (!allowed) {
-    return (
-      <div className="p-6 max-w-xl">
-        <h1 className="text-xl font-semibold">Charge reconciliation</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          You need <code>bill.view</code> to see implant, stock and charge exceptions.
-        </p>
-      </div>
-    );
-  }
+  }, [load]);
 
   const rowsFor = (key: keyof ChargeReconciliationReport): ReconciliationRow[] => {
     const value = report?.[key];

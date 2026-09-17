@@ -1,7 +1,9 @@
+export const BILL_RECONCILIATION_VIEW_PERMISSION = 'bill.reconciliation.view';
+
 export function canViewChargeReconciliation(permissions: string[] | null | undefined): boolean {
   if (!permissions || permissions.length === 0) return false;
   if (permissions.includes('*')) return true;
-  return permissions.includes('bill.view') || permissions.includes('bill.admin');
+  return permissions.includes(BILL_RECONCILIATION_VIEW_PERMISSION);
 }
 
 export function completenessWarning(recorded: number, missing: number): string | null {

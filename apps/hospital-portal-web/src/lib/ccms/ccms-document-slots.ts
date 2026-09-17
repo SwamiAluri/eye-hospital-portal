@@ -346,6 +346,10 @@ export function withBiometrySlot(slots: SlotDef[]): SlotDef[] {
   ];
 }
 
+/**
+ * Submit-to-claims gate copy — documents are required before claim/pre-auth packet submit.
+ * Do not reuse for counselling Save/Finish messaging.
+ */
 export function formatMissingDocumentsMessage(
   missingLabels: string[],
   options?: { uploaded?: number; required?: number },
@@ -358,13 +362,69 @@ export function formatMissingDocumentsMessage(
     required > 0 &&
     missingLabels.length > 0
   ) {
-    return `${uploaded}/${required} documents — upload required`;
+    return `${uploaded}/${required} documents — upload required before submit`;
   }
   if (missingLabels.length === 0) {
     return 'Documents required before submit';
   }
   if (missingLabels.length === 1) {
-    return `1 document missing — upload required`;
+    return `1 document missing — upload required before submit`;
   }
-  return `${missingLabels.length} documents missing — upload required`;
+  return `${missingLabels.length} documents missing — upload required before submit`;
+}
+
+/**
+ * Counselling / workspace display copy — operational readiness, not a session completion gate.
+ */
+export function formatOutstandingDocumentsMessage(
+  outstandingCount: number,
+  options?: { uploaded?: number; required?: number },
+): string {
+  const uploaded = options?.uploaded;
+  const required = options?.required;
+  if (
+    typeof uploaded === 'number' &&
+    typeof required === 'number' &&
+    required > 0
+  ) {
+    const outstanding = Math.max(0, required - uploaded);
+    if (outstanding === 0) {
+      return `${uploaded} of ${required} required uploaded`;
+    }
+    if (outstanding === 1) {
+      return `1 required document outstanding`;
+    }
+    return `${outstanding} required documents outstanding`;
+  }
+  if (outstandingCount <= 0) {
+    return 'All required documents uploaded';
+  }
+  if (outstandingCount === 1) {
+    return '1 required document outstanding';
+  }
+  return `${outstandingCount} required documents outstanding`;
+}
+
+/** Document Progress rail: "1 of 4 required" + "3 outstanding". */
+export function formatDocumentProgressReadiness(
+  uploaded: number,
+  required: number,
+): { primary: string; outstanding: string | null; complete: boolean } {
+  if (required <= 0) {
+    return { primary: 'No required documents', outstanding: null, complete: true };
+  }
+  const outstanding = Math.max(0, required - uploaded);
+  return {
+    primary: `${uploaded} of ${required} required`,
+    outstanding: outstanding > 0 ? `${outstanding} outstanding` : null,
+    complete: outstanding === 0,
+  };
+}
+
+/** Soft CTA / submit readiness predicate shared by coverage panel. */
+export function isRequiredDocumentUploadComplete(
+  uploadedDocCount: number,
+  requiredDocCount: number,
+): boolean {
+  return requiredDocCount === 0 || uploadedDocCount >= requiredDocCount;
 }

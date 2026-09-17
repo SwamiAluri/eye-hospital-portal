@@ -8,14 +8,17 @@ export interface CounsellingRepeatSessionBannerProps {
   sessionTypeCode: string;
   onSessionTypeChange: (code: string) => void;
   onStartSession: () => void;
+  /** When false, Start Session is hidden (non-owner View). Default true. */
+  canStart?: boolean;
 }
 
 export function CounsellingRepeatSessionBanner({
   sessionTypeCode,
   onSessionTypeChange,
   onStartSession,
+  canStart: canStartOwned = true,
 }: CounsellingRepeatSessionBannerProps) {
-  const canStart = sessionTypeCode.trim().length > 0;
+  const canStart = canStartOwned && sessionTypeCode.trim().length > 0;
 
   return (
     <div
@@ -30,31 +33,41 @@ export function CounsellingRepeatSessionBanner({
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-orange-900">Repeat counselling required</h2>
             <p className="mt-1 text-xs leading-relaxed text-orange-800/90">
-              Patient needs more time before deciding. Choose the session type for this round, then
-              click <strong>Start Session</strong> to continue.
+              {canStartOwned ? (
+                <>
+                  Patient needs more time before deciding. Choose the session type for this round, then
+                  click <strong>Start Session</strong> to continue.
+                </>
+              ) : (
+                <>
+                  This session is assigned to another counsellor. You can view details only.
+                </>
+              )}
             </p>
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end">
-          <SessionTypeSelect
-            id="repeat-session-type"
-            value={sessionTypeCode}
-            onChange={onSessionTypeChange}
-            context="repeat"
-            label="Session type for this round"
-            className="w-full sm:w-[220px]"
-          />
-          <CounsellingButton
-            type="button"
-            onClick={onStartSession}
-            disabled={!canStart}
-            data-testid="counselling-btn-start-repeat-session"
-            className="h-[38px] shrink-0 whitespace-nowrap bg-orange-600 px-5 hover:bg-orange-700 disabled:opacity-50"
-          >
-            Start Session
-          </CounsellingButton>
-        </div>
+        {canStartOwned ? (
+          <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end">
+            <SessionTypeSelect
+              id="repeat-session-type"
+              value={sessionTypeCode}
+              onChange={onSessionTypeChange}
+              context="repeat"
+              label="Session type for this round"
+              className="w-full sm:w-[220px]"
+            />
+            <CounsellingButton
+              type="button"
+              onClick={onStartSession}
+              disabled={!canStart}
+              data-testid="counselling-btn-start-repeat-session"
+              className="h-[38px] shrink-0 whitespace-nowrap bg-orange-600 px-5 hover:bg-orange-700 disabled:opacity-50"
+            >
+              Start Session
+            </CounsellingButton>
+          </div>
+        ) : null}
       </div>
     </div>
   );

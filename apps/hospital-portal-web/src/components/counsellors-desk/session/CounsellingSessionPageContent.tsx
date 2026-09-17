@@ -13,7 +13,6 @@ import {
   CounsellingTooltipProvider,
 } from '@/components/counsellors-desk/session/primitives';
 import { CounsellingStatusMessage } from '@/components/counsellors-desk/session/primitives/CounsellingStatusMessage';
-import { CounsellingRepeatSessionBanner } from '@/components/counsellors-desk/session/CounsellingRepeatSessionBanner';
 import { cn } from '@/lib/utils';
 import { counsellingTestIds, counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { findCounsellorVariant } from '@/lib/master-data/clinical-catalog-master';
@@ -128,10 +127,9 @@ export function CounsellingSessionPageContent() {
     : undefined;
   const sessionEstimateMode = ctx.counsellingEstimate.isPackageMode ? ('package' as const) : ('custom' as const);
 
-  const isRepeatGateActive = ctx.isRepeatState;
-  const repeatPanelClass = 'pointer-events-none select-none opacity-45';
+  /** Waiting List owns Start Repeat / Re-evaluate — do not grey or scroll-lock completed session UX. */
   const outpatientReadOnly =
-    ctx.queueStatus === 'SurgeryDone' || !canEditCounsellorOutpatient || isRepeatGateActive;
+    ctx.queueStatus === 'SurgeryDone' || !canEditCounsellorOutpatient || ctx.isRepeatState;
 
   return (
     <CounsellingTooltipProvider delayDuration={300}>
@@ -140,7 +138,6 @@ export function CounsellingSessionPageContent() {
       <CounsellingTabs
         value={ctx.activeMainTab}
         onValueChange={(value) => {
-          if (isRepeatGateActive) return;
           ctx.setActiveMainTab(value as 'counselling' | 'coverage' | 'outpatient');
         }}
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
@@ -175,13 +172,11 @@ export function CounsellingSessionPageContent() {
             workspaceCcmsState={ctx.workspaceCcmsState ?? ctx.session.ccmsCurrentState}
             canGoToPhase={ctx.canGoToPhase}
             finishSummaryActive={ctx.finishSummaryActive}
-            navigationBlocked={isRepeatGateActive}
+            navigationBlocked={false}
             onNavigateTab={(tab) => {
-              if (isRepeatGateActive) return;
               ctx.setActiveMainTab(tab);
             }}
             onNavigatePhase={(phase) => {
-              if (isRepeatGateActive) return;
               ctx.setActiveMainTab('counselling');
               ctx.goToPhase(phase);
             }}
@@ -196,14 +191,6 @@ export function CounsellingSessionPageContent() {
         </div>
 
       <div className={cn(counsellingSessionTokens.shellModuleHost, 'staff-page-workspace min-h-0 flex-1')}>
-        {isRepeatGateActive ? (
-          <CounsellingRepeatSessionBanner
-            sessionTypeCode={ctx.repeatSessionTypeCode}
-            onSessionTypeChange={ctx.setRepeatSessionTypeCode}
-            onStartSession={ctx.handleStartRepeatSession}
-          />
-        ) : null}
-
         <div className={TAB_BODY_CLASS}>
         {ctx.coverageTabMounted && (
           <div
@@ -217,9 +204,7 @@ export function CounsellingSessionPageContent() {
               className={cn(
                 'counselling-hidden-scroll flex min-h-0 flex-1 flex-col overflow-hidden',
                 counsellingSessionTokens.shellModuleBodyPadding,
-                isRepeatGateActive && repeatPanelClass,
               )}
-              aria-disabled={isRepeatGateActive || undefined}
             >
             <CoveragePreauthPanel
               ref={ctx.coveragePanelRef}
@@ -262,10 +247,10 @@ export function CounsellingSessionPageContent() {
               sessionPackageAmount={
                 ctx.counsellingEstimate.activeTemplate?.packageAmount
               }
-              forceReadOnly={isRepeatGateActive || ctx.isReadOnly}
+              forceReadOnly={ctx.isReadOnly}
               onProgressChange={ctx.handleCoverageProgressChange}
               onEditQuote={() => {
-                if (isRepeatGateActive || ctx.isReadOnly) return;
+                if (ctx.isReadOnly) return;
                 ctx.setActiveMainTab('counselling');
                 ctx.goToPhase('estimate');
               }}
@@ -278,9 +263,8 @@ export function CounsellingSessionPageContent() {
           className={
             ctx.activeMainTab !== 'counselling'
               ? 'hidden'
-              : cn(COUNSELLING_TAB_CLASS, isRepeatGateActive && repeatPanelClass)
+              : COUNSELLING_TAB_CLASS
           }
-          aria-disabled={isRepeatGateActive || undefined}
         >
           <CounsellingTabPanel />
         </div>
@@ -292,9 +276,7 @@ export function CounsellingSessionPageContent() {
                 'counselling-hidden-scroll',
                 TAB_SCROLL_CLASS,
                 counsellingSessionTokens.shellModuleBodyPadding,
-                isRepeatGateActive && repeatPanelClass,
               )}
-              aria-disabled={isRepeatGateActive || undefined}
             >
             <CounsellorOutpatientChecklist
               ref={ctx.outpatientChecklistRef}
@@ -337,19 +319,19 @@ export function CounsellingSessionPageContent() {
         isSaving={ctx.isSaving}
         isSavingDraft={ctx.isSavingDraft}
         finishSummaryActive={ctx.finishSummaryActive}
-        navigationBlocked={isRepeatGateActive}
+        navigationBlocked={false}
+        sessionFrom={ctx.sessionFrom}
         onPhaseBack={ctx.goToPreviousPhase}
+        onCloseSession={ctx.handleClose}
         onPhaseNext={() => ctx.goNext()}
         onSaveSession={ctx.handleSave}
         onSaveDraft={ctx.handleSaveDraft}
         onPrint={() => ctx.setEstimatePrintOpen(true)}
         onSubmitToClaims={() => void ctx.coveragePanelRef.current?.submitToClaims()}
         onNavigateTab={(tab) => {
-          if (isRepeatGateActive) return;
           ctx.setActiveMainTab(tab);
         }}
         onNavigatePhase={(phase) => {
-          if (isRepeatGateActive) return;
           ctx.setActiveMainTab('counselling');
           ctx.goToPhase(phase);
         }}

@@ -72,7 +72,8 @@ export interface PatientSuggestRow {
 }
 
 export interface PatientLookupFilters {
-  branchId: string;
+  /** Optional — server resolves effective authorized branch when omitted (single-branch users). */
+  branchId?: string;
   q?: string;
   tab?: PatientLookupTab;
   page?: number;

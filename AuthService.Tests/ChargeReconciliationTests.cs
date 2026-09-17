@@ -21,21 +21,30 @@ public class ChargeReconciliationTests
     private static readonly Guid UserId = Guid.NewGuid();
 
     [Fact]
-    public void Routes_RequireBillView()
+    public void OperationalRoutes_RequireBillReconciliationView()
     {
         foreach (var name in new[]
         {
             nameof(ChargeReconciliationController.Get),
             nameof(ChargeReconciliationController.Run),
             nameof(ChargeReconciliationController.Wastage),
-            nameof(ChargeReconciliationController.Completeness),
         })
         {
             var method = typeof(ChargeReconciliationController).GetMethod(name);
             Assert.NotNull(method);
             var attr = method!.GetCustomAttribute<RequirePermissionAttribute>();
-            Assert.Equal("bill.view", attr!.PermissionCode);
+            Assert.Equal("bill.reconciliation.view", attr!.PermissionCode);
         }
+    }
+
+    [Fact]
+    public void Completeness_RemainsBillView()
+    {
+        var method = typeof(ChargeReconciliationController).GetMethod(
+            nameof(ChargeReconciliationController.Completeness));
+        Assert.NotNull(method);
+        var attr = method!.GetCustomAttribute<RequirePermissionAttribute>();
+        Assert.Equal("bill.view", attr!.PermissionCode);
     }
 
     [Fact]

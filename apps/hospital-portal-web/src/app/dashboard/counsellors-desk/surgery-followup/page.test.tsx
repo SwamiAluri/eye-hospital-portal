@@ -97,8 +97,21 @@ describe('SurgeryFollowupPage Phase 2F shell', () => {
     expect(html).toContain('data-testid="followup-intention-filter"');
     expect(html).toContain('Search name, MRN, phone, or procedure');
     expect(html).toContain('Active');
-    expect(html).toContain('High Priority');
+    expect(html).not.toContain('High Priority');
+    expect(html).not.toContain('Over 30 Days');
     expect(html).toContain('Never Contacted');
     expect(html).toContain('Avg Attempts');
+  });
+
+  it('Phase2Y: Active KPI has no priority language and no alert-level chrome', () => {
+    const html = renderToStaticMarkup(<SurgeryFollowupPage />);
+    expect(html).not.toContain('High Priority');
+    expect(html).not.toContain('>Critical<');
+    expect(html).not.toContain('>High<');
+    expect(html).not.toContain('>Medium<');
+    expect(html).toContain('Never Contacted');
+    expect(html).not.toContain('Due Date');
+    expect(html).not.toContain('Overdue');
+    expect(html).not.toContain('SLA');
   });
 });

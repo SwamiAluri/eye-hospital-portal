@@ -127,10 +127,10 @@ export function DocumentChecklist({
         const borderCls = isUploaded
           ? 'border-l-2 border-emerald-400'
           : isRequired
-            ? 'border-l-2 border-red-300'
+            ? 'border-l-2 border-amber-300'
             : 'border-l-2 border-gray-200';
 
-        const rowBg = isUploaded ? 'bg-emerald-50/40' : isRequired ? 'bg-red-50/30' : 'bg-white';
+        const rowBg = isUploaded ? 'bg-emerald-50/40' : isRequired ? 'bg-amber-50/40' : 'bg-white';
 
         const StatusIcon = isUploaded
           ? () => (
@@ -140,8 +140,8 @@ export function DocumentChecklist({
             )
           : isRequired
             ? () => (
-                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg bg-red-100">
-                  <FileX2 className="h-3.5 w-3.5 text-red-500" />
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg bg-amber-100">
+                  <FileX2 className="h-3.5 w-3.5 text-amber-600" />
                 </span>
               )
             : () => (
@@ -329,7 +329,14 @@ export function DocumentChecklist({
                 >
                   {slot.label}
                   {isRequired && !isUploaded && (
-                    <span className="ml-0.5 text-red-500">*</span>
+                    <span className="ml-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                      Required · Outstanding
+                    </span>
+                  )}
+                  {isUploaded && (
+                    <span className="ml-1.5 rounded bg-emerald-100 px-1 py-px text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                      Uploaded
+                    </span>
                   )}
                 </p>
                 {uploadedMeta}

@@ -27,16 +27,17 @@ export function usePatientLookupQuery(filters: PatientLookupFilters, enabled = t
     queryKey: patientLookupKeys.lookup(filters),
     queryFn: () => patientLookupApi.lookup(filters),
     staleTime: LIST_STALE_MS,
-    enabled: enabled && !!filters.branchId,
+    // branchId optional — server ResolveEffectiveBranchAsync when omitted (single-branch users)
+    enabled,
   });
 }
 
 export function usePatientLookupStatsQuery(branchId: string | null, enabled = true) {
   return useQuery({
     queryKey: patientLookupKeys.stats(branchId ?? ''),
-    queryFn: () => patientLookupApi.stats(branchId!),
+    queryFn: () => patientLookupApi.stats(branchId ?? ''),
     staleTime: LIST_STALE_MS,
-    enabled: enabled && !!branchId,
+    enabled,
   });
 }
 
@@ -44,9 +45,9 @@ export function usePatientSuggestQuery(branchId: string | null, q: string, enabl
   const trimmed = q.trim();
   return useQuery({
     queryKey: patientLookupKeys.suggest(branchId ?? '', trimmed),
-    queryFn: () => patientLookupApi.suggest(branchId!, trimmed),
+    queryFn: () => patientLookupApi.suggest(branchId ?? '', trimmed),
     staleTime: 15_000,
-    enabled: enabled && !!branchId && trimmed.length >= 2,
+    enabled: enabled && trimmed.length >= 2,
   });
 }
 

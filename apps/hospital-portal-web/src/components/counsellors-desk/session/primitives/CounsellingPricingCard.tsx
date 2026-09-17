@@ -68,7 +68,7 @@ export function CounsellingPricingCard({
         selected && 'border-counselling-primary ring-2 ring-counselling-primary/25/80',
         suggested && !selected && 'border-amber-200 bg-amber-50/30',
         !selected && !suggested && 'hover:border-counselling-primary/40',
-        disabled && 'pointer-events-none opacity-60',
+        disabled && 'pointer-events-none',
         className,
       )}
     >

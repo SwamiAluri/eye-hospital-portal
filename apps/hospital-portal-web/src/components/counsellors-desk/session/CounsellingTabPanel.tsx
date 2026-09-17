@@ -199,6 +199,10 @@ export function CounsellingTabPanel() {
 
     packageTemplates,
 
+    packageTemplatesAccessDenied,
+
+    requestPackageCatalog,
+
     activePhase,
 
     finishSummaryActive,
@@ -272,6 +276,8 @@ export function CounsellingTabPanel() {
           isReadOnly={isReadOnly}
           isDoneState={isDoneState}
           packageTemplates={templates}
+          packageTemplatesAccessDenied={packageTemplatesAccessDenied}
+          requestPackageCatalog={requestPackageCatalog}
           masterCatalog={masterCatalog}
           masterCatalogLoading={masterCatalogLoading}
           masterCatalogError={masterCatalogError}
@@ -362,9 +368,11 @@ export function CounsellingTabPanel() {
           insuranceCompany={insuranceCompany}
           schedule={schedule}
           finalPayableAmount={
-            estimate.mergedEstimate.finalPayableAmount > 0
-              ? estimate.mergedEstimate.finalPayableAmount
-              : null
+            estimate.finalPayableAmount > 0
+              ? estimate.finalPayableAmount
+              : estimate.mergedEstimate.finalPayableAmount > 0
+                ? estimate.mergedEstimate.finalPayableAmount
+                : null
           }
           showCoverageWorkflow={showCoverageWorkflow}
           notRequiredPreAuth={notRequiredPreAuth}
@@ -607,31 +615,10 @@ export function CounsellingTabPanel() {
         </CounsellingInfoAlert>
       )}
 
-      {isDoneState && !finishSummaryActive && (
-        <CounsellingInfoAlert
-          variant="success"
-          className="mb-4 shrink-0"
-          title="Session completed"
-          action={
-            <CounsellingButton
-              type="button"
-              size="sm"
-              onClick={handleReEvaluate}
-              className="shrink-0 bg-green-700 hover:bg-green-800"
-            >
-              Re-evaluate
-            </CounsellingButton>
-          }
-        >
-          This session is <strong>read-only</strong>. Click <strong>Re-evaluate</strong> to reopen
-          counselling and change the procedure, quote, or decision.
-        </CounsellingInfoAlert>
-      )}
-
       {queueStatus === 'AddOnSurgery' && !finishSummaryActive && (
         <CounsellingInfoAlert variant="info" className="mb-4 shrink-0" title="Upgraded case">
           Add-on surgery counselling is complete and <strong>read-only</strong>. Use Re-evaluate from
-          a Done session path if the case must be reopened.
+          the Waiting List if the case must be reopened.
         </CounsellingInfoAlert>
       )}
 

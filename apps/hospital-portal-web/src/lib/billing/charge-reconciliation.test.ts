@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { BUCKET_COPY, canViewChargeReconciliation, completenessWarning, localDateToUtcRange, reconciliationCsv } from './charge-reconciliation';
 
 describe('charge-reconciliation helpers', () => {
-  it('gates the report on bill.view or bill.admin', () => {
+  it('gates the report on bill.reconciliation.view (not broad bill.view)', () => {
     expect(canViewChargeReconciliation(undefined)).toBe(false);
     expect(canViewChargeReconciliation([])).toBe(false);
     expect(canViewChargeReconciliation(['bill.update'])).toBe(false);
-    expect(canViewChargeReconciliation(['bill.view'])).toBe(true);
-    expect(canViewChargeReconciliation(['bill.admin'])).toBe(true);
+    expect(canViewChargeReconciliation(['bill.view'])).toBe(false);
+    expect(canViewChargeReconciliation(['bill.admin'])).toBe(false);
+    expect(canViewChargeReconciliation(['bill.reconciliation.view'])).toBe(true);
     expect(canViewChargeReconciliation(['*'])).toBe(true);
   });
 

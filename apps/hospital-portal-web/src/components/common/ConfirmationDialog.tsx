@@ -14,11 +14,15 @@ interface ConfirmationDialogProps {
   message: string | ReactNode;
   confirmText?: string;
   cancelText?: string;
+  /** Optional third action (e.g. Leave Without Saving between Cancel and Save & Close). */
+  alternateText?: string;
+  onAlternate?: () => void | Promise<void>;
   variant?: ConfirmationVariant;
   isLoading?: boolean;
   /** Optional E2E hooks */
   dataTestId?: string;
   confirmTestId?: string;
+  alternateTestId?: string;
 }
 
 const VARIANT_CONFIG = {
@@ -64,10 +68,13 @@ export function ConfirmationDialog({
   message,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
+  alternateText,
+  onAlternate,
   variant = 'danger',
   isLoading = false,
   dataTestId,
   confirmTestId,
+  alternateTestId,
 }: ConfirmationDialogProps) {
   const [isProcessing, setIsProcessing] = React.useState(false);
 
@@ -78,6 +85,20 @@ export function ConfirmationDialog({
       onClose();
     } catch (error) {
       console.error('Confirmation action failed:', error);
+      // Keep dialog open so caller can surface the error; do not navigate away.
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAlternate = async () => {
+    if (!onAlternate) return;
+    setIsProcessing(true);
+    try {
+      await onAlternate();
+      onClose();
+    } catch (error) {
+      console.error('Confirmation alternate action failed:', error);
     } finally {
       setIsProcessing(false);
     }
@@ -90,6 +111,7 @@ export function ConfirmationDialog({
   const cfg = VARIANT_CONFIG[variant];
   const Icon = cfg.icon;
   const busy = isProcessing || isLoading;
+  const hasAlternate = Boolean(alternateText && onAlternate);
 
   return (
     <Dialog open={isOpen} onOpenChange={(next) => { if (!next && !busy) onClose(); }}>
@@ -101,10 +123,8 @@ export function ConfirmationDialog({
         className="p-0 gap-0 overflow-hidden"
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
-        {/* Accent bar */}
         <div className={`h-1 w-full ${cfg.bar}`} />
 
-        {/* Close button */}
         <button
           onClick={handleCancel}
           disabled={busy}
@@ -114,14 +134,11 @@ export function ConfirmationDialog({
           <X size={15} />
         </button>
 
-        {/* Body */}
         <div className="px-6 pt-7 pb-6 flex flex-col items-center text-center">
-          {/* Icon */}
           <div className={`w-14 h-14 rounded-2xl ${cfg.iconBg} flex items-center justify-center mb-4`}>
             <Icon size={28} className={cfg.iconColor} />
           </div>
 
-          {/* Title */}
           <h3
             id="confirm-dialog-title"
             className="text-base font-bold text-gray-900 mb-1.5"
@@ -129,14 +146,12 @@ export function ConfirmationDialog({
             {title}
           </h3>
 
-          {/* Message */}
           <div className="text-sm text-gray-500 leading-relaxed">
             {typeof message === 'string' ? <p>{message}</p> : message}
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="px-6 pb-6 flex gap-3">
+        <div className={`px-6 pb-6 flex gap-2 ${hasAlternate ? 'flex-col sm:flex-row' : ''}`}>
           <button
             onClick={handleCancel}
             disabled={busy}
@@ -144,6 +159,16 @@ export function ConfirmationDialog({
           >
             {cancelText}
           </button>
+          {hasAlternate ? (
+            <button
+              onClick={handleAlternate}
+              disabled={busy}
+              data-testid={alternateTestId}
+              className="flex-1 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {alternateText}
+            </button>
+          ) : null}
           <button
             onClick={handleConfirm}
             disabled={busy}

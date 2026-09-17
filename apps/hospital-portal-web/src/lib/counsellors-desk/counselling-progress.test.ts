@@ -22,6 +22,17 @@ const VARIANT_WITH_SUBTYPE: CounsellorProcedureVariant = {
   hasIolOptions: false,
 };
 
+const VARIANT_EDOF_DUAL: CounsellorProcedureVariant = {
+  id: 'var-edof',
+  name: 'EDOF Lens (40cm-Distance)',
+  price: 120000,
+  defaultPrice: 120000,
+  categoryCode: 'CAT',
+  categoryName: 'Cataract',
+  subOptions: ['Alcon', 'Hoya'],
+  hasIolOptions: true,
+};
+
 const VARIANT_WITH_IOL: CounsellorProcedureVariant = {
   id: 'var-iol',
   name: 'Phaco with IOL',
@@ -99,6 +110,23 @@ describe('counselling-progress — D018 Build Quote completion', () => {
       ),
     );
     expect(completion.estimate).toBe(true);
+  });
+
+  it('requires Alcon/Hoya sub-type for EDOF even when hasIolOptions is true', () => {
+    expect(
+      validateEstimatePhase(
+        ctx({ selectedVariantId: 'var-edof', iolOptionCount: 2 }, [VARIANT_EDOF_DUAL]),
+      ),
+    ).toBe('Please select a sub-type for the selected procedure');
+
+    expect(
+      validateEstimatePhase(
+        ctx(
+          { selectedVariantId: 'var-edof', variantSubOption: 'Hoya', iolOptionCount: 2 },
+          [VARIANT_EDOF_DUAL],
+        ),
+      ),
+    ).toBeNull();
   });
 
   it('marks estimate incomplete when IOL is required but missing', () => {
@@ -312,7 +340,7 @@ describe('counselling-progress — D003 insurance validation', () => {
   });
 });
 
-describe('counselling-progress — Save Session decision validation', () => {
+describe('counselling-progress — Complete Session decision validation', () => {
   it('blocks save when repeat decision lacks follow-up information', () => {
     expect(
       validateSaveSessionDecision(

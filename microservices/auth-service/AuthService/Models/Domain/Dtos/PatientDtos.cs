@@ -188,6 +188,9 @@ public class CreatePatientRequest
 
     [StringLength(500)]
     public string? PhotoThumbnailUrl { get; set; }
+
+    /// <summary>Optional. When omitted, server resolves the caller's effective authorized branch.</summary>
+    public Guid? BranchId { get; set; }
 }
 
 public class UpdatePatientRequest : CreatePatientRequest

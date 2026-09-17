@@ -374,7 +374,11 @@ export function CounsellingPriceOverrideDialog({
                       </CounsellingSelectTrigger>
                       <CounsellingSelectContent>
                         {staffList.length === 0 ? (
-                          <CounsellingEmptyState compact title="No staff loaded" />
+                          <CounsellingEmptyState
+                            compact
+                            title="Staff directory unavailable"
+                            description="Staff picker requires user directory access. Use Self (Counsellor) or enter contact manually."
+                          />
                         ) : (
                           staffList.map((s) => (
                             <CounsellingSelectItem key={s.id} value={s.id}>

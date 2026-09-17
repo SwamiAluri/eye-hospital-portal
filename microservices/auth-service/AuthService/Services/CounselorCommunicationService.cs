@@ -49,7 +49,7 @@ namespace AuthService.Services
                 Channel        = request.Channel,
                 Direction      = request.Direction,
                 CommunicationAt = request.CommunicationAt ?? DateTime.UtcNow,
-                Outcome        = request.Outcome,
+                Outcome        = CounselorCommunicationContracts.NormalizeCommOutcome(request.Outcome),
                 CallDurationMinutes = request.CallDurationMinutes,
                 MessageBody    = request.MessageBody,
                 ResponseSummary = request.ResponseSummary,
@@ -67,12 +67,12 @@ namespace AuthService.Services
 
             // Update session escalation tracking
             session.LastContactDate    = log.CommunicationAt.Date;
-            session.LastContactOutcome = request.Outcome;
+            session.LastContactOutcome = log.Outcome;
             if (request.Direction == "Outbound")
                 session.ContactAttemptCount++;
 
             // Auto-clear Overdue status if contact was successful (answered)
-            if (session.EscalationStatus == "Overdue" && request.Outcome.StartsWith("Answered"))
+            if (session.EscalationStatus == "Overdue" && log.Outcome.StartsWith("Answered"))
                 session.EscalationStatus = "Normal";
 
             await _context.SaveChangesAsync();
@@ -131,8 +131,8 @@ namespace AuthService.Services
                 PatientId           = session.PatientId,
                 BranchId            = session.BranchId ?? Guid.Empty,
                 AssignedToUserId    = request.AssignedToUserId ?? createdByUserId,
-                CallbackType        = request.CallbackType,
-                Channel             = request.Channel,
+                CallbackType        = CounselorCommunicationContracts.NormalizeCallbackType(request.CallbackType),
+                Channel             = CounselorCommunicationContracts.NormalizeCallbackChannel(request.Channel),
                 CallbackDate        = request.CallbackDate.Date,
                 CallbackTime        = request.CallbackTime,
                 CallbackNotes       = request.CallbackNotes,

@@ -39,8 +39,8 @@
   </ItemGroup>
 
   <!-- Pre-existing suite is out of sync with current service constructors/DTOs.
-       Phase 1 only enables the admission-decision policy tests.
-       Phase 4 C re-enables EnhancementServiceTests after constructor/auth fix. -->
+       Phase 3G uniqueness coverage: PatchDraftVisitPolicyUniquenessTests,
+       VisitPolicyCreateUniquenessTests (enabled). -->
   <ItemGroup>
     <Compile Remove="ServiceTests\ClaimServiceTests.cs" />
     <Compile Remove="ServiceTests\CoverageCaseServiceTests.cs" />
@@ -51,4 +51,3 @@
   </ItemGroup>
 
 </Project>
-

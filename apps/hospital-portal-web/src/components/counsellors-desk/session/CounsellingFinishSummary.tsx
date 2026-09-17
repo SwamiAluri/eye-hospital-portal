@@ -54,7 +54,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Terminal read-only confirmation after Save session completion — not a counselling phase. */
+/** Terminal read-only confirmation after Complete Session — not a counselling phase. */
 export function CounsellingFinishSummary({
   queueStatus,
   decision,

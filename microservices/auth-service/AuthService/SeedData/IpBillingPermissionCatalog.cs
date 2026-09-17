@@ -76,6 +76,8 @@ internal static class IpBillingPermissionCatalog
             // Billing service codes (156)
             Perm("bill.view", "View Bills", "billing", "view", "opd_bill", "branch",
                 "View bills and their line items"),
+            Perm("bill.reconciliation.view", "View Charge Reconciliation", "billing", "view", "charge_reconciliation", "branch",
+                "Access Charge Reconciliation operational reports (implant/stock/charge exceptions and wastage)"),
             Perm("bill.create", "Create Bill", "billing", "create", "opd_bill", "branch",
                 "Create a bill for an admitted patient who has none"),
             Perm("bill.update", "Update Bill", "billing", "update", "opd_bill", "branch",

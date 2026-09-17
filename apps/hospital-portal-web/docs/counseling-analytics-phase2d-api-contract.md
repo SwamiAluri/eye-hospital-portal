@@ -56,16 +56,30 @@ Callback metrics use the **same** `[FromInclusive, ToExclusive)` on **`CallbackD
 | `counselorId` | no | `session.CounselorId`; callbacks filtered via related session |
 | `from`, `to` | together | Custom range |
 
-### Metrics (unchanged definitions)
+### Metrics (PD13 partition — Phase 2Z)
+
+Sessions are classified into **exactly one** mutually exclusive outcome via `CounselingAnalyticsOutcomeClassifier`:
+
+| Partition | Rule (precedence order) |
+|-----------|-------------------------|
+| Exception | Agreed + Declined intention marker; or Declined marker + PendingDecision |
+| PendingDecision | `PendingDecision == true` (includes pending + agreed) |
+| Agreed | `PatientAgreedToSurgery == true` (not pending) |
+| Declined | `PatientAgreedToSurgery == false` && not pending |
+| OtherUnclassified | null agreement without pending |
 
 | Metric | Formula |
 |--------|---------|
 | `totalSessions` | Count sessions in window + filters |
-| `agreedCount` | `PatientAgreedToSurgery == true` |
-| `declinedCount` | agreed == false && `PendingDecision == false` |
-| `undecidedCount` | `PendingDecision == true` |
-| `conversionRate` | agreed/total×100 (0 if total=0) |
-| `decisionRate` | (agreed+declined)/total×100 (0 if total=0) |
+| `agreedCount` | PD13 Agreed partition count |
+| `declinedCount` | PD13 Declined partition count |
+| `undecidedCount` | Legacy alias — same as `pendingDecisionCount` |
+| `pendingDecisionCount` | PD13 PendingDecision partition count |
+| `exceptionCount` | PD13 Exception partition count |
+| `otherUnclassifiedCount` | PD13 OtherUnclassified partition count |
+| `eligibleOutcomeSessions` | Agreed + Declined + PendingDecision (excludes Exception/Other) |
+| `conversionRate` | agreed / **eligibleOutcomeSessions** × 100 (0 if eligible=0) |
+| `decisionRate` | (agreed + declined) / **eligibleOutcomeSessions** × 100 (0 if eligible=0) |
 | `avgDaysToDecision` | Avg `(DecisionDate - SessionDate).TotalDays` where DecisionDate set; **0** if none |
 | `bySurgeryType` | Top 8 by count of non-empty `RecommendedSurgery` |
 | `bySessionType` | Group by `SessionType` |
@@ -138,9 +152,32 @@ All three endpoints: `counseling_sessions.read`.
 
 ---
 
+## GET `/api/Counseling/sessions` — drill-down filters (Phase 2Z)
+
+Used by `/dashboard/counsellors-desk/sessions` for analytics drill-down.
+
+| Param | Notes |
+|-------|--------|
+| `branchId`, `counselorId` | optional scope |
+| `sessionDateFrom`, `sessionDateTo` | inclusive `SessionDate` bounds (`SessionDateTo` is `<=`) |
+| `pendingDecision` | bool |
+| `patientAgreedToSurgery` | bool |
+| `recommendedSurgery` | exact match |
+| `search` | session number |
+| `page`, `pageSize` | pagination |
+
+**Drill-down routing (Phase 2Z):**
+
+- PendingDecision aging / funnel Pending → session list with `pendingDecision=true`
+- Follow-up workload only → `/dashboard/counsellors-desk/surgery-followup` (Active Follow-up Center)
+- PendingDecision **never** routes to surgery-followup
+
+Analytics half-open `[from, toExclusive)` → pass `sessionDateTo = toExclusive - 1 day` (date only).
+
+---
+
 ## Explicit non-goals
 
 - Follow-up Center due dates (+7/+30/+14)
 - Financial / insurance / OT finalization / claim metrics
 - DB migrations or indexes (candidates → Phase 2E)
-- Frontend filter UI

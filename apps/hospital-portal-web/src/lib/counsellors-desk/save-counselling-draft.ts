@@ -92,6 +92,8 @@ export async function saveCounsellingDraft(params: SaveCounsellingDraftParams): 
       insuranceCompany,
       variantId: selectedVariantId,
       eye: selectedEye,
+      ...(params.selectedIolId ? { selectedIolId: params.selectedIolId } : {}),
+      ...(params.variantSubOption ? { variantSubOption: params.variantSubOption } : {}),
     }),
     paymentType: paymentType || undefined,
     insuranceCompany: insuranceCompany || undefined,

@@ -22,10 +22,11 @@ function procedureFeatureLines(variant: CounsellorProcedureVariant): string[] {
   if (variant.categoryName) lines.push(variant.categoryName);
   if (variant.code) lines.push(variant.code);
   if (variant.priceType === 'BOTH_EYES') lines.push('Both eyes pricing');
-  if ((variant.subOptions?.length ?? 0) > 0 && !variant.hasIolOptions) {
+  if ((variant.subOptions?.length ?? 0) > 0) {
     lines.push('Lens / sub-type required');
+  } else if (variant.hasIolOptions) {
+    lines.push('IOL selection available');
   }
-  if (variant.hasIolOptions) lines.push('IOL selection available');
   return lines;
 }
 

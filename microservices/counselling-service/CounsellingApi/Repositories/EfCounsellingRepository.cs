@@ -23,20 +23,18 @@ public class EfCounsellingRepository : ICounsellingRepository
 
     public async Task<PatientCounselling?> Get(Guid id)
     {
-        // Primary lookup: by the counselling record's own UUID.
+        // Do not JOIN patients — that table is owned by auth-service and may be absent
+        // on the counselling connection (Postgres 42P01). Save/Decision must still work.
         var byId = await _context.PatientCounselling
             .AsNoTracking()
-            .Include(x => x.Patient)
             .FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt == null);
 
         if (byId != null) return byId;
 
         // Fallback: the frontend passes the auth-service session ID as the record locator.
         // That ID is stored as PatientId on the counselling record (set during Start()).
-        // Without this fallback every Azure DML call silently fails and no history is written.
         return await _context.PatientCounselling
             .AsNoTracking()
-            .Include(x => x.Patient)
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(x => x.PatientId == id && x.DeletedAt == null);
     }
@@ -54,7 +52,6 @@ public class EfCounsellingRepository : ICounsellingRepository
     {
         var q = _context.PatientCounselling
             .AsNoTracking()
-            .Include(x => x.Patient)
             .Where(x => x.DeletedAt == null);
 
         if (query.TenantId.HasValue)

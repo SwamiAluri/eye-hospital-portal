@@ -4,6 +4,7 @@ import {
   formatFollowupAverage,
   formatFollowupShortDate,
   intentionPillClass,
+  POST_DISCHARGE_AGING_KPI_LABEL,
 } from './followup-presentation';
 
 describe('followup-presentation', () => {
@@ -34,5 +35,12 @@ describe('followup-presentation', () => {
   it('maps intention pills without due-date heuristics', () => {
     expect(intentionPillClass('Declined')).toContain('red');
     expect(intentionPillClass('WillingWeek')).toContain('emerald');
+  });
+
+  it('Phase2Y: Post aging KPI is factual discharge age, not overdue/priority', () => {
+    expect(POST_DISCHARGE_AGING_KPI_LABEL).toBe('Discharged ≥30 days');
+    expect(POST_DISCHARGE_AGING_KPI_LABEL.toLowerCase()).not.toContain('overdue');
+    expect(POST_DISCHARGE_AGING_KPI_LABEL.toLowerCase()).not.toContain('priority');
+    expect(POST_DISCHARGE_AGING_KPI_LABEL).not.toBe('Over 30 Days');
   });
 });

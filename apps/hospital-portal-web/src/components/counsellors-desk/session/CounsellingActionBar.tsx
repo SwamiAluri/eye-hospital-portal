@@ -10,6 +10,7 @@ import { applySessionNavigation } from '@/lib/counsellors-desk/counselling-sessi
 import type { CounsellingPhase } from '@/lib/counsellors-desk/counselling-progress';
 import type { SessionMainTab } from '@/lib/counsellors-desk/session-status-summary';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
+import { resolveCounsellingSessionLeaveControl } from '@/lib/counsellors-desk/counselling-session-origin';
 import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { CounsellingButton } from '@/components/counsellors-desk/session/primitives';
 import { CounsellingDisabledActionTooltip } from '@/components/counsellors-desk/session/CounsellingDisabledActionTooltip';
@@ -20,7 +21,10 @@ export interface CounsellingActionBarProps extends BuildSessionActionBarInput {
   isSavingDraft: boolean;
   saveSessionTooltip?: string | null;
   phaseAdvanceTooltip?: string | null;
+  /** URL `from` query — Waiting List entry shows Back instead of Close when applicable. */
+  sessionFrom?: string | null;
   onPhaseBack?: () => void;
+  onCloseSession?: () => void;
   onPhaseNext?: () => void;
   onSaveSession?: () => void;
   onSaveDraft?: () => void;
@@ -67,7 +71,9 @@ function resolvePrimaryTooltip(
 export function CounsellingActionBar({
   isSaving,
   isSavingDraft,
+  sessionFrom = null,
   onPhaseBack,
+  onCloseSession,
   onPhaseNext,
   onSaveSession,
   onSaveDraft,
@@ -81,6 +87,10 @@ export function CounsellingActionBar({
   ...input
 }: CounsellingActionBarProps) {
   const model = buildSessionActionBarModel(input);
+  const leaveControl = resolveCounsellingSessionLeaveControl({
+    from: sessionFrom,
+    showPhaseBack: model.showPhaseBack,
+  });
   const primaryIsDisabled = resolvePrimaryDisabled(
     model,
     isSaving,
@@ -137,6 +147,32 @@ export function CounsellingActionBar({
           >
             <ChevronLeft className="h-4 w-4" aria-hidden />
             {counsellingCopy.back}
+          </CounsellingButton>
+        ) : null}
+        {model.showClose ? (
+          <CounsellingButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onCloseSession}
+            aria-label={leaveControl.ariaLabel}
+            data-testid={
+              leaveControl.showChevron
+                ? counsellingTestIds.btnBackToWaitingList
+                : counsellingTestIds.btnCloseSession
+            }
+            className={cn(
+              'h-9 gap-1 px-2',
+              leaveControl.showChevron
+                ? 'text-counselling-primary hover:bg-counselling-accent/50 hover:text-counselling-primary'
+                : 'text-counselling-muted-foreground hover:bg-counselling-muted/50 hover:text-counselling-foreground',
+              counsellingSessionTokens.actionBarLabel,
+            )}
+          >
+            {leaveControl.showChevron ? (
+              <ChevronLeft className="h-4 w-4" aria-hidden />
+            ) : null}
+            {leaveControl.label}
           </CounsellingButton>
         ) : null}
         {model.statusHint && !showPrimary ? (

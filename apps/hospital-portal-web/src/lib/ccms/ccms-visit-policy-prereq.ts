@@ -268,7 +268,7 @@ export function canEnableSubmitToClaims(policies: VisitPolicy[]): boolean {
   return isCoveragePolicyStepComplete(policies);
 }
 
-/** Whether coverage draft save should attempt primary visit-policy sync. */
+/** Whether form fields are sufficient to create/update a visit policy (explicit actions only). */
 export function canSyncVisitPolicyFromCoverageForm(
   form: Pick<CoveragePanelForm, 'policyNumber' | 'insurerName' | 'insuranceProviderId'>,
 ): boolean {

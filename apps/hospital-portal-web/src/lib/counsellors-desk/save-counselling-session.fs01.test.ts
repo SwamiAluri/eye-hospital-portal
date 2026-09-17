@@ -209,7 +209,7 @@ describe('FS-01 counselling → OT handoff', () => {
     expect(upsertOtSchedule).toHaveBeenCalledOnce();
     expect(completeSession).toHaveBeenCalledWith('sess-1');
     expect(params.onSuccess).toHaveBeenCalledOnce();
-    expect(toast.success).toHaveBeenCalledWith('Session saved successfully');
+    expect(toast.success).toHaveBeenCalledWith('Session completed successfully');
   });
 
   it('CS-01 — completeSession failure: no false success / Finish', async () => {
@@ -305,7 +305,7 @@ describe('FS-01 counselling → OT handoff', () => {
     expect(upsertOtSchedule).not.toHaveBeenCalled();
     expect(editOtScheduleSlot).not.toHaveBeenCalled();
     expect(params.onSuccess).toHaveBeenCalledOnce();
-    expect(toast.success).toHaveBeenCalledWith('Session saved successfully');
+    expect(toast.success).toHaveBeenCalledWith('Session completed successfully');
   });
 
   it('Test 7 — retry after OT failure: upsert called again (idempotent client path)', async () => {
@@ -325,7 +325,7 @@ describe('FS-01 counselling → OT handoff', () => {
 
     expect(upsertOtSchedule).toHaveBeenCalledTimes(2);
     expect(retryParams.onSuccess).toHaveBeenCalledOnce();
-    expect(toast.success).toHaveBeenCalledWith('Session saved successfully');
+    expect(toast.success).toHaveBeenCalledWith('Session completed successfully');
   });
 
   it('uses editOtScheduleSlot when Done + existing OT id', async () => {

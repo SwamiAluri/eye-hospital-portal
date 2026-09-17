@@ -73,6 +73,11 @@ interface MenuItem {
   href: string;
   icon: LucideIcon;
   requiredPermission: string | null;
+  /**
+   * When true and requiredPermission is null, item is visible to any authenticated user.
+   * Operational modules must NOT rely on null alone (PD-NAV-01).
+   */
+  allowAuthenticated?: boolean;
   isSection?: boolean;
   isParent?: boolean;
   isChild?: boolean;
@@ -86,6 +91,36 @@ interface MenuSection {
   title: string;
   icon: LucideIcon;
   items: MenuItem[];
+}
+
+/**
+ * Filters sidebar sections by permission (PD-NAV-01).
+ * - Admin wildcard `*`: preserves prior behavior (null = visible).
+ * - Non-admin: null without allowAuthenticated is hidden (not all-authenticated).
+ * - requiredPermission set: hasPermission(code).
+ */
+export function filterSidebarSectionsByPermission(
+  sections: MenuSection[],
+  hasPermission: (permissionCode: string) => boolean,
+): MenuSection[] {
+  const isAdminWildcard = hasPermission('*');
+
+  const itemVisible = (item: MenuItem): boolean => {
+    if (item.requiredPermission) {
+      return hasPermission(item.requiredPermission);
+    }
+    if (isAdminWildcard) {
+      return true;
+    }
+    return item.allowAuthenticated === true;
+  };
+
+  return sections
+    .map(section => ({
+      ...section,
+      items: section.items.filter(itemVisible),
+    }))
+    .filter(section => section.items.length > 0);
 }
 
 export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
@@ -572,7 +607,7 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           label: 'Charge reconciliation',
           href: '/dashboard/admin/charge-reconciliation',
           icon: Scale,
-          requiredPermission: 'bill.view',
+          requiredPermission: 'bill.reconciliation.view',
         },
         {
           label: 'Insurance Management',

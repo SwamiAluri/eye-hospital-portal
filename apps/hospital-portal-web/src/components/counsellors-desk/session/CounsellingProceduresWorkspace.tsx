@@ -25,12 +25,21 @@ import { loadSuggestedIolPower } from '@/lib/ip-management/clinical-evaluation-p
 
 export type ProcedureWorkspacePart = 'lens' | 'biometry';
 
+export function variantUsesLensSubOptions(
+  variant: CounsellorProcedureVariant | undefined,
+): boolean {
+  return (variant?.subOptions?.length ?? 0) > 0;
+}
+
 export function variantNeedsLensSection(
   variant: CounsellorProcedureVariant | undefined,
   iolOptions: IolMasterDto[],
 ): boolean {
   if (!variant) return false;
-  if ((variant.subOptions?.length ?? 0) > 0 && !variant.hasIolOptions) return true;
+  // Prefer explicit sub-options (Alcon/Hoya, Vivity/PureSee, …) over catalog IOL picker.
+  // EDOF and similar variants often have BOTH hasIolOptions=true and subOptions set;
+  // the counsellor-facing choice is the sub-option label persisted as variantSubOption.
+  if (variantUsesLensSubOptions(variant)) return true;
   return iolOptions.length > 0;
 }
 
@@ -183,11 +192,10 @@ export function CounsellingProceduresWorkspace({
   const showLens = parts.includes('lens');
   const showBiometry = parts.includes('biometry');
   const selectedVariant = findCounsellorVariant(procedureVariants, selectedVariantId);
+  const useSubOptions = variantUsesLensSubOptions(selectedVariant);
 
   const lensSubtypeBlock =
-    selectedVariant &&
-    (selectedVariant.subOptions?.length ?? 0) > 0 &&
-    !selectedVariant.hasIolOptions ? (
+    selectedVariant && useSubOptions ? (
       <div className="space-y-1.5">
         <CounsellingToggleGroup
           type="single"
@@ -220,7 +228,7 @@ export function CounsellingProceduresWorkspace({
     ) : null;
 
   const iolBlock =
-    selectedVariant && iolOptions.length > 0 ? (
+    selectedVariant && !useSubOptions && iolOptions.length > 0 ? (
       <CounsellingToggleGroup
         type="single"
         value={selectedIolId ?? ''}

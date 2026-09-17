@@ -11,7 +11,7 @@ describe('resolveOtReturnedAction', () => {
     ).toEqual({
       kind: 'replan',
       label: 'Re-plan',
-      href: '/dashboard/counsellors-desk/session-9',
+      href: '/dashboard/counsellors-desk/session-9?from=waiting-list',
     });
   });
 

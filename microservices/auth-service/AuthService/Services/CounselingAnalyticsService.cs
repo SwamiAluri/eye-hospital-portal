@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +15,8 @@ public interface ICounselingAnalyticsService
 {
     Task<CounselingAnalyticsSummaryDto> GetSummaryAsync(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
+        Guid? echoBranchId,
         Guid? counselorId,
         int period,
         DateTime? from,
@@ -24,7 +26,8 @@ public interface ICounselingAnalyticsService
 
     Task<CounselingAnalyticsTrendsDto> GetTrendsAsync(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
+        Guid? echoBranchId,
         Guid? counselorId,
         int period,
         DateTime? from,
@@ -34,7 +37,8 @@ public interface ICounselingAnalyticsService
 
     Task<CounselingAnalyticsAgingDto> GetFollowupAgingAsync(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
+        Guid? echoBranchId,
         Guid? counselorId,
         int? period,
         DateTime? from,
@@ -45,6 +49,7 @@ public interface ICounselingAnalyticsService
 
 /// <summary>
 /// Phase 2D — Counselling Analytics (Summary / Trends / PendingDecision aging).
+/// Phase 2Z — PD13 mutually exclusive partition + PD16 branch scope.
 /// Does not implement Follow-up Center due dates. Aging ≠ Active Follow-up population.
 /// </summary>
 public class CounselingAnalyticsService : ICounselingAnalyticsService
@@ -60,7 +65,8 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
 
     public async Task<CounselingAnalyticsSummaryDto> GetSummaryAsync(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
+        Guid? echoBranchId,
         Guid? counselorId,
         int period,
         DateTime? from,
@@ -70,54 +76,97 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
     {
         var now = utcNow ?? DateTime.UtcNow;
         var window = CounselingAnalyticsDateWindow.Resolve(period, from, to, now);
-        var sessions = BuildSessionQuery(tenantId, branchId, counselorId, window);
+        var sessions = BuildSessionQuery(tenantId, accessibleBranchIds, counselorId, window);
 
-        var totalSessions = await sessions.CountAsync(ct);
-        var agreedCount = await sessions.CountAsync(s => s.PatientAgreedToSurgery == true, ct);
-        var declinedCount = await sessions.CountAsync(
-            s => s.PatientAgreedToSurgery == false && s.PendingDecision == false, ct);
-        var undecidedCount = await sessions.CountAsync(s => s.PendingDecision == true, ct);
+        var rows = await sessions
+            .Select(s => new SessionOutcomeRow
+            {
+                PendingDecision = s.PendingDecision,
+                PatientAgreedToSurgery = s.PatientAgreedToSurgery,
+                PatientIntention = s.PatientIntention,
+                RecommendedSurgery = s.RecommendedSurgery,
+                SessionType = s.SessionType,
+                DecisionDate = s.DecisionDate,
+                SessionDate = s.SessionDate,
+            })
+            .ToListAsync(ct);
 
-        var decisionRate = totalSessions > 0
-            ? Math.Round((agreedCount + declinedCount) * 100.0 / totalSessions, 1)
+        var totalSessions = rows.Count;
+        var agreedCount = 0;
+        var declinedCount = 0;
+        var pendingCount = 0;
+        var exceptionCount = 0;
+        var otherCount = 0;
+
+        foreach (var row in rows)
+        {
+            switch (CounselingAnalyticsOutcomeClassifier.Classify(
+                row.PendingDecision, row.PatientAgreedToSurgery, row.PatientIntention))
+            {
+                case CounselingAnalyticsOutcomePartition.Agreed:
+                    agreedCount++;
+                    break;
+                case CounselingAnalyticsOutcomePartition.Declined:
+                    declinedCount++;
+                    break;
+                case CounselingAnalyticsOutcomePartition.PendingDecision:
+                    pendingCount++;
+                    break;
+                case CounselingAnalyticsOutcomePartition.Exception:
+                    exceptionCount++;
+                    break;
+                default:
+                    otherCount++;
+                    break;
+            }
+        }
+
+        Debug.Assert(
+            agreedCount + declinedCount + pendingCount + exceptionCount + otherCount == totalSessions,
+            "PD13 partitions must be mutually exclusive and sum to TotalSessions.");
+
+        var eligibleOutcomeSessions = totalSessions - exceptionCount - otherCount;
+        var conversionRate = eligibleOutcomeSessions > 0
+            ? Math.Round(agreedCount * 100.0 / eligibleOutcomeSessions, 1)
             : 0;
-        var conversionRate = totalSessions > 0
-            ? Math.Round(agreedCount * 100.0 / totalSessions, 1)
+        var decisionRate = eligibleOutcomeSessions > 0
+            ? Math.Round((agreedCount + declinedCount) * 100.0 / eligibleOutcomeSessions, 1)
             : 0;
 
         double avgDaysToDecision = 0;
-        var withDecision = sessions.Where(s => s.DecisionDate != null);
-        if (await withDecision.AnyAsync(ct))
+        var withDecision = rows.Where(r => r.DecisionDate != null).ToList();
+        if (withDecision.Count > 0)
         {
-            avgDaysToDecision = await withDecision.AverageAsync(
-                s => (double)(s.DecisionDate!.Value - s.SessionDate).TotalDays, ct);
+            avgDaysToDecision = withDecision.Average(r => (r.DecisionDate!.Value - r.SessionDate).TotalDays);
             avgDaysToDecision = Math.Round(avgDaysToDecision, 1);
         }
 
-        var bySurgeryType = await sessions
-            .Where(s => s.RecommendedSurgery != null && s.RecommendedSurgery != "")
-            .GroupBy(s => s.RecommendedSurgery!)
+        var bySurgeryType = rows
+            .Where(r => !string.IsNullOrEmpty(r.RecommendedSurgery))
+            .GroupBy(r => r.RecommendedSurgery!)
             .Select(g => new AnalyticsSurgeryTypeCountDto
             {
                 SurgeryType = g.Key,
                 Count = g.Count(),
-                AgreedCount = g.Count(s => s.PatientAgreedToSurgery == true),
+                AgreedCount = g.Count(r => CounselingAnalyticsOutcomeClassifier.Classify(
+                    r.PendingDecision, r.PatientAgreedToSurgery, r.PatientIntention)
+                    == CounselingAnalyticsOutcomePartition.Agreed),
             })
             .OrderByDescending(g => g.Count)
             .Take(8)
-            .ToListAsync(ct);
+            .ToList();
 
-        var bySessionType = await sessions
-            .GroupBy(s => s.SessionType)
+        var bySessionType = rows
+            .GroupBy(r => r.SessionType)
             .Select(g => new AnalyticsSessionTypeCountDto
             {
                 SessionType = g.Key,
                 Count = g.Count(),
             })
             .OrderByDescending(g => g.Count)
-            .ToListAsync(ct);
+            .ToList();
 
-        var callbacks = BuildCallbackQuery(tenantId, branchId, counselorId, window);
+        var callbacks = BuildCallbackQuery(tenantId, accessibleBranchIds, counselorId, window);
         var callbackTotal = await callbacks.CountAsync(ct);
         var callbackCompleted = await callbacks.CountAsync(c => c.CallbackStatus == "Completed", ct);
         var callbackCompletionRate = callbackTotal > 0
@@ -130,12 +179,16 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
             WindowMode = window.Mode == CounselingAnalyticsDateWindowMode.Custom ? "custom" : "period",
             From = window.FromInclusive,
             ToExclusive = window.ToExclusive,
-            BranchId = branchId,
+            BranchId = echoBranchId,
             CounselorId = counselorId,
             TotalSessions = totalSessions,
             AgreedCount = agreedCount,
             DeclinedCount = declinedCount,
-            UndecidedCount = undecidedCount,
+            UndecidedCount = pendingCount,
+            PendingDecisionCount = pendingCount,
+            ExceptionCount = exceptionCount,
+            OtherUnclassifiedCount = otherCount,
+            EligibleOutcomeSessions = eligibleOutcomeSessions,
             DecisionRate = decisionRate,
             ConversionRate = conversionRate,
             AvgDaysToDecision = avgDaysToDecision,
@@ -150,7 +203,8 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
 
     public async Task<CounselingAnalyticsTrendsDto> GetTrendsAsync(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
+        Guid? echoBranchId,
         Guid? counselorId,
         int period,
         DateTime? from,
@@ -160,18 +214,30 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
     {
         var now = utcNow ?? DateTime.UtcNow;
         var window = CounselingAnalyticsDateWindow.Resolve(period, from, to, now);
-        var sessions = BuildSessionQuery(tenantId, branchId, counselorId, window);
+        var sessions = BuildSessionQuery(tenantId, accessibleBranchIds, counselorId, window);
 
-        var trend = await sessions
-            .GroupBy(s => s.SessionDate.Date)
+        var rows = await sessions
+            .Select(s => new SessionOutcomeRow
+            {
+                PendingDecision = s.PendingDecision,
+                PatientAgreedToSurgery = s.PatientAgreedToSurgery,
+                PatientIntention = s.PatientIntention,
+                SessionDate = s.SessionDate,
+            })
+            .ToListAsync(ct);
+
+        var trend = rows
+            .GroupBy(r => r.SessionDate.Date)
             .Select(g => new
             {
                 Date = g.Key,
                 Count = g.Count(),
-                AgreedCount = g.Count(s => s.PatientAgreedToSurgery == true),
+                AgreedCount = g.Count(r => CounselingAnalyticsOutcomeClassifier.Classify(
+                    r.PendingDecision, r.PatientAgreedToSurgery, r.PatientIntention)
+                    == CounselingAnalyticsOutcomePartition.Agreed),
             })
             .OrderBy(g => g.Date)
-            .ToListAsync(ct);
+            .ToList();
 
         return new CounselingAnalyticsTrendsDto
         {
@@ -179,7 +245,7 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
             WindowMode = window.Mode == CounselingAnalyticsDateWindowMode.Custom ? "custom" : "period",
             From = window.FromInclusive,
             ToExclusive = window.ToExclusive,
-            BranchId = branchId,
+            BranchId = echoBranchId,
             CounselorId = counselorId,
             Trend = trend.Select(t => new AnalyticsTrendPointDto
             {
@@ -192,7 +258,8 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
 
     public async Task<CounselingAnalyticsAgingDto> GetFollowupAgingAsync(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
+        Guid? echoBranchId,
         Guid? counselorId,
         int? period,
         DateTime? from,
@@ -203,8 +270,6 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
         var now = utcNow ?? DateTime.UtcNow;
         var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
 
-        // Optional date window on SessionDate to bound aging scans.
-        // When neither custom nor period supplied: default period 365 (keeps long-pending visible).
         CounselingAnalyticsDateWindow? window = null;
         if (from.HasValue || to.HasValue || period.HasValue)
         {
@@ -219,24 +284,36 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
             window = CounselingAnalyticsDateWindow.Resolve(365, null, null, now);
         }
 
-        var pending = BuildPendingDecisionQuery(tenantId, branchId, counselorId, window);
+        var pending = BuildPendingDecisionQuery(tenantId, accessibleBranchIds, counselorId, window);
 
         var totalPending = await pending.CountAsync(ct);
 
-        // Project days + bucket in SQL-friendly form, then CountAsync per bucket.
-        var withDays = pending.Select(s => new
-        {
-            s.Id,
-            s.SessionDate,
-            Days = (int)(today - s.SessionDate.Date).TotalDays,
-        });
+        // PostgreSQL-safe half-open SessionDate bounds (avoid SessionDate.Date / TotalDays in SQL).
+        // Calendar-day buckets relative to UTC `today` (00:00):
+        // 0–3:  [today-3, today+1)
+        // 4–7:  [today-7, today-3)
+        // 8–14: [today-14, today-7)
+        // 15+:  SessionDate < today-14 (already window-scoped by pending)
+        var bucket03From = today.AddDays(-3);
+        var bucket03ToExclusive = today.AddDays(1);
+        var bucket47From = today.AddDays(-7);
+        var bucket47ToExclusive = today.AddDays(-3);
+        var bucket814From = today.AddDays(-14);
+        var bucket814ToExclusive = today.AddDays(-7);
+        var bucket15PlusToExclusive = today.AddDays(-14);
 
-        var c03 = await withDays.CountAsync(x => x.Days <= 3, ct);
-        var c47 = await withDays.CountAsync(x => x.Days >= 4 && x.Days <= 7, ct);
-        var c814 = await withDays.CountAsync(x => x.Days >= 8 && x.Days <= 14, ct);
-        var c15 = await withDays.CountAsync(x => x.Days >= 15, ct);
+        var c03 = await pending.CountAsync(
+            s => s.SessionDate >= bucket03From && s.SessionDate < bucket03ToExclusive, ct);
+        var c47 = await pending.CountAsync(
+            s => s.SessionDate >= bucket47From && s.SessionDate < bucket47ToExclusive, ct);
+        var c814 = await pending.CountAsync(
+            s => s.SessionDate >= bucket814From && s.SessionDate < bucket814ToExclusive, ct);
+        var c15 = await pending.CountAsync(
+            s => s.SessionDate < bucket15PlusToExclusive, ct);
 
-        async Task<List<AnalyticsAgingSessionDto>> LoadBucketAsync(int minDays, int? maxDays)
+        async Task<List<AnalyticsAgingSessionDto>> LoadBucketAsync(
+            DateTime? fromInclusive,
+            DateTime? toExclusive)
         {
             var q = pending.Join(
                 _context.Patients.AsNoTracking(),
@@ -251,17 +328,22 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
                     SessionDate = s.SessionDate,
                 });
 
-            // Filter by days in memory after a bounded Take would lose accuracy;
-            // instead filter with SessionDate range equivalent to day buckets.
-            DateTime? sessionOnOrBefore = null;
-            DateTime? sessionOnOrAfter = null;
-            if (maxDays.HasValue)
-                sessionOnOrAfter = today.AddDays(-maxDays.Value);
-            sessionOnOrBefore = today.AddDays(-minDays);
-
-            q = q.Where(x => x.SessionDate.Date <= sessionOnOrBefore);
-            if (sessionOnOrAfter.HasValue)
-                q = q.Where(x => x.SessionDate.Date >= sessionOnOrAfter.Value);
+            if (fromInclusive.HasValue && toExclusive.HasValue)
+            {
+                var from = fromInclusive.Value;
+                var toEx = toExclusive.Value;
+                q = q.Where(x => x.SessionDate >= from && x.SessionDate < toEx);
+            }
+            else if (toExclusive.HasValue)
+            {
+                // 15+: upper-bounded only (lower bound is the analytics window on `pending`)
+                var toEx = toExclusive.Value;
+                q = q.Where(x => x.SessionDate < toEx);
+            }
+            else
+            {
+                throw new ArgumentException("Aging bucket requires at least an exclusive upper bound.");
+            }
 
             var rows = await q
                 .OrderBy(x => x.SessionDate)
@@ -269,6 +351,7 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
                 .Take(MaxAgingItemsPerBucket)
                 .ToListAsync(ct);
 
+            // DaysSinceSession is display-only — computed in memory after materialization.
             return rows.Select(x => new AnalyticsAgingSessionDto
             {
                 Id = x.Id,
@@ -279,10 +362,10 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
             }).ToList();
         }
 
-        var b03 = await LoadBucketAsync(0, 3);
-        var b47 = await LoadBucketAsync(4, 7);
-        var b814 = await LoadBucketAsync(8, 14);
-        var b15 = await LoadBucketAsync(15, null);
+        var b03 = await LoadBucketAsync(bucket03From, bucket03ToExclusive);
+        var b47 = await LoadBucketAsync(bucket47From, bucket47ToExclusive);
+        var b814 = await LoadBucketAsync(bucket814From, bucket814ToExclusive);
+        var b15 = await LoadBucketAsync(null, bucket15PlusToExclusive);
 
         var truncated = b03.Count < c03 || b47.Count < c47 || b814.Count < c814 || b15.Count < c15;
 
@@ -292,7 +375,7 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
             WindowMode = window.Mode == CounselingAnalyticsDateWindowMode.Custom ? "custom" : "period",
             From = window.FromInclusive,
             ToExclusive = window.ToExclusive,
-            BranchId = branchId,
+            BranchId = echoBranchId,
             CounselorId = counselorId,
             TotalPending = totalPending,
             Counts = new AnalyticsAgingBucketCountsDto
@@ -318,54 +401,84 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
 
     internal IQueryable<CounselingSession> BuildSessionQuery(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
         Guid? counselorId,
         CounselingAnalyticsDateWindow window)
     {
+        if (accessibleBranchIds.Count == 0)
+        {
+            return _context.CounselingSession
+                .AsNoTracking()
+                .Where(s => false);
+        }
+
+        var branchIds = accessibleBranchIds as Guid[] ?? accessibleBranchIds.ToArray();
+
         return _context.CounselingSession
             .AsNoTracking()
             .Where(s => s.TenantId == tenantId
                      && s.DeletedAt == null
                      && s.SessionDate >= window.FromInclusive
                      && s.SessionDate < window.ToExclusive
-                     && (branchId == null || s.BranchId == branchId)
-                     && (counselorId == null || s.CounselorId == counselorId));
+                     && s.BranchId != null
+                     && branchIds.Contains(s.BranchId.Value)
+                     && (counselorId == null
+                         || s.CounselorId == counselorId
+                         || (s.CounselorId == null && s.CreatedByUserId == counselorId)));
     }
 
     internal IQueryable<CounselorCallbackRequest> BuildCallbackQuery(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
         Guid? counselorId,
         CounselingAnalyticsDateWindow window)
     {
-        // Callback metrics remain CallbackDate-based (existing semantics).
-        // Counselor filter applies via related session.CounselorId.
+        if (accessibleBranchIds.Count == 0)
+        {
+            return _context.CounselorCallbackRequests
+                .AsNoTracking()
+                .Where(c => false);
+        }
+
+        var branchIds = accessibleBranchIds as Guid[] ?? accessibleBranchIds.ToArray();
+
         var callbacks = _context.CounselorCallbackRequests
             .AsNoTracking()
             .Where(c => c.TenantId == tenantId
                      && c.DeletedAt == null
                      && c.CallbackDate >= window.FromInclusive
                      && c.CallbackDate < window.ToExclusive
-                     && (branchId == null || c.BranchId == branchId));
+                     && branchIds.Contains(c.BranchId));
 
         if (counselorId == null)
             return callbacks;
 
+        // Effective owner: CounselorId, else CreatedByUserId when CounselorId is unset.
         return from c in callbacks
                join s in _context.CounselingSession.AsNoTracking() on c.SessionId equals s.Id
                where s.TenantId == tenantId
                   && s.DeletedAt == null
-                  && s.CounselorId == counselorId
+                  && (s.CounselorId == counselorId
+                      || (s.CounselorId == null && s.CreatedByUserId == counselorId))
                select c;
     }
 
     /// <summary>PendingDecision population only — not Follow-up Active intentions.</summary>
     internal IQueryable<CounselingSession> BuildPendingDecisionQuery(
         Guid tenantId,
-        Guid? branchId,
+        IReadOnlyCollection<Guid> accessibleBranchIds,
         Guid? counselorId,
         CounselingAnalyticsDateWindow window)
     {
+        if (accessibleBranchIds.Count == 0)
+        {
+            return _context.CounselingSession
+                .AsNoTracking()
+                .Where(s => false);
+        }
+
+        var branchIds = accessibleBranchIds as Guid[] ?? accessibleBranchIds.ToArray();
+
         return _context.CounselingSession
             .AsNoTracking()
             .Where(s => s.TenantId == tenantId
@@ -373,7 +486,21 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
                      && s.PendingDecision == true
                      && s.SessionDate >= window.FromInclusive
                      && s.SessionDate < window.ToExclusive
-                     && (branchId == null || s.BranchId == branchId)
-                     && (counselorId == null || s.CounselorId == counselorId));
+                     && s.BranchId != null
+                     && branchIds.Contains(s.BranchId.Value)
+                     && (counselorId == null
+                         || s.CounselorId == counselorId
+                         || (s.CounselorId == null && s.CreatedByUserId == counselorId)));
+    }
+
+    private sealed class SessionOutcomeRow
+    {
+        public bool PendingDecision { get; init; }
+        public bool? PatientAgreedToSurgery { get; init; }
+        public string? PatientIntention { get; init; }
+        public string? RecommendedSurgery { get; init; }
+        public string SessionType { get; init; } = "";
+        public DateTime? DecisionDate { get; init; }
+        public DateTime SessionDate { get; init; }
     }
 }

@@ -36,11 +36,11 @@ Switch modes in the **Build estimate** card (Custom procedure | Package tabs). T
 
 1. **Build Quote** — procedure or package tabs, RE/LE/Both eye, optional investigations  
 2. **Patient Decision** — payment type, patient outcome, surgery schedule (when agreed)  
-3. **Session Notes** — optional notes and workflow flags; **Save Session** and **Print Estimate**
+3. **Session Notes** — optional notes and workflow flags; **Complete Session** and **Print Estimate**
 
 Use the **session flow** sidebar (desktop) or phase pills (tablet) to jump back to completed phases. **Next** in the footer validates the current phase before advancing.
 
-**Save Session** validates procedure, eye, required sub-type/IOL, decision, and discount reason.
+**Complete Session** validates procedure, eye, required sub-type/IOL, decision, and discount reason.
 
 ## Optional pre-admission lab values (Ward §1 handoff)
 

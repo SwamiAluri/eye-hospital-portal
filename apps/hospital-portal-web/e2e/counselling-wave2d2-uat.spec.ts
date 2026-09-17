@@ -247,7 +247,7 @@ test.describe('Wave 2D-2 Navigation IA UAT @wave2d2-uat', () => {
       test.info().annotations.push({
         type: 'note',
         description:
-          'Post-submit fixture — Save Session hidden; Save Draft remains available for editable state',
+          'Post-submit fixture — Complete Session hidden; Save Draft remains available for editable state',
       });
     }
 

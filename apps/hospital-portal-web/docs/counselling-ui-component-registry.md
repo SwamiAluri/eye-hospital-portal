@@ -214,7 +214,7 @@ Defined in `counselling-session-tokens.ts` → `counsellingTestIds`.
 | `counselling-quote-mode-badge` | Quote mode badge |
 | `counselling-quote-final-payable` | Final payable block |
 | `counselling-pricing-mode-custom` / `counselling-pricing-mode-package` | Deprecated glass radio (removed; use estimate type tabs) |
-| `counselling-btn-save-session` | Save Session footer button |
+| `counselling-btn-save-session` | Complete Session footer button (test id retained; kind `save_session`) |
 | `counselling-btn-patient-details` | Patient details link (session header) |
 | `counselling-btn-save-draft` | Save Draft footer button (all tabs) |
 | `counselling-insurance-company` | Insurance company select (Decision phase payment) |
@@ -304,7 +304,7 @@ Helpers: `e2e/helpers/counselling.ts` — `goCoverageWizardStep`, `goCoverageTab
 | **P8** ✅ | Empty states, Loader2 save, skeleton panel loading |
 | **P9** ✅ | E2E helpers + spec sync for wizard steps, visit policies rail, header chip, Title Case labels |
 | **Coverage P1–P4** ✅ | Editable coverage (no preview gate), tabbed wizard, counselling→CCMS sync, policy card OCR, E2E parity |
-| **Coverage P5–P10** ✅ | Save Draft / Save Session footer, orchestration, cross-tab sync, audit gap fixes |
+| **Coverage P5–P10** ✅ | Save Draft / Complete Session footer, orchestration, cross-tab sync, audit gap fixes |
 
 ### Coverage & Pre-Auth components
 
@@ -352,7 +352,7 @@ Counselling dirty state no longer gates the Coverage tab. Unsaved counselling va
 
 | Action | Placement | Behaviour |
 |--------|-----------|-----------|
-| **Save Session** | `SessionPageHeader` (all tabs) | Full finalize via `saveCounsellingSession` — decision required; coverage/outpatient orchestration in controller |
+| **Complete Session** | `SessionPageHeader` (all tabs) | Full finalize via `saveCounsellingSession` — decision required; coverage/outpatient orchestration in controller |
 | **Save Draft** | Sticky footer | Partial persist; silent (no toast) |
 | **Print Estimate** | Sticky footer | Counselling tab / wrap-up phase |
 | **Phase Back / Next** | Sticky footer | Counselling tab only |

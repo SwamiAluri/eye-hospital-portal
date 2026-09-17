@@ -120,7 +120,7 @@ describe('WaitingListFilterToolbar', () => {
     expect(html).toContain('data-testid="waiting-list-filter-toolbar"');
     expect(html).toContain('min-[1600px]:flex-nowrap');
     // Workstation search uses grid minmax(12rem,1fr); not a fixed max-[1599px] width cap.
-    expect(html).toContain('grid-cols-[minmax(12rem,1fr)_auto_auto]');
+    expect(html).toContain('grid-cols-[minmax(12rem,1fr)_auto_auto_auto]');
     expect(html).toContain('waiting-list-filter-toolbar__search');
     expect(html).not.toContain('max-[1599px]:max-w-[min(100%,20rem)]');
     expect(html).toContain('data-testid="waiting-list-quick-search"');
@@ -186,5 +186,48 @@ describe('WaitingListFilterToolbar', () => {
     expect(search).toBeTruthy();
     (search!.props as { onChange: (v: string) => void }).onChange('mrd-1');
     expect(onQuickSearchChange).toHaveBeenCalledWith('mrd-1');
+  });
+
+  it('uses expanded search placeholder covering counsellor', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListFilterToolbar {...baseProps()} />,
+    );
+
+    expect(html).toContain(
+      'Search patient, MRN, doctor, procedure, counsellor...',
+    );
+  });
+
+  it('renders client-side Owner filter with visible Owner: label and wires change', () => {
+    const onOwnerFilterChange = vi.fn();
+    const html = renderToStaticMarkup(
+      <WaitingListFilterToolbar
+        {...baseProps({
+          ownerFilter: 'All',
+          onOwnerFilterChange,
+        })}
+      />,
+    );
+
+    expect(html).toContain('Owner:');
+    expect(html).toContain('data-testid="waiting-list-owner-filter"');
+    expect(html).toContain('>All<');
+    expect(html).toContain('>My Sessions<');
+    expect(html).toContain('>Unassigned<');
+    expect(html).toContain('>Other Counsellors<');
+
+    const tree = expandToolbar(
+      baseProps({
+        ownerFilter: 'All',
+        onOwnerFilterChange,
+      }),
+    );
+
+    const select = findByTestId(tree, 'waiting-list-owner-filter');
+    expect(select).toBeTruthy();
+    (select!.props as { onChange: (e: { target: { value: string } }) => void }).onChange({
+      target: { value: 'Mine' },
+    });
+    expect(onOwnerFilterChange).toHaveBeenCalledWith('Mine');
   });
 });

@@ -106,6 +106,9 @@ namespace AuthService.SeedData
             // NOT EXISTS is Code+TenantId in the loop below — keep SQL 156/171/172.
             permissions.AddRange(IpBillingPermissionCatalog.Create(tenantId, DateTime.UtcNow));
 
+            // Counselling desk session codes (SQL 189) — required by CounselingController + FE nav.
+            permissions.AddRange(CounselingSessionsPermissionCatalog.Create(tenantId, DateTime.UtcNow));
+
             // Add permissions that don't exist
             foreach (var permission in permissions)
             {
@@ -120,7 +123,418 @@ namespace AuthService.SeedData
             
             await context.SaveChangesAsync();
             
-            Console.WriteLine($"✓ Seeded {permissions.Count} permissions (incl. CCMS Phase 2 aliases and IP/billing) for system tenant");
+            Console.WriteLine($"✓ Seeded {permissions.Count} permissions (incl. CCMS Phase 2 aliases, IP/billing, counselling sessions) for system tenant");
+        }
+
+        /// <summary>
+        /// Ensures counseling_sessions.* exist and are linked to Counsellor/Counselor roles
+        /// so JWT claims include them after next login (Phase 2Z nav + API access).
+        /// </summary>
+        public static async Task SeedCounselingSessionsPermissionsForCounsellorRolesAsync(AppDbContext context)
+        {
+            await SeedPermissionsAsync(context);
+
+            var counsellorRoleIds = await context.Roles
+                .Where(r => r.NormalizedName == "COUNSELLOR" || r.NormalizedName == "COUNSELOR")
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            if (counsellorRoleIds.Count == 0)
+            {
+                Console.WriteLine("⚠ No Counsellor/Counselor roles found — counseling_sessions role links skipped");
+                return;
+            }
+
+            var permIds = await context.Permissions
+                .Where(p => CounselingSessionsPermissionCatalog.Codes.Contains(p.Code) && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            foreach (var roleId in counsellorRoleIds)
+            {
+                foreach (var permId in permIds)
+                {
+                    var linked = await context.RolePermissions
+                        .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permId);
+                    if (linked) continue;
+
+                    await context.RolePermissions.AddAsync(new Models.Domain.RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = roleId,
+                        PermissionId = permId,
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                }
+            }
+
+            await context.SaveChangesAsync();
+            Console.WriteLine($"✓ counseling_sessions.* linked to {counsellorRoleIds.Count} Counsellor role(s)");
+        }
+
+        /// <summary>
+        /// Phase 3I Slice 6 D1 — seed counseling_sessions.reassign and grant to ADMIN only.
+        /// Does not grant Counsellor/Counselor. Does not change Assign/Claim (.update) grants.
+        /// Idempotent. Permission-based supervisors outside ADMIN receive the code via IAM role editing.
+        /// </summary>
+        public static async Task SeedCounselingSessionReassignPermissionsAsync(AppDbContext context)
+        {
+            await SeedPermissionsAsync(context);
+
+            var code = CounselingSessionsPermissionCatalog.ReassignPermissionCode;
+            var permIds = await context.Permissions
+                .Where(p => p.Code == code && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            if (permIds.Count == 0)
+            {
+                Console.WriteLine("⚠ counseling_sessions.reassign missing — role links skipped");
+                return;
+            }
+
+            var roleNames = CounselingSessionsPermissionCatalog.ReassignRoleNormalizedNames;
+            var roleIds = await context.Roles
+                .Where(r => r.NormalizedName != null && roleNames.Contains(r.NormalizedName))
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            var linked = 0;
+            foreach (var roleId in roleIds)
+            {
+                foreach (var permId in permIds)
+                {
+                    var already = await context.RolePermissions
+                        .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permId);
+                    if (already) continue;
+
+                    await context.RolePermissions.AddAsync(new Models.Domain.RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = roleId,
+                        PermissionId = permId,
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                    linked++;
+                }
+            }
+
+            if (linked > 0)
+                await context.SaveChangesAsync();
+
+            Console.WriteLine(
+                $"✓ counseling_sessions.reassign linked ({linked} new row(s)) to {roleIds.Count} ADMIN role(s); Counsellor excluded");
+        }
+
+        /// <summary>
+        /// PD-RBAC-01: strip unjustified IP/Ward/OT mutation grants from Counsellor roles.
+        /// Idempotent. Does not touch session ownership data.
+        /// </summary>
+        public static async Task ApplyCounsellorLeastPrivilegeAsync(AppDbContext context)
+        {
+            var counsellorRoleIds = await context.Roles
+                .Where(r => r.NormalizedName == "COUNSELLOR" || r.NormalizedName == "COUNSELOR")
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            if (counsellorRoleIds.Count == 0)
+            {
+                Console.WriteLine("Counsellor least-privilege: no Counsellor roles found");
+                return;
+            }
+
+            var removePermIds = await context.Permissions
+                .Where(p => CounsellorLeastPrivilegeCatalog.RemovedFromCounsellorPermissionCodes.Contains(p.Code))
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            var toRemove = await context.RolePermissions
+                .Where(rp => counsellorRoleIds.Contains(rp.RoleId) && removePermIds.Contains(rp.PermissionId))
+                .ToListAsync();
+
+            if (toRemove.Count > 0)
+            {
+                context.RolePermissions.RemoveRange(toRemove);
+                await context.SaveChangesAsync();
+            }
+
+            Console.WriteLine($"Counsellor least-privilege: removed {toRemove.Count} role_permission row(s) from {counsellorRoleIds.Count} role(s)");
+        }
+
+        /// <summary>
+        /// Workflow RBAC: ensure Counsellor roles have patient.view + patient.create
+        /// for session header / suggest / Add Patient registration (existing PatientsController contracts).
+        /// Seeds missing patient.create/view catalog rows if absent (controller already requires these codes).
+        /// Does not grant user.view, patient.update, or patient.admin. Idempotent.
+        /// </summary>
+        public static async Task SeedCounsellorPatientWorkflowPermissionsAsync(AppDbContext context)
+        {
+            var systemTenant = Guid.Parse("00000000-0000-0000-0000-000000000000");
+            var now = DateTime.UtcNow;
+
+            async Task EnsurePermissionAsync(string code, string name, string action, string description)
+            {
+                var exists = await context.Permissions
+                    .AnyAsync(p => p.Code == code && p.IsActive);
+                if (exists) return;
+
+                await context.Permissions.AddAsync(new Permission
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = systemTenant,
+                    Code = code,
+                    Name = name,
+                    Module = "patient",
+                    Action = action,
+                    ResourceType = "patient",
+                    Scope = "branch",
+                    Description = description,
+                    IsSystemPermission = true,
+                    DepartmentSpecific = false,
+                    IsCustom = false,
+                    IsActive = true,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+                await context.SaveChangesAsync();
+            }
+
+            await EnsurePermissionAsync(
+                "patient.view",
+                "View Patients",
+                "view",
+                "View patient records, suggest, and demographics needed for clinical workflows");
+            await EnsurePermissionAsync(
+                "patient.create",
+                "Create Patients",
+                "create",
+                "Register new patients (MPI create) including counselling Add Patient registration");
+
+            var counsellorRoleIds = await context.Roles
+                .Where(r => r.NormalizedName == "COUNSELLOR" || r.NormalizedName == "COUNSELOR")
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            if (counsellorRoleIds.Count == 0)
+            {
+                Console.WriteLine("⚠ No Counsellor/Counselor roles — patient.view/create links skipped");
+                return;
+            }
+
+            var permIds = await context.Permissions
+                .Where(p => CounsellorLeastPrivilegeCatalog.WorkflowPatientPermissionCodes.Contains(p.Code) && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            if (permIds.Count == 0)
+            {
+                Console.WriteLine("⚠ patient.view/patient.create permissions missing — cannot link to Counsellor");
+                return;
+            }
+
+            var linked = 0;
+            foreach (var roleId in counsellorRoleIds)
+            {
+                foreach (var permId in permIds)
+                {
+                    var exists = await context.RolePermissions
+                        .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permId);
+                    if (exists) continue;
+
+                    await context.RolePermissions.AddAsync(new Models.Domain.RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = roleId,
+                        PermissionId = permId,
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                    linked++;
+                }
+            }
+
+            if (linked > 0)
+                await context.SaveChangesAsync();
+
+            Console.WriteLine($"✓ patient.view/create linked ({linked} new role_permission row(s)) to {counsellorRoleIds.Count} Counsellor role(s)");
+        }
+
+        /// <summary>
+        /// Workflow RBAC: ensure Counsellor roles have package_templates.read so Quote → Package
+        /// can list/select approved counselling_package_templates (existing controller contract).
+        /// Does not grant package_templates.create/update/delete. Idempotent.
+        /// </summary>
+        public static async Task SeedCounsellorPackageTemplateReadPermissionAsync(AppDbContext context)
+        {
+            var systemTenant = Guid.Parse("00000000-0000-0000-0000-000000000000");
+            var now = DateTime.UtcNow;
+            const string code = "package_templates.read";
+
+            var exists = await context.Permissions.AnyAsync(p => p.Code == code && p.IsActive);
+            if (!exists)
+            {
+                await context.Permissions.AddAsync(new Permission
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = systemTenant,
+                    Code = code,
+                    Name = "Read Package Templates",
+                    Module = "counselling",
+                    Action = "read",
+                    ResourceType = "package_template",
+                    Scope = "tenant",
+                    Description =
+                        "List and select approved counselling package templates for quoting (not package administration)",
+                    IsSystemPermission = true,
+                    DepartmentSpecific = false,
+                    IsCustom = false,
+                    IsActive = true,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+                await context.SaveChangesAsync();
+            }
+
+            var counsellorRoleIds = await context.Roles
+                .Where(r => r.NormalizedName == "COUNSELLOR" || r.NormalizedName == "COUNSELOR")
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            if (counsellorRoleIds.Count == 0)
+            {
+                Console.WriteLine("⚠ No Counsellor/Counselor roles — package_templates.read links skipped");
+                return;
+            }
+
+            var permIds = await context.Permissions
+                .Where(p =>
+                    CounsellorLeastPrivilegeCatalog.WorkflowPackageTemplatePermissionCodes.Contains(p.Code)
+                    && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            if (permIds.Count == 0)
+            {
+                Console.WriteLine("⚠ package_templates.read missing — cannot link to Counsellor");
+                return;
+            }
+
+            var linked = 0;
+            foreach (var roleId in counsellorRoleIds)
+            {
+                foreach (var permId in permIds)
+                {
+                    var existsLink = await context.RolePermissions
+                        .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permId);
+                    if (existsLink) continue;
+
+                    await context.RolePermissions.AddAsync(new Models.Domain.RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = roleId,
+                        PermissionId = permId,
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                    linked++;
+                }
+            }
+
+            if (linked > 0)
+                await context.SaveChangesAsync();
+
+            Console.WriteLine(
+                $"✓ package_templates.read linked ({linked} new role_permission row(s)) to {counsellorRoleIds.Count} Counsellor role(s)");
+        }
+
+        /// <summary>
+        /// Phase 2Z-RBAC: seed bill.reconciliation.view and grant to CR operational roles.
+        /// Does not grant Counsellor. Does not remove bill.view from any role. Idempotent.
+        /// </summary>
+        public static async Task SeedBillReconciliationViewPermissionsAsync(AppDbContext context)
+        {
+            await SeedPermissionsAsync(context);
+
+            var systemTenant = Guid.Parse("00000000-0000-0000-0000-000000000000");
+            var now = DateTime.UtcNow;
+            var code = BillReconciliationPermissionCatalog.ViewPermissionCode;
+
+            var exists = await context.Permissions.AnyAsync(p => p.Code == code && p.IsActive);
+            if (!exists)
+            {
+                await context.Permissions.AddAsync(new Permission
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = systemTenant,
+                    Code = code,
+                    Name = "View Charge Reconciliation",
+                    Module = "billing",
+                    Action = "view",
+                    ResourceType = "charge_reconciliation",
+                    Scope = "branch",
+                    Description =
+                        "Access Charge Reconciliation operational reports (implant/stock/charge exceptions and wastage)",
+                    IsSystemPermission = true,
+                    DepartmentSpecific = false,
+                    IsCustom = false,
+                    IsActive = true,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+                await context.SaveChangesAsync();
+            }
+
+            var permIds = await context.Permissions
+                .Where(p => p.Code == code && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            if (permIds.Count == 0)
+            {
+                Console.WriteLine("⚠ bill.reconciliation.view missing — role links skipped");
+                return;
+            }
+
+            var roleNames = BillReconciliationPermissionCatalog.OperationalRoleNormalizedNames;
+            var roleIds = await context.Roles
+                .Where(r => r.NormalizedName != null && roleNames.Contains(r.NormalizedName))
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            // Fallback: some DBs store NormalizedName with underscores
+            if (roleIds.Count < roleNames.Length)
+            {
+                var underscored = roleNames.Select(n => n.Replace(' ', '_')).ToArray();
+                var extra = await context.Roles
+                    .Where(r => r.NormalizedName != null && underscored.Contains(r.NormalizedName))
+                    .Select(r => r.Id)
+                    .ToListAsync();
+                roleIds = roleIds.Union(extra).ToList();
+            }
+
+            var linked = 0;
+            foreach (var roleId in roleIds)
+            {
+                foreach (var permId in permIds)
+                {
+                    var already = await context.RolePermissions
+                        .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permId);
+                    if (already) continue;
+
+                    await context.RolePermissions.AddAsync(new Models.Domain.RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = roleId,
+                        PermissionId = permId,
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                    linked++;
+                }
+            }
+
+            if (linked > 0)
+                await context.SaveChangesAsync();
+
+            Console.WriteLine(
+                $"✓ bill.reconciliation.view linked ({linked} new row(s)) to {roleIds.Count} operational role(s); Counsellor excluded");
         }
 
         /// <summary>

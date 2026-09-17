@@ -402,6 +402,8 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
       insuranceCompany,
       variantId: selectedVariantId,
       eye: selectedEye,
+      ...(params.selectedIolId ? { selectedIolId: params.selectedIolId } : {}),
+      ...(params.variantSubOption ? { variantSubOption: params.variantSubOption } : {}),
     }),
     paymentType: paymentType || undefined,
     insuranceCompany: insuranceCompany || undefined,
@@ -420,5 +422,5 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
   onSuccess({ snapshot: currentSnapshot, queueStatus: nextStatus, openCoverageTab });
   invalidateWaitingList();
   invalidateSession(sessionId);
-  toast.success('Session saved successfully');
+  toast.success('Session completed successfully');
 }

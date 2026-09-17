@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace AuthService.Models.Counselor
 {
@@ -320,6 +321,14 @@ namespace AuthService.Models.Counselor
     {
         public Guid? TenantId { get; set; }
         public Guid? BranchId { get; set; }
+
+        /// <summary>
+        /// Server-resolved authorized branch scope (PD16 / Phase2Z F-04).
+        /// Never bind from client query — set only by the controller after FollowupBranchAccessService.
+        /// </summary>
+        [BindNever]
+        public IReadOnlyList<Guid>? AccessibleBranchIds { get; set; }
+
         public Guid? PatientId { get; set; }
         public Guid? CounselorId { get; set; }
         public Guid? ReferredByDoctorId { get; set; }
@@ -341,6 +350,8 @@ namespace AuthService.Models.Counselor
         public DateTime? SessionDateFrom { get; set; }
         public DateTime? SessionDateTo { get; set; }
         public bool? PendingDecision { get; set; }
+        public bool? PatientAgreedToSurgery { get; set; }
+        public string? RecommendedSurgery { get; set; }
         public string? Search { get; set; } // Search session number or patient name
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 20;
@@ -554,12 +565,89 @@ namespace AuthService.Models.Counselor
         public string? VerificationNotes { get; set; }
     }
 
+    /// <summary>Phase 3I Slice 4 — distinguish ownership ACL failures from validation errors.</summary>
+    public enum SessionOperationFailureKind
+    {
+        NotFound,
+        Forbidden,
+        BadRequest,
+    }
+
     public class SessionOperationResult
     {
         public bool Success { get; set; }
         public string Message { get; set; } = null!;
         public Guid? SessionId { get; set; }
         public CounselingSessionDetailsDto? Session { get; set; }
+        /// <summary>Set when Success is false so controllers can map 403 / 404 / 400.</summary>
+        public SessionOperationFailureKind? FailureKind { get; set; }
+    }
+
+    /// <summary>Phase 3I Slice 3 — initial ownership assignment (NULL → target counsellor).</summary>
+    public class AssignCounselingSessionRequest
+    {
+        [Required]
+        public Guid CounselorId { get; set; }
+    }
+
+    /// <summary>Phase 3I — lifecycle ownership claim intents (not general Reassign).</summary>
+    public static class CounselingLifecycleClaimIntent
+    {
+        public const string ReEvaluate = "ReEvaluate";
+        public const string StartRepeat = "StartRepeat";
+    }
+
+    /// <summary>
+    /// Phase 3I — peer counsellor claims a Done/Repeat session for a specific lifecycle intent.
+    /// Supports NULL → actor and other-owner → actor. Not general Reassign (PD-REASSIGN-01 / Slice 6).
+    /// </summary>
+    public class ClaimCounselingSessionForLifecycleRequest
+    {
+        /// <summary>
+        /// Current owner expected by the client.
+        /// Null when claiming an unassigned Done/Repeat session; required Guid when already owned.
+        /// </summary>
+        public Guid? ExpectedCounselorId { get; set; }
+
+        /// <summary>ReEvaluate | StartRepeat</summary>
+        [Required]
+        [MaxLength(30)]
+        public string Intent { get; set; } = null!;
+    }
+
+    /// <summary>Phase 3I Slice 6 — supervisory General Reassign (owned A → B).</summary>
+    public class ReassignCounselingSessionRequest
+    {
+        /// <summary>Target counsellor B.</summary>
+        [Required]
+        public Guid CounselorId { get; set; }
+
+        /// <summary>Expected current owner A (optimistic concurrency without Version).</summary>
+        [Required]
+        public Guid ExpectedCounselorId { get; set; }
+
+        /// <summary>Required concise free-text reason (no reason-code taxonomy).</summary>
+        [Required]
+        [MaxLength(500)]
+        public string Reason { get; set; } = null!;
+    }
+
+    public enum AssignSessionFailureKind
+    {
+        NotFound,
+        Forbidden,
+        Conflict,
+        BadRequest,
+    }
+
+    public class AssignSessionResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = null!;
+        public Guid? SessionId { get; set; }
+        public Guid? CounselorId { get; set; }
+        public string? CounselorName { get; set; }
+        public AssignSessionFailureKind? FailureKind { get; set; }
     }
 
     // ============================================================================
@@ -598,6 +686,12 @@ namespace AuthService.Models.Counselor
         public string? NewPackage { get; set; }
         /// <summary>Price difference = new − previous (AddOnSurgery rows only, negative = downgrade).</summary>
         public decimal? UpgradeDiff { get; set; }
+        /// <summary>Active counselling owner (CounselorId). Null = unassigned. Display only — not a visibility filter.</summary>
+        public string? CounselorId { get; set; }
+        /// <summary>Display name for CounselorId when assigned.</summary>
+        public string? CounselorName { get; set; }
+        /// <summary>Session/queue branch — UX for Assign picker filtering; not a security boundary.</summary>
+        public string? BranchId { get; set; }
     }
 
     public class WaitingListFiltersRequest

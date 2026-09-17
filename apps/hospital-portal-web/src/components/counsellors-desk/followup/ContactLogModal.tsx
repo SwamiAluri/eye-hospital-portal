@@ -4,8 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { X, Phone, MessageSquare, Mail, Calendar, Clock, User } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
+import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import { useCounsellorMasterOptions } from '@/hooks/use-counsellor-master-options';
-import { commChannelCodeToApi } from '@/lib/counsellors-desk/counsellor-master-maps';
+import {
+  callbackChannelToDb,
+  callbackTypeCodeToDb,
+  commChannelCodeToApi,
+  contactOutcomeToDb,
+} from '@/lib/counsellors-desk/counsellor-master-maps';
 import type { LucideIcon } from 'lucide-react';
 
 interface ContactLogModalProps {
@@ -92,31 +98,51 @@ export default function ContactLogModal({
   const handleSubmit = async () => {
     setSaving(true);
     setError(null);
+    let contactPersisted = false;
     try {
       await counsellorsDeskApi.logCommunication(sessionId, {
         channel: apiChannel,
         direction: 'Outbound',
         communicationAt: new Date().toISOString(),
-        outcome,
+        outcome: contactOutcomeToDb(outcome),
         callDurationMinutes: callDuration ? parseInt(callDuration, 10) : undefined,
         responseSummary: notes || undefined,
       });
+      contactPersisted = true;
 
       if (scheduleCallback && callbackDate) {
-        await counsellorsDeskApi.scheduleCallback(sessionId, {
-          callbackDate,
-          callbackReason: notes || 'Follow-up call scheduled',
-          preferredChannel: apiChannel,
-          callbackType: callbackTypeCode,
-        });
+        try {
+          await counsellorsDeskApi.scheduleCallback(sessionId, {
+            callbackDate,
+            callbackReason: notes || 'Follow-up call scheduled',
+            preferredChannel: callbackChannelToDb(apiChannel),
+            callbackType: callbackTypeCodeToDb(callbackTypeCode),
+          });
+        } catch (callbackErr) {
+          const detail = getApiErrorMessage(callbackErr, 'Callback could not be scheduled.');
+          // Contact already saved — do not prompt a blind re-submit of the same contact.
+          setError(
+            `Contact was logged, but the callback failed (${detail}). Do not log the same contact again — retry callback separately if needed.`,
+          );
+          toast.error('Contact saved; callback failed');
+          onLogged();
+          return;
+        }
       }
 
       toast.success('Contact logged successfully');
       onLogged();
       onClose();
       resetForm();
-    } catch {
-      setError('Failed to log contact. Please try again.');
+    } catch (err) {
+      if (contactPersisted) {
+        setError(
+          'Contact was logged, but a follow-up step failed. Do not log the same contact again.',
+        );
+        onLogged();
+      } else {
+        setError(`Failed to log contact: ${getApiErrorMessage(err, 'Please try again.')}`);
+      }
     } finally {
       setSaving(false);
     }

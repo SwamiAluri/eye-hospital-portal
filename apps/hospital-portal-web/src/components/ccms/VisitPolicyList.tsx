@@ -11,6 +11,7 @@ import {
 import { parseCounsellorDraft } from '@/lib/api/ccms/parse-counsellor-draft';
 import { buildVisitPolicyFromDraft, shouldOfferImportPolicyFromCounsellorDraft } from '@/lib/ccms/ccms-visit-policy-prereq';
 import { ccmsKeys, useCcmsCasePolicies } from '@/hooks/use-ccms-case';
+import { selectVisitPoliciesForDisplay } from '@/lib/ccms/select-visit-policies-for-display';
 import { VisitPolicyForm } from './VisitPolicyForm';
 import { coverageTestIds } from '@/lib/counsellors-desk/coverage-test-ids';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
@@ -60,7 +61,10 @@ export function VisitPolicyList({
 
   React.useEffect(() => { loadSessionPolicies(); }, [loadSessionPolicies]);
 
-  const policies = caseId ? (casePoliciesQuery.data ?? []) : sessionPolicies;
+  // SoT: React Query case policies (or session fetch). Display guard collapses
+  // known same-number duplicates only — see selectVisitPoliciesForDisplay.
+  const rawPolicies = caseId ? (casePoliciesQuery.data ?? []) : sessionPolicies;
+  const policies = selectVisitPoliciesForDisplay(rawPolicies);
   const loading = caseId ? casePoliciesQuery.isLoading : sessionLoading;
   const error = caseId ? (casePoliciesQuery.error ? (casePoliciesQuery.error as Error).message : null) : sessionError;
 
@@ -69,9 +73,10 @@ export function VisitPolicyList({
     hasCaseId: Boolean(caseId),
     readOnly,
     draftPolicyNumber: draft?.policyNumber,
-    policies,
+    policies: rawPolicies,
   });
 
+  /** Single refresh path: invalidate ccmsKeys.policies (active query refetches once). */
   const reload = useCallback(async () => {
     if (caseId) {
       await queryClient.invalidateQueries({ queryKey: ccmsKeys.policies(caseId) });
@@ -264,17 +269,16 @@ export function VisitPolicyList({
         <VisitPolicyForm
           caseId={caseId}
           existing={editing}
-          existingPolicies={policies}
-          isAdditionalPolicy={!editing && policies.length > 0}
+          existingPolicies={rawPolicies}
+          isAdditionalPolicy={!editing && rawPolicies.length > 0}
           defaultInsuranceProviderId={defaultInsuranceProviderId}
           onClose={() => { setShowForm(false); setEditing(null); }}
           onSaved={() => {
             setShowForm(false);
             setEditing(null);
-            void (async () => {
-              await reload();
-              onChanged?.();
-            })();
+            // One invalidation → React Query refresh. Parent hydrates from cache
+            // (no second policiesQuery.refetch).
+            void reload().then(() => onChanged?.());
           }}
         />
       )}

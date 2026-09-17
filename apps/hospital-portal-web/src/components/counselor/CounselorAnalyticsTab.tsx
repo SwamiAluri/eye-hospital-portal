@@ -1,13 +1,15 @@
 /**
  * CounselorAnalyticsTab — Counsellor operational analytics.
  * Metrics from Phase 2D Summary / Trends APIs — no client-side aggregation.
- * counselorId selector deferred (no approved counsellor picker/data source yet).
  */
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/lib/auth-store';
+import { getApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
   TrendingUp,
@@ -19,26 +21,60 @@ import {
   Printer,
 } from 'lucide-react';
 import { FollowupAgingTable } from './FollowupAgingTable';
-import { ConversionFunnelChart } from './ConversionFunnelChart';
+import { ConversionFunnelChart, type FunnelStageKey } from './ConversionFunnelChart';
 import {
   counselorAnalyticsKeys,
   useCounselorAnalytics,
   useCounselorAnalyticsTrends,
+  useCounselorFollowupAging,
 } from '@/hooks/use-counselor-analytics';
 import { buildCounselorAnalyticsCsv } from '@/lib/counsellors-desk/counselor-analytics-export';
+import {
+  buildAgreedSessionsHref,
+  buildConversionSessionsHref,
+  buildDeclinedSessionsHref,
+  buildPendingDecisionSessionsHref,
+  buildSurgerySessionsHref,
+  buildTotalSessionsHref,
+} from '@/lib/counsellors-desk/analytics-drilldown';
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { CounsellingButton } from '@/components/counsellors-desk/session/primitives/CounsellingButton';
 import { PermissionGate } from '@/components/permissions/PermissionGate';
 import { useQueryClient } from '@tanstack/react-query';
+import { AnalyticsPrintReport } from '@/components/counselor/AnalyticsPrintReport';
 
-/** Phase 2D period presets — must stay within 1–30 days (custom from/to max 366 is deferred). */
-const ANALYTICS_PERIODS = [
+/** Summary/trends period presets — 7/14/30 days. */
+export const ANALYTICS_PERIODS = [
   { value: 7, label: '7 days' },
   { value: 14, label: '14 days' },
   { value: 30, label: '30 days' },
 ] as const;
 
 const denseBtn = 'min-h-8 !min-h-8 h-8 text-xs';
+
+type CounselorOption = { id: string; label: string };
+
+function displayNameFromUser(u: Record<string, unknown>): string {
+  const first = String(u.firstName ?? u.FirstName ?? '').trim();
+  const last = String(u.lastName ?? u.LastName ?? '').trim();
+  const combined = `${first} ${last}`.trim();
+  if (combined) return combined;
+  const name = String(u.name ?? u.fullName ?? u.userName ?? '').trim();
+  if (name) return name;
+  return String(u.email ?? u.id ?? '');
+}
+
+function mapCounselorOptions(raw: unknown[]): CounselorOption[] {
+  return raw
+    .map((row) => {
+      const u = row as Record<string, unknown>;
+      return {
+        id: String(u.id ?? u.userId ?? ''),
+        label: displayNameFromUser(u),
+      };
+    })
+    .filter((u) => u.id);
+}
 
 function Bar({ pct }: { pct: number }) {
   return (
@@ -54,14 +90,21 @@ function Bar({ pct }: { pct: number }) {
 function SurgeryTypeRow({
   item,
   maxCount,
+  onOpen,
 }: {
   item: { surgeryType: string; count: number; agreedCount: number };
   maxCount: number;
+  onOpen: () => void;
 }) {
   const convPct = item.count > 0 ? Math.round((item.agreedCount / item.count) * 100) : 0;
   const barPct = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
   return (
-    <div className="flex items-center gap-3 py-1.5">
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 py-1.5 text-left hover:bg-counselling-muted/30"
+      data-testid="analytics-surgery-row"
+    >
       <p
         className="w-36 flex-shrink-0 truncate text-sm text-counselling-foreground"
         title={item.surgeryType}
@@ -84,7 +127,7 @@ function SurgeryTypeRow({
       >
         {convPct}%
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -126,12 +169,51 @@ function TrendsStrip({
   );
 }
 
+function useCounselorOptions(): {
+  options: CounselorOption[];
+  isError: boolean;
+  isPending: boolean;
+  errorMessage: string | null;
+  refetch: () => void;
+} {
+  const query = useQuery({
+    queryKey: ['counseling', 'counselors', 'picker'],
+    queryFn: async (): Promise<CounselorOption[]> => {
+      // counseling_sessions.read — same permission as Analytics (not user.view).
+      const res = await getApi().get('/Counseling/counselors');
+      const raw = Array.isArray(res.data) ? res.data : res.data?.items ?? [];
+      return mapCounselorOptions(raw);
+    },
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
+  return {
+    options: query.data ?? [],
+    isError: query.isError,
+    isPending: query.isPending,
+    errorMessage: query.isError
+      ? 'Counselor list unavailable — check access and try again'
+      : null,
+    refetch: () => {
+      void query.refetch();
+    },
+  };
+}
+
 export function CounselorAnalyticsTab() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { user, selectedBranchId } = useAuthStore();
   const branchId = selectedBranchId ?? user?.branchId;
   const [period, setPeriod] = useState(30);
-  const analyticsFilters = { branchId, period };
+  const [agingPeriod, setAgingPeriod] = useState(365);
+  const [counselorId, setCounselorId] = useState<string | null>(null);
+  const counselorPicker = useCounselorOptions();
+
+  const analyticsFilters = { branchId, counselorId, period };
+  const agingFilters = { branchId, counselorId };
 
   const {
     data,
@@ -142,7 +224,41 @@ export function CounselorAnalyticsTab() {
     dataUpdatedAt,
   } = useCounselorAnalytics(analyticsFilters);
 
+  const windowDrillContext = useMemo(
+    () => ({
+      branchId,
+      counselorId,
+      from: data?.from,
+      toExclusive: data?.toExclusive,
+    }),
+    [branchId, counselorId, data?.from, data?.toExclusive],
+  );
+
   const trendsQuery = useCounselorAnalyticsTrends(analyticsFilters);
+  const agingQuery = useCounselorFollowupAging({ ...agingFilters, period: agingPeriod });
+
+  const selectedCounselorLabel = counselorId
+    ? (counselorPicker.options.find((c) => c.id === counselorId)?.label ?? counselorId)
+    : 'All counselors';
+
+  const handleFunnelStage = (stage: FunnelStageKey) => {
+    switch (stage) {
+      case 'total':
+        router.push(buildTotalSessionsHref(windowDrillContext));
+        break;
+      case 'agreedCount':
+        router.push(buildAgreedSessionsHref(windowDrillContext));
+        break;
+      case 'declinedCount':
+        router.push(buildDeclinedSessionsHref(windowDrillContext));
+        break;
+      case 'pendingDecisionCount':
+        router.push(buildPendingDecisionSessionsHref(windowDrillContext));
+        break;
+      default:
+        break;
+    }
+  };
 
   const lastUpdated = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('en-IN', {
@@ -151,30 +267,92 @@ export function CounselorAnalyticsTab() {
       })
     : null;
 
+  const pendingCount = data
+    ? (data.pendingDecisionCount ?? data.undecidedCount ?? 0)
+    : 0;
+
+  /** Compact PD13 partition strip + conversion/decision + operational metrics. */
   const kpiItems = data
     ? [
         {
-          label: 'Total Sessions',
+          key: 'total',
+          label: 'Total',
           value: data.totalSessions,
           sub:
             data.windowMode === 'custom'
               ? 'Custom range'
-              : `Last ${data.period ?? period} days`,
+              : `${data.period ?? period}d`,
+          href: buildTotalSessionsHref(windowDrillContext),
         },
         {
-          label: 'Conversion Rate',
+          key: 'agreed',
+          label: 'Agreed',
+          value: data.agreedCount,
+          sub: 'Partition',
+          href: buildAgreedSessionsHref(windowDrillContext),
+        },
+        {
+          key: 'declined',
+          label: 'Declined',
+          value: data.declinedCount,
+          sub: 'Partition',
+          href: buildDeclinedSessionsHref(windowDrillContext),
+        },
+        {
+          key: 'pending',
+          label: 'Pending',
+          value: pendingCount,
+          sub: 'Partition',
+          href: buildPendingDecisionSessionsHref(windowDrillContext),
+        },
+        {
+          key: 'exception',
+          label: 'Exception',
+          value: data.exceptionCount ?? 0,
+          sub: 'In Total',
+          href: null,
+        },
+        {
+          key: 'other',
+          label: 'Other',
+          value: data.otherUnclassifiedCount ?? 0,
+          sub: 'In Total',
+          href: null,
+        },
+        {
+          key: 'eligible',
+          label: 'Eligible',
+          value: data.eligibleOutcomeSessions ?? 0,
+          sub: 'T−Ex−Other',
+          href: null,
+        },
+        {
+          key: 'conversion',
+          label: 'Conversion',
           value: `${data.conversionRate}%`,
-          sub: `${data.agreedCount} agreed`,
+          sub: 'Agreed÷Elig',
+          href: buildConversionSessionsHref(windowDrillContext),
         },
         {
-          label: 'Avg Days to Decision',
+          key: 'decision',
+          label: 'Decision',
+          value: `${data.decisionRate}%`,
+          sub: '(A+D)÷Elig',
+          href: null,
+        },
+        {
+          key: 'avgDays',
+          label: 'Avg Days',
           value: data.avgDaysToDecision,
-          sub: 'Session → decision',
+          sub: 'To decision',
+          href: null,
         },
         {
-          label: 'Callback Completion',
+          key: 'callbacks',
+          label: 'Callbacks',
           value: `${data.callbackCompletionRate}%`,
-          sub: `${data.callbackCompleted} / ${data.callbackTotal}`,
+          sub: `${data.callbackCompleted}/${data.callbackTotal}`,
+          href: null,
         },
       ]
     : [];
@@ -184,17 +362,74 @@ export function CounselorAnalyticsTab() {
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain min-[1600px]:gap-2.5 print:overflow-visible"
       data-testid="analytics-workspace"
     >
-      {/* Period + actions */}
+      <AnalyticsPrintReport
+        scope={{
+          periodDays: period,
+          windowFrom: data?.from,
+          windowToExclusive: data?.toExclusive,
+          branchId,
+          branchLabel: branchId ?? 'Authorized branches',
+          counselorId,
+          counselorLabel: selectedCounselorLabel,
+          agingPeriod,
+        }}
+        summary={data}
+        trends={trendsQuery.data}
+        aging={agingQuery.data}
+      />
+
+      <div className="analytics-screen flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 min-[1600px]:gap-2.5">
       <div
         className={cn(
           counsellingSessionTokens.sessionWidget,
-          'flex shrink-0 flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 print:hidden min-[1600px]:px-4 min-[1600px]:py-2.5',
+          'flex shrink-0 flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 min-[1600px]:px-4 min-[1600px]:py-2.5',
         )}
         data-testid="analytics-toolbar"
       >
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {lastUpdated && (
             <p className="text-xs text-counselling-muted-foreground">Last updated {lastUpdated}</p>
+          )}
+          <label className="flex items-center gap-1.5 text-xs text-counselling-muted-foreground">
+            <span className="sr-only">Counselor</span>
+            <select
+              value={counselorId ?? ''}
+              onChange={(e) => setCounselorId(e.target.value || null)}
+              disabled={counselorPicker.isPending || counselorPicker.isError}
+              className="h-8 max-w-[12rem] truncate rounded-md border border-counselling-border bg-counselling-card px-2 text-xs text-counselling-foreground disabled:opacity-60"
+              data-testid="analytics-counselor-select"
+              aria-label="Filter by counselor"
+            >
+              <option value="">All counselors</option>
+              {counselorPicker.options.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p
+            className="text-[10px] text-counselling-muted-foreground"
+            data-testid="analytics-counselor-scope"
+          >
+            Scope: {selectedCounselorLabel}
+            {counselorId ? ` (${counselorId.slice(0, 8)}…)` : ''}
+          </p>
+          {counselorPicker.isError && (
+            <p
+              className="text-[10px] text-red-800"
+              role="alert"
+              data-testid="analytics-counselor-error"
+            >
+              {counselorPicker.errorMessage}{' '}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => counselorPicker.refetch()}
+              >
+                Retry
+              </button>
+            </p>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -232,7 +467,7 @@ export function CounselorAnalyticsTab() {
               data-testid="analytics-export-csv"
               onClick={() => {
                 if (!data) return;
-                const blob = new Blob([buildCounselorAnalyticsCsv(data)], {
+                const blob = new Blob([buildCounselorAnalyticsCsv(data, { branchId, counselorId })], {
                   type: 'text/csv;charset=utf-8;',
                 });
                 const url = URL.createObjectURL(blob);
@@ -325,18 +560,37 @@ export function CounselorAnalyticsTab() {
             <dl
               className={cn(
                 counsellingSessionTokens.sessionStatusDetails,
-                'grid-cols-2 gap-x-2 gap-y-1 sm:grid-cols-4',
+                'grid-cols-3 gap-x-2 gap-y-1 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11',
               )}
             >
               {kpiItems.map((item) => (
                 <div key={item.label} className="min-w-0">
-                  <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg">
-                    {item.value}
-                  </dd>
-                  <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>
-                    {item.label}
-                  </dt>
-                  <p className="text-[10px] text-counselling-muted-foreground">{item.sub}</p>
+                  {item.href ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push(item.href!)}
+                      className="text-left hover:opacity-80"
+                      data-testid={`analytics-kpi-${item.key}`}
+                    >
+                      <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg">
+                        {item.value}
+                      </dd>
+                      <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>
+                        {item.label}
+                      </dt>
+                      <p className="text-[10px] text-counselling-muted-foreground">{item.sub}</p>
+                    </button>
+                  ) : (
+                    <>
+                      <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg">
+                        {item.value}
+                      </dd>
+                      <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>
+                        {item.label}
+                      </dt>
+                      <p className="text-[10px] text-counselling-muted-foreground">{item.sub}</p>
+                    </>
+                  )}
                 </div>
               ))}
             </dl>
@@ -351,9 +605,9 @@ export function CounselorAnalyticsTab() {
                 <TrendingUp className="h-4 w-4 text-counselling-primary" aria-hidden />
                 Decision Funnel
               </h2>
-              <ConversionFunnelChart data={data} />
-              <div className="mt-2 flex items-center justify-between border-t border-counselling-border/50 pt-2 text-xs text-counselling-muted-foreground">
-                <span>Decision rate</span>
+              <ConversionFunnelChart data={data} onStageClick={handleFunnelStage} />
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-counselling-border/50 pt-2 text-xs text-counselling-muted-foreground">
+                <span>Decision rate (eligible)</span>
                 <span className="font-semibold tabular-nums text-counselling-foreground">
                   {data.decisionRate}%
                 </span>
@@ -425,6 +679,11 @@ export function CounselorAnalyticsTab() {
                     key={item.surgeryType}
                     item={item}
                     maxCount={data.bySurgeryType[0]?.count ?? 1}
+                    onOpen={() =>
+                      router.push(
+                        buildSurgerySessionsHref(windowDrillContext, item.surgeryType),
+                      )
+                    }
                   />
                 ))}
               </div>
@@ -457,13 +716,22 @@ export function CounselorAnalyticsTab() {
             )}
           </div>
 
-          <FollowupAgingTable filters={{ branchId }} />
+          <FollowupAgingTable
+            filters={agingFilters}
+            agingPeriod={agingPeriod}
+            onAgingPeriodChange={setAgingPeriod}
+          />
         </>
       )}
 
       {!data && !isPending && !isError && (
-        <FollowupAgingTable filters={{ branchId }} />
+        <FollowupAgingTable
+          filters={agingFilters}
+          agingPeriod={agingPeriod}
+          onAgingPeriodChange={setAgingPeriod}
+        />
       )}
+      </div>
     </div>
   );
 }

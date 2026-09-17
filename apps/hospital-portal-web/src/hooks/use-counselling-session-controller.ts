@@ -1,14 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { getApiErrorMessage } from '@/lib/auth-interceptors';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
+import { resolveCounsellingSessionCloseHref } from '@/lib/counsellors-desk/counselling-session-origin';
+import { resolveCloseNavigation } from '@/lib/counsellors-desk/counselling-session-close';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { counsellingAzureApi } from '@/lib/api/counselling-azure.api';
 import type { PriceOverrideRecord } from '@/lib/api/counselling-azure.api';
 import { resolvePackageOverridePrice, resolveProcedureOverridePrice } from '@/lib/counsellors-desk/package-preview';
 import { useAuthStore } from '@/lib/auth-store';
+import {
+  isCounsellingSessionOwner,
+  isOwnershipReadOnly,
+  isPendingLifecycleReadOnly,
+} from '@/lib/counsellors-desk/counselling-ownership';
 import { useConfirmation } from '@/components/common/ConfirmationDialog';
 import { useMasterValues } from '@/hooks/use-master-values';
 import {
@@ -19,6 +27,7 @@ import {
   buildCounsellorIolDtos,
   findCounsellorVariant,
 } from '@/lib/master-data/clinical-catalog-master';
+import { resolveStaleIolSelection } from '@/lib/counsellors-desk/stale-iol-selection';
 import {
   useCounsellorsMasterCatalogQuery,
   useStaffDirectoryQuery,
@@ -50,6 +59,7 @@ import {
 } from '@/hooks/use-counselling-packages';
 import { useCounsellingEstimate } from '@/hooks/use-counselling-estimate';
 import type { PackageApplyPatch } from '@/lib/counsellors-desk/estimate-engine';
+import { validateDiscountForSave } from '@/lib/counsellors-desk/counselling-discount-contract';
 import {
   buildCounsellingEstimatePdfData,
   canPrintCounsellingEstimate,
@@ -91,6 +101,7 @@ import {
   type CounsellingPhaseInput,
 } from '@/lib/counsellors-desk/counselling-progress';
 import { resolveSessionBackTarget } from '@/lib/counsellors-desk/counselling-session-navigation';
+import { assertCounsellingStartReachedProcessing } from '@/lib/counsellors-desk/counselling-start-persistence';
 import { isCounsellingTerminalOutcome, shouldAutoOpenFinishSummary } from '@/lib/counsellors-desk/counselling-finish-outcome';
 import { resolveCounsellingPrintDisabledReason } from '@/lib/counsellors-desk/counselling-print-gate';
 
@@ -127,10 +138,22 @@ export function useCounsellingSessionController({
   initialSubtab,
 }: UseCounsellingSessionControllerParams) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionFrom = searchParams.get('from');
+  const sessionCloseHref = resolveCounsellingSessionCloseHref(sessionFrom);
   const { showConfirmation, ConfirmationComponent } = useConfirmation();
   const { invalidateWaitingList, invalidateSession } = useInvalidateCounsellorsDesk();
   const { options: insuranceProviderOptions } = useMasterValues('insurance.provider');
   const authUser = useAuthStore((s) => s.user);
+  const lifecycleParam = searchParams.get('lifecycle');
+  const lifecycleHandledRef = useRef<string | null>(null);
+  /** Waiting List Start Repeat / Re-evaluate / Start Counseling entry. */
+  const lifecycleEntry =
+    lifecycleParam === 're-evaluate' ||
+    lifecycleParam === 'start-repeat' ||
+    lifecycleParam === 'start-counseling'
+      ? lifecycleParam
+      : null;
 
   const [session, setSession] = useState<CounsellingSession | null>(null);
   const sessionQuery = useCounsellingSessionQuery(sessionId);
@@ -251,12 +274,22 @@ export function useCounsellingSessionController({
     [iolPricing.items],
   );
 
+  // Staff directory is optional (price-override "another staff" picker only).
+  // Requires user.view — Counsellor baseline must not call /users/with-details.
   const staffQuery = useStaffDirectoryQuery(!!session);
   const staffList = staffQuery.data ?? EMPTY_STAFF_LIST;
 
   const markDirty = useCallback(() => setIsDirty(true), []);
   const { data: counsellingSettings } = useCounsellingSettings();
-  const { data: packageTemplates = [] } = useCounsellingPackageTemplates();
+  // Package catalog requires package_templates.read. Do NOT fetch on session hydration —
+  // load only when Quote → Package is opened (or when restoring a saved package estimate).
+  const [packageCatalogRequested, setPackageCatalogRequested] = useState(false);
+  const requestPackageCatalog = useCallback(() => setPackageCatalogRequested(true), []);
+  const packageTemplatesQuery = useCounsellingPackageTemplates({
+    enabled: packageCatalogRequested,
+  });
+  const packageTemplates = packageTemplatesQuery.data ?? [];
+  const packageTemplatesAccessDenied = !packageTemplatesQuery.canReadPackageTemplates;
 
   const applyingPackageRef = useRef(false);
   const prevVariantIdRef = useRef<string | null>(null);
@@ -527,26 +560,40 @@ export function useCounsellingSessionController({
   const isRepeatState = queueStatus === 'RepeatCounselling';
   const isSurgeryDoneState = queueStatus === 'SurgeryDone';
   const isAddOnState = queueStatus === 'AddOnSurgery';
-  /** Terminal counselling outcomes are sealed until Re-evaluate / reopen. */
+  const isSessionOwner = isCounsellingSessionOwner(session?.counselorId, authUser?.id);
+  const ownershipLocksMutations = isOwnershipReadOnly({
+    counselorId: session?.counselorId,
+    currentUserId: authUser?.id,
+    queueStatus,
+  });
+  /** PD-PENDING-READONLY-01: Pending is sealed until Auth StartSession (Start Counseling). */
+  const pendingLocksMutations = isPendingLifecycleReadOnly(queueStatus);
+  /** Terminal counselling outcomes are sealed until Re-evaluate / reopen.
+   * FE ownership/pending read-only is UX enforcement; backend UpdateSession also guards pre-start. */
   const isReadOnly =
     isRepeatState ||
     isSurgeryDoneState ||
     isDoneState ||
     isAddOnState ||
-    finishSummaryActive;
+    finishSummaryActive ||
+    ownershipLocksMutations ||
+    pendingLocksMutations;
 
   const saveDisabledReason = useMemo((): string | null => {
     if (isSurgeryDoneState) return 'Session is read-only';
-    if (isSaving || isSavingDraft) return 'Saving session…';
+    if (pendingLocksMutations) return 'Start counselling to continue';
+    if (isSaving) return 'Completing session…';
+    if (isSavingDraft) return 'Saving…';
     return validateSaveSessionDecision(phaseInput);
-  }, [isSurgeryDoneState, isSaving, isSavingDraft, phaseInput]);
+  }, [isSurgeryDoneState, pendingLocksMutations, isSaving, isSavingDraft, phaseInput]);
 
   const saveDraftDisabledReason = useMemo((): string | null => {
     if (isSurgeryDoneState) return 'Session is read-only';
+    if (pendingLocksMutations) return 'Start counselling to continue';
     if (isSaving || isSavingDraft) return 'Saving…';
     if (isRepeatState) return 'Start repeat session to continue';
     return null;
-  }, [isSurgeryDoneState, isSaving, isSavingDraft, isRepeatState]);
+  }, [isSurgeryDoneState, pendingLocksMutations, isSaving, isSavingDraft, isRepeatState]);
 
   const printDisabledReason = useMemo(
     (): string | null =>
@@ -694,21 +741,27 @@ export function useCounsellingSessionController({
   const validateCounsellingForSave = useCallback((): boolean => {
     if (selectedVariantId) {
       const selVariant = findCounsellorVariant(procedureVariants, selectedVariantId);
-      if (selVariant?.subOptions?.length && !selVariant.hasIolOptions && !variantSubOption) {
+      if (selVariant?.subOptions?.length && !variantSubOption) {
         toast.error('Please select a sub-type for the selected procedure');
         return false;
       }
-      if (selVariant?.hasIolOptions && iolOptions.length > 0 && !selectedIolId) {
+      if (
+        selVariant?.hasIolOptions &&
+        !(selVariant.subOptions?.length) &&
+        iolOptions.length > 0 &&
+        !selectedIolId
+      ) {
         toast.error('Please select an IOL for the selected procedure');
         return false;
       }
     }
-    if (
-      mergedEstimate.discountType &&
-      mergedEstimate.discountValue > 0 &&
-      !mergedEstimate.discountReason?.trim()
-    ) {
-      toast.error('Please enter a discount reason');
+    const discountError = validateDiscountForSave({
+      discountType: mergedEstimate.discountType,
+      discountValue: mergedEstimate.discountValue,
+      discountReason: mergedEstimate.discountReason ?? '',
+    });
+    if (discountError) {
+      toast.error(discountError);
       return false;
     }
     return true;
@@ -914,6 +967,13 @@ export function useCounsellingSessionController({
               setSelectedEye(eye);
               setSelectedSurgeryId(`type-${pkg.variantId}-${eye}`);
             }
+            // Secondary restore when auth blob lacked lens fields (Azure enrichment).
+            if (pkg.selectedIolId && !data.selectedIolId) {
+              setSelectedIolId(String(pkg.selectedIolId));
+            }
+            if (pkg.variantSubOption && !data.variantSubOption) {
+              setVariantSubOption(String(pkg.variantSubOption));
+            }
           } catch {
             /* ignore */
           }
@@ -937,11 +997,6 @@ export function useCounsellingSessionController({
         /* non-critical */
       }
 
-      if (data.status === 'Pending') {
-        void counsellorsDeskApi.startSession(sessionId).catch(() => {
-          /* Pending auto-start is best-effort */
-        });
-      }
       if ((data.status as string) !== 'SurgeryDone') {
         isSurgeryDoneRef.current = false;
         counsellingAzureApi.lock(sessionId);
@@ -980,19 +1035,31 @@ export function useCounsellingSessionController({
     prevVariantIdRef.current = selectedVariantId;
   }, [selectedVariantId]);
 
-  /** Drop stale IOL when current procedure does not support it or catalog no longer contains it. */
+  /**
+   * Drop stale IOL once catalogs are authoritative — never while procedure/IOL
+   * catalogs are still loading (hydration race would wipe a restored selection).
+   */
   useEffect(() => {
     if (applyingPackageRef.current) return;
-    if (!selectedIolId) return;
-    const variant = findCounsellorVariant(procedureVariants, selectedVariantId);
-    if (!variant?.hasIolOptions) {
+    const action = resolveStaleIolSelection({
+      selectedIolId,
+      selectedVariantId,
+      procedureVariants,
+      procedureCatalogReady: !procedureLoading,
+      iolOptions,
+      iolOptionsReady: !iolPricing.loading,
+    });
+    if (action === 'clear') {
       setSelectedIolId(null);
-      return;
     }
-    if (iolOptions.length > 0 && !iolOptions.some((iol) => iol.id === selectedIolId)) {
-      setSelectedIolId(null);
-    }
-  }, [selectedIolId, selectedVariantId, procedureVariants, iolOptions]);
+  }, [
+    selectedIolId,
+    selectedVariantId,
+    procedureVariants,
+    procedureLoading,
+    iolOptions,
+    iolPricing.loading,
+  ]);
 
   useEffect(() => {
     if (!session) return;
@@ -1052,6 +1119,11 @@ export function useCounsellingSessionController({
     if (!session) return;
     if (packageRestoredRef.current === session.id) return;
     if (estimateState.estimateMode !== 'package' || !estimateState.packageTemplateId) return;
+    // Need catalog to restore a previously selected package — request lazily.
+    if (!packageCatalogRequested) {
+      setPackageCatalogRequested(true);
+      return;
+    }
     if (packageTemplates.length === 0) return;
     if (!masterCatalogQuery.data) return;
 
@@ -1066,6 +1138,7 @@ export function useCounsellingSessionController({
     session,
     estimateState.estimateMode,
     estimateState.packageTemplateId,
+    packageCatalogRequested,
     packageTemplates,
     masterCatalogQuery.data,
     counsellingEstimate.restorePackage,
@@ -1089,19 +1162,20 @@ export function useCounsellingSessionController({
   }, [sessionId]);
 
   const handleBack = useCallback(() => {
+    // Legacy leave path (Quote no longer uses Back to exit — Close does).
     if (isDirty) {
       showConfirmation({
-        title: 'Unsaved Changes',
-        message: 'You have unsaved changes. Are you sure you want to leave?',
+        title: counsellingCopy.unsavedChangesTitle,
+        message: counsellingCopy.unsavedChangesMessage,
         variant: 'warning',
-        confirmText: 'Leave',
-        cancelText: 'Stay',
-        onConfirm: () => router.back(),
+        confirmText: counsellingCopy.leaveWithoutSaving,
+        cancelText: 'Cancel',
+        onConfirm: () => router.push(sessionCloseHref),
       });
       return;
     }
-    router.back();
-  }, [isDirty, showConfirmation, router]);
+    router.push(sessionCloseHref);
+  }, [isDirty, showConfirmation, router, sessionCloseHref]);
 
   const goToPreviousPhase = useCallback(() => {
     const target = resolveSessionBackTarget({
@@ -1129,40 +1203,60 @@ export function useCounsellingSessionController({
     finishSummaryActive,
     handleBack,
   ]);
-
   const openFinishSummary = useCallback(() => {
     setFinishSummaryActive(true);
     setActiveMainTab('counselling');
     setActivePhase('wrapup');
   }, []);
 
+  const executeReEvaluate = useCallback(async () => {
+    try {
+      // Auth StartSession is authoritative (Completed → InProgress, clear agreement flags).
+      // Waiting List projects Processing from Auth queue — Azure alone must not drive status.
+      await counsellorsDeskApi.startSession(sessionId);
+      // Azure enrichment (Done → Processed) — best-effort; API client already swallows errors.
+      await counsellingAzureApi.reEvaluate(sessionId);
+      setQueueStatus('Processed');
+      setFinishSummaryActive(false);
+      setActiveMainTab('counselling');
+      setActivePhase('estimate');
+      setVisitedPhases(['estimate']);
+      phasesInitializedRef.current = false;
+      invalidateWaitingList();
+      invalidateSession(sessionId);
+      toast.success('Session reopened for re-evaluation');
+    } catch {
+      toast.error('Failed to re-open session');
+    }
+  }, [sessionId, invalidateWaitingList, invalidateSession]);
+
   const handleReEvaluate = useCallback(() => {
+    if (!isCounsellingSessionOwner(session?.counselorId, authUser?.id)) {
+      toast.error('Only the assigned counsellor can re-evaluate this session');
+      return;
+    }
     showConfirmation({
       title: 'Re-evaluate Session',
       message:
         'Changing the procedure will restart the counselling process (Done → In Progress). Continue?',
       variant: 'warning',
       confirmText: 'Continue',
-      onConfirm: async () => {
-        try {
-          await counsellingAzureApi.reEvaluate(sessionId);
-          setQueueStatus('Processed');
-          setFinishSummaryActive(false);
-          setActiveMainTab('counselling');
-          setActivePhase('estimate');
-          setVisitedPhases(['estimate']);
-          phasesInitializedRef.current = false;
-          invalidateWaitingList();
-          invalidateSession(sessionId);
-          toast.success('Session reopened for re-evaluation');
-        } catch {
-          toast.error('Failed to re-open session');
-        }
+      onConfirm: () => {
+        void executeReEvaluate();
       },
     });
-  }, [sessionId, showConfirmation, invalidateWaitingList, invalidateSession]);
+  }, [
+    session?.counselorId,
+    authUser?.id,
+    showConfirmation,
+    executeReEvaluate,
+  ]);
 
   const handleStartRepeatSession = useCallback(async () => {
+    if (!isCounsellingSessionOwner(session?.counselorId, authUser?.id)) {
+      toast.error('Only the assigned counsellor can start repeat counselling');
+      return;
+    }
     try {
       await counsellorsDeskApi.startSession(sessionId, repeatSessionTypeCode);
       setSession((prev) => (prev ? { ...prev, sessionTypeCode: repeatSessionTypeCode } : prev));
@@ -1179,10 +1273,105 @@ export function useCounsellingSessionController({
       toast.error('Failed to start repeat session');
     }
   }, [
+    session?.counselorId,
+    authUser?.id,
     sessionId,
     repeatSessionTypeCode,
     invalidateWaitingList,
     invalidateSession,
+  ]);
+
+  /** Pending Start Counseling — Auth StartSession (Waiting → InProgress). No ownership stamp. */
+  const handleStartCounselingSession = useCallback(async (): Promise<boolean> => {
+    if (!isCounsellingSessionOwner(session?.counselorId, authUser?.id)) {
+      toast.error('Only the assigned counsellor can start counselling');
+      return false;
+    }
+    try {
+      await counsellorsDeskApi.startSession(sessionId);
+      // Verify Auth queue projection — do not show Processing if Waiting List would still be Pending.
+      const started = await counsellorsDeskApi.getSession(sessionId, {
+        skipCatalogFallback: true,
+      });
+      assertCounsellingStartReachedProcessing(started.status);
+      setQueueStatus('Processed');
+      setFinishSummaryActive(false);
+      setActiveMainTab('counselling');
+      setActivePhase('estimate');
+      setVisitedPhases(['estimate']);
+      phasesInitializedRef.current = false;
+      invalidateWaitingList();
+      invalidateSession(sessionId);
+      toast.success('Counselling session started');
+      return true;
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to start counselling session';
+      toast.error(msg);
+      return false;
+    }
+  }, [
+    session?.counselorId,
+    authUser?.id,
+    sessionId,
+    invalidateWaitingList,
+    invalidateSession,
+  ]);
+
+  // Waiting List Re-evaluate CTA — enter Re-evaluate directly (no second confirmation).
+  useEffect(() => {
+    if (!session || lifecycleParam !== 're-evaluate') return;
+    if (lifecycleHandledRef.current === `${sessionId}:re-evaluate`) return;
+    if (queueStatus !== 'Done') return;
+    if (!isCounsellingSessionOwner(session.counselorId, authUser?.id)) return;
+    lifecycleHandledRef.current = `${sessionId}:re-evaluate`;
+    void executeReEvaluate();
+  }, [
+    session,
+    lifecycleParam,
+    sessionId,
+    queueStatus,
+    authUser?.id,
+    executeReEvaluate,
+  ]);
+
+  // Waiting List Start Repeat CTA — enter Start Repeat directly (no second banner/prompt).
+  useEffect(() => {
+    if (!session || lifecycleParam !== 'start-repeat') return;
+    if (lifecycleHandledRef.current === `${sessionId}:start-repeat`) return;
+    if (queueStatus !== 'RepeatCounselling') return;
+    if (!isCounsellingSessionOwner(session.counselorId, authUser?.id)) return;
+    lifecycleHandledRef.current = `${sessionId}:start-repeat`;
+    void handleStartRepeatSession();
+  }, [
+    session,
+    lifecycleParam,
+    sessionId,
+    queueStatus,
+    authUser?.id,
+    handleStartRepeatSession,
+  ]);
+
+  // Waiting List Start Counseling CTA — Pending → Processing (no silent start on View/direct URL).
+  useEffect(() => {
+    if (!session || lifecycleParam !== 'start-counseling') return;
+    if (lifecycleHandledRef.current === `${sessionId}:start-counseling`) return;
+    if (queueStatus !== 'Pending') return;
+    if (!isCounsellingSessionOwner(session.counselorId, authUser?.id)) return;
+    lifecycleHandledRef.current = `${sessionId}:start-counseling`;
+    void handleStartCounselingSession().then((ok) => {
+      // Allow retry if Auth queue was not actually moved to InProgress.
+      if (!ok) lifecycleHandledRef.current = null;
+    });
+  }, [
+    session,
+    lifecycleParam,
+    sessionId,
+    queueStatus,
+    authUser?.id,
+    handleStartCounselingSession,
   ]);
 
   const handleSelectVariantId = useCallback(
@@ -1260,8 +1449,11 @@ export function useCounsellingSessionController({
     [counsellingEstimate, markDirty, selectedEye],
   );
 
-  const handleSaveDraft = useCallback(async () => {
-    if (!session || saveDraftDisabledReason) return;
+  const handleSaveDraft = useCallback(async (): Promise<boolean> => {
+    if (!session || saveDraftDisabledReason) {
+      if (saveDraftDisabledReason) toast.error(saveDraftDisabledReason);
+      return false;
+    }
 
     const coveragePanelReady = Boolean(coveragePanelRef.current?.saveDraft);
     const coverageDraftEditable = coveragePanelRef.current?.isCoverageDraftEditable
@@ -1276,9 +1468,9 @@ export function useCounsellingSessionController({
       flushOutpatient: true,
     });
 
-    if (!plan.saveCounselling && !plan.saveCoverage && !plan.flushOutpatient) return;
+    if (!plan.saveCounselling && !plan.saveCoverage && !plan.flushOutpatient) return false;
 
-    if (plan.saveCounselling && !validateCounsellingForSave()) return;
+    if (plan.saveCounselling && !validateCounsellingForSave()) return false;
 
     setIsSavingDraft(true);
     let counsellingSaved = false;
@@ -1344,9 +1536,12 @@ export function useCounsellingSessionController({
       } else if (!counsellingSaved && coverageSaved) {
         toast.success('Coverage draft saved');
       }
+
+      return counsellingSaved || coverageSaved;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : getApiErrorMessage(err);
       toast.error(msg ? `Save failed: ${msg}` : 'Failed to save draft — check network tab');
+      return false;
     } finally {
       setIsSavingDraft(false);
     }
@@ -1383,6 +1578,36 @@ export function useCounsellingSessionController({
     isDoneState,
     invalidateSession,
   ]);
+
+  const handleSaveDraftRef = useRef(handleSaveDraft);
+  handleSaveDraftRef.current = handleSaveDraft;
+
+  const handleClose = useCallback(() => {
+    const decision = resolveCloseNavigation({ isDirty });
+    if (decision.action === 'navigate') {
+      router.push(sessionCloseHref);
+      return;
+    }
+
+    showConfirmation({
+      title: counsellingCopy.unsavedChangesTitle,
+      message: counsellingCopy.unsavedChangesMessage,
+      variant: 'warning',
+      confirmText: counsellingCopy.saveAndClose,
+      alternateText: counsellingCopy.leaveWithoutSaving,
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        const saved = await handleSaveDraftRef.current();
+        if (!saved) {
+          throw new Error('Draft save failed');
+        }
+        router.push(sessionCloseHref);
+      },
+      onAlternate: () => {
+        router.push(sessionCloseHref);
+      },
+    });
+  }, [isDirty, showConfirmation, router, sessionCloseHref]);
 
   const handleSave = useCallback(async () => {
     if (!session) return;
@@ -1454,9 +1679,9 @@ export function useCounsellingSessionController({
         if (coveragePanelRef.current?.saveDraft && editable) {
           await saveCoveragePanelDraft({ force: true });
         } else if (!coveragePanelRef.current?.saveDraft) {
-          toast('Session saved; open Insurance to sync coverage draft', { icon: 'ℹ️' });
+          toast('Session completed; open Insurance to sync coverage draft', { icon: 'ℹ️' });
         }
-        // Locked coverage (Waiting for TPA): skip silently — counselling session already saved.
+        // Locked coverage (Waiting for TPA): skip silently — counselling session already completed.
       }
     } catch (err: unknown) {
       // Prefer explicit Error.message (e.g. FS-01 OT handoff) over nested axios payloads.
@@ -1471,7 +1696,7 @@ export function useCounsellingSessionController({
         toast.error(plain);
       } else {
         const msg = axiosMsg || plain;
-        toast.error(msg ? `Save failed: ${msg}` : 'Failed to save session — check network tab');
+        toast.error(msg ? `Complete failed: ${msg}` : 'Failed to complete session — check network tab');
       }
     } finally {
       setIsSaving(false);
@@ -1545,12 +1770,17 @@ export function useCounsellingSessionController({
     isLoading,
     ConfirmationComponent,
     handleBack,
+    handleClose,
+    sessionFrom,
+    sessionCloseHref,
     queueStatus,
     isDirty,
     isDoneState,
     isRepeatState,
     isSurgeryDoneState,
     isReadOnly,
+    isSessionOwner,
+    lifecycleEntry,
     isSaving,
     isSavingDraft,
     coveragePanelRef,
@@ -1645,6 +1875,8 @@ export function useCounsellingSessionController({
     setInsuranceCompany,
     setQueueStatus,
     packageTemplates,
+    packageTemplatesAccessDenied,
+    requestPackageCatalog,
     isScheduleModalOpen,
     handleScheduleSubmit,
     activePhase,

@@ -17,7 +17,7 @@ export function resolveOtReturnedAction(input: {
     return {
       kind: 'replan',
       label: 'Re-plan',
-      href: `/dashboard/counsellors-desk/${sessionId}`,
+      href: `/dashboard/counsellors-desk/${sessionId}?from=waiting-list`,
     };
   }
   return {

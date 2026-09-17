@@ -28,7 +28,8 @@ export interface ResolveSessionBackInput {
 
 /**
  * Journey-aware Back target for the session footer.
- * Finish → Notes; Quote leaves the session; later stages walk the journey.
+ * Quote has no previous phase — Close (not Back) leaves the session.
+ * Later stages walk the journey backward.
  */
 export function resolveSessionBackTarget(
   input: ResolveSessionBackInput,
@@ -44,7 +45,8 @@ export function resolveSessionBackTarget(
   }
   if (input.activeMainTab === 'counselling') {
     if (input.activePhase === 'estimate') {
-      return { leaveSession: true };
+      // First counselling phase — Back is not leave; use Close for exit.
+      return null;
     }
     if (input.activePhase === 'decision') {
       return { tab: 'counselling', phase: 'estimate', finishSummaryActive: false };

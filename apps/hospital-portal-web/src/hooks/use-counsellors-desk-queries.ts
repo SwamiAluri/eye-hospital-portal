@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { serviceCatalogApi } from '@/lib/api/service-catalog.api';
 import { usersApi } from '@/lib/api';
+import { useHasPermission } from '@/hooks/use-permissions';
 import type { WaitingListFilters } from '@/types/counsellors-desk';
 import type { FinalizeSurgeryRecord } from '@/types/counsellors-desk';
 import {
@@ -74,6 +75,8 @@ export function useServiceCatalogQuery(enabled = true) {
 }
 
 export function useStaffDirectoryQuery(enabled = false) {
+  /** Unrestricted staff directory requires user.view — never call it for Counsellor baseline. */
+  const canViewUsers = useHasPermission('user.view');
   return useQuery({
     queryKey: counsellorsDeskKeys.staffDirectory(),
     queryFn: async () => {
@@ -94,7 +97,7 @@ export function useStaffDirectoryQuery(enabled = false) {
       }));
     },
     staleTime: CATALOG_STALE_MS,
-    enabled,
+    enabled: enabled && canViewUsers,
   });
 }
 

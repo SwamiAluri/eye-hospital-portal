@@ -21,7 +21,7 @@
 }
 
 .counselling-session {
-  /* HSL components (no hsl() wrapper) — teal primary on slate neutrals */
+  /* HSL components (no hsl() wrapper) â teal primary on slate neutrals */
   --counselling-background: 210 40% 98%;
   --counselling-foreground: 222 47% 11%;
   --counselling-primary: 173 58% 32%;
@@ -124,16 +124,16 @@
 }
 
 /**
- * Waiting List / Finalize Surgery worklist grids — real CSS (not Tailwind
+ * Waiting List / Finalize Surgery worklist grids â real CSS (not Tailwind
  * arbitrary vars from src/lib). Tailwind content paths do not scan `src/lib`,
  * and imported class-string constants are invisible to JIT, so tracks live here.
  *
  * SAME design language at every viewport. Tracks adapt continuously:
  * - <768: single column (safe stack)
- * - 768–1599.98: workstation fluid five-zone tracks (information parity)
- * - ≥1600: approved Large Desktop SoT (frozen)
+ * - 768â1599.98: workstation fluid five-zone tracks (information parity)
+ * - â¥1600: approved Large Desktop SoT (frozen)
  *
- * Hierarchy: identity > procedure > status > warning/schedule > action
+ * Hierarchy: identity > visit > procedure > owner > payment/coverage > status > action
  */
 .counselling-session .waiting-list-work-grid,
 .counselling-session .waiting-list-ot-grid,
@@ -146,18 +146,20 @@
   align-items: start;
 }
 
-/* Workstation — fluid tracks; denser floors, same five-zone IA */
+/* Workstation — fluid tracks; denser floors, seven-zone Patient Queue IA */
 @media (min-width: 768px) and (max-width: 1599.98px) {
   .counselling-session .waiting-list-work-grid {
-    /* Patient | Procedure·Eye | Status | Attention | Action */
+    /* Patient | Visit | Procedure·Eye | Owner | Payment/Coverage | Status | Action */
     grid-template-columns:
-      minmax(0, 1.65fr)
       minmax(0, 1.2fr)
-      minmax(5.25rem, 7.25rem)
+      minmax(0, 0.85fr)
+      minmax(0, 0.95fr)
+      minmax(0, 0.7fr)
       minmax(0, 0.8fr)
-      minmax(7rem, 9.25rem);
+      minmax(4.5rem, 6rem)
+      minmax(8.75rem, 10.25rem);
     align-items: center;
-    column-gap: clamp(0.4rem, 0.85vw, 0.75rem);
+    column-gap: clamp(0.3rem, 0.65vw, 0.55rem);
     row-gap: 0;
   }
 
@@ -192,12 +194,14 @@
 @media (min-width: 1600px) {
   .counselling-session .waiting-list-work-grid {
     grid-template-columns:
-      minmax(14rem, 1.6fr)
       minmax(10rem, 1.2fr)
-      minmax(7rem, 8.5rem)
-      minmax(7rem, 0.85fr)
+      minmax(6.25rem, 0.85fr)
+      minmax(7.25rem, 0.95fr)
+      minmax(5.25rem, 0.7fr)
+      minmax(5.75rem, 0.8fr)
+      minmax(4.75rem, 6.25rem)
       minmax(9.5rem, 11rem);
-    column-gap: 1rem;
+    column-gap: 0.75rem;
     align-items: center;
     row-gap: 0;
   }
@@ -228,7 +232,7 @@
 }
 
 /*
- * Wave 6 — workstation chrome density for counsellor ops (same IA).
+ * Wave 6 â workstation chrome density for counsellor ops (same IA).
  * Scoped to counselling-session; Large Desktop strip/pill pad unchanged.
  */
 @media (max-width: 1599.98px) {
@@ -262,11 +266,11 @@
 }
 
 /*
- * Wave 7 — adaptive viewport fit (height + width). Same IA; reclaim chrome
- * for complete worklist rows. Large Desktop ≥1600 unchanged.
+ * Wave 7 â adaptive viewport fit (height + width). Same IA; reclaim chrome
+ * for complete worklist rows. Large Desktop â¥1600 unchanged.
  */
 @media (max-width: 1599.98px) {
-  /* KPI — further compact vertical footprint without dropping metrics */
+  /* KPI â further compact vertical footprint without dropping metrics */
   .counselling-session [data-testid='waiting-list-stats'],
   .counselling-session [data-testid='finalize-surgery-summary'] {
     padding: 0.375rem 0.625rem;
@@ -284,7 +288,7 @@
     line-height: 0.875rem;
   }
 
-  /* Status strip — compact + internal horizontal scroll only */
+  /* Status strip â compact + internal horizontal scroll only */
   .counselling-session [data-testid='waiting-list-summary-strip'] > div,
   .counselling-session [data-testid='finalize-surgery-status-nav'] > div {
     overflow-x: auto;
@@ -302,7 +306,7 @@
     font-size: 0.75rem;
   }
 
-  /* Worklist rows — denser pad; identity still two readable lines */
+  /* Worklist rows â denser pad; identity still two readable lines */
   .counselling-session [data-testid='waiting-list-work-row'].staff-worklist-row,
   .counselling-session .staff-worklist-row {
     min-height: 2.75rem; /* 44px floor; content may grow slightly */
@@ -338,17 +342,56 @@
     --widget-pad: 12px !important;
   }
 }
-/* Phase 1 � Counsellor analytics print: hide chrome, keep widgets readable */
+/* Phase 2Z — Analytics print shell: collapse workstation chrome; report visibility is in globals.css */
 @media print {
-  [data-testid='app-shell'] > div:first-child,
-  [data-testid='app-shell'] header {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  [data-testid='app-shell'] {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+  }
+
+  [data-testid='app-shell'] > div:first-child {
+    display: none !important;
+  }
+
+  [data-testid='app-shell'] > div:last-child,
+  [data-testid='app-shell'] main,
+  [data-testid='app-shell'] main > div {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  [data-testid='app-shell'] > div:last-child > div:first-child {
     display: none !important;
   }
 
   [data-testid='analytics-page'],
   [data-testid='analytics-workspace'] {
+    display: block !important;
     overflow: visible !important;
     height: auto !important;
+    min-height: 0 !important;
     background: white !important;
+    padding: 0 !important;
+    gap: 0 !important;
   }
 }

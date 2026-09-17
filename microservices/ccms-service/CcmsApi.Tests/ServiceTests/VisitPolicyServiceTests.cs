@@ -107,6 +107,27 @@ public class VisitPolicyServiceTests : IDisposable
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Fact]
+    public async Task CreateAsync_DuplicatePolicyNumberOnSameCase_ThrowsConflict()
+    {
+        var c = _fx.SeedCase();
+        _fx.SeedPolicy(c.Id, "DUP-POL", isPrimary: true);
+
+        var entity = new CcmsVisitInsurancePolicy
+        {
+            TenantId        = _fx.TenantId,
+            CoverageCase_Id = c.Id,
+            PolicyNumber    = "  dup-pol  ",
+            IsPrimary       = false,
+            SortOrder       = 2,
+            Status          = "active",
+        };
+
+        Func<Task> act = async () => await _svc.CreateAsync(entity, _fx.ActorId);
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already exists*");
+    }
+
     // ── SetPrimaryAsync ──────────────────────────────────────────────────────
 
     [Fact]

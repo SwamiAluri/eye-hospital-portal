@@ -106,14 +106,14 @@ export function formatDocumentProgressLabel(
   if (required <= 0) {
     return { label: 'No required documents', tone: 'neutral' };
   }
-  const missing = Math.max(0, required - uploaded);
-  if (missing === 0) {
+  const outstanding = Math.max(0, required - uploaded);
+  if (outstanding === 0) {
     return { label: 'All documents uploaded', tone: 'success' };
   }
-  if (missing === 1) {
-    return { label: '1 document missing', tone: 'warning' };
+  if (outstanding === 1) {
+    return { label: '1 outstanding', tone: 'warning' };
   }
-  return { label: `${missing} documents missing`, tone: 'warning' };
+  return { label: `${outstanding} outstanding`, tone: 'warning' };
 }
 
 const COVERAGE_DANGER_STATES = new Set([
@@ -249,6 +249,7 @@ export function buildSessionStatusSummary(
 ): SessionStatusSummary {
   const {
     queueStatus,
+    activeMainTab,
     activePhase,
     phaseCompletion,
     isRepeatState,
@@ -310,14 +311,10 @@ export function buildSessionStatusSummary(
   }
 
   if (showCoverageWorkflow && requiredDocCount > 0) {
-    const docValue =
-      requiredDocCount > 0
-        ? `${uploadedDocCount}/${requiredDocCount}`
-        : docProgress.label;
     allChips.push({
       id: 'documents',
       label: 'Documents',
-      value: docValue,
+      value: docProgress.label,
       tone: docProgress.tone,
     });
   }
@@ -372,26 +369,35 @@ export function buildSessionStatusSummary(
     nextAction = 'Complete patient decision';
     nextActionPhase = 'decision';
   } else if (showCoverageWorkflow && !preAuthSubmitted && !isPreAuthSubmittedState(ccmsState)) {
-    const missingDocs = requiredDocCount > 0 && uploadedDocCount < requiredDocCount;
-    if (!ccmsState || ccmsState === 'DRAFT') {
+    // Document completeness is insurance readiness — it must not replace counselling journey next.
+    const canSubmitPacket =
+      ccmsState &&
+      ['DRAFT', 'ELIGIBILITY_PENDING', 'ELIGIBILITY_VERIFIED', 'POLICY_CAPTURED'].includes(
+        ccmsState,
+      ) &&
+      !(requiredDocCount > 0 && uploadedDocCount < requiredDocCount);
+
+    if (activeMainTab === 'coverage') {
+      nextAction = 'Continue to Notes';
+      nextActionTab = 'counselling';
+      nextActionPhase = 'wrapup';
+    } else if (activePhase === 'wrapup') {
+      nextAction = 'Complete Session';
+      nextActionTab = 'counselling';
+      nextActionPhase = 'wrapup';
+    } else if (!ccmsState || ccmsState === 'DRAFT') {
       nextAction = 'Insurance & Documents';
       nextActionTab = 'coverage';
       nextActionPhase = undefined;
-    } else if (missingDocs) {
-      nextAction = 'Upload missing documents';
-      nextActionTab = 'coverage';
-      nextActionPhase = undefined;
-    } else if (
-      ccmsState &&
-      ['DRAFT', 'ELIGIBILITY_PENDING', 'ELIGIBILITY_VERIFIED', 'POLICY_CAPTURED'].includes(ccmsState)
-    ) {
+    } else if (canSubmitPacket) {
       nextAction = 'Submit to claims';
       nextActionTab = 'coverage';
       nextActionPhase = undefined;
     } else {
-      nextAction = 'Insurance & Documents';
-      nextActionTab = 'coverage';
-      nextActionPhase = undefined;
+      // Coverage started but docs still outstanding — continue counselling journey.
+      nextAction = 'Continue to Notes';
+      nextActionTab = 'counselling';
+      nextActionPhase = 'wrapup';
     }
   } else if (preAuthSubmitted || isPreAuthSubmittedState(ccmsState)) {
     nextAction = '';
@@ -401,7 +407,7 @@ export function buildSessionStatusSummary(
     nextAction = 'Close';
     nextActionPhase = 'wrapup';
   } else if (phaseCompletion.decision) {
-    nextAction = 'Save session';
+    nextAction = 'Complete Session';
     nextActionPhase = 'wrapup';
   }
 

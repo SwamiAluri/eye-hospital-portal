@@ -8,6 +8,10 @@ import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
+  classifyScheduleLookupError,
+  type ScheduleLookupOption,
+} from '@/lib/counsellors-desk/schedule-surgery-lookups';
+import {
   formatCounsellingDateDisplay,
   formatCounsellingDateLabel,
   toCounsellingDateOnly,
@@ -38,7 +42,6 @@ interface ScheduleSurgeryModalProps {
   existingSchedule?: ScheduleData | null;
 }
 
-type DropdownOption = { id: string; name: string };
 type PreviewRow = { date: string; ot: string; start: string; end: string; status: string };
 
 function statusBadgeClass(status: string): string {
@@ -78,24 +81,73 @@ export function ScheduleSurgeryModal({
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [surgeons, setSurgeons] = useState<DropdownOption[]>([]);
-  const [theatres, setTheatres] = useState<DropdownOption[]>([]);
-  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [surgeons, setSurgeons] = useState<ScheduleLookupOption[]>([]);
+  const [theatres, setTheatres] = useState<ScheduleLookupOption[]>([]);
+  const [surgeonError, setSurgeonError] = useState<string | null>(null);
+  const [theaterError, setTheaterError] = useState<string | null>(null);
+  const [loadingTheaters, setLoadingTheaters] = useState(false);
+  const [loadingSurgeons, setLoadingSurgeons] = useState(false);
+  const [theaterRetryKey, setTheaterRetryKey] = useState(0);
+  const [surgeonRetryKey, setSurgeonRetryKey] = useState(0);
 
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
+  // Theatres — independent of date and of surgeons. Must NOT mark session dirty.
   useEffect(() => {
     if (!isOpen) return;
-    setLoadingOptions(true);
-    Promise.all([counsellorsDeskApi.getSurgeons(), counsellorsDeskApi.getOtTheaters()])
-      .then(([s, t]) => {
-        setSurgeons(s);
-        setTheatres(t);
+    let cancelled = false;
+    setLoadingTheaters(true);
+    setTheaterError(null);
+    void counsellorsDeskApi
+      .getOtTheaters()
+      .then((rows) => {
+        if (cancelled) return;
+        setTheatres(
+          rows.filter((t) => Boolean(t.id?.trim() && t.name?.trim())),
+        );
       })
-      .catch(console.error)
-      .finally(() => setLoadingOptions(false));
-  }, [isOpen]);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setTheatres([]);
+        setTheaterError(classifyScheduleLookupError(err, 'theatres'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTheaters(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, theaterRetryKey]);
+
+  // Surgeons — independent of theaters. Must NOT mark session dirty.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    setLoadingSurgeons(true);
+    setSurgeonError(null);
+    void counsellorsDeskApi
+      .getSurgeons()
+      .then((rows) => {
+        if (cancelled) return;
+        setSurgeons(
+          rows.filter((s) => Boolean(s.id?.trim() && s.name?.trim())),
+        );
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setSurgeons([]);
+        setSurgeonError(classifyScheduleLookupError(err, 'doctors'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSurgeons(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, surgeonRetryKey]);
+
+  const loadingOptions = loadingTheaters || loadingSurgeons;
 
   useEffect(() => {
     if (!selectedDate) {
@@ -113,9 +165,7 @@ export function ScheduleSurgeryModal({
       .then((records) =>
         setPreviewRows(
           records.map((r) => ({
-            date:
-              formatCounsellingDateDisplay(dateOnly) ??
-              dateOnly,
+            date: formatCounsellingDateDisplay(dateOnly) ?? dateOnly,
             ot: r.theaterName || '—',
             start: r.startTime || '—',
             end: r.endTime || '—',
@@ -171,7 +221,10 @@ export function ScheduleSurgeryModal({
 
   return (
     <CounsellingDialog open={isOpen} onOpenChange={handleOpenChange}>
-      <CounsellingDialogContent className="counselling-session flex max-h-[90vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+      <CounsellingDialogContent
+        data-testid={counsellingTestIds.scheduleSurgeryModal}
+        className="counselling-session flex max-h-[90vh] max-w-3xl flex-col gap-0 overflow-hidden p-0"
+      >
         <CounsellingDialogHeader className="border-b border-counselling-border bg-counselling-accent/40 px-5 py-4 text-left">
           <CounsellingDialogTitle className="text-base font-semibold text-counselling-foreground">
             {existingSchedule ? counsellingCopy.updateSchedule : counsellingCopy.scheduleSurgery}
@@ -179,6 +232,41 @@ export function ScheduleSurgeryModal({
         </CounsellingDialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {theaterError ? (
+            <div
+              data-testid={counsellingTestIds.scheduleSurgeryLookupError}
+              className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+            >
+              <span>{theaterError}</span>
+              <CounsellingButton
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2"
+                disabled={loadingTheaters}
+                onClick={() => setTheaterRetryKey((k) => k + 1)}
+                data-testid={counsellingTestIds.scheduleSurgeryLookupRetry}
+              >
+                Retry theatres
+              </CounsellingButton>
+            </div>
+          ) : null}
+          {surgeonError ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span>{surgeonError}</span>
+              <CounsellingButton
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2"
+                disabled={loadingSurgeons}
+                onClick={() => setSurgeonRetryKey((k) => k + 1)}
+              >
+                Retry doctors
+              </CounsellingButton>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <CounsellingLabel className="text-xs font-medium">
@@ -206,7 +294,7 @@ export function ScheduleSurgeryModal({
                 <CounsellingSelect
                   value={form.operationTheatre || undefined}
                   onValueChange={(v) => setForm((f) => ({ ...f, operationTheatre: v }))}
-                  disabled={loadingOptions}
+                  disabled={loadingTheaters || !!theaterError || theatres.length === 0}
                 >
                   <CounsellingSelectTrigger
                     className={cn(
@@ -214,8 +302,19 @@ export function ScheduleSurgeryModal({
                       'w-full',
                       errors.operationTheatre && 'border-red-400',
                     )}
+                    data-testid={counsellingTestIds.scheduleSurgeryOt}
                   >
-                    <CounsellingSelectValue placeholder="Select OT" />
+                    <CounsellingSelectValue
+                      placeholder={
+                        loadingTheaters
+                          ? 'Loading operation theatres…'
+                          : theaterError
+                            ? 'Theatres unavailable'
+                            : theatres.length === 0
+                              ? 'No operation theatres available for this branch.'
+                              : 'Select OT'
+                      }
+                    />
                   </CounsellingSelectTrigger>
                   <CounsellingSelectContent>
                     {theatres.map((t) => (
@@ -237,7 +336,7 @@ export function ScheduleSurgeryModal({
                 <CounsellingSelect
                   value={form.doctor || undefined}
                   onValueChange={(v) => setForm((f) => ({ ...f, doctor: v }))}
-                  disabled={loadingOptions}
+                  disabled={loadingSurgeons || !!surgeonError || surgeons.length === 0}
                 >
                   <CounsellingSelectTrigger
                     className={cn(
@@ -245,8 +344,19 @@ export function ScheduleSurgeryModal({
                       'w-full',
                       errors.doctor && 'border-red-400',
                     )}
+                    data-testid={counsellingTestIds.scheduleSurgeryDoctor}
                   >
-                    <CounsellingSelectValue placeholder="Select Doctor" />
+                    <CounsellingSelectValue
+                      placeholder={
+                        loadingSurgeons
+                          ? 'Loading doctors…'
+                          : surgeonError
+                            ? 'Doctors unavailable'
+                            : surgeons.length === 0
+                              ? 'No doctors available'
+                              : 'Select Doctor'
+                      }
+                    />
                   </CounsellingSelectTrigger>
                   <CounsellingSelectContent>
                     {surgeons.map((s) => (

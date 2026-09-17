@@ -156,14 +156,14 @@ test.describe('Wave 2C counselling UAT @wave2c-uat', () => {
     await goCoverageWizardStep(page, 'documents');
 
     const ready = page.getByTestId('ccms-docs-ready');
-    const blocked = page.getByTestId('ccms-docs-blocked');
+    const outstanding = page.getByTestId('ccms-docs-outstanding');
     if (await ready.isVisible({ timeout: 10_000 }).catch(() => false)) {
       await expect(page.getByTestId(coverageTestIds.submitToClaims)).toHaveCount(0);
       const primary = actionBarPrimary(page);
       const label = (await primary.textContent()) ?? '';
       expect(label).toMatch(/Submit to Claims/i);
       await shot(page, '05-coverage-docs-complete');
-    } else if (await blocked.isVisible().catch(() => false)) {
+    } else if (await outstanding.isVisible().catch(() => false)) {
       await shot(page, '05-coverage-docs-missing');
       test.info().annotations.push({ type: 'note', description: 'Documents incomplete on fixture — submit CTA not expected' });
     } else {

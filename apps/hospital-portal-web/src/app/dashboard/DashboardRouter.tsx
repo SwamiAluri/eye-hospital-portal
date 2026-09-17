@@ -23,7 +23,7 @@ const ROLE_DASHBOARD_MAP: Record<string, string> = {
   Nurse: '/dashboard/ip-management/ward',
   'Nurse Manager': '/dashboard/ip-management/ward',
   Receptionist: '/dashboard/frontdesk',
-  Counsellor: '/dashboard/frontdesk',
+  Counsellor: '/dashboard/counsellors-desk/waiting-list',
   Pharmacist: '/dashboard/pharmacy',
   'Pharmacy Manager': '/dashboard/pharmacy',
   // Lab: /dashboard/lab does not exist. Sidebar "Laboratory (Pathology)".

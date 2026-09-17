@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { ChevronRight, Loader2, Stethoscope } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { History, Loader2, Stethoscope, UserRound } from 'lucide-react';
 import type { Patient } from '@/lib/api/patients.api';
-import type { CounsellingSession, WaitingListStatus } from '@/types/counsellors-desk';
+import type { CounsellingSession, SessionAuditEntry, WaitingListStatus } from '@/types/counsellors-desk';
 import { getStatusBadge } from '@/lib/counsellors-desk/session-utils';
 import { useCounsellorMasterOptions } from '@/hooks/use-counsellor-master-options';
 import { sessionTypeLabelForCode } from '@/lib/counsellors-desk/counsellor-master-maps';
@@ -13,6 +13,11 @@ import {
   counsellingTestIds,
 } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { PatientDemographicsSheet } from '@/components/examination/PatientDemographicsSheet';
+import { ClinicalRecommendationsSheet } from '@/components/counsellors-desk/session/ClinicalRecommendationsSheet';
+import { SessionHistoryModal } from '@/components/counsellors-desk/SessionHistoryModal';
+import { loadCounsellingSessionHistory } from '@/lib/counsellors-desk/load-counselling-session-history';
+import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
+import { buildCounselorNameMap } from '@/lib/counsellors-desk/ownership-display-name';
 import { PatientAvatar } from '@/components/patients/PatientAvatar';
 import {
   calcPatientAge,
@@ -50,6 +55,14 @@ export function SessionPageHeader({
 }: SessionPageHeaderProps) {
   const { sessionTypeOptions } = useCounsellorMasterOptions();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [clinicalRecsOpen, setClinicalRecsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<SessionAuditEntry[]>([]);
+  const [historyCounselorNames, setHistoryCounselorNames] = useState<
+    Record<string, string>
+  >({});
+  const historyBtnRef = useRef<HTMLButtonElement>(null);
 
   const statusBadge = getStatusBadge(queueStatus);
   const sessionTypeLabel = session.sessionTypeCode
@@ -86,6 +99,50 @@ export function SessionPageHeader({
   const canOpenDetails = Boolean(patientDetails);
   const openDetails = () => {
     if (canOpenDetails) setDetailsOpen(true);
+  };
+
+  const doctorRecommendationSummary = useMemo(() => {
+    const recommendation = doctorRecommendation?.trim();
+    if (!recommendation) return null;
+    const eye = operativeEye?.trim();
+    return eye ? `${recommendation} · ${eye}` : recommendation;
+  }, [doctorRecommendation, operativeEye]);
+
+  const headerActionClass = cn(
+    'h-auto min-h-9 justify-start gap-1.5 rounded-md px-2 py-1.5 hover:bg-counselling-muted/60 hover:text-counselling-primary focus-visible:ring-2 focus-visible:ring-counselling-primary/40 sm:justify-end',
+    counsellingSessionTokens.patientDetailsAction,
+  );
+
+  const openClinicalRecommendations = () => setClinicalRecsOpen(true);
+
+  const openSessionHistory = async () => {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    try {
+      const [entries, counselors] = await Promise.all([
+        loadCounsellingSessionHistory(session.id),
+        counsellorsDeskApi
+          .getCounselors(session.branchId)
+          .catch(() => [] as Awaited<ReturnType<typeof counsellorsDeskApi.getCounselors>>),
+      ]);
+      setHistoryEntries(entries);
+      setHistoryCounselorNames(
+        buildCounselorNameMap(counselors, {
+          counselorId: session.counselorId,
+          counselorName: session.counselorName,
+        }),
+      );
+    } catch {
+      setHistoryEntries([]);
+      setHistoryCounselorNames(
+        buildCounselorNameMap([], {
+          counselorId: session.counselorId,
+          counselorName: session.counselorName,
+        }),
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
   return (
@@ -172,52 +229,64 @@ export function SessionPageHeader({
                   </span>
                 ) : null}
               </div>
+              <CounsellingButton
+                type="button"
+                variant="ghost"
+                size="sm"
+                ref={historyBtnRef}
+                data-testid={counsellingTestIds.btnSessionHistory}
+                aria-label={counsellingCopy.sessionHistoryAria}
+                onClick={openSessionHistory}
+                className={headerActionClass}
+              >
+                <History className="h-4 w-4 shrink-0" aria-hidden />
+                {counsellingCopy.sessionHistory}
+              </CounsellingButton>
+              <CounsellingButton
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-testid={counsellingTestIds.btnClinicalRecommendations}
+                aria-label={counsellingCopy.clinicalRecommendations}
+                onClick={openClinicalRecommendations}
+                className={headerActionClass}
+              >
+                <Stethoscope className="h-4 w-4 shrink-0" aria-hidden />
+                {counsellingCopy.clinicalRecommendations}
+              </CounsellingButton>
               {canOpenDetails ? (
                 <CounsellingButton
                   type="button"
                   variant="ghost"
                   size="sm"
                   data-testid={counsellingTestIds.btnPatientDetails}
+                  aria-label={counsellingCopy.patientDetails}
                   onClick={openDetails}
-                  className={cn(
-                    'h-auto min-h-9 justify-start gap-1 rounded-md px-2 py-1.5 hover:bg-counselling-muted/60 hover:text-counselling-primary focus-visible:ring-2 focus-visible:ring-counselling-primary/40 sm:justify-end',
-                    counsellingSessionTokens.patientDetailsAction,
-                  )}
+                  className={headerActionClass}
                 >
+                  <UserRound className="h-4 w-4 shrink-0" aria-hidden />
                   {counsellingCopy.patientDetails}
-                  <ChevronRight className="h-4 w-4" aria-hidden />
                 </CounsellingButton>
               ) : null}
             </div>
           </div>
         </div>
-
-        {doctorRecommendation ? (
-          <div
-            data-testid={counsellingTestIds.clinicalContextRow}
-            className="mt-2 flex flex-wrap items-start gap-x-2 gap-y-1 border-l-2 border-amber-400/80 bg-amber-50/60 py-1.5 pl-2.5 pr-1"
-          >
-            <span className="inline-flex min-w-0 items-start gap-1 text-[12.5px] leading-5 text-amber-950">
-              <Stethoscope className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span>
-                <span className="font-medium">{counsellingCopy.recommendedProcedure}: </span>
-                <span className="line-clamp-2">{doctorRecommendation}</span>
-              </span>
-            </span>
-            {canOpenDetails ? (
-              <CounsellingButton
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={openDetails}
-                className="h-auto px-1 py-0 text-[12.5px] font-medium text-amber-900 hover:bg-amber-100/60 hover:text-amber-950"
-              >
-                {counsellingCopy.viewClinicalDetails}
-              </CounsellingButton>
-            ) : null}
-          </div>
-        ) : null}
       </header>
+
+      <SessionHistoryModal
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        entries={historyEntries}
+        isLoading={historyLoading}
+        anchorRef={historyBtnRef}
+        counselorNameById={historyCounselorNames}
+      />
+
+      <ClinicalRecommendationsSheet
+        open={clinicalRecsOpen}
+        onClose={() => setClinicalRecsOpen(false)}
+        doctorRecommendationSummary={doctorRecommendationSummary}
+      />
 
       <PatientDemographicsSheet
         open={detailsOpen}

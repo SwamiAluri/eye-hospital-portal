@@ -820,6 +820,7 @@ try
     builder.Services.AddScoped<ICounselingWorkflowService, CounselingWorkflowService>();
     builder.Services.AddScoped<ICounselorCommunicationService, CounselorCommunicationService>(); // Comm logs, callbacks, overdue (Phase B)
     builder.Services.AddScoped<IFollowupListService, FollowupListService>(); // Follow-up Center list/search/stats (Phase 2B)
+    builder.Services.AddScoped<IFollowupBranchAccessService, FollowupBranchAccessService>(); // Phase2X PD16
     builder.Services.AddScoped<ICounselingAnalyticsService, CounselingAnalyticsService>(); // Analytics summary/trends/aging (Phase 2D)
     builder.Services.AddScoped<IDeptCoordinationService, DeptCoordinationService>(); // Dept coordination requests (Mar 16, 2026)
     builder.Services.AddScoped<IPatientTypeConfigurationsService, PatientTypeConfigurationsService>(); // Patient type configs (Mar 1, 2026)
@@ -984,10 +985,16 @@ builder.Services.AddScoped<IImagingAIAnalysisService, ImagingAIAnalysisService>(
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthService.Context.AppDbContext>();
         await AuthService.SeedData.PermissionSeeder.SeedPhase2AliasesForAllTenantsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedCounselingSessionsPermissionsForCounsellorRolesAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedCounselingSessionReassignPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.ApplyCounsellorLeastPrivilegeAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedCounsellorPatientWorkflowPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedCounsellorPackageTemplateReadPermissionAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedBillReconciliationViewPermissionsAsync(db);
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"⚠ Phase 2 CCMS permission seed skipped: {ex.Message}");
+        Console.WriteLine($"⚠ Phase 2 CCMS / counselling permission seed skipped: {ex.Message}");
     }
 
     // Configure the HTTP request pipeline

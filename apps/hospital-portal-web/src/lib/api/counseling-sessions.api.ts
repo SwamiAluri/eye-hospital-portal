@@ -69,6 +69,8 @@ export interface CounselingSession {
   estimatedSurgeryCost?: number;
   additionalNotes?: string;
   agreedToSurgery?: boolean;
+  patientAgreedToSurgery?: boolean;
+  pendingDecision?: boolean;
   tentativeSurgeryDate?: string;
   sessionDurationMinutes?: number;
   consentFormsSigned?: boolean;
@@ -97,14 +99,27 @@ export interface CounselingSession {
 }
 
 export interface SessionFilters {
+  page?: number;
   pageNumber?: number;
   pageSize?: number;
+  branchId?: string;
+  counselorId?: string;
   sessionStatus?: string;
+  status?: string;
   sessionType?: string;
   patientType?: string;
   patientId?: string;
+  sessionDateFrom?: string;
+  sessionDateTo?: string;
+  /** @deprecated use sessionDateFrom */
   startDate?: string;
+  /** @deprecated use sessionDateTo */
   endDate?: string;
+  pendingDecision?: boolean;
+  patientAgreedToSurgery?: boolean;
+  recommendedSurgery?: string;
+  search?: string;
+  /** @deprecated use search */
   searchTerm?: string;
 }
 
@@ -181,31 +196,33 @@ export const counselingSessionsApi = {
    */
   getAll: async (filters?: SessionFilters): Promise<SessionListResponse> => {
     const params = new URLSearchParams();
-    if (filters?.pageNumber) params.append('pageNumber', filters.pageNumber.toString());
+    const page = filters?.page ?? filters?.pageNumber;
+    if (page) params.append('page', page.toString());
     if (filters?.pageSize) params.append('pageSize', filters.pageSize.toString());
-    if (filters?.sessionStatus) params.append('sessionStatus', filters.sessionStatus);
+    if (filters?.branchId) params.append('branchId', filters.branchId);
+    if (filters?.counselorId) params.append('counselorId', filters.counselorId);
+    if (filters?.sessionStatus) params.append('status', filters.sessionStatus);
+    if (filters?.status) params.append('status', filters.status);
     if (filters?.sessionType) params.append('sessionType', filters.sessionType);
     if (filters?.patientType) params.append('patientType', filters.patientType);
-    if (filters?.startDate) params.append('startDate', filters.startDate);
-    if (filters?.endDate) params.append('endDate', filters.endDate);
-    if (filters?.searchTerm) params.append('searchTerm', filters.searchTerm);
-    
+    if (filters?.patientId) params.append('patientId', filters.patientId);
+    const dateFrom = filters?.sessionDateFrom ?? filters?.startDate;
+    const dateTo = filters?.sessionDateTo ?? filters?.endDate;
+    if (dateFrom) params.append('sessionDateFrom', dateFrom);
+    if (dateTo) params.append('sessionDateTo', dateTo);
+    if (filters?.pendingDecision != null) {
+      params.append('pendingDecision', String(filters.pendingDecision));
+    }
+    if (filters?.patientAgreedToSurgery != null) {
+      params.append('patientAgreedToSurgery', String(filters.patientAgreedToSurgery));
+    }
+    if (filters?.recommendedSurgery) params.append('recommendedSurgery', filters.recommendedSurgery);
+    const search = filters?.search ?? filters?.searchTerm;
+    if (search) params.append('search', search);
+
     const query = params.toString();
     const url = `/counseling/sessions${query ? `?${query}` : ''}`;
-    
-    console.log('🔵 Fetching Sessions:', { url, filters });
-    
     const response = await getApi().get<SessionListResponse>(url);
-    
-    console.log('✅ Sessions API Response:', {
-      status: response.status,
-      dataKeys: Object.keys(response.data),
-      totalCount: response.data.totalCount || response.data.TotalCount,
-      sessionsCount: (response.data.sessions || response.data.data || response.data.Sessions)?.length,
-      firstSession: (response.data.sessions || response.data.data || response.data.Sessions)?.[0],
-      rawData: response.data
-    });
-    
     return response.data;
   },
 

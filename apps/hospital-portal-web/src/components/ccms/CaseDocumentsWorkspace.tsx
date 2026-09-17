@@ -8,7 +8,7 @@ import { uploadCaseDocument, deleteCaseDocument, fetchCaseDocumentsFromApi, fetc
 import { ccmsKeys, useCcmsCaseDocuments } from '@/hooks/use-ccms-case';
 import {
   augmentSlotsWithUploadedDocuments,
-  formatMissingDocumentsMessage,
+  formatOutstandingDocumentsMessage,
   mergeFetchedWithCachedDocuments,
   mergeSlotsWithDocuments,
   removeCaseDocumentFromList,
@@ -311,11 +311,19 @@ export function CaseDocumentsWorkspace({
             : 'All required documents are on file. Submit sends the packet. The TPA may still raise a query later.'}
         </div>
       ) : (
-        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="ccms-docs-blocked">
-          {formatMissingDocumentsMessage(missingLabels, {
+        <div
+          className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+          data-testid="ccms-docs-outstanding"
+        >
+          {formatOutstandingDocumentsMessage(missingLabels.length, {
             uploaded: requiredDone,
             required: requiredCount,
           })}
+          {!compactStatusBanners ? (
+            <span className="mt-0.5 block text-amber-800/80">
+              Required for insurance packet readiness — counselling can continue.
+            </span>
+          ) : null}
         </div>
       )}
       <div className="flex items-center gap-3 mb-3">
@@ -327,14 +335,14 @@ export function CaseDocumentsWorkspace({
             />
           </div>
         </div>
-        <span className={`text-xs font-bold flex-shrink-0 ${allRequiredDone ? 'text-emerald-600' : 'text-amber-600'}`}>
-          {requiredDone}/{requiredCount} required
+        <span className={`text-xs font-bold flex-shrink-0 ${allRequiredDone ? 'text-emerald-600' : 'text-amber-700'}`}>
+          {requiredDone} of {requiredCount} required
         </span>
         <span className="text-xs text-gray-400 flex-shrink-0">
           {uploadedCount}/{liveSlots.length} total
         </span>
         {allRequiredDone && requiredCount > 0 && (
-          <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex-shrink-0">✓ Done</span>
+          <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex-shrink-0">✓ Uploaded</span>
         )}
       </div>
 

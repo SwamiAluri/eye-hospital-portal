@@ -22,6 +22,10 @@ import { type CounsellingEyeOption } from '@/lib/counsellors-desk/counselling-ey
 import { groupEstimateLinesForDisplay } from '@/lib/counsellors-desk/estimate-engine';
 import { sanitizeVariantName } from '@/lib/utils/sanitize-names';
 import {
+  buildCommittedDiscountPatch,
+  canCommitDiscountDraft,
+} from '@/lib/counsellors-desk/counselling-discount-contract';
+import {
   CounsellingBadge,
   CounsellingButton,
   CounsellingEmptyState,
@@ -89,87 +93,68 @@ const QuoteModeLabel = memo(function QuoteModeLabel({
 
 
 function useDiscountDraft(
-
   estimate: UseCounsellingEstimateResult,
-
   estimateDiscountType: CounsellingDiscountType | null,
-
   estimateDiscountValue: number,
-
   estimateDiscountReason: string,
-
 ) {
-
   const [draftType, setDraftType] = useState<CounsellingDiscountType | null>(estimateDiscountType);
-
   const [draftValue, setDraftValue] = useState(String(estimateDiscountValue || ''));
-
   const [draftReason, setDraftReason] = useState(estimateDiscountReason);
 
-
-
   useEffect(() => {
-
     setDraftType(estimateDiscountType);
-
     setDraftValue(String(estimateDiscountValue || ''));
-
     setDraftReason(estimateDiscountReason);
-
   }, [estimateDiscountType, estimateDiscountValue, estimateDiscountReason]);
 
-
-
   const applyDiscount = useCallback(() => {
-
     if (!draftType) {
-
-      estimate.setDiscount({ discountType: null, discountValue: 0, discountReason: draftReason });
-
+      estimate.setDiscount({ discountType: null, discountValue: 0, discountReason: '' });
       return;
-
     }
-
-    const parsed = Number(draftValue) || 0;
-
-    estimate.setDiscount({
-
-      discountType: draftType,
-
-      discountValue: parsed,
-
-      discountReason: draftReason,
-
+    const patch = buildCommittedDiscountPatch({
+      draftType,
+      draftValue,
+      draftReason,
     });
-
+    if (!patch) return;
+    estimate.setDiscount(patch);
   }, [draftReason, draftType, draftValue, estimate]);
 
+  /** Keep canonical estimate.discountReason in sync with the visible reason field. */
+  const updateDraftReason = useCallback(
+    (next: string) => {
+      setDraftReason(next);
+      const hasApplied =
+        !!estimateDiscountType && estimateDiscountValue > 0;
+      if (hasApplied) {
+        estimate.setDiscount({
+          discountType: estimateDiscountType,
+          discountValue: estimateDiscountValue,
+          discountReason: next,
+        });
+      }
+    },
+    [estimate, estimateDiscountType, estimateDiscountValue],
+  );
 
-
-  const canApply = draftType != null && draftValue.trim() !== '' && Number(draftValue) > 0;
-
-
+  const canApply = canCommitDiscountDraft({
+    draftType,
+    draftValue,
+    draftReason,
+  });
 
   return {
-
     draftType,
-
     setDraftType,
-
     draftValue,
-
     setDraftValue,
-
     draftReason,
-
-    setDraftReason,
-
+    setDraftReason: updateDraftReason,
     applyDiscount,
-
     canApply,
-
   };
-
 }
 
 

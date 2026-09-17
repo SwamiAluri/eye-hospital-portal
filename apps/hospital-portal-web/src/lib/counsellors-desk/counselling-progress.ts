@@ -66,7 +66,7 @@ export interface CounsellingPhaseValidationContext extends CounsellingPhaseInput
 
 export type CounsellingPhaseCompletion = Record<CounsellingPhase, boolean>;
 
-/** True when the phase passes the same rules as Footer Next / Save Session gates. */
+/** True when the phase passes the same rules as Footer Next / Complete Session gates. */
 export function isPhaseComplete(
   phase: CounsellingPhase,
   ctx: CounsellingPhaseValidationContext,
@@ -96,10 +96,15 @@ export function validateEstimatePhase(ctx: CounsellingPhaseValidationContext): s
   const variant = findCounsellorVariant(ctx.procedureVariants, ctx.selectedVariantId);
   if (!variant) return null;
 
-  if (variant.subOptions?.length && !variant.hasIolOptions && !ctx.variantSubOption) {
+  if (variant.subOptions?.length && !ctx.variantSubOption) {
     return 'Please select a sub-type for the selected procedure';
   }
-  if (variant.hasIolOptions && ctx.iolOptionCount > 0 && !ctx.selectedIolId) {
+  if (
+    variant.hasIolOptions &&
+    !(variant.subOptions?.length) &&
+    ctx.iolOptionCount > 0 &&
+    !ctx.selectedIolId
+  ) {
     return 'Please select an IOL for the selected procedure';
   }
   return null;
@@ -170,7 +175,7 @@ export function canNavigateToCounsellingPhase(
   return validatePhasesBefore(targetPhase, ctx) === null;
 }
 
-/** Decision-phase validation for Save Session (estimate checks remain in validateCounsellingForSave). */
+/** Decision-phase validation for Complete Session (estimate checks remain in validateCounsellingForSave). */
 export function validateSaveSessionDecision(ctx: CounsellingPhaseInput): string | null {
   if (!ctx.decision) return 'Select a patient decision before saving';
   return validateDecisionPhase(ctx);

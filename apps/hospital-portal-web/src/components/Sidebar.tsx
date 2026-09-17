@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useHasPermission } from '@/lib/permission-cache';
 import { logoutEverywhere } from '@/lib/logout-everywhere';
-import { SIDEBAR_MENU_SECTIONS } from '@/lib/navigation/sidebar-menu-sections';
+import { SIDEBAR_MENU_SECTIONS, filterSidebarSectionsByPermission } from '@/lib/navigation/sidebar-menu-sections';
 import {
   useState,
   useEffect,
@@ -105,16 +105,8 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
   const menuSections = SIDEBAR_MENU_SECTIONS;
 
   const filteredSections = useMemo(
-    () =>
-      menuSections
-        .map(section => ({
-          ...section,
-          items: section.items.filter(
-            item => !item.requiredPermission || hasPermission(item.requiredPermission),
-          ),
-        }))
-        .filter(section => section.items.length > 0),
-    [hasPermission],
+    () => filterSidebarSectionsByPermission(menuSections, hasPermission),
+    [hasPermission, menuSections],
   );
 
   const isActive = (href: string, exact?: boolean) => {

@@ -108,9 +108,24 @@ describe('Notes workspace UI (Wave 2E-5R)', () => {
     expect(html).toContain('Not required pre-authorization');
     expect(html).toContain(counsellingSessionTokens.sessionAdditionalOptionsLabel);
     expect(html).toContain('shrink-0 space-y-1.5 border-t');
-    expect(html).toContain('min-h-0 flex-1 space-y-2');
+    expect(html).toContain(`data-testid="${counsellingTestIds.notesDocumentationSection}"`);
     expect(html).not.toContain('overflow-y-auto');
     expect(html).not.toContain('uppercase');
+  });
+
+  it('separates Doctor notes from Additional Options with clear vertical rhythm', () => {
+    const html = renderNotes();
+    const docsIdx = html.indexOf(`data-testid="${counsellingTestIds.notesDocumentationSection}"`);
+    const doctorIdx = html.indexOf(`data-testid="${counsellingTestIds.notesDoctorField}"`);
+    const optionsIdx = html.indexOf(`data-testid="${counsellingTestIds.notesAdditionalOptions}"`);
+    expect(docsIdx).toBeGreaterThan(-1);
+    expect(doctorIdx).toBeGreaterThan(docsIdx);
+    expect(optionsIdx).toBeGreaterThan(doctorIdx);
+
+    // Field wrappers stay shrink-0; Additional Options keeps border-t + increased top padding.
+    expect(html).toContain('shrink-0 space-y-1');
+    expect(html).toMatch(/shrink-0[\s\S]*border-t[\s\S]*pt-3\.5/);
+    expect(html).toContain(`data-testid="${counsellingTestIds.notesAdditionalOptionsSection}"`);
   });
 
   it('avoids nested card chrome and uses compact textarea mins', () => {
@@ -124,9 +139,37 @@ describe('Notes workspace UI (Wave 2E-5R)', () => {
     expect(html).toContain('resize-none');
   });
 
-  it('marks fields read-only when session is locked', () => {
+  it('marks fields read-only when session is locked (no disabled greying)', () => {
     const html = renderNotes({}, true);
-    expect(html).toContain('disabled=""');
+    expect(html).toContain('readonly=""');
+    expect(html).not.toContain('disabled=""');
+  });
+
+  it('keeps Additional Options checkbox controls pressable (aria-pressed)', () => {
+    const html = renderToStaticMarkup(
+      <CounsellingWrapupPhase
+        counselingSessionId="sess-1"
+        counsellorNotes=""
+        setCounsellorNotes={vi.fn()}
+        patientRemarks=""
+        setPatientRemarks={vi.fn()}
+        doctorNotes=""
+        setDoctorNotes={vi.fn()}
+        wantToSeeDoctor
+        setWantToSeeDoctor={vi.fn()}
+        interestedToUpgrade={false}
+        setInterestedToUpgrade={vi.fn()}
+        notRequiredPreAuth={false}
+        setNotRequiredPreAuth={vi.fn()}
+        isReadOnly={false}
+        markDirty={vi.fn()}
+        phaseValidationContext={completeContext}
+      />,
+    );
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('Want to see doctor again');
+    expect(html).toContain('Interested to upgrade');
+    expect(html).toContain('Not required pre-authorization');
   });
 });
 

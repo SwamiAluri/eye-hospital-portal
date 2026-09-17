@@ -366,17 +366,25 @@ export function mergeEstimateState(
   const hasProcedureLine = computed.lines.some(
     (line) => line.kind === 'procedure' || line.kind === 'iol',
   );
+  const hasActiveDiscount =
+    (base.discountType === 'flat' || base.discountType === 'percent') &&
+    (base.discountValue ?? 0) > 0;
   const savedFinal = base.finalPayableAmount ?? 0;
   const liveFinal = computed.finalPayableAmount;
-  const finalPayableAmount = hasProcedureLine
-    ? liveFinal
-    : liveFinal > 0
-      ? savedFinal > liveFinal
-        ? savedFinal
-        : liveFinal
-      : savedFinal > 0
-        ? savedFinal
-        : liveFinal;
+  // When a discount is active and live math has a base, never let stale savedFinal
+  // override the discounted live payable (package+labs often have no procedure line).
+  const finalPayableAmount =
+    hasActiveDiscount && computed.baseBeforeDiscount > 0
+      ? liveFinal
+      : hasProcedureLine
+        ? liveFinal
+        : liveFinal > 0
+          ? savedFinal > liveFinal
+            ? savedFinal
+            : liveFinal
+          : savedFinal > 0
+            ? savedFinal
+            : liveFinal;
 
   return {
     ...base,

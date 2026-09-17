@@ -36,6 +36,68 @@ public class FollowupQueryContractsTests
     }
 
     [Theory]
+    [InlineData("WillingWeek", PatientIntentionKind.Active)]
+    [InlineData("WillingMonth", PatientIntentionKind.Active)]
+    [InlineData("WillingQuarter", PatientIntentionKind.Active)]
+    [InlineData("WillingCallToConfirm", PatientIntentionKind.Active)]
+    [InlineData("Undecided", PatientIntentionKind.Active)]
+    [InlineData("WaitingFinancial", PatientIntentionKind.Active)]
+    [InlineData("WaitingFear", PatientIntentionKind.Active)]
+    [InlineData("Declined", PatientIntentionKind.Cold)]
+    [InlineData("ReferredElsewhere", PatientIntentionKind.Cold)]
+    [InlineData("WillingNow", PatientIntentionKind.Orphan)]
+    [InlineData("WillingTwoWeeks", PatientIntentionKind.Orphan)]
+    [InlineData("WillingSixMonths", PatientIntentionKind.Orphan)]
+    [InlineData("SecondOpinion", PatientIntentionKind.Orphan)]
+    [InlineData("TotallyMadeUp", PatientIntentionKind.Unknown)]
+    [InlineData("", PatientIntentionKind.None)]
+    [InlineData(null, PatientIntentionKind.None)]
+    public void ClassifyPatientIntention_DistinguishesKinds(string? intention, PatientIntentionKind expected)
+    {
+        Assert.Equal(expected, FollowupQueryContracts.ClassifyPatientIntention(intention));
+    }
+
+    [Theory]
+    [InlineData("WillingWeek")]
+    [InlineData("Declined")]
+    [InlineData("WillingNow")]
+    [InlineData(" SecondOpinion ")]
+    public void EnsureWritable_AllowsActiveColdAndOrphan(string intention)
+    {
+        FollowupQueryContracts.EnsureWritablePatientIntention(intention);
+        Assert.Equal(intention.Trim(), FollowupQueryContracts.NormalizeWritablePatientIntention(intention));
+    }
+
+    [Theory]
+    [InlineData("NotARealIntention")]
+    [InlineData("PendingDecision")]
+    [InlineData("Agreed")]
+    public void EnsureWritable_RejectsUnknown(string intention)
+    {
+        Assert.Throws<ArgumentException>(() => FollowupQueryContracts.EnsureWritablePatientIntention(intention));
+        Assert.Throws<ArgumentException>(() => FollowupQueryContracts.NormalizeWritablePatientIntention(intention));
+    }
+
+    [Fact]
+    public void NormalizeWritable_WhitespaceClearsToNull()
+    {
+        Assert.Null(FollowupQueryContracts.NormalizeWritablePatientIntention("   "));
+        Assert.Null(FollowupQueryContracts.NormalizeWritablePatientIntention(null));
+    }
+
+    [Fact]
+    public void OrphanIntentions_ExactFourKnownMasterCodes()
+    {
+        Assert.Equal(new[]
+        {
+            "WillingNow",
+            "WillingTwoWeeks",
+            "WillingSixMonths",
+            "SecondOpinion",
+        }, FollowupQueryContracts.OrphanIntentions);
+    }
+
+    [Theory]
     [InlineData(0, 0, 1, 20)]
     [InlineData(-1, 500, 1, 100)]
     [InlineData(2, 10, 2, 10)]
@@ -50,12 +112,19 @@ public class FollowupQueryContractsTests
     [InlineData("SupervisorAlert", null, "Critical")]
     [InlineData("Escalated", null, "High")]
     [InlineData("Overdue", null, "Medium")]
-    [InlineData("Normal", null, "Medium")]
+    [InlineData("Normal", null, "Normal")]
     [InlineData("Normal", "2026-01-01", "Normal")]
-    public void MapAlertLevel_MatchesControllerSemantics(string escalation, string? lastContact, string expected)
+    public void MapAlertLevel_DoesNotTreatNeverContactedAsPriority(string escalation, string? lastContact, string expected)
     {
         DateTime? lcd = lastContact == null ? null : DateTime.Parse(lastContact);
         Assert.Equal(expected, FollowupQueryContracts.MapAlertLevel(escalation, lcd));
+    }
+
+    [Fact]
+    public void MapAlertLevel_NeverContacted_IsNormal_NotMedium()
+    {
+        Assert.Equal("Normal", FollowupQueryContracts.MapAlertLevel("Normal", null));
+        Assert.Equal("Normal", FollowupQueryContracts.MapAlertLevel(null, null));
     }
 
     [Fact]

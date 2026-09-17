@@ -16,6 +16,11 @@ public class CounselingAnalyticsSummaryDto
     public int AgreedCount { get; set; }
     public int DeclinedCount { get; set; }
     public int UndecidedCount { get; set; }
+    /// <summary>PD13 alias — same value as <see cref="UndecidedCount"/>.</summary>
+    public int PendingDecisionCount { get; set; }
+    public int ExceptionCount { get; set; }
+    public int OtherUnclassifiedCount { get; set; }
+    public int EligibleOutcomeSessions { get; set; }
     public double DecisionRate { get; set; }
     public double ConversionRate { get; set; }
     public double AvgDaysToDecision { get; set; }

@@ -228,7 +228,7 @@ export function CounsellingDecisionSection({
             className={cn(
               counsellingSessionTokens.notesOptionRow,
               selected && counsellingSessionTokens.notesOptionRowSelected,
-              isReadOnly && 'cursor-not-allowed opacity-60',
+              isReadOnly && 'cursor-default',
             )}
           >
             <CounsellingRadioGroupItem
@@ -513,7 +513,6 @@ export function CounsellingNotesSection({
                 if (!isReadOnly) set(e.target.value);
               }}
               placeholder={`Enter ${label.toLowerCase()}…`}
-              disabled={isReadOnly}
             />
           </CounsellingAccordionContent>
         </CounsellingAccordionItem>
@@ -602,7 +601,7 @@ export function CounsellingAdditionalOptionsSection({
         <button
           key={label}
           type="button"
-          disabled={isReadOnly}
+          aria-disabled={isReadOnly || undefined}
           aria-pressed={value}
           onClick={() => {
             if (!isReadOnly) set(!value);
@@ -610,7 +609,7 @@ export function CounsellingAdditionalOptionsSection({
           className={cn(
             counsellingSessionTokens.notesOptionRow,
             value && counsellingSessionTokens.notesOptionRowSelected,
-            isReadOnly && 'cursor-not-allowed opacity-60',
+            isReadOnly && 'cursor-default',
             'outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
           )}
         >

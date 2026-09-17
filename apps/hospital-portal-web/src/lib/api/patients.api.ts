@@ -71,6 +71,8 @@ export interface PatientFormData {
   insuranceProvider?: string;
   insurancePolicyNumber?: string;
   status?: string;
+  /** Optional — server ResolveEffectiveBranchAsync when omitted. */
+  branchId?: string;
 }
 
 export interface PatientDetails extends Patient {
@@ -180,10 +182,7 @@ export const patientApi = {
     const { searchPatientsUnified, unifiedHitToPatient } = await import(
       '@/lib/patients/unified-patient-search'
     );
-    if (!branchId) {
-      throw new Error('branchId is required for patient search');
-    }
-    const hits = await searchPatientsUnified(branchId, query, 25);
+    const hits = await searchPatientsUnified(branchId ?? null, query, 25);
     return { data: hits.map(unifiedHitToPatient) };
   },
 

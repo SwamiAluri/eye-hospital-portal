@@ -439,10 +439,9 @@ public class CoverageCaseService
         coverageCase.UpdatedByUserId = actorUserId;
         coverageCase.RowVersion     += 1;
 
-        // ── Auto-upsert a primary visit policy from the counsellor's draft ──────────
-        // If the counsellor provided a policy number, create or update the primary
-        // VisitInsurancePolicy so the CCMS team can see structured policy data and the
-        // submit-to-claims guard (which requires a primary policy) is satisfied.
+        // ── Auto-upsert visit policy from counsellor draft (case-scoped) ─────────
+        // Prefer matching active policyNumber (CreateAsync uniqueness contract).
+        // Only insert when no active same-number row exists.
         if (!string.IsNullOrWhiteSpace(req.PolicyNumber))
         {
             Guid? visitProviderId = null;
@@ -450,40 +449,72 @@ public class CoverageCaseService
                 Guid.TryParse(req.InsuranceProviderId, out var visitProvGuid))
                 visitProviderId = visitProvGuid;
 
-            var existingPolicy = await _db.VisitInsurancePolicies
-                .FirstOrDefaultAsync(p => p.CoverageCase_Id == coverageCase.Id
-                                       && p.IsPrimary
-                                       && p.DeletedAt == null, ct);
+            var normalizedPolicyNumber = req.PolicyNumber.Trim().ToLowerInvariant();
 
-            if (existingPolicy is null)
+            // CASE A: active row with same normalized policy number → update/reuse (no insert).
+            var matchingByNumber = await _db.VisitInsurancePolicies
+                .Where(p => p.CoverageCase_Id == coverageCase.Id && p.DeletedAt == null)
+                .ToListAsync(ct);
+            var existingByNumber = matchingByNumber
+                .FirstOrDefault(p =>
+                    p.PolicyNumber != null &&
+                    p.PolicyNumber.Trim().ToLowerInvariant() == normalizedPolicyNumber);
+
+            if (existingByNumber is not null)
             {
-                _db.VisitInsurancePolicies.Add(new CcmsApi.Models.Domain.CcmsVisitInsurancePolicy
-                {
-                    Id                   = Guid.NewGuid(),
-                    TenantId             = coverageCase.TenantId,
-                    SessionId            = coverageCase.SessionId,
-                    CoverageCase_Id      = coverageCase.Id,
-                    PolicyNumber         = req.PolicyNumber.Trim(),
-                    MembershipNumber     = req.MembershipNumber?.Trim(),
-                    InsuredName          = req.InsuredName?.Trim(),
-                    InsuranceProviderId  = visitProviderId,
-                    RelationshipToInsured = req.RelationshipToInsured?.ToLower(),
-                    AccommodationClass   = req.RoomClassEntitlement?.ToLower(),
-                    IsPrimary            = true,
-                    SortOrder            = 1,
-                    CreatedByUserId      = actorUserId,
-                    UpdatedByUserId      = actorUserId,
-                });
+                existingByNumber.PolicyNumber         = req.PolicyNumber.Trim();
+                existingByNumber.MembershipNumber     = req.MembershipNumber?.Trim() ?? existingByNumber.MembershipNumber;
+                existingByNumber.InsuredName          = req.InsuredName?.Trim()      ?? existingByNumber.InsuredName;
+                existingByNumber.RelationshipToInsured = req.RelationshipToInsured?.ToLower() ?? existingByNumber.RelationshipToInsured;
+                existingByNumber.AccommodationClass   = req.RoomClassEntitlement?.ToLower()  ?? existingByNumber.AccommodationClass;
+                if (visitProviderId.HasValue)
+                    existingByNumber.InsuranceProviderId = visitProviderId;
+                // Reuse matching row as primary when the visit has no other active primary.
+                if (!matchingByNumber.Any(p => p.IsPrimary && p.Id != existingByNumber.Id))
+                    existingByNumber.IsPrimary = true;
+                existingByNumber.UpdatedAt            = DateTime.UtcNow;
+                existingByNumber.UpdatedByUserId      = actorUserId;
             }
             else
             {
-                existingPolicy.PolicyNumber         = req.PolicyNumber.Trim();
-                existingPolicy.MembershipNumber     = req.MembershipNumber?.Trim() ?? existingPolicy.MembershipNumber;
-                existingPolicy.InsuredName          = req.InsuredName?.Trim()      ?? existingPolicy.InsuredName;
-                existingPolicy.RelationshipToInsured = req.RelationshipToInsured?.ToLower() ?? existingPolicy.RelationshipToInsured;
-                existingPolicy.AccommodationClass   = req.RoomClassEntitlement?.ToLower()  ?? existingPolicy.AccommodationClass;
-                existingPolicy.UpdatedAt            = DateTime.UtcNow;
-                existingPolicy.UpdatedByUserId      = actorUserId;
+                var existingPrimary = matchingByNumber
+                    .FirstOrDefault(p => p.IsPrimary);
+
+                if (existingPrimary is null)
+                {
+                    // CASE C / D: no matching number and no active primary → create primary.
+                    // Soft-deleted same-number rows are ignored above (DeletedAt == null filter).
+                    _db.VisitInsurancePolicies.Add(new CcmsApi.Models.Domain.CcmsVisitInsurancePolicy
+                    {
+                        Id                   = Guid.NewGuid(),
+                        TenantId             = coverageCase.TenantId,
+                        SessionId            = coverageCase.SessionId,
+                        CoverageCase_Id      = coverageCase.Id,
+                        PolicyNumber         = req.PolicyNumber.Trim(),
+                        MembershipNumber     = req.MembershipNumber?.Trim(),
+                        InsuredName          = req.InsuredName?.Trim(),
+                        InsuranceProviderId  = visitProviderId,
+                        RelationshipToInsured = req.RelationshipToInsured?.ToLower(),
+                        AccommodationClass   = req.RoomClassEntitlement?.ToLower(),
+                        IsPrimary            = true,
+                        SortOrder            = 1,
+                        CreatedByUserId      = actorUserId,
+                        UpdatedByUserId      = actorUserId,
+                    });
+                }
+                else
+                {
+                    // CASE B / E: different number with existing primary → update primary (prior behavior).
+                    existingPrimary.PolicyNumber         = req.PolicyNumber.Trim();
+                    existingPrimary.MembershipNumber     = req.MembershipNumber?.Trim() ?? existingPrimary.MembershipNumber;
+                    existingPrimary.InsuredName          = req.InsuredName?.Trim()      ?? existingPrimary.InsuredName;
+                    existingPrimary.RelationshipToInsured = req.RelationshipToInsured?.ToLower() ?? existingPrimary.RelationshipToInsured;
+                    existingPrimary.AccommodationClass   = req.RoomClassEntitlement?.ToLower()  ?? existingPrimary.AccommodationClass;
+                    if (visitProviderId.HasValue)
+                        existingPrimary.InsuranceProviderId = visitProviderId;
+                    existingPrimary.UpdatedAt            = DateTime.UtcNow;
+                    existingPrimary.UpdatedByUserId      = actorUserId;
+                }
             }
         }
 

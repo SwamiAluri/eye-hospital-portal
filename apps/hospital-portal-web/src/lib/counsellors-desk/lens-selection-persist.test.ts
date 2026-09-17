@@ -117,6 +117,105 @@ describe('lens selection save → blob round-trip', () => {
     });
   });
 
+  it('persists Hoya and Alcon selectedIolId values inside packageAddonsJson', () => {
+    for (const selectedIolId of ['iol-hoya', 'iol-alcon'] as const) {
+      const { payload } = buildCounsellingSessionPayload({
+        sessionId: 's1',
+        session,
+        selectedSurgeryId: 'type-var-edof-RE',
+        selectedVariantId: 'var-edof',
+        selectedEye: 'RE',
+        selectedIolId,
+        variantSubOption: null,
+        packageName: '',
+        packageRate: '',
+        paymentType: 'Cash',
+        insuranceCompany: '',
+        insuranceProviderId: undefined,
+        freeSurgeryReason: '',
+        decision: '',
+        followUpReason: '',
+        followUpDate: '',
+        counsellorNotes: '',
+        patientRemarks: '',
+        doctorNotes: '',
+        wantToSeeDoctor: false,
+        interestedToUpgrade: false,
+        notRequiredPreAuth: false,
+        schedule: null,
+        selectedInvestigations: new Map(),
+        mergedEstimate: { ...EMPTY_COUNSELLING_ESTIMATE, finalPayableAmount: 53475 },
+        savedSnapshot: {},
+        isDoneState: false,
+        existingOtScheduleId: null,
+        onSuccess: () => undefined,
+        invalidateWaitingList: () => undefined,
+        invalidateSession: () => undefined,
+      });
+
+      const blob = JSON.parse(payload.packageAddonsJson as string);
+      expect(blob.selectedIolId).toBe(selectedIolId);
+      expect(restoreLensSelectionFromBlob(blob).selectedIolId).toBe(selectedIolId);
+    }
+  });
+
+  it('includes selectedIolId in Azure packageDetails shape used by Save Draft', () => {
+    const packageDetails = JSON.stringify({
+      name: '',
+      rate: 120000,
+      paymentType: 'Cash',
+      insuranceCompany: '',
+      variantId: 'ff29c7ce-9d00-441b-9387-8f5235966e32',
+      eye: 'RE',
+      selectedIolId: 'iol-hoya',
+      variantSubOption: undefined,
+    });
+    const parsed = JSON.parse(packageDetails);
+    expect(parsed.selectedIolId).toBe('iol-hoya');
+    expect(parsed.eye).toBe('RE');
+    expect(parsed.variantId).toBe('ff29c7ce-9d00-441b-9387-8f5235966e32');
+  });
+
+  it('persists Hoya variantSubOption for sub-option procedures', () => {
+    const { payload } = buildCounsellingSessionPayload({
+      sessionId: 's1',
+      session,
+      selectedSurgeryId: 'type-var-edof-RE',
+      selectedVariantId: 'var-edof',
+      selectedEye: 'RE',
+      selectedIolId: null,
+      variantSubOption: 'Hoya',
+      packageName: '',
+      packageRate: '',
+      paymentType: 'Cash',
+      insuranceCompany: '',
+      insuranceProviderId: undefined,
+      freeSurgeryReason: '',
+      decision: '',
+      followUpReason: '',
+      followUpDate: '',
+      counsellorNotes: '',
+      patientRemarks: '',
+      doctorNotes: '',
+      wantToSeeDoctor: false,
+      interestedToUpgrade: false,
+      notRequiredPreAuth: false,
+      schedule: null,
+      selectedInvestigations: new Map(),
+      mergedEstimate: { ...EMPTY_COUNSELLING_ESTIMATE, finalPayableAmount: 53475 },
+      savedSnapshot: {},
+      isDoneState: false,
+      existingOtScheduleId: null,
+      onSuccess: () => undefined,
+      invalidateWaitingList: () => undefined,
+      invalidateSession: () => undefined,
+    });
+
+    const blob = JSON.parse(payload.packageAddonsJson as string);
+    expect(blob.variantSubOption).toBe('Hoya');
+    expect(restoreLensSelectionFromBlob(blob).variantSubOption).toBe('Hoya');
+  });
+
   it('keeps lens fields when merging estimate into blob', () => {
     const merged = mergeEstimateIntoBlob(
       {

@@ -25,6 +25,10 @@ export interface CounsellingEstimatePhaseProps {
   isReadOnly: boolean;
   isDoneState: boolean;
   packageTemplates: CounsellingPackageTemplate[];
+  /** True when caller lacks package_templates.read — do not imply catalog load failure. */
+  packageTemplatesAccessDenied?: boolean;
+  /** Lazy-load package catalog when Quote → Package is opened. */
+  requestPackageCatalog?: () => void;
   masterCatalog: {
     imaging: MasterCatalogItem[];
     scan: MasterCatalogItem[];

@@ -22,19 +22,21 @@ export type WaitingListPatientDetailSheetProps = {
   onClose: () => void;
 };
 
-function displayValue(value: string | number | null | undefined): string {
-  if (value == null) return '—';
+function displayValue(value: string | number | null | undefined): string | null {
+  if (value == null) return null;
   if (typeof value === 'number') {
-    if (Number.isNaN(value)) return '—';
+    if (Number.isNaN(value)) return null;
     return String(value);
   }
   const trimmed = value.trim();
-  return trimmed ? trimmed : '—';
+  return trimmed ? trimmed : null;
 }
 
-function FieldRow({ label, value }: { label: string; value: string }) {
+/** Compact field row — omit empty values (PatientDemographicsSheet pattern). */
+function FieldRow({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null;
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-counselling-border/40 py-2 last:border-0">
+    <div className="flex items-baseline justify-between gap-3 border-b border-counselling-border/40 py-1.5 last:border-0">
       <span className="w-[40%] shrink-0 text-[12.5px] font-medium leading-[18px] text-counselling-muted-foreground">
         {label}
       </span>
@@ -45,24 +47,39 @@ function FieldRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  children,
+  show,
+}: {
+  title: string;
+  children: ReactNode;
+  show: boolean;
+}) {
+  if (!show) return null;
   return (
-    <section className="min-w-0">
-      <h3 className="mb-1 text-sm font-semibold text-counselling-foreground">{title}</h3>
+    <section className="min-w-0 rounded-lg border border-counselling-border/50 bg-counselling-card px-3 py-2.5">
+      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-counselling-muted-foreground">
+        {title}
+      </h3>
       <div className="min-w-0">{children}</div>
     </section>
   );
 }
 
-function formatUpgradeDiff(diff: number | undefined): string {
-  if (diff == null || Number.isNaN(diff)) return '—';
+function hasAny(...values: Array<string | null | undefined>): boolean {
+  return values.some((v) => Boolean(v?.trim()));
+}
+
+function formatUpgradeDiff(diff: number | undefined): string | null {
+  if (diff == null || Number.isNaN(diff)) return null;
   if (diff === 0) return '₹0';
   const sign = diff > 0 ? '+' : '';
   return `${sign}₹${diff.toLocaleString('en-IN')}`;
 }
 
-function formatFollowUpDate(value: string | undefined): string {
-  if (!value?.trim()) return '—';
+function formatFollowUpDate(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
   const raw = value.trim();
   const ymd = raw.slice(0, 10);
   const parsed = /^\d{4}-\d{2}-\d{2}$/.test(ymd)
@@ -76,23 +93,78 @@ function formatFollowUpDate(value: string | undefined): string {
   });
 }
 
+function ownerDisplay(patient: WaitingListPatient): string {
+  if (!patient.counselorId) return 'Unassigned';
+  return patient.counselorName?.trim() || 'Assigned';
+}
+
 export function WaitingListPatientDetailSheet({
   patient,
   open,
   onClose,
 }: WaitingListPatientDetailSheetProps) {
   const isOpen = open && patient != null;
-  const name = displayValue(patient?.patientName);
+  const name = displayValue(patient?.patientName) ?? '—';
   const uhid = displayValue(patient?.uhid);
-  const gender = formatPatientSex(patient?.gender) ?? '—';
+  const gender = formatPatientSex(patient?.gender);
   const ageLabel =
-    patient?.age != null && patient.age > 0 ? `${patient.age} yrs` : '—';
-  const dob = formatPatientDob(patient?.dob) ?? '—';
+    patient?.age != null && patient.age > 0 ? `${patient.age} yrs` : null;
+  const dob = formatPatientDob(patient?.dob);
   const doctor = displayValue(formatWaitingListDoctorDisplay(patient?.doctor));
   const statusBadge = patient ? getStatusBadge(patient.status) : null;
-  const identityMeta = [uhid, ageLabel !== '—' ? ageLabel : null, gender !== '—' ? gender : null]
-    .filter(Boolean)
-    .join(' · ');
+  const identityMeta = [uhid, ageLabel, gender].filter(Boolean).join(' · ');
+
+  const bloodGroup = displayValue(patient?.bloodGroup);
+  const visitType = displayValue(patient?.type);
+  const patientType = displayValue(patient?.patientType);
+  const visitTime = displayValue(patient?.time);
+  const procedure = displayValue(patient?.surgeryName);
+  const eye = displayValue(patient?.eye);
+  const followUpDate = formatFollowUpDate(patient?.followUpDate);
+  const followUpReason = displayValue(patient?.followUpReason);
+  const previousPackage = displayValue(patient?.previousPackage);
+  const newPackage = displayValue(patient?.newPackage);
+  const upgradeDiff = formatUpgradeDiff(patient?.upgradeDiff);
+  const remarks = displayValue(patient?.remarks);
+
+  const patientRows = (
+    <>
+      <FieldRow label="UHID" value={uhid} />
+      <FieldRow label="Age" value={ageLabel} />
+      <FieldRow label="Sex" value={gender} />
+      <FieldRow label="Date of Birth" value={dob} />
+      <FieldRow label="Blood Group" value={bloodGroup} />
+    </>
+  );
+
+  const visitRows = (
+    <>
+      <FieldRow label="Visit Type" value={visitType} />
+      <FieldRow label="Doctor" value={doctor} />
+      <FieldRow label="Time" value={visitTime} />
+      <FieldRow label="Patient Type" value={patientType} />
+    </>
+  );
+
+  const ownerLabel = patient ? ownerDisplay(patient) : null;
+  const counsellingRows = (
+    <>
+      <FieldRow label="Owner" value={ownerLabel} />
+      <FieldRow label="Follow-up Date" value={followUpDate} />
+      <FieldRow label="Follow-up Reason" value={followUpReason} />
+      <FieldRow label="Remarks" value={remarks} />
+    </>
+  );
+
+  const clinicalRows = (
+    <>
+      <FieldRow label="Procedure" value={procedure} />
+      <FieldRow label="Eye" value={eye} />
+      <FieldRow label="Previous Package" value={previousPackage} />
+      <FieldRow label="New Package" value={newPackage} />
+      <FieldRow label="Upgrade Difference" value={upgradeDiff} />
+    </>
+  );
 
   return (
     <Sheet
@@ -117,7 +189,6 @@ export function WaitingListPatientDetailSheet({
                   counsellingSessionTokens.patientHeaderGap,
                 )}
               >
-                {/* WaitingListPatient has no photoUrl — initials from name only */}
                 <PatientAvatar
                   displayName={patient.patientName}
                   size="lg"
@@ -161,84 +232,41 @@ export function WaitingListPatientDetailSheet({
                 </div>
               </div>
               <SheetDescription className="sr-only">
-                Read-only waiting list patient identity, contact, visit, and
-                clinical details
+                Quick patient context for this waiting list item. Read-only —
+                does not assign or claim ownership.
               </SheetDescription>
             </SheetHeader>
 
-            <div className="counselling-hidden-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
-              <Section title="Identity">
-                <FieldRow label="UHID" value={uhid} />
-                <FieldRow label="Age" value={ageLabel} />
-                <FieldRow label="Sex" value={gender} />
-                <FieldRow label="Date of Birth" value={dob} />
-                <FieldRow label="Blood Group" value={displayValue(patient.bloodGroup)} />
+            <div className="counselling-hidden-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              <Section
+                title="Patient"
+                show={hasAny(uhid, ageLabel, gender, dob, bloodGroup)}
+              >
+                {patientRows}
               </Section>
-
-              <Section title="Contact">
-                <FieldRow
-                  label="Contact Number"
-                  value={displayValue(patient.contactNumber)}
-                />
+              <Section
+                title="Visit"
+                show={hasAny(visitType, doctor, visitTime, patientType)}
+              >
+                {visitRows}
               </Section>
-
-              <Section title="Visit / Counselling Context">
-                <FieldRow label="Type" value={displayValue(patient.type)} />
-                <FieldRow
-                  label="Patient Type"
-                  value={displayValue(patient.patientType)}
-                />
-                <FieldRow
-                  label="Status"
-                  value={statusBadge?.label ?? '—'}
-                />
-                <FieldRow label="Time" value={displayValue(patient.time)} />
-                <FieldRow label="Remarks" value={displayValue(patient.remarks)} />
-                <FieldRow
-                  label="Follow-up Date"
-                  value={formatFollowUpDate(patient.followUpDate)}
-                />
-                <FieldRow
-                  label="Follow-up Reason"
-                  value={displayValue(patient.followUpReason)}
-                />
+              <Section
+                title="Counselling"
+                show={hasAny(ownerLabel, followUpDate, followUpReason, remarks)}
+              >
+                {counsellingRows}
               </Section>
-
-              <Section title="Clinical / Surgery Context">
-                <FieldRow
-                  label="Procedure"
-                  value={displayValue(patient.surgeryName)}
-                />
-                <FieldRow label="Eye" value={displayValue(patient.eye)} />
-                <FieldRow label="Doctor" value={doctor} />
-                <FieldRow
-                  label="Previous Package"
-                  value={displayValue(patient.previousPackage)}
-                />
-                <FieldRow
-                  label="New Package"
-                  value={displayValue(patient.newPackage)}
-                />
-                <FieldRow
-                  label="Upgrade Difference"
-                  value={formatUpgradeDiff(patient.upgradeDiff)}
-                />
-              </Section>
-
-              <Section title="Emergency / Address">
-                <FieldRow
-                  label="Emergency Contact"
-                  value={displayValue(patient.emergencyContactName)}
-                />
-                <FieldRow
-                  label="Emergency Phone"
-                  value={displayValue(patient.emergencyContactPhone)}
-                />
-                <FieldRow
-                  label="Relationship"
-                  value={displayValue(patient.emergencyContactRelationship)}
-                />
-                <FieldRow label="Address" value={displayValue(patient.address)} />
+              <Section
+                title="Clinical / Surgery"
+                show={hasAny(
+                  procedure,
+                  eye,
+                  previousPackage,
+                  newPackage,
+                  upgradeDiff,
+                )}
+              >
+                {clinicalRows}
               </Section>
             </div>
           </>

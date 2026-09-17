@@ -19,6 +19,9 @@ public class ApplicationDbContext : DbContext
         // ─── Patient ─────────────────────────────────────────────────────────────
         // Read-only projection of the shared `patients` table (owned by auth-service).
         // ExcludeFromMigrations() ensures EF never generates CREATE/DROP TABLE for it.
+        // Do NOT require a JOIN to this table for counselling DML — local/shared DBs may
+        // not expose `patients` in the counselling connection (42P01). PatientId is a
+        // plain Guid column; display enrichment is optional and must not block Save.
         modelBuilder.Entity<Patient>(entity =>
         {
             entity.ToTable("patients", t => t.ExcludeFromMigrations());
@@ -34,8 +37,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50);
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+            entity.Ignore(e => e.CounsellingRecords);
 
-            // Unique index on (tenant_id, health_id) mirrors the auth-service constraint.
             entity.HasIndex(e => new { e.TenantId, e.HealthId })
                   .IsUnique()
                   .HasFilter("health_id IS NOT NULL AND deleted_at IS NULL")
@@ -78,23 +81,16 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.RecordStatus).HasColumnName("record_status").HasMaxLength(50);
 
             // xmin-based optimistic concurrency (Npgsql 8.x idiomatic approach).
-            // Uses the PostgreSQL system column xmin as a shadow property — no entity property needed.
-            // EF Core throws DbUpdateConcurrencyException if another process modified the row first.
             entity.Property<uint>("xmin")
                   .HasColumnType("xid")
                   .IsRowVersion();
 
-            // Indexes mirror those in 001_create_tables.sql (idempotent — EF won't re-create
-            // existing indexes when migrations are applied to the live DB).
             entity.HasIndex(e => e.Status).HasDatabaseName("idx_pc_status");
             entity.HasIndex(e => e.TenantId).HasDatabaseName("idx_pc_tenant_id");
             entity.HasIndex(e => e.PatientId).HasDatabaseName("idx_pc_patient_id");
 
-            // FK: patient_counselling.patient_id → patients.id
-            entity.HasOne(e => e.Patient)
-                  .WithMany(p => p.CounsellingRecords)
-                  .HasForeignKey(e => e.PatientId)
-                  .OnDelete(DeleteBehavior.Restrict);
+            // No EF FK/join to patients — avoids 42P01 when the shared table is absent.
+            entity.Ignore(e => e.Patient);
         });
 
         // ─── AuditLog ────────────────────────────────────────────────────────────

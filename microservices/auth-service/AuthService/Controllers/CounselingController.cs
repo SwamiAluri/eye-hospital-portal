@@ -4,6 +4,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,7 @@ using AuthService.Context;
 using AuthService.Hubs;
 using AuthService.Models.Counselor;
 using AuthService.Models.Domain;
+using AuthService.Models.Identity;
 using AuthService.Services;
 
 namespace AuthService.Controllers
@@ -25,6 +27,7 @@ namespace AuthService.Controllers
         private readonly ICounselingWorkflowService _counselingService;
         private readonly ICounselorCommunicationService _communicationService;
         private readonly IFollowupListService _followupListService;
+        private readonly IFollowupBranchAccessService _followupBranchAccess;
         private readonly ICounselingAnalyticsService _analyticsService;
         private readonly ILogger<CounselingController> _logger;
         private readonly IEmailService _emailService;
@@ -37,6 +40,7 @@ namespace AuthService.Controllers
             ICounselingWorkflowService counselingService,
             ICounselorCommunicationService communicationService,
             IFollowupListService followupListService,
+            IFollowupBranchAccessService followupBranchAccess,
             ICounselingAnalyticsService analyticsService,
             ILogger<CounselingController> logger,
             IEmailService emailService,
@@ -48,6 +52,7 @@ namespace AuthService.Controllers
             _counselingService = counselingService;
             _communicationService = communicationService;
             _followupListService = followupListService;
+            _followupBranchAccess = followupBranchAccess;
             _analyticsService = analyticsService;
             _logger = logger;
             _emailService = emailService;
@@ -75,6 +80,21 @@ namespace AuthService.Controllers
                 throw new UnauthorizedAccessException("User ID not found in token");
             }
             return userId;
+        }
+
+        /// <summary>Phase 3I Slice 4 — map owner ACL / validation failures to HTTP status.</summary>
+        private IActionResult MapSessionOperationResult(SessionOperationResult result)
+        {
+            if (result.Success)
+                return Ok(result);
+
+            return result.FailureKind switch
+            {
+                SessionOperationFailureKind.Forbidden => StatusCode(
+                    StatusCodes.Status403Forbidden, result),
+                SessionOperationFailureKind.NotFound => NotFound(result),
+                _ => BadRequest(result),
+            };
         }
 
         /// <summary>Safely extracts a string property from a JSON blob; returns null on any error.</summary>
@@ -121,8 +141,15 @@ namespace AuthService.Controllers
             try
             {
                 filters.TenantId = GetTenantId();
+                // Phase2Z F-04 — always enforce branch authorization (PD16 parity with Analytics/Follow-up).
+                var branches = await ResolveFollowupBranchesAsync(filters.BranchId);
+                filters.AccessibleBranchIds = branches;
                 var response = await _counselingService.GetAllSessionsAsync(filters);
                 return Ok(response);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -191,14 +218,20 @@ namespace AuthService.Controllers
             try
             {
                 var tenantId = GetTenantId();
+                var branches = await ResolveFollowupBranchesAsync(null);
                 var filters = new SessionFilters
                 {
                     TenantId = tenantId,
                     PatientId = patientId,
+                    AccessibleBranchIds = branches,
                     PageSize = 50
                 };
                 var response = await _counselingService.GetAllSessionsAsync(filters);
                 return Ok(response);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -217,9 +250,39 @@ namespace AuthService.Controllers
                 var currentUserId = GetCurrentUserId();
                 
                 request.TenantId = tenantId;
+                request.BranchId = await _followupBranchAccess.ResolveEffectiveBranchAsync(
+                    tenantId, currentUserId, request.BranchId);
+
+                // Reject patients assigned to a branch outside the caller's authorization.
+                var patient = await _context.Patients.AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.Id == request.PatientId && p.TenantId == tenantId && p.DeletedAt == null);
+                if (patient == null)
+                    return BadRequest(new { message = "Patient not found in this tenant." });
+                if (patient.BranchId.HasValue)
+                {
+                    var accessible = await _followupBranchAccess.ResolveAccessibleBranchesAsync(
+                        tenantId, currentUserId, requestedBranchId: null);
+                    if (!accessible.Contains(patient.BranchId.Value))
+                    {
+                        return StatusCode(StatusCodes.Status403Forbidden,
+                            new { message = "Patient belongs to a branch you are not authorized to access." });
+                    }
+                }
                 
                 var result = await _counselingService.CreateSessionAsync(request, currentUserId);
                 return result.Success ? Ok(result) : BadRequest(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -238,12 +301,160 @@ namespace AuthService.Controllers
                 var currentUserId = GetCurrentUserId();
                 
                 var result = await _counselingService.UpdateSessionAsync(tenantId, id, request, currentUserId);
-                return result.Success ? Ok(result) : BadRequest(result);
+                return MapSessionOperationResult(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating counseling session {SessionId}", id);
                 return StatusCode(500, new { message = "Error updating session", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Phase 3I Slice 3 — explicit initial ownership assignment (NULL → target counsellor).
+        /// Open/view/start do not assign. Permission: counseling_sessions.update (PD-ASSIGN-01).
+        /// </summary>
+        [HttpPost("sessions/{id}/assign")]
+        [RequirePermission("counseling_sessions.update")]
+        public async Task<IActionResult> AssignSession(Guid id, [FromBody] AssignCounselingSessionRequest request)
+        {
+            try
+            {
+                if (request == null || request.CounselorId == Guid.Empty)
+                    return BadRequest(new { message = "CounselorId is required." });
+
+                var tenantId = GetTenantId();
+                var actorUserId = GetCurrentUserId();
+
+                var result = await _counselingService.AssignSessionAsync(
+                    tenantId, id, request.CounselorId, actorUserId);
+
+                if (result.Success)
+                    return Ok(result);
+
+                return result.FailureKind switch
+                {
+                    AssignSessionFailureKind.NotFound => NotFound(new { message = result.Message }),
+                    AssignSessionFailureKind.Forbidden => StatusCode(
+                        StatusCodes.Status403Forbidden, new { message = result.Message }),
+                    AssignSessionFailureKind.Conflict => Conflict(new { message = result.Message }),
+                    _ => BadRequest(new { message = result.Message }),
+                };
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error assigning counseling session {SessionId}", id);
+                return StatusCode(500, new { message = "Error assigning session", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Phase 3I — lifecycle ownership claim (owned → actor) for ReEvaluate / StartRepeat only.
+        /// Not general Reassign (PD-REASSIGN-01 / Slice 6). Counsellor actor only.
+        /// </summary>
+        [HttpPost("sessions/{id}/claim-for-lifecycle")]
+        [RequirePermission("counseling_sessions.update")]
+        public async Task<IActionResult> ClaimSessionForLifecycle(
+            Guid id,
+            [FromBody] ClaimCounselingSessionForLifecycleRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.Intent))
+                    return BadRequest(new { message = "Intent is required." });
+
+                var tenantId = GetTenantId();
+                var actorUserId = GetCurrentUserId();
+
+                var result = await _counselingService.ClaimSessionForLifecycleAsync(
+                    tenantId, id, request.ExpectedCounselorId, request.Intent, actorUserId);
+
+                if (result.Success)
+                    return Ok(result);
+
+                return result.FailureKind switch
+                {
+                    AssignSessionFailureKind.NotFound => NotFound(new { message = result.Message }),
+                    AssignSessionFailureKind.Forbidden => StatusCode(
+                        StatusCodes.Status403Forbidden, new { message = result.Message }),
+                    AssignSessionFailureKind.Conflict => Conflict(new { message = result.Message }),
+                    _ => BadRequest(new { message = result.Message }),
+                };
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error claiming counseling session {SessionId} for lifecycle", id);
+                return StatusCode(500, new { message = "Error claiming session", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Phase 3I Slice 6 — supervisory General Reassign (owned A → B).
+        /// Permission: counseling_sessions.reassign (not .update). Not Assign; not lifecycle Claim.
+        /// </summary>
+        [HttpPost("sessions/{id}/reassign")]
+        [RequirePermission("counseling_sessions.reassign")]
+        public async Task<IActionResult> ReassignSession(
+            Guid id,
+            [FromBody] ReassignCounselingSessionRequest request)
+        {
+            try
+            {
+                if (request == null)
+                    return BadRequest(new { message = "Request body is required." });
+
+                if (request.CounselorId == Guid.Empty)
+                    return BadRequest(new { message = "CounselorId is required." });
+
+                if (request.ExpectedCounselorId == Guid.Empty)
+                    return BadRequest(new { message = "ExpectedCounselorId is required." });
+
+                if (string.IsNullOrWhiteSpace(request.Reason))
+                    return BadRequest(new { message = "Reason is required." });
+
+                var tenantId = GetTenantId();
+                var actorUserId = GetCurrentUserId();
+
+                var result = await _counselingService.ReassignSessionAsync(
+                    tenantId,
+                    id,
+                    request.CounselorId,
+                    request.ExpectedCounselorId,
+                    request.Reason,
+                    actorUserId);
+
+                if (result.Success)
+                    return Ok(result);
+
+                return result.FailureKind switch
+                {
+                    AssignSessionFailureKind.NotFound => NotFound(new { message = result.Message }),
+                    AssignSessionFailureKind.Forbidden => StatusCode(
+                        StatusCodes.Status403Forbidden, new { message = result.Message }),
+                    AssignSessionFailureKind.Conflict => Conflict(new { message = result.Message }),
+                    _ => BadRequest(new { message = result.Message }),
+                };
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reassigning counseling session {SessionId}", id);
+                return StatusCode(500, new { message = "Error reassigning session", error = ex.Message });
             }
         }
 
@@ -271,9 +482,16 @@ namespace AuthService.Controllers
                 };
 
                 var result = await _counselingService.UpdateSessionAsync(tenantId, id, updateRequest, currentUserId);
-                return result.Success
-                    ? Ok(new { success = true, currentStage = request.Stage.ToString() })
-                    : NotFound(new { message = "Session not found" });
+                if (result.Success)
+                    return Ok(new { success = true, currentStage = request.Stage.ToString() });
+
+                return result.FailureKind switch
+                {
+                    SessionOperationFailureKind.Forbidden => StatusCode(
+                        StatusCodes.Status403Forbidden, new { message = result.Message }),
+                    SessionOperationFailureKind.NotFound => NotFound(new { message = result.Message }),
+                    _ => BadRequest(new { message = result.Message }),
+                };
             }
             catch (Exception ex)
             {
@@ -292,7 +510,7 @@ namespace AuthService.Controllers
                 var currentUserId = GetCurrentUserId();
                 
                 var result = await _counselingService.StartSessionAsync(tenantId, id, currentUserId, request?.SessionType);
-                return result.Success ? Ok(result) : BadRequest(result);
+                return MapSessionOperationResult(result);
             }
             catch (Exception ex)
             {
@@ -311,7 +529,7 @@ namespace AuthService.Controllers
                 var currentUserId = GetCurrentUserId();
                 
                 var result = await _counselingService.CompleteSessionAsync(tenantId, id, currentUserId);
-                return result.Success ? Ok(result) : BadRequest(result);
+                return MapSessionOperationResult(result);
             }
             catch (Exception ex)
             {
@@ -356,7 +574,7 @@ namespace AuthService.Controllers
                 var currentUserId = GetCurrentUserId();
 
                 var result = await _counselingService.MarkAddOnSurgeryAsync(tenantId, id, currentUserId);
-                return result.Success ? Ok(result) : BadRequest(result);
+                return MapSessionOperationResult(result);
             }
             catch (Exception ex)
             {
@@ -375,7 +593,7 @@ namespace AuthService.Controllers
                 var currentUserId = GetCurrentUserId();
                 
                 var result = await _counselingService.CancelSessionAsync(tenantId, id, request.Reason, currentUserId);
-                return result.Success ? Ok(result) : BadRequest(result);
+                return MapSessionOperationResult(result);
             }
             catch (Exception ex)
             {
@@ -462,6 +680,13 @@ namespace AuthService.Controllers
             {
                 var tenantId = GetTenantId();
 
+                // Phase 3I Slice 1 — PD16: client branchId is a request filter only.
+                // Server-authorized branches are the security boundary (FollowupBranchAccessService).
+                // Omitting branchId narrows to authorized set — never tenant-wide fallback.
+                // Waiting List remains SHARED: CounselorId / CreatedByUserId are not visibility filters.
+                var authorizedBranches = await ResolveFollowupBranchesAsync(filters.BranchId);
+                var authorizedBranchIds = authorizedBranches as Guid[] ?? authorizedBranches.ToArray();
+
                 // Date range filter — only applied when explicitly provided.
                 // Without dates the full active queue is returned (development
                 // seeded data may have non-today timestamps).
@@ -489,11 +714,14 @@ namespace AuthService.Controllers
                     join p in _context.Patients on q.PatientId equals p.Id
                     join u in _context.Users on s.ReferredByDoctorId equals u.Id into userJoin
                     from u in userJoin.DefaultIfEmpty()
+                    join c in _context.Users on s.CounselorId equals c.Id into counselorJoin
+                    from c in counselorJoin.DefaultIfEmpty()
                     where q.TenantId == tenantId
                        && q.DeletedAt == null
+                       && s.DeletedAt == null
+                       && authorizedBranchIds.Contains(q.BranchId)
                        && (fromDate == null || q.AddedToQueueAt >= fromDate)
                        && (toDate   == null || q.AddedToQueueAt <  toDate)
-                       && (filters.BranchId == null || q.BranchId == filters.BranchId)
                     orderby q.QueuePosition
                     select new
                     {
@@ -504,6 +732,7 @@ namespace AuthService.Controllers
                         q.Status,
                         q.UrgencyLevel,
                         q.AddedToQueueAt,
+                        QueueBranchId = q.BranchId,
                         s.RecommendedSurgery,
                         s.SurgeryTentativeEye,
                         s.SessionCategory,
@@ -515,6 +744,9 @@ namespace AuthService.Controllers
                         s.PackageAmount,
                         s.DecisionDate,
                         s.ReasonsForDelay,
+                        s.CounselorId,
+                        CounselorFirstName = c != null ? c.FirstName : null,
+                        CounselorLastName  = c != null ? c.LastName  : null,
                         p.FirstName,
                         p.LastName,
                         p.HealthId,
@@ -599,6 +831,11 @@ namespace AuthService.Controllers
                             UpgradeDiff = status == "AddOnSurgery" && !string.IsNullOrEmpty(item.PackageAddonsJson)
                                 ? ComputeUpgradeDiff(item.PackageAddonsJson)
                                 : null,
+                            CounselorId = item.CounselorId?.ToString(),
+                            CounselorName = item.CounselorId.HasValue
+                                ? $"{item.CounselorFirstName} {item.CounselorLastName}".Trim()
+                                : null,
+                            BranchId = item.QueueBranchId.ToString(),
                         };
                     })
                     .Where(item =>
@@ -613,6 +850,10 @@ namespace AuthService.Controllers
                     .ToList();
 
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -1108,6 +1349,10 @@ namespace AuthService.Controllers
                 var log = await _communicationService.AddCommLogAsync(sessionId, request, tenantId, counselorId);
                 return StatusCode(201, log);
             }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
             catch (InvalidOperationException ex)
             {
                 return NotFound(new { message = ex.Message });
@@ -1270,7 +1515,8 @@ namespace AuthService.Controllers
         /// <summary>
         /// GET /api/Counseling/followups/active — Active PatientIntention allowlist.
         /// Query: branchId?, intention?, q?, page, pageSize.
-        /// total = count after population + branch + intention + q (not page size).
+        /// total = count after population + authorized branch scope + intention + q (not page size).
+        /// Phase2X PD16: branchId is a filter within server-authorized branches only.
         /// </summary>
         [HttpGet("followups/active")]
         [RequirePermission("counseling_sessions.read")]
@@ -1283,9 +1529,14 @@ namespace AuthService.Controllers
         {
             try
             {
+                var branches = await ResolveFollowupBranchesAsync(branchId);
                 var result = await _followupListService.GetActiveAsync(
-                    GetTenantId(), branchId, intention, q, page, pageSize);
+                    GetTenantId(), branches, intention, q, page, pageSize);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -1297,6 +1548,7 @@ namespace AuthService.Controllers
         /// <summary>
         /// GET /api/Counseling/followups/cold-leads — Declined / ReferredElsewhere.
         /// Query: branchId?, q?, page, pageSize.
+        /// Phase2X PD16: branchId is a filter within server-authorized branches only.
         /// </summary>
         [HttpGet("followups/cold-leads")]
         [RequirePermission("counseling_sessions.read")]
@@ -1308,9 +1560,14 @@ namespace AuthService.Controllers
         {
             try
             {
+                var branches = await ResolveFollowupBranchesAsync(branchId);
                 var result = await _followupListService.GetColdLeadsAsync(
-                    GetTenantId(), branchId, q, page, pageSize);
+                    GetTenantId(), branches, q, page, pageSize);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -1322,6 +1579,7 @@ namespace AuthService.Controllers
         /// <summary>
         /// GET /api/Counseling/followups/post-surgery — discharged patient_journey rows.
         /// Query: branchId?, q?, page, pageSize.
+        /// Phase2X PD16: branchId is a filter within server-authorized branches only.
         /// </summary>
         [HttpGet("followups/post-surgery")]
         [RequirePermission("counseling_sessions.read")]
@@ -1333,9 +1591,14 @@ namespace AuthService.Controllers
         {
             try
             {
+                var branches = await ResolveFollowupBranchesAsync(branchId);
                 var result = await _followupListService.GetPostSurgeryAsync(
-                    GetTenantId(), branchId, q, page, pageSize);
+                    GetTenantId(), branches, q, page, pageSize);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -1348,7 +1611,8 @@ namespace AuthService.Controllers
         /// GET /api/Counseling/followups/stats — server aggregates for Follow-up Center KPIs.
         /// Filters: branchId?, intention? (Active only), q?.
         /// Scope is always the filtered population (same predicates as list endpoints), never the current page.
-        /// Does not implement due-date windows.
+        /// Does not implement due-date windows. Includes orphan-intention audit counts (not a queue).
+        /// Phase2X PD16: branchId is a filter within server-authorized branches only.
         /// </summary>
         [HttpGet("followups/stats")]
         [RequirePermission("counseling_sessions.read")]
@@ -1359,9 +1623,14 @@ namespace AuthService.Controllers
         {
             try
             {
+                var branches = await ResolveFollowupBranchesAsync(branchId);
                 var result = await _followupListService.GetStatsAsync(
-                    GetTenantId(), branchId, intention, q);
+                    GetTenantId(), branches, branchId, intention, q);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -1369,6 +1638,11 @@ namespace AuthService.Controllers
                 return StatusCode(500, new { message = "Error retrieving follow-up stats", error = ex.Message });
             }
         }
+
+        /// <summary>PD16 — resolve authorized branch scope (never trust client branchId alone).</summary>
+        private Task<IReadOnlyList<Guid>> ResolveFollowupBranchesAsync(Guid? requestedBranchId)
+            => _followupBranchAccess.ResolveAccessibleBranchesAsync(
+                GetTenantId(), GetCurrentUserId(), requestedBranchId);
 
         /// <summary>POST /api/Counseling/sessions/{id}/re-queue — re-queue a patient to the counselor waiting list after call.</summary>
         [HttpPost("sessions/{id}/re-queue")]
@@ -1386,9 +1660,12 @@ namespace AuthService.Controllers
                 if (session == null)
                     return NotFound(new { message = "Session not found" });
 
-                // Update patient intention to the new agreed intention
+                // Update patient intention — Phase2X write validation (Active/Cold/Orphan only)
                 if (!string.IsNullOrEmpty(request.NewIntention))
-                    session.PatientIntention = request.NewIntention;
+                {
+                    session.PatientIntention =
+                        FollowupQueryContracts.NormalizeWritablePatientIntention(request.NewIntention);
+                }
 
                 if (!string.IsNullOrWhiteSpace(request.SessionType))
                     session.SessionType = request.SessionType.Trim();
@@ -1438,6 +1715,10 @@ namespace AuthService.Controllers
                     message     = "Patient re-queued to counselor waiting list"
                 });
             }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error re-queuing session {Id}", id);
@@ -1461,7 +1742,8 @@ namespace AuthService.Controllers
                     .OrderByDescending(s => s.CreatedAt)
                     .FirstOrDefaultAsync();
 
-                // Build comm-log entry regardless of whether a session exists
+                // Build comm-log entry regardless of whether a session exists.
+                // Outcome/NextAction must satisfy migration-69 CHECKs (not free-form master codes).
                 if (session != null)
                 {
                     var log = new CounselorCommunicationLog
@@ -1474,9 +1756,12 @@ namespace AuthService.Controllers
                         Channel           = request.Channel,
                         Direction         = "Outbound",
                         CommunicationAt   = DateTime.UtcNow,
-                        Outcome           = "Sent",
+                        Outcome           = "MessageSent",
                         MessageBody       = request.Message,
-                        NextAction        = request.MessageType,
+                        ResponseSummary   = string.IsNullOrWhiteSpace(request.MessageType)
+                            ? null
+                            : $"ReminderType:{request.MessageType.Trim()}",
+                        NextAction        = "NoFurtherAction",
                         Status            = "active",
                         CreatedAt         = DateTime.UtcNow,
                         UpdatedAt         = DateTime.UtcNow,
@@ -1508,6 +1793,232 @@ namespace AuthService.Controllers
         // ANALYTICS — Phase E + Phase 2D (shared date window, counselorId, from/to)
         // ============================================================================
 
+        /// <summary>
+        /// GET /api/Counseling/surgeons — referring-surgeon dropdown for Add Patient / OT counselling.
+        /// Uses counseling_sessions.read (not user.view). Same least-privilege pattern as GetCounselors.
+        /// Does not invent a new IAM permission. UsersController /users/surgeons remains user.view.
+        /// </summary>
+        [HttpGet("surgeons")]
+        [RequirePermission("counseling_sessions.read")]
+        public async Task<IActionResult> GetSurgeons()
+        {
+            try
+            {
+                var tenantId = GetTenantId();
+
+                var surgeons = await (
+                    from ur in _context.UserRoles.Cast<AppUserRole>()
+                    join u in _context.Users on ur.UserId equals u.Id
+                    join r in _context.Roles on ur.RoleId equals r.Id
+                    where u.TenantId == tenantId
+                          && u.DeletedAt == null
+                          && ur.IsActive
+                          && r.NormalizedName != null
+                          && (r.NormalizedName.Contains("DOCTOR")
+                              || r.NormalizedName.Contains("SURGEON")
+                              || r.NormalizedName.Contains("OPHTHAL"))
+                    select new
+                    {
+                        id = u.Id,
+                        name = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
+                        specialization = u.Specialization ?? "Ophthalmology",
+                        jobTitle = r.Name,
+                        email = u.Email,
+                        phone = u.PhoneNumber,
+                    }
+                ).Distinct().OrderBy(s => s.name).ToListAsync();
+
+                if (surgeons.Count == 0)
+                {
+                    surgeons = await _context.Users
+                        .AsNoTracking()
+                        .Where(u => u.TenantId == tenantId
+                                    && u.DeletedAt == null
+                                    && (u.UserType == "Doctor"
+                                        || u.UserType == "Surgeon"
+                                        || u.UserType == "Ophthalmologist"))
+                        .Select(u => new
+                        {
+                            id = u.Id,
+                            name = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
+                            specialization = u.Specialization ?? "Ophthalmology",
+                            jobTitle = u.UserType,
+                            email = u.Email,
+                            phone = u.PhoneNumber,
+                        })
+                        .OrderBy(s => s.name)
+                        .ToListAsync();
+                }
+
+                return Ok(surgeons);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving surgeons for counselling desk");
+                return StatusCode(500, new { message = "Error retrieving surgeons", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/Counseling/theaters — OT theater dropdown for Schedule Surgery / Finalize OT.
+        /// Uses counseling_sessions.read (not ot.theaters.view). Same least-privilege pattern as GetSurgeons.
+        /// Does not invent a new IAM permission. OTBookingController /otbooking/theaters remains ot.theaters.view.
+        /// Tenant + authorized-branch filtered; client branchId is not a security bypass.
+        /// </summary>
+        [HttpGet("theaters")]
+        [RequirePermission("counseling_sessions.read")]
+        public async Task<IActionResult> GetTheaters([FromQuery] Guid? branchId = null)
+        {
+            try
+            {
+                var tenantId = GetTenantId();
+                var userId = GetCurrentUserId();
+
+                IReadOnlyList<Guid> accessibleBranches;
+                try
+                {
+                    accessibleBranches = await _followupBranchAccess.ResolveAccessibleBranchesAsync(
+                        tenantId, userId, branchId);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+                }
+
+                if (accessibleBranches.Count == 0)
+                {
+                    return Ok(Array.Empty<object>());
+                }
+
+                var branchSet = accessibleBranches.ToHashSet();
+                var theaters = await _context.OTTheaters
+                    .AsNoTracking()
+                    .Where(t => t.TenantId == tenantId
+                                && t.DeletedAt == null
+                                && t.IsActive
+                                && branchSet.Contains(t.BranchId))
+                    .OrderBy(t => t.TheaterName)
+                    .Select(t => new
+                    {
+                        id = t.Id,
+                        theaterName = t.TheaterName,
+                        theaterCode = t.TheaterCode,
+                        branchId = t.BranchId,
+                    })
+                    .ToListAsync();
+
+                return Ok(theaters);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving theaters for counselling desk");
+                return StatusCode(500, new { message = "Error retrieving theaters", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/Counseling/counselors — counsellor picker (Analytics + Assign).
+        /// Uses counseling_sessions.read (not user.view). Optional branchId narrows discovery
+        /// to counsellors with membership on that branch (UX only — Assign validates server-side).
+        /// </summary>
+        [HttpGet("counselors")]
+        [RequirePermission("counseling_sessions.read")]
+        public async Task<IActionResult> GetCounselors([FromQuery] Guid? branchId = null)
+        {
+            try
+            {
+                var tenantId = GetTenantId();
+
+                // When branchId is supplied, ensure the caller may request that branch scope.
+                if (branchId.HasValue)
+                {
+                    await ResolveFollowupBranchesAsync(branchId);
+                }
+
+                var counselors = await (
+                    from ur in _context.UserRoles.Cast<AppUserRole>()
+                    join u in _context.Users on ur.UserId equals u.Id
+                    join r in _context.Roles on ur.RoleId equals r.Id
+                    where u.TenantId == tenantId
+                          && u.DeletedAt == null
+                          && ur.IsActive
+                          && r.NormalizedName != null
+                          && r.NormalizedName.Contains("COUNSEL")
+                    select new
+                    {
+                        id = u.Id,
+                        firstName = u.FirstName ?? "",
+                        lastName = u.LastName ?? "",
+                        name = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
+                        email = u.Email,
+                        primaryBranchId = u.BranchId,
+                    }
+                ).Distinct().OrderBy(c => c.name).ToListAsync();
+
+                if (counselors.Count == 0)
+                {
+                    counselors = await _context.Users
+                        .AsNoTracking()
+                        .Where(u => u.TenantId == tenantId
+                                    && u.DeletedAt == null
+                                    && (
+                                        (u.UserType != null && u.UserType.ToLower().Contains("counsel"))
+                                        || (u.Designation != null && u.Designation.ToLower().Contains("counsel"))
+                                    ))
+                        .Select(u => new
+                        {
+                            id = u.Id,
+                            firstName = u.FirstName ?? "",
+                            lastName = u.LastName ?? "",
+                            name = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
+                            email = u.Email,
+                            primaryBranchId = u.BranchId,
+                        })
+                        .OrderBy(c => c.name)
+                        .ToListAsync();
+                }
+
+                if (branchId.HasValue)
+                {
+                    var now = DateTime.UtcNow;
+                    var branchMemberIds = await _context.UserBranches
+                        .AsNoTracking()
+                        .Where(ub => ub.TenantId == tenantId
+                                  && ub.BranchId == branchId.Value
+                                  && ub.Status == "active"
+                                  && ub.EffectiveFrom <= now
+                                  && (ub.EffectiveUntil == null || ub.EffectiveUntil > now))
+                        .Select(ub => ub.UserId)
+                        .Distinct()
+                        .ToListAsync();
+                    var memberSet = new HashSet<Guid>(branchMemberIds);
+                    counselors = counselors
+                        .Where(c =>
+                            memberSet.Contains(c.id)
+                            || (c.primaryBranchId.HasValue && c.primaryBranchId.Value == branchId.Value))
+                        .ToList();
+                }
+
+                return Ok(counselors.Select(c => new
+                {
+                    c.id,
+                    c.firstName,
+                    c.lastName,
+                    c.name,
+                    c.email,
+                }));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving counselors for analytics picker");
+                return StatusCode(500, new { message = "Error retrieving counselors", error = ex.Message });
+            }
+        }
+
         [HttpGet("analytics/summary")]
         [RequirePermission("counseling_sessions.read")]
         public async Task<IActionResult> GetAnalyticsSummary(
@@ -1519,9 +2030,14 @@ namespace AuthService.Controllers
         {
             try
             {
+                var branches = await ResolveFollowupBranchesAsync(branchId);
                 var result = await _analyticsService.GetSummaryAsync(
-                    GetTenantId(), branchId, counselorId, period, from, to);
+                    GetTenantId(), branches, branchId, counselorId, period, from, to);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (CounselingAnalyticsDateWindowException ex)
             {
@@ -1547,9 +2063,14 @@ namespace AuthService.Controllers
         {
             try
             {
+                var branches = await ResolveFollowupBranchesAsync(branchId);
                 var result = await _analyticsService.GetTrendsAsync(
-                    GetTenantId(), branchId, counselorId, period, from, to);
+                    GetTenantId(), branches, branchId, counselorId, period, from, to);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (CounselingAnalyticsDateWindowException ex)
             {
@@ -1576,9 +2097,14 @@ namespace AuthService.Controllers
         {
             try
             {
+                var branches = await ResolveFollowupBranchesAsync(branchId);
                 var result = await _analyticsService.GetFollowupAgingAsync(
-                    GetTenantId(), branchId, counselorId, period, from, to);
+                    GetTenantId(), branches, branchId, counselorId, period, from, to);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (CounselingAnalyticsDateWindowException ex)
             {
@@ -1624,6 +2150,10 @@ namespace AuthService.Controllers
                 var userId   = GetCurrentUserId();
                 await _counselingService.SaveSessionInvestigationsAsync(tenantId, id, userId, request.Investigations);
                 return Ok(new { message = "Investigations saved successfully" });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {

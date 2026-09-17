@@ -118,7 +118,7 @@ export function findActiveWaitingListDuplicate(args: {
 
 export interface CreateCounsellingSessionFromWaitingListInput {
   patientId: string;
-  branchId: string;
+  branchId?: string;
   doctorId: string;
   sessionTypeCode: string;
   surgeryType: 'Procedure' | 'Surgery';
@@ -135,7 +135,7 @@ export function buildCreateCounsellingSessionPayload(
   const remarks = input.remarks.trim();
   return {
     patientId: input.patientId,
-    branchId: input.branchId,
+    ...(input.branchId?.trim() ? { branchId: input.branchId.trim() } : {}),
     referredByDoctorId: input.doctorId,
     sessionType: sessionTypeCodeToDb(input.sessionTypeCode),
     /** Walk-in add has no coverage capture yet — counsellor sets payment type in session. */

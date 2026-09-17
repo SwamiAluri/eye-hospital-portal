@@ -1,12 +1,13 @@
 import { getApi } from '../api';
 import { serviceCatalogApi } from './service-catalog.api';
 import { buildInvestigationCatalogFromServiceCatalog } from '@/lib/counsellors-desk/investigation-catalog';
-import { sessionTypeApiToCode, sessionTypeCodeToDb } from '@/lib/counsellors-desk/counsellor-master-maps';
+import { sessionTypeApiToCode, sessionTypeCodeToDb, callbackTypeCodeToDb, callbackChannelToDb } from '@/lib/counsellors-desk/counsellor-master-maps';
 import {
   parseEstimateFromBlob,
   restoreLensSelectionFromBlob,
 } from '@/lib/counsellors-desk/package-addons-blob';
 import { toCounsellingDateOnly } from '@/lib/counsellors-desk/session-utils';
+import { resolveHydratedSelectedSurgeryId } from '@/lib/counsellors-desk/resolve-hydrated-selected-surgery-id';
 import type { CounsellingPackageAddonsBlob } from '@/types/counselling-estimate';
 import type {
   WaitingListPatient,
@@ -28,6 +29,14 @@ import type {
   OtScheduleDetail,
   UpdateOtDetailsPayload,
 } from '@/types/counsellors-desk';
+
+export type CounselingCounselorOption = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  name: string;
+  email: string | null;
+};
 
 // ─── Mock Data ──────────────────────────────────────────────────────────────
 
@@ -226,7 +235,14 @@ export const counsellorsDeskApi = {
       // have no dedicated column in the auth-service session schema.
       let cd: CounsellingPackageAddonsBlob = {};
       if (raw.packageAddonsJson) {
-        try { cd = JSON.parse(raw.packageAddonsJson) as CounsellingPackageAddonsBlob; } catch { /* ignore invalid JSON */ }
+        try {
+          cd =
+            typeof raw.packageAddonsJson === 'string'
+              ? (JSON.parse(raw.packageAddonsJson) as CounsellingPackageAddonsBlob)
+              : (raw.packageAddonsJson as CounsellingPackageAddonsBlob);
+        } catch {
+          /* ignore invalid JSON */
+        }
       }
 
       const estimate = parseEstimateFromBlob(cd);
@@ -296,12 +312,14 @@ export const counsellorsDeskApi = {
         uhid: raw.patientHealthId ?? raw.patientMrn ?? '',
         visitDate: raw.sessionDate ? (raw.sessionDate as string).split('T')[0] : '',
         surgeries,
-        // Restore selected surgery: blob (most precise) → variantId in blob → doctor-recommended surgery fallback.
-        // The last fallback is the "first recommended" entry from surgeriesWithPricing so old sessions
-        // (where package_addons_json is null in DB) get a sensible pre-selection and can be re-saved.
-        selectedSurgeryId: cd.selectedSurgeryId
-          ?? (cd.variantId ? `type-${cd.variantId}-${restoredEye}` : null)
-          ?? (surgeries.find(s => s.isRecommended)?.id ?? null),
+        // Restore selection: blob → variantId → first isRecommended (scheduling /
+        // recommended_surgery matched by GetSession into SurgeriesWithPricing).
+        selectedSurgeryId: resolveHydratedSelectedSurgeryId({
+          blobSelectedSurgeryId: cd.selectedSurgeryId,
+          blobVariantId: cd.variantId,
+          restoredEye,
+          firstRecommendedSurgeryId: surgeries.find((s) => s.isRecommended)?.id ?? null,
+        }),
         // Carry the restored eye as a top-level field so page.tsx can set selectedEye
         // even when selectedSurgeryId is null (no blob saved yet).
         restoredEye: restoredEye as string,
@@ -330,6 +348,7 @@ export const counsellorsDeskApi = {
         isFollowUpRequired: raw.pendingDecision ?? false,
         sessionTypeCode: sessionTypeApiToCode(raw.sessionType as string | undefined, []),
         status,
+        counselorId: raw.counselorId != null ? String(raw.counselorId) : null,
         followUpReason: raw.reasonsForDelay ?? '',
         followUpDate: cd.followUpDate ?? (raw.decisionDate ? (raw.decisionDate as string).split('T')[0] : ''),
         investigations: Array.isArray(raw.investigationOrders)
@@ -387,6 +406,132 @@ export const counsellorsDeskApi = {
       ? { sessionType: sessionTypeCodeToDb(sessionType) }
       : {};
     await getApi().post(`/Counseling/sessions/${id}/start`, payload);
+  },
+
+  /**
+   * Phase 3I Slice 3 — explicit initial ownership assignment (NULL → target).
+   * Does not use generic Update CounselorId mutation.
+   */
+  async assignSession(
+    sessionId: string,
+    counselorId: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    sessionId: string;
+    counselorId: string;
+    counselorName: string | null;
+  }> {
+    const res = await getApi().post(
+      `/Counseling/sessions/${sessionId}/assign`,
+      { counselorId },
+      // In-context mutation: keep 403/Conflict on Waiting List (toast), not Access Denied page.
+      { skipForbiddenRedirect: true },
+    );
+    const data = res.data ?? {};
+    return {
+      success: Boolean(data.success ?? true),
+      message: data.message ?? 'Session assigned successfully',
+      sessionId: String(data.sessionId ?? sessionId),
+      counselorId: String(data.counselorId ?? counselorId),
+      counselorName: data.counselorName ?? null,
+    };
+  },
+
+  /**
+   * Phase 3I — lifecycle ownership claim for Done ReEvaluate / Repeat StartRepeat.
+   * Supports NULL → actor and other-owner → actor. Not general Reassign.
+   * Does not use UpdateSession CounselorId write or Slice 3 Assign.
+   */
+  async claimSessionForLifecycle(
+    sessionId: string,
+    input: {
+      expectedCounselorId: string | null;
+      intent: 'ReEvaluate' | 'StartRepeat';
+    },
+  ): Promise<{
+    success: boolean;
+    message: string;
+    sessionId: string;
+    counselorId: string;
+    counselorName: string | null;
+  }> {
+    const res = await getApi().post(
+      `/Counseling/sessions/${sessionId}/claim-for-lifecycle`,
+      {
+        expectedCounselorId: input.expectedCounselorId,
+        intent: input.intent,
+      },
+      { skipForbiddenRedirect: true },
+    );
+    const data = res.data ?? {};
+    return {
+      success: Boolean(data.success ?? true),
+      message: data.message ?? 'Session claimed for lifecycle work',
+      sessionId: String(data.sessionId ?? sessionId),
+      counselorId: String(data.counselorId ?? ''),
+      counselorName: data.counselorName ?? null,
+    };
+  },
+
+  /**
+   * Phase 3I Slice 6 — supervisory General Reassign (owned A → B).
+   * Requires counseling_sessions.reassign. Not Assign; not lifecycle Claim.
+   */
+  async reassignSession(
+    sessionId: string,
+    input: {
+      counselorId: string;
+      expectedCounselorId: string;
+      reason: string;
+    },
+  ): Promise<{
+    success: boolean;
+    message: string;
+    sessionId: string;
+    counselorId: string;
+    counselorName: string | null;
+  }> {
+    const res = await getApi().post(
+      `/Counseling/sessions/${sessionId}/reassign`,
+      {
+        counselorId: input.counselorId,
+        expectedCounselorId: input.expectedCounselorId,
+        reason: input.reason,
+      },
+      { skipForbiddenRedirect: true },
+    );
+    const data = res.data ?? {};
+    return {
+      success: Boolean(data.success ?? true),
+      message: data.message ?? 'Session reassigned successfully',
+      sessionId: String(data.sessionId ?? sessionId),
+      counselorId: String(data.counselorId ?? input.counselorId),
+      counselorName: data.counselorName ?? null,
+    };
+  },
+
+  /** Counsellor picker for Assign / Analytics — tenant-scoped; optional branchId for UX filtering. */
+  async getCounselors(branchId?: string | null): Promise<CounselingCounselorOption[]> {
+    const params: Record<string, string> = {};
+    if (branchId?.trim()) params.branchId = branchId.trim();
+    const res = await getApi().get('/Counseling/counselors', {
+      params: Object.keys(params).length ? params : undefined,
+    });
+    const rows = (res.data ?? []) as Array<{
+      id: string;
+      firstName?: string;
+      lastName?: string;
+      name?: string;
+      email?: string | null;
+    }>;
+    return rows.map((r) => ({
+      id: String(r.id),
+      firstName: r.firstName ?? '',
+      lastName: r.lastName ?? '',
+      name: (r.name ?? `${r.firstName ?? ''} ${r.lastName ?? ''}`).trim(),
+      email: r.email ?? null,
+    }));
   },
 
   /**
@@ -555,12 +700,24 @@ export const counsellorsDeskApi = {
   },
 
   async getSurgeons(): Promise<{ id: string; name: string }[]> {
-    const response = await getApi().get('/users/surgeons');
+    // CounselingController GET /surgeons — counseling_sessions.read (not broad user.view)
+    const response = await getApi().get('/Counseling/surgeons');
     const list = response.data ?? [];
-    return list.map((u: { id: string; fullName?: string; name?: string }) => ({
-      id: u.id,
-      name: u.fullName ?? u.name ?? '',
-    }));
+    return list
+      .map(
+        (u: {
+          id?: string;
+          Id?: string;
+          fullName?: string;
+          FullName?: string;
+          name?: string;
+          Name?: string;
+        }) => ({
+          id: String(u.id ?? u.Id ?? '').trim(),
+          name: String(u.fullName ?? u.FullName ?? u.name ?? u.Name ?? '').trim(),
+        }),
+      )
+      .filter((u: { id: string; name: string }) => Boolean(u.id && u.name));
   },
 
   async getAnesthetists(): Promise<
@@ -587,13 +744,17 @@ export const counsellorsDeskApi = {
   },
 
   async getOtTheaters(branchId?: string): Promise<{ id: string; name: string }[]> {
+    // CounselingController GET /theaters — counseling_sessions.read (not ot.theaters.view)
     const params = branchId ? { branchId } : {};
-    const response = await getApi().get('/otbooking/theaters', { params });
-    const list = response.data ?? [];
-    return list.map((t: { id?: string; Id?: string; theaterName?: string; TheaterName?: string }) => ({
-      id: t.id ?? t.Id ?? '',
-      name: t.theaterName ?? t.TheaterName ?? '',
-    }));
+    const response = await getApi().get('/Counseling/theaters', { params });
+    const raw = response.data;
+    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+    return list
+      .map((t: { id?: string; Id?: string; theaterName?: string; TheaterName?: string; name?: string }) => ({
+        id: String(t.id ?? t.Id ?? '').trim(),
+        name: String(t.theaterName ?? t.TheaterName ?? t.name ?? '').trim(),
+      }))
+      .filter((t: { id: string; name: string }) => Boolean(t.id && t.name));
   },
 
   /** @deprecated Use confirmOtSchedule / finaliseOtSchedule / cancelOtSchedule instead. */
@@ -615,12 +776,9 @@ export const counsellorsDeskApi = {
 
   async addPatientToWaitingList(
     data: AddPatientFormData,
-    opts: { branchId: string },
+    opts?: { branchId?: string | null },
   ): Promise<{ patientName: string; uhid: string }> {
-    const branchId = opts.branchId?.trim();
-    if (!branchId) {
-      throw new Error('Branch is required to add a patient to the waiting list.');
-    }
+    const branchId = opts?.branchId?.trim() || '';
     if (!data.doctorId?.trim()) {
       throw new Error('Please select a referring doctor.');
     }
@@ -649,7 +807,7 @@ export const counsellorsDeskApi = {
     } else {
       // Legacy fallback: resolve by UHID + name (kept for safety; UI passes patientId).
       const { searchPatientsUnified } = await import('@/lib/patients/unified-patient-search');
-      const hits = await searchPatientsUnified(branchId, data.uhid.trim(), 25);
+      const hits = await searchPatientsUnified(branchId || null, data.uhid.trim(), 25);
       const match = matchPatientForAddWaitingList(hits, data.uhid, data.patientName);
       if (!match.ok) throw new Error(match.message);
       patientId = match.patient.id;
@@ -662,7 +820,10 @@ export const counsellorsDeskApi = {
       throw new Error('Select or register a patient before adding to the waiting list.');
     }
 
-    const existingRows = await this.getWaitingList({ type: 'All', branchId });
+    const existingRows = await this.getWaitingList({
+      type: 'All',
+      ...(branchId ? { branchId } : {}),
+    });
     const duplicate =
       findActiveWaitingListDuplicate({
         uhid: displayUhid,
@@ -685,7 +846,7 @@ export const counsellorsDeskApi = {
 
     const payload = buildCreateCounsellingSessionPayload({
       patientId,
-      branchId,
+      branchId: branchId || undefined,
       doctorId: data.doctorId.trim(),
       sessionTypeCode: data.sessionTypeCode,
       surgeryType: data.surgeryType,
@@ -795,9 +956,9 @@ export const counsellorsDeskApi = {
     }
   ) {
     const res = await getApi().post(`/Counseling/sessions/${sessionId}/callbacks`, {
-      callbackType: payload.callbackType ?? 'General',
+      callbackType: callbackTypeCodeToDb(payload.callbackType ?? 'General'),
       callbackDate: payload.callbackDate,
-      channel: payload.preferredChannel ?? 'Phone',
+      channel: callbackChannelToDb(payload.preferredChannel ?? 'Phone'),
       callbackNotes: payload.callbackReason,
     });
     return res.data;

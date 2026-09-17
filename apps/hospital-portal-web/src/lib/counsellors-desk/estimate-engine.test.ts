@@ -295,4 +295,144 @@ describe('mergeEstimateState', () => {
     );
     expect(merged.finalPayableAmount).toBe(138_100);
   });
+
+  it('flat discount on package+labs (no procedure line) prefers discounted live over stale savedFinal', () => {
+    const live = computeEstimateResult({
+      estimateMode: 'package',
+      packageTemplate: { ...template, packageAmount: 206_000, procedureVariantId: null, iolId: null },
+      procedure: null,
+      iol: null,
+      investigations: [
+        {
+          catalogId: 'inv-oct',
+          testName: 'OCT',
+          testType: 'Imaging',
+          price: 2700,
+          urgency: 'Routine',
+          source: 'counsellor',
+        },
+      ],
+      discountType: 'flat',
+      discountValue: 10_000,
+      settings: { maxDiscountPercent: 50 },
+    });
+    expect(live.baseBeforeDiscount).toBe(206_000);
+    expect(live.discount.discountAmount).toBe(10_000);
+    expect(live.finalPayableAmount).toBe(196_000);
+
+    const merged = mergeEstimateState(
+      {
+        estimateMode: 'package',
+        packageTemplateId: template.id,
+        discountType: 'flat',
+        discountValue: 10_000,
+        discountReason: 'Courtesy',
+        finalPayableAmount: 206_000,
+      } as never,
+      live,
+    );
+    expect(merged.discountAmount).toBe(10_000);
+    expect(merged.finalPayableAmount).toBe(196_000);
+  });
+
+  it('percentage discount prefers live discounted payable over higher savedFinal', () => {
+    const live = computeEstimateResult({
+      estimateMode: 'custom',
+      packageTemplate: null,
+      procedure: null,
+      procedureOverridePrice: 100_000,
+      iol: null,
+      investigations: [],
+      discountType: 'percent',
+      discountValue: 10,
+      settings: { maxDiscountPercent: 50 },
+    });
+    // procedure override creates a procedure line — still assert discount math
+    expect(live.finalPayableAmount).toBe(90_000);
+
+    const merged = mergeEstimateState(
+      {
+        discountType: 'percent',
+        discountValue: 10,
+        discountReason: 'Promo',
+        finalPayableAmount: 100_000,
+      } as never,
+      {
+        ...live,
+        lines: [{ key: 'inv-1', label: 'Lab', amount: 100_000, kind: 'investigation' }],
+      },
+    );
+    expect(merged.finalPayableAmount).toBe(90_000);
+  });
+
+  it('active discount does not allow double-discount via merge', () => {
+    const live = computeEstimateResult({
+      estimateMode: 'package',
+      packageTemplate: { ...template, packageAmount: 206_000 },
+      procedure: null,
+      iol: null,
+      investigations: [],
+      discountType: 'flat',
+      discountValue: 10_000,
+      settings: { maxDiscountPercent: 50 },
+    });
+    const once = mergeEstimateState(
+      {
+        discountType: 'flat',
+        discountValue: 10_000,
+        discountReason: 'Courtesy',
+        finalPayableAmount: 196_000,
+      } as never,
+      live,
+    );
+    const twice = mergeEstimateState(once, live);
+    expect(twice.finalPayableAmount).toBe(196_000);
+    expect(twice.discountAmount).toBe(10_000);
+  });
+
+  it('removing discount restores gross live payable over discounted savedFinal', () => {
+    const live = computeEstimateResult({
+      estimateMode: 'package',
+      packageTemplate: { ...template, packageAmount: 206_000 },
+      procedure: null,
+      iol: null,
+      investigations: [],
+      discountType: null,
+      discountValue: 0,
+      settings: { maxDiscountPercent: 50 },
+    });
+    expect(live.finalPayableAmount).toBe(206_000);
+
+    const merged = mergeEstimateState(
+      {
+        discountType: null,
+        discountValue: 0,
+        discountReason: '',
+        finalPayableAmount: 196_000,
+      } as never,
+      {
+        ...live,
+        lines: [{ key: 'inv-1', label: 'OCT', amount: 2700, kind: 'investigation' }],
+      },
+    );
+    // No active discount + no procedure line: hydration may keep saved; clearing discount
+    // with a live gross base must prefer live when liveFinal >= saved (gross restored).
+    expect(merged.finalPayableAmount).toBe(206_000);
+  });
+
+  it('caps flat discount at effective max percent of package base', () => {
+    const live = computeEstimateResult({
+      estimateMode: 'package',
+      packageTemplate: { ...template, packageAmount: 100_000, maxDiscountPercent: 10 },
+      procedure: null,
+      iol: null,
+      investigations: [],
+      discountType: 'flat',
+      discountValue: 50_000,
+      settings: { maxDiscountPercent: 50 },
+    });
+    expect(live.discount.discountAmount).toBe(10_000);
+    expect(live.discount.discountExceeded).toBe(true);
+    expect(live.finalPayableAmount).toBe(90_000);
+  });
 });

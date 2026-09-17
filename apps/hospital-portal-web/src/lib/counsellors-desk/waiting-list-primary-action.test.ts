@@ -2,31 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WaitingListStatus } from '@/types/counsellors-desk';
 import { resolveWaitingListPrimaryAction } from './waiting-list-primary-action';
 
-describe('resolveWaitingListPrimaryAction', () => {
-  const statusCases: Array<{
-    status: WaitingListStatus;
-    label: string;
-  }> = [
-    { status: 'Pending', label: 'Start' },
-    { status: 'Processed', label: 'Continue' },
-    { status: 'Done', label: 'View' },
-    { status: 'RepeatCounselling', label: 'Open' },
-    { status: 'AddOnSurgery', label: 'Open' },
-    { status: 'SurgeryDone', label: 'View' },
-  ];
-
-  it.each(statusCases)(
-    'returns $label / row-navigate for status $status',
-    ({ status, label }) => {
-      expect(
-        resolveWaitingListPrimaryAction({
-          status,
-          activeTab: 'All',
-        }),
-      ).toEqual({ label, kind: 'row-navigate' });
-    },
-  );
-
+describe('resolveWaitingListPrimaryAction (compat wrapper)', () => {
   it('returns Pre-Auth / preauth on PreAuthQueue + Insurance', () => {
     expect(
       resolveWaitingListPrimaryAction({
@@ -37,23 +13,27 @@ describe('resolveWaitingListPrimaryAction', () => {
     ).toEqual({ label: 'Pre-Auth', kind: 'preauth' });
   });
 
-  it('falls through to status label on PreAuthQueue + Cash', () => {
+  it('falls through to lifecycle label on PreAuthQueue + Cash', () => {
     expect(
       resolveWaitingListPrimaryAction({
-        status: 'Pending',
+        status: 'Pending' as WaitingListStatus,
         activeTab: 'PreAuthQueue',
         patientType: 'Cash',
+        counselorId: null,
+        currentUserId: 'u1',
+        canAssign: true,
       }),
-    ).toEqual({ label: 'Start', kind: 'row-navigate' });
+    ).toEqual({ label: 'Assign', kind: 'row-navigate' });
   });
 
-  it('ignores preauth override on non-PreAuthQueue tab even for Insurance', () => {
+  it('maps owner-aware Done current to Re-evaluate label', () => {
     expect(
       resolveWaitingListPrimaryAction({
-        status: 'Pending',
+        status: 'Done',
         activeTab: 'All',
-        patientType: 'Insurance',
+        counselorId: 'u1',
+        currentUserId: 'u1',
       }),
-    ).toEqual({ label: 'Start', kind: 'row-navigate' });
+    ).toEqual({ label: 'Re-evaluate', kind: 'row-navigate' });
   });
 });

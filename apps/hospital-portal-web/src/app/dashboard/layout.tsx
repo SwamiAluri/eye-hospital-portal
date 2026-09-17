@@ -37,17 +37,20 @@ export default function DashboardLayout({
     '/dashboard/counsellors-desk/waiting-list',
     '/dashboard/counsellors-desk/finalize-surgery',
     '/dashboard/counsellors-desk/surgery-followup',
+    '/dashboard/counsellors-desk/sessions',
   ];
   const isCounsellingSessionPage =
     /^\/dashboard\/counsellors-desk\/[^/]+$/.test(pathname) &&
     pathname !== '/dashboard/counsellors-desk/waiting-list' &&
     pathname !== '/dashboard/counsellors-desk/finalize-surgery' &&
-    pathname !== '/dashboard/counsellors-desk/surgery-followup';
+    pathname !== '/dashboard/counsellors-desk/surgery-followup' &&
+    pathname !== '/dashboard/counsellors-desk/sessions';
   /** Counsellor ops worklists share the grey counselling canvas (no white padded shell). */
   const isCounsellingOpsCanvas =
     pathname === '/dashboard/counsellors-desk/waiting-list' ||
     pathname === '/dashboard/counsellors-desk/finalize-surgery' ||
     pathname === '/dashboard/counsellors-desk/surgery-followup' ||
+    pathname === '/dashboard/counsellors-desk/sessions' ||
     pathname === '/dashboard/counselor/analytics' ||
     pathname.startsWith('/dashboard/counselor/analytics/');
   const isNoPad =

@@ -16,6 +16,39 @@ namespace AuthService.Services
         Task<CounselingSessionDetailsDto?> GetSessionByNumberAsync(Guid tenantId, string sessionNumber);
         Task<SessionOperationResult> CreateSessionAsync(CreateCounselingSessionRequest request, Guid currentUserId);
         Task<SessionOperationResult> UpdateSessionAsync(Guid tenantId, Guid sessionId, UpdateCounselingSessionRequest request, Guid currentUserId);
+        /// <summary>
+        /// Phase 3I Slice 3 — explicit initial Assign (CounselorId NULL → validated target).
+        /// Does not reassign already-owned sessions. Actor may differ from owner.
+        /// </summary>
+        Task<AssignSessionResult> AssignSessionAsync(
+            Guid tenantId,
+            Guid sessionId,
+            Guid targetCounselorId,
+            Guid actorUserId);
+
+        /// <summary>
+        /// Phase 3I — lifecycle ownership claim for Done Re-evaluate / Repeat Start only.
+        /// Supports NULL → actor and owned → actor. Not general Reassign.
+        /// </summary>
+        Task<AssignSessionResult> ClaimSessionForLifecycleAsync(
+            Guid tenantId,
+            Guid sessionId,
+            Guid? expectedCounselorId,
+            string intent,
+            Guid actorUserId);
+
+        /// <summary>
+        /// Phase 3I Slice 6 — supervisory General Reassign (owned A → eligible B).
+        /// Requires counseling_sessions.reassign at the controller. Not Assign; not lifecycle Claim.
+        /// </summary>
+        Task<AssignSessionResult> ReassignSessionAsync(
+            Guid tenantId,
+            Guid sessionId,
+            Guid targetCounselorId,
+            Guid expectedCounselorId,
+            string reason,
+            Guid actorUserId);
+
         Task<SessionOperationResult> StartSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, string? sessionType = null);
         Task<SessionOperationResult> CompleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId);
         Task<SessionOperationResult> CancelSessionAsync(Guid tenantId, Guid sessionId, string reason, Guid currentUserId);

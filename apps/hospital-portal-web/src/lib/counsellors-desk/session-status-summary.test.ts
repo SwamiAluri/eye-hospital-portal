@@ -38,9 +38,9 @@ describe('session-status-summary', () => {
     expect(formatDecisionLabel('')).toBe('Decision pending');
   });
 
-  it('describes missing documents', () => {
+  it('describes outstanding documents with warning tone', () => {
     expect(formatDocumentProgressLabel(2, 3)).toEqual({
-      label: '1 document missing',
+      label: '1 outstanding',
       tone: 'warning',
     });
     expect(formatDocumentProgressLabel(3, 3)).toEqual({
@@ -63,7 +63,7 @@ describe('session-status-summary', () => {
     expect(summary.chips.length).toBeLessThanOrEqual(4);
   });
 
-  it('guides to coverage when insurance workflow pending', () => {
+  it('keeps counselling journey next when insurance docs are outstanding', () => {
     const summary = buildSessionStatusSummary({
       ...baseInput,
       phaseCompletion: { estimate: true, decision: true, wrapup: true },
@@ -77,13 +77,16 @@ describe('session-status-summary', () => {
         preAuthSubmitted: false,
       },
     });
-    expect(summary.nextActionTab).toBe('coverage');
-    expect(summary.nextAction).toMatch(/Upload missing documents/i);
+    expect(summary.nextAction).toBe('Complete Session');
+    expect(summary.nextActionTab).toBe('counselling');
+    expect(summary.nextActionPhase).toBe('wrapup');
+    expect(summary.nextAction).not.toMatch(/Upload missing documents/i);
     expect(summary.chips.some((c) => c.id === 'documents' && c.tone === 'warning')).toBe(true);
+    expect(summary.chips.find((c) => c.id === 'documents')?.value).toBe('2 outstanding');
     expect(summary.chips.length).toBeLessThanOrEqual(4);
   });
 
-  it('omits documents chip on coverage tab when docs are visible in workspace', () => {
+  it('on Insurance tab with outstanding docs points to Notes, not upload-as-block', () => {
     const summary = buildSessionStatusSummary({
       ...baseInput,
       activeMainTab: 'coverage',
@@ -96,7 +99,27 @@ describe('session-status-summary', () => {
         preAuthSubmitted: false,
       },
     });
+    expect(summary.nextAction).toMatch(/Notes/i);
+    expect(summary.nextAction).not.toMatch(/Upload missing documents/i);
+    expect(summary.nextActionTab).toBe('counselling');
     expect(summary.chips.some((c) => c.id === 'documents')).toBe(false);
+  });
+
+  it('still guides to Insurance when coverage case is draft and not yet on Notes', () => {
+    const summary = buildSessionStatusSummary({
+      ...baseInput,
+      activePhase: 'decision',
+      phaseCompletion: { estimate: true, decision: true, wrapup: false },
+      decision: 'DateForSurgery',
+      coverageProgress: {
+        uploadedDocCount: 0,
+        requiredDocCount: 4,
+        ccmsState: 'DRAFT',
+        preAuthSubmitted: false,
+      },
+    });
+    expect(summary.nextAction).toMatch(/Insurance/i);
+    expect(summary.nextActionTab).toBe('coverage');
   });
 
   it('uses Waiting for TPA after pre-auth submit (not prose or raw codes)', () => {

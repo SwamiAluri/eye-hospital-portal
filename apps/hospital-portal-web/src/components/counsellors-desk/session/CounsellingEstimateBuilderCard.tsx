@@ -49,6 +49,10 @@ export interface CounsellingEstimateBuilderCardProps {
   isReadOnly: boolean;
   isDoneState: boolean;
   packageTemplates: CounsellingPackageTemplate[];
+  /** True when caller lacks package_templates.read — do not imply catalog load failure. */
+  packageTemplatesAccessDenied?: boolean;
+  /** Lazy-load package catalog when Quote → Package is opened. */
+  requestPackageCatalog?: () => void;
   masterCatalog: {
     imaging: MasterCatalogItem[];
     scan: MasterCatalogItem[];
@@ -88,6 +92,8 @@ export function CounsellingEstimateBuilderCard({
   isReadOnly,
   isDoneState,
   packageTemplates,
+  packageTemplatesAccessDenied = false,
+  requestPackageCatalog,
   masterCatalog,
   masterCatalogLoading,
   masterCatalogError,
@@ -126,6 +132,12 @@ export function CounsellingEstimateBuilderCard({
       setActiveTab(estimate.isPackageMode ? 'package' : 'custom');
     }
   }, [activeTab, estimate.isPackageMode, investigationTabsEnabled]);
+
+  useEffect(() => {
+    if (activeTab === 'package') {
+      requestPackageCatalog?.();
+    }
+  }, [activeTab, requestPackageCatalog]);
 
   const handleEyeChange = useCallback(
     (eye: CounsellingEyeOption) => {
@@ -340,6 +352,7 @@ export function CounsellingEstimateBuilderCard({
               collapseBrowseWhenSelected
               estimate={estimate}
               packageTemplates={packageTemplates}
+              packageTemplatesAccessDenied={packageTemplatesAccessDenied}
               procedureVariants={procedureVariants}
               masterCatalog={masterCatalog}
               recommendedVariantIds={recommendedVariantIds}

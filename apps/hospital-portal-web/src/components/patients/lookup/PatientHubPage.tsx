@@ -60,7 +60,7 @@ export default function PatientHubPage() {
   const workspace = useOptionalPatientWorkspace();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { branchId, isReady, isLoading: branchLoading } = useBranchContext();
+  const { branchId, branches, isReady, isLoading: branchLoading } = useBranchContext();
   const canExport = useHasPermission("patient.export");
   usePatientHubRealtime(branchId, isReady);
   const {
@@ -302,7 +302,7 @@ export default function PatientHubPage() {
         className="flex flex-col h-full min-h-0 bg-gray-50"
         data-testid={patientLookupTestIds.page}
       >
-        <PatientHubEmptyBranch />
+        <PatientHubEmptyBranch reason={branches.length === 0 ? 'none' : 'select'} />
       </div>
     );
   }

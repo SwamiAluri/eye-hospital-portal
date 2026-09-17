@@ -20,9 +20,10 @@ export async function searchPatientsUnified(
   limit = 20,
 ): Promise<UnifiedPatientSearchHit[]> {
   const trimmed = q.trim();
-  if (!branchId || trimmed.length < 2) return [];
+  if (trimmed.length < 2) return [];
 
-  const rows = await patientLookupApi.suggest(branchId, trimmed, limit);
+  // branchId optional — server resolves effective authorized branch when omitted
+  const rows = await patientLookupApi.suggest(branchId ?? '', trimmed, limit);
   return rows.map((row) => ({
     id: row.id,
     firstName: row.firstName,

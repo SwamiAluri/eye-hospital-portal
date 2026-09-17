@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, CheckCircle2, Loader2, Search, UserPlus } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import type { AddPatientFormData } from '@/types/counsellors-desk';
-import { useSurgeonsQuery } from '@/hooks/use-counsellors-desk-queries';
+import { useSurgeonsQuery, useServiceCatalogQuery } from '@/hooks/use-counsellors-desk-queries';
 import { SessionTypeSelect } from '@/components/counsellors-desk/SessionTypeSelect';
+import { SearchableMasterSelect } from '@/components/counsellors-desk/SearchableMasterSelect';
 import { defaultSessionTypeCode } from '@/lib/counsellors-desk/counsellor-master-maps';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import {
@@ -78,6 +79,21 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
   const surgeonsQuery = useSurgeonsQuery(isOpen);
   const surgeons = surgeonsQuery.data ?? [];
   const loadingSurgeons = surgeonsQuery.isLoading && surgeons.length === 0;
+  const catalogQuery = useServiceCatalogQuery(isOpen);
+  const surgeryOptions = useMemo(() => {
+    const cats = catalogQuery.data?.categories ?? [];
+    const opts: { id: string; name: string }[] = [];
+    for (const cat of cats) {
+      for (const svc of cat.services ?? []) {
+        for (const v of svc.variants ?? []) {
+          const name = (v.name || svc.name || '').trim();
+          if (!name || !v.id) continue;
+          opts.push({ id: String(v.id), name });
+        }
+      }
+    }
+    return opts;
+  }, [catalogQuery.data]);
   const debouncedQuery = useDebouncedValue(searchQuery.trim(), 300);
 
   useEffect(() => {
@@ -117,15 +133,9 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
-  // Name / phone / UHID typeahead (option A — pick from list).
+  // Name / phone / UHID typeahead — branchId optional; server resolves authorized branch.
   useEffect(() => {
     if (!isOpen || selected) return;
-
-    if (!branchId) {
-      setHits([]);
-      setSearchLoading(false);
-      return;
-    }
 
     if (debouncedQuery.length < 2) {
       setHits([]);
@@ -135,7 +145,7 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
 
     let cancelled = false;
     setSearchLoading(true);
-    void searchPatientsUnified(branchId, debouncedQuery, 12)
+    void searchPatientsUnified(branchId ?? null, debouncedQuery, 12)
       .then((rows) => {
         if (!cancelled) {
           setHits(rows);
@@ -183,7 +193,6 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
     if (!mpi.ok) e.patient = mpi.message;
     if (!form.eye) e.eye = 'Please select eye';
     if (!form.doctorId.trim()) e.doctorId = 'Please select a referring doctor';
-    if (!branchId) e.patient = 'Branch is required. Select a branch and try again.';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -347,9 +356,6 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
                   {errors.patient}
                 </p>
               )}
-              {!branchId && (
-                <p className="text-xs text-amber-700 mt-1">Select a branch to search or register patients.</p>
-              )}
             </div>
 
             <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2">
@@ -399,42 +405,38 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
             </div>
 
             <div>
-              <label htmlFor="add-patient-surgery" className="block text-sm font-medium text-gray-700 mb-1">
-                Surgery Name
-              </label>
-              <input
-                id="add-patient-surgery"
-                type="text"
-                placeholder="e.g. Phacoemulsification"
+              <SearchableMasterSelect
+                label="Surgery / procedure"
                 value={form.surgeryName}
-                onChange={(e) => setForm((f) => ({ ...f, surgeryName: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                options={surgeryOptions}
+                emit="name"
+                placeholder={catalogQuery.isLoading ? 'Loading catalogue…' : 'Search surgery or procedure…'}
+                loading={catalogQuery.isLoading && surgeryOptions.length === 0}
+                error={catalogQuery.isError ? 'Unable to load catalogue' : null}
+                onRetry={() => void catalogQuery.refetch()}
+                emptyMessage="No procedures found in the service catalogue."
+                onChange={(name) => setForm((f) => ({ ...f, surgeryName: name }))}
+                data-testid="add-patient-surgery"
               />
             </div>
 
             <div>
-              <label htmlFor="add-patient-doctor" className="block text-sm font-medium text-gray-700 mb-1">
-                Doctor <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="add-patient-doctor"
+              <SearchableMasterSelect
+                label="Doctor"
                 value={form.doctorId}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, doctorId: e.target.value }));
-                  if (e.target.value) setErrors((er) => ({ ...er, doctorId: '' }));
+                options={surgeons}
+                emit="id"
+                placeholder={loadingSurgeons ? 'Loading…' : 'Search referring doctor…'}
+                loading={loadingSurgeons}
+                error={surgeonsQuery.isError ? 'Unable to load doctors' : null}
+                onRetry={() => void surgeonsQuery.refetch()}
+                emptyMessage="No doctors found."
+                onChange={(id) => {
+                  setForm((f) => ({ ...f, doctorId: id }));
+                  if (id) setErrors((er) => ({ ...er, doctorId: '' }));
                 }}
-                disabled={loadingSurgeons}
-                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 ${
-                  errors.doctorId ? 'border-red-400' : 'border-gray-300'
-                }`}
-              >
-                <option value="">{loadingSurgeons ? 'Loading…' : 'Select Doctor'}</option>
-                {surgeons.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+                data-testid="add-patient-doctor"
+              />
               {errors.doctorId && <p className="text-xs text-red-500 mt-1">{errors.doctorId}</p>}
             </div>
 
@@ -493,6 +495,7 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
         <PatientFormModal
           isOpen={registerOpen}
           onClose={() => setRegisterOpen(false)}
+          branchId={branchId}
           onSave={(patient) => {
             if (!patient.id) {
               setErrors((er) => ({

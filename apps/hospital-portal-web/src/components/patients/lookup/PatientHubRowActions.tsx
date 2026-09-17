@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useHasPermission } from '@/hooks/use-permissions';
 import { patientLookupTestIds } from '@/lib/patients/patient-lookup-test-ids';
 import { patientProfileUrl } from '@/lib/patients/patient-routes';
 import type { PatientLookupRow } from '@/types/patient-lookup';
@@ -20,6 +21,7 @@ interface PatientHubRowActionsProps {
 
 export function PatientHubRowActions({ row, onPreview }: PatientHubRowActionsProps) {
   const [open, setOpen] = useState(false);
+  const canBookAppointment = useHasPermission('appointment.view');
 
   return (
     <div
@@ -59,11 +61,13 @@ export function PatientHubRowActions({ row, onPreview }: PatientHubRowActionsPro
           <DropdownMenuItem asChild>
             <Link href={patientProfileUrl(row.id)}>Open full profile</Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href={`/dashboard/appointments/schedule?patientId=${row.id}`}>
-              Book appointment
-            </Link>
-          </DropdownMenuItem>
+          {canBookAppointment && (
+            <DropdownMenuItem asChild>
+              <Link href={`/dashboard/appointments/schedule?patientId=${row.id}`}>
+                Book appointment
+              </Link>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

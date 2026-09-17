@@ -16,8 +16,17 @@ import {
   SheetDescription,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { cn } from '@/lib/utils';
-import { X } from 'lucide-react';
+import {
+  CalendarDays,
+  Eye,
+  Phone,
+  Shield,
+  UserRound,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 
 export type PatientDemographicsCounsellingContext = {
   counsellingType?: string | null;
@@ -41,41 +50,80 @@ export interface PatientDemographicsSheetProps {
   genderFallback?: string | null;
 }
 
-function FieldRow({ label, value }: { label: string; value?: string | null }) {
-  if (!value?.trim()) return null;
+function FieldRow({
+  label,
+  value,
+  valueNode,
+}: {
+  label: string;
+  value?: string | null;
+  valueNode?: ReactNode;
+}) {
+  if (!valueNode && !value?.trim()) return null;
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-border/50 py-2 last:border-0">
-      <span className="w-[38%] shrink-0 text-[12.5px] font-medium leading-[18px] text-muted-foreground">
+    <div className="flex items-baseline justify-between gap-3 border-b border-border/50 py-1.5 last:border-0">
+      <span className="w-[40%] shrink-0 text-[12.5px] font-medium leading-[18px] text-muted-foreground">
         {label}
       </span>
-      <span className="min-w-0 flex-1 text-right text-sm font-medium leading-5 text-foreground">
-        {value}
+      <span className="min-w-0 flex-1 text-right text-sm font-semibold leading-5 text-foreground">
+        {valueNode ?? value}
       </span>
     </div>
   );
 }
 
+const sectionIconChrome: Record<string, string> = {
+  identity: 'bg-sky-100 text-sky-700',
+  contact: 'bg-emerald-100 text-emerald-700',
+  visit: 'bg-violet-100 text-violet-700',
+  clinical: 'bg-teal-100 text-teal-700',
+  insurance: 'bg-amber-100 text-amber-800',
+};
+
 /** Section widget — one card per domain section; rows inside are not cards. */
 function SectionWidget({
   title,
+  icon: Icon,
+  iconTone,
   children,
   emptyMessage,
   isEmpty = false,
 }: {
   title: string;
+  icon: LucideIcon;
+  iconTone: keyof typeof sectionIconChrome;
   children?: ReactNode;
   emptyMessage?: string;
   isEmpty?: boolean;
 }) {
   return (
-    <section className="rounded-xl border border-border/70 bg-card px-4 py-3 shadow-sm">
-      <h3 className="mb-2 text-sm font-semibold leading-5 text-foreground">{title}</h3>
+    <section className="rounded-xl border border-border/70 bg-card px-3 py-2.5 shadow-sm">
+      <h3 className="mb-1.5 flex items-center gap-2 text-sm font-semibold leading-5 text-foreground">
+        <span
+          className={cn(
+            'flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
+            sectionIconChrome[iconTone],
+          )}
+          aria-hidden
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        {title}
+      </h3>
       {isEmpty ? (
         <p className="text-sm font-medium leading-5 text-muted-foreground">{emptyMessage}</p>
       ) : (
         <div className="min-w-0">{children}</div>
       )}
     </section>
+  );
+}
+
+function SessionStatusValue({ status }: { status: string }) {
+  return (
+    <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-[12px] font-semibold leading-[18px] text-amber-900">
+      {status}
+    </span>
   );
 }
 
@@ -145,47 +193,60 @@ export function PatientDemographicsContent({
       counsellingContext?.consultingDoctor?.trim(),
   );
 
-  // Hero already shows name / MRN / age / sex / eye — Identity only adds remaining fields.
-  const hasExtraIdentity = Boolean(dob || patient.bloodGroup?.trim());
+  const ageYearsLabel = age != null ? `${age} years` : null;
+  const hasIdentitySection = Boolean(
+    dob || gender || ageYearsLabel || patient.bloodGroup?.trim(),
+  );
 
   return (
-    <div className="space-y-3">
-      <section className="rounded-xl border border-border/70 bg-card px-4 py-3.5 shadow-sm">
-        <div className="flex items-center gap-3.5">
+    <div className="flex flex-col gap-2">
+      <section
+        data-testid="patient-details-identity-hero"
+        className="rounded-xl border border-border/70 bg-card px-3 py-2.5 shadow-sm"
+      >
+        <div className="flex items-center gap-3">
           <PatientAvatar
             photoUrl={patient.photoUrl}
             firstName={patient.firstName}
             lastName={patient.lastName}
             displayName={name}
             size="lg"
-            className="!h-[88px] !w-[88px] shrink-0 !text-xl ring-2 ring-border/80"
+            className="h-14 w-14 shrink-0 text-lg ring-2 ring-border/70"
           />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[20px] font-semibold leading-6 text-foreground">{name}</p>
+            <p className="truncate text-[18px] font-semibold leading-6 text-foreground sm:text-[20px]">
+              {name}
+            </p>
             {mrn ? (
-              <p className="mt-1 font-mono text-[13px] font-medium leading-[18px] tabular-nums text-muted-foreground">
+              <p className="mt-0.5 text-[13px] font-medium leading-[18px] tabular-nums text-muted-foreground">
                 {mrn}
               </p>
             ) : null}
             {identityMeta ? (
-              <p className="mt-1 text-sm font-medium leading-5 text-foreground/80">{identityMeta}</p>
+              <p className="mt-0.5 text-[13px] font-medium leading-5 text-muted-foreground">
+                {identityMeta}
+              </p>
             ) : null}
             {visitLabel && !counsellingContext ? (
-              <p className="mt-1.5 text-sm font-medium leading-5 text-emerald-700">{visitLabel}</p>
+              <p className="mt-1 text-sm font-medium leading-5 text-emerald-700">{visitLabel}</p>
             ) : null}
           </div>
         </div>
       </section>
 
-      {hasExtraIdentity ? (
-        <SectionWidget title="Identity">
+      {hasIdentitySection ? (
+        <SectionWidget title="Identity" icon={UserRound} iconTone="identity">
           <FieldRow label="Date of Birth" value={dob} />
+          <FieldRow label="Gender" value={gender} />
+          <FieldRow label="Age" value={ageYearsLabel} />
           <FieldRow label="Blood Group" value={patient.bloodGroup} />
         </SectionWidget>
       ) : null}
 
       <SectionWidget
         title="Contact"
+        icon={Phone}
+        iconTone="contact"
         emptyMessage="No contact information available"
         isEmpty={!hasContact}
       >
@@ -193,15 +254,23 @@ export function PatientDemographicsContent({
       </SectionWidget>
 
       {hasVisitContext ? (
-        <SectionWidget title="Visit & Session">
+        <SectionWidget title="Visit & Session" icon={CalendarDays} iconTone="visit">
           <FieldRow label="Visit" value={visitLabel} />
           <FieldRow label="Counselling" value={counsellingContext?.counsellingType} />
-          <FieldRow label="Session Status" value={counsellingContext?.sessionStatus} />
+          <FieldRow
+            label="Session Status"
+            value={counsellingContext?.sessionStatus}
+            valueNode={
+              counsellingContext?.sessionStatus?.trim() ? (
+                <SessionStatusValue status={counsellingContext.sessionStatus.trim()} />
+              ) : undefined
+            }
+          />
         </SectionWidget>
       ) : null}
 
       {hasClinical ? (
-        <SectionWidget title="Clinical Context">
+        <SectionWidget title="Clinical Context" icon={Eye} iconTone="clinical">
           <FieldRow label="Eye" value={eye} />
           <FieldRow
             label="Consulting Doctor"
@@ -211,7 +280,7 @@ export function PatientDemographicsContent({
       ) : null}
 
       {(patient.insuranceProvider || patient.insurancePolicyNumber) && (
-        <SectionWidget title="Insurance">
+        <SectionWidget title="Insurance" icon={Shield} iconTone="insurance">
           <FieldRow label="Provider" value={patient.insuranceProvider} />
           <FieldRow label="Policy" value={patient.insurancePolicyNumber} />
         </SectionWidget>
@@ -232,6 +301,7 @@ export function PatientDemographicsSheet({
   genderFallback,
 }: PatientDemographicsSheetProps) {
   const isOpen = open && Boolean(patient);
+  const useCounsellingChrome = Boolean(counsellingContext);
 
   return (
     <Sheet
@@ -246,29 +316,57 @@ export function PatientDemographicsSheet({
         overlayClassName="!z-[90] bg-black/40"
         className={cn(
           '!z-[100] flex h-full w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md',
-          'border-l border-border bg-muted/30',
+          'border-l border-border shadow-lg',
+          useCounsellingChrome
+            ? 'counselling-session bg-counselling-card border-counselling-border'
+            : 'bg-card',
         )}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-3">
-          <div>
-            <SheetTitle className="text-[18px] font-semibold leading-6 text-foreground">
-              Patient Details
+        <div
+          className={cn(
+            'flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3',
+            useCounsellingChrome
+              ? 'border-counselling-border/60 bg-counselling-card'
+              : 'border-border bg-card',
+          )}
+        >
+          <div className="min-w-0">
+            <SheetTitle
+              className={cn(
+                'text-[18px] font-semibold leading-6',
+                useCounsellingChrome ? 'text-counselling-foreground' : 'text-foreground',
+              )}
+            >
+              {counsellingCopy.patientDetails}
             </SheetTitle>
-            <SheetDescription className="sr-only">
-              Read-only patient identity, contact, and visit context
+            <SheetDescription
+              data-testid="patient-details-subtitle"
+              className="sr-only"
+            >
+              {counsellingCopy.patientDetails}
             </SheetDescription>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2',
+              useCounsellingChrome
+                ? 'text-counselling-muted-foreground hover:bg-counselling-muted hover:text-counselling-foreground focus-visible:ring-counselling-ring'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring',
+            )}
             aria-label="Close"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+        <div
+          className={cn(
+            'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5',
+            useCounsellingChrome ? 'bg-counselling-card' : 'bg-card',
+          )}
+        >
           {patient ? (
             <PatientDemographicsContent
               patient={patient}

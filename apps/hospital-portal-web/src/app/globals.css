@@ -598,8 +598,15 @@ body {
   }
 }
 
-/* BILL-030: print the grouped bill, not the rest of the OPD workspace. */
+/* BILL-030: print the grouped bill, not the rest of the OPD workspace.
+   Phase 2Z: Analytics print uses the same visibility model — body * is hidden
+   unless an explicit *-print-root opts in (visibility:hidden still occupies layout,
+   which caused blank Analytics print pages before .analytics-print-root was added). */
 .bill-print-only {
+  display: none;
+}
+
+.analytics-print-root {
   display: none;
 }
 
@@ -623,5 +630,25 @@ body {
   .bill-print-only {
     display: inline !important;
     visibility: visible;
+  }
+
+  /* Counsellor Analytics — dedicated print tree (must opt into visibility) */
+  .analytics-screen {
+    display: none !important;
+  }
+  .analytics-print-root,
+  .analytics-print-root * {
+    visibility: visible !important;
+  }
+  .analytics-print-root {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: #111 !important;
+    background: #fff !important;
+    padding: 1.25rem !important;
+    box-sizing: border-box;
   }
 }

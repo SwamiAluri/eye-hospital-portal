@@ -73,6 +73,12 @@ export interface WaitingListPatient {
   newPackage?: string;
   /** Price difference = new − previous (AddOnSurgery rows only). */
   upgradeDiff?: number;
+  /** Active counselling owner. Null/undefined = unassigned (Phase 3I Slice 3). */
+  counselorId?: string | null;
+  /** Display name for counselorId when assigned. */
+  counselorName?: string | null;
+  /** Queue/session branch — Assign picker filter (UX); server validates assignment. */
+  branchId?: string | null;
   /** Patient demographics — returned from backend for quick display. */
   contactNumber?: string;
   bloodGroup?: string;
@@ -170,6 +176,8 @@ export interface CounsellingSession {
   ccmsCurrentState?: string;
   isFollowUpRequired: boolean;
   status: WaitingListStatus;
+  /** Active counselling owner (Auth CounselorId). Null = unassigned. */
+  counselorId?: string | null;
   /** Master code from counsellor.session_type (e.g. INITIAL, FOLLOW_UP). */
   sessionTypeCode?: string;
   sessionStatus?: string;
@@ -427,6 +435,10 @@ export interface ActiveFollowupRecord {
   uhid: string | null;
   phone: string | null;
   branchId: string | null;
+  /** Authoritative owner — CounselingSession.CounselorId (Phase2X PD7). */
+  counselorId: string | null;
+  /** Display name when resolvable; null when unassigned/unknown. */
+  counselorName: string | null;
   recommendedSurgery: string | null;
   patientIntention: PatientIntention | null;
   sessionDate: string;
@@ -445,6 +457,10 @@ export interface ColdLeadRecord {
   uhid: string | null;
   phone: string | null;
   branchId: string | null;
+  /** Authoritative owner — CounselingSession.CounselorId (Phase2X PD7). */
+  counselorId: string | null;
+  /** Display name when resolvable; null when unassigned/unknown. */
+  counselorName: string | null;
   recommendedSurgery: string | null;
   patientIntention: 'Declined' | 'ReferredElsewhere' | null;
   sessionDate: string;
@@ -461,6 +477,10 @@ export interface PostSurgeryFollowupRecord {
   uhid: string | null;
   phone: string | null;
   branchId: string | null;
+  /**
+   * Authoritative counselling session only.
+   * Null when no journey↔session link exists (Phase2X — no opportunistic latest session).
+   */
   sessionId: string | null;
   surgeryType: string | null;
   dischargedAt: string | null;
@@ -506,11 +526,21 @@ export interface FollowupPostSurgeryStats {
   averageDaysSinceDischarge: number | null;
 }
 
+/** Phase2X orphan discrepancy audit on /followups/stats (not a Center queue). */
+export interface FollowupOrphanIntentionAudit {
+  total: number;
+  willingNow: number;
+  willingTwoWeeks: number;
+  willingSixMonths: number;
+  secondOpinion: number;
+}
+
 export interface FollowupStatsResponse {
   filters: FollowupStatsFilters;
   active: FollowupActiveStats;
   cold: FollowupColdStats;
   postSurgery: FollowupPostSurgeryStats;
+  orphanIntentions?: FollowupOrphanIntentionAudit;
 }
 
 export interface FollowupListQueryParams {

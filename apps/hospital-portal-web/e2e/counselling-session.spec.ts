@@ -123,7 +123,7 @@ test.describe('Counselling session workspace @counselling', () => {
 
     await expect(page.getByRole('button', { name: /Print Estimate|Print/i })).toBeVisible();
 
-    // Primary may be Save session, phase-next, or navigate — do not require Notes hop
+    // Primary may be Complete Session, phase-next, or navigate — do not require Notes hop
     // (Notes can remain pending until journey rules unlock it).
     const save = saveSessionButton(page);
     if (await save.isVisible().catch(() => false)) {
@@ -266,7 +266,7 @@ test.describe('Counselling session workspace @counselling', () => {
     await goCounsellingSession(page);
     await ensureInsurancePaymentType(page);
 
-    // Notes not required — Coverage is Insurance. Do not Save session here (would seal Done
+    // Notes not required — Coverage is Insurance. Do not Complete Session here (would seal Done
     // on DateForSurgery). Existing Waiting-for-TPA fixture already has a coverage case.
     await goToPhase(page, 'decision');
     await expect(page.getByTestId('counselling-decision-workspace')).toBeVisible({
@@ -314,7 +314,7 @@ test.describe('Counselling session workspace @counselling', () => {
     await ensureInsurancePaymentType(page);
 
     // Notes not required for Coverage. Dirty via Decision. Prefer Save draft over Save
-    // session — DateForSurgery + Save session can seal Done on this fixture.
+    // session — DateForSurgery + Complete Session can seal Done on this fixture.
     // Wait until Decision is navigable (button present) — under load the rail can hydrate
     // with pending stages before Quote unlocks Decision.
     const decisionStage = counsellingJourneyStage(page, 'decision');
@@ -373,7 +373,7 @@ test.describe('Counselling session workspace @counselling', () => {
       test.skip(true, 'Session is read-only — use a Pending/Processed editable fixture');
     }
 
-    // Core contract: Save Session stays blocked without a completed Decision.
+    // Core contract: Complete Session stays blocked without a completed Decision.
     await expect(saveBtn).toBeDisabled();
 
     // Dirty via Quote eye — not Decision, not Notes.

@@ -26,6 +26,8 @@ public class CounselingAnalyticsServiceTests : IDisposable
     private readonly Guid _patient1 = Guid.Parse("a1000001-0000-0000-0000-000000000001");
     private readonly Guid _patient2 = Guid.Parse("a1000002-0000-0000-0000-000000000002");
 
+    private Guid[] AllBranches() => new[] { _branchA, _branchB };
+
     public CounselingAnalyticsServiceTests()
     {
         _db = TestDbContextFactory.CreateInMemory();
@@ -165,8 +167,8 @@ public class CounselingAnalyticsServiceTests : IDisposable
     [Fact]
     public async Task SummaryAndTrends_ShareIdenticalWindow_AndConsistentTotals()
     {
-        var summary = await _svc.GetSummaryAsync(_tenant, null, null, 30, null, null, FixedUtc);
-        var trends = await _svc.GetTrendsAsync(_tenant, null, null, 30, null, null, FixedUtc);
+        var summary = await _svc.GetSummaryAsync(_tenant, AllBranches(), null, null, 30, null, null, FixedUtc);
+        var trends = await _svc.GetTrendsAsync(_tenant, AllBranches(), null, null, 30, null, null, FixedUtc);
 
         Assert.Equal(summary.From, trends.From);
         Assert.Equal(summary.ToExclusive, trends.ToExclusive);
@@ -177,7 +179,7 @@ public class CounselingAnalyticsServiceTests : IDisposable
     [Fact]
     public async Task Period_ExcludesSessionsBeforeFromInclusive()
     {
-        var summary = await _svc.GetSummaryAsync(_tenant, null, null, 30, null, null, FixedUtc);
+        var summary = await _svc.GetSummaryAsync(_tenant, AllBranches(), null, null, 30, null, null, FixedUtc);
         // s1..s5 + p0,p5,p20 that fall in window — p20 is -20 days so in window; s6 at -60 out
         Assert.DoesNotContain(summary.BySurgeryType, x => x.SurgeryType == "Old");
         Assert.True(summary.TotalSessions >= 5);
@@ -188,11 +190,11 @@ public class CounselingAnalyticsServiceTests : IDisposable
     {
         var from = FixedUtc.Date.AddDays(-6);
         var to = FixedUtc.Date.AddDays(-4);
-        var summary = await _svc.GetSummaryAsync(_tenant, null, null, 30, from, to, FixedUtc);
+        var summary = await _svc.GetSummaryAsync(_tenant, AllBranches(), null, null, 30, from, to, FixedUtc);
         Assert.Equal("custom", summary.WindowMode);
         Assert.Null(summary.Period);
 
-        var trends = await _svc.GetTrendsAsync(_tenant, null, null, 30, from, to, FixedUtc);
+        var trends = await _svc.GetTrendsAsync(_tenant, AllBranches(), null, null, 30, from, to, FixedUtc);
         Assert.Equal(summary.TotalSessions, trends.Trend.Sum(t => t.Count));
         Assert.All(trends.Trend, t =>
         {
@@ -205,32 +207,66 @@ public class CounselingAnalyticsServiceTests : IDisposable
     public async Task InvalidFromWithoutTo_Throws()
     {
         await Assert.ThrowsAsync<CounselingAnalyticsDateWindowException>(() =>
-            _svc.GetSummaryAsync(_tenant, null, null, 30, FixedUtc.Date, null, FixedUtc));
+            _svc.GetSummaryAsync(_tenant, AllBranches(), null, null, 30, FixedUtc.Date, null, FixedUtc));
     }
 
     [Fact]
     public async Task CounselorId_FiltersSummaryTrendsAndAging()
     {
-        var summaryA = await _svc.GetSummaryAsync(_tenant, null, _counselorA, 30, null, null, FixedUtc);
-        var summaryB = await _svc.GetSummaryAsync(_tenant, null, _counselorB, 30, null, null, FixedUtc);
+        var summaryA = await _svc.GetSummaryAsync(_tenant, AllBranches(), null, _counselorA, 30, null, null, FixedUtc);
+        var summaryB = await _svc.GetSummaryAsync(_tenant, AllBranches(), null, _counselorB, 30, null, null, FixedUtc);
         Assert.NotEqual(summaryA.TotalSessions, summaryB.TotalSessions);
         Assert.True(summaryA.TotalSessions > summaryB.TotalSessions);
 
-        var trendsA = await _svc.GetTrendsAsync(_tenant, null, _counselorA, 30, null, null, FixedUtc);
+        var trendsA = await _svc.GetTrendsAsync(_tenant, AllBranches(), null, _counselorA, 30, null, null, FixedUtc);
         Assert.Equal(summaryA.TotalSessions, trendsA.Trend.Sum(t => t.Count));
 
-        var agingA = await _svc.GetFollowupAgingAsync(_tenant, null, _counselorA, 365, null, null, FixedUtc);
-        var agingB = await _svc.GetFollowupAgingAsync(_tenant, null, _counselorB, 365, null, null, FixedUtc);
+        var agingA = await _svc.GetFollowupAgingAsync(_tenant, AllBranches(), null, _counselorA, 365, null, null, FixedUtc);
+        var agingB = await _svc.GetFollowupAgingAsync(_tenant, AllBranches(), null, _counselorB, 365, null, null, FixedUtc);
         Assert.True(agingA.TotalPending >= 1);
         Assert.True(agingB.TotalPending >= 1);
         Assert.NotEqual(agingA.TotalPending, agingB.TotalPending);
     }
 
     [Fact]
+    public async Task CounselorFilter_UsesCreatedByWhenCounselorIdNull()
+    {
+        var creator = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        var other = Guid.Parse("66666666-6666-6666-6666-666666666666");
+        _db.CounselingSession.Add(new CounselingSession
+        {
+            Id = Guid.Parse("b00000aa-0000-0000-0000-0000000000aa"),
+            TenantId = _tenant,
+            BranchId = _branchA,
+            PatientId = _patient1,
+            CounselorId = null,
+            CreatedByUserId = creator,
+            ReferredByDoctorId = Guid.NewGuid(),
+            SessionDate = FixedUtc.Date.AddDays(-1),
+            PatientType = "Cash",
+            SessionType = "Initial",
+            PatientAgreedToSurgery = true,
+            PendingDecision = false,
+            RecommendedSurgery = "CreatedByOnly",
+            CreatedAt = FixedUtc,
+        });
+        _db.SaveChanges();
+
+        var forCreator = await _svc.GetSummaryAsync(
+            _tenant, new[] { _branchA }, _branchA, creator, 30, null, null, FixedUtc);
+        var forOther = await _svc.GetSummaryAsync(
+            _tenant, new[] { _branchA }, _branchA, other, 30, null, null, FixedUtc);
+
+        Assert.True(forCreator.TotalSessions >= 1);
+        Assert.Equal(0, forOther.TotalSessions);
+        Assert.Equal(creator, forCreator.CounselorId);
+    }
+
+    [Fact]
     public async Task BranchId_AndCounselorCombination()
     {
-        var both = await _svc.GetSummaryAsync(_tenant, _branchA, _counselorA, 30, null, null, FixedUtc);
-        var branchB = await _svc.GetSummaryAsync(_tenant, _branchB, _counselorA, 30, null, null, FixedUtc);
+        var both = await _svc.GetSummaryAsync(_tenant, new[] { _branchA }, _branchA, _counselorA, 30, null, null, FixedUtc);
+        var branchB = await _svc.GetSummaryAsync(_tenant, new[] { _branchB }, _branchB, _counselorA, 30, null, null, FixedUtc);
         Assert.True(both.TotalSessions >= 1);
         Assert.Equal(1, branchB.TotalSessions);
     }
@@ -238,14 +274,21 @@ public class CounselingAnalyticsServiceTests : IDisposable
     [Fact]
     public async Task MetricDefinitions_AgreedDeclinedUndecided_AndRates()
     {
-        var s = await _svc.GetSummaryAsync(_tenant, _branchA, _counselorA, 30, null, null, FixedUtc);
-        Assert.Equal(s.AgreedCount + s.DeclinedCount + s.UndecidedCount, s.TotalSessions);
+        var s = await _svc.GetSummaryAsync(_tenant, new[] { _branchA }, _branchA, _counselorA, 30, null, null, FixedUtc);
         Assert.Equal(
-            Math.Round(s.AgreedCount * 100.0 / s.TotalSessions, 1),
-            s.ConversionRate);
-        Assert.Equal(
-            Math.Round((s.AgreedCount + s.DeclinedCount) * 100.0 / s.TotalSessions, 1),
-            s.DecisionRate);
+            s.AgreedCount + s.DeclinedCount + s.UndecidedCount + s.ExceptionCount + s.OtherUnclassifiedCount,
+            s.TotalSessions);
+        Assert.Equal(s.UndecidedCount, s.PendingDecisionCount);
+        Assert.Equal(s.TotalSessions - s.ExceptionCount - s.OtherUnclassifiedCount, s.EligibleOutcomeSessions);
+        if (s.EligibleOutcomeSessions > 0)
+        {
+            Assert.Equal(
+                Math.Round(s.AgreedCount * 100.0 / s.EligibleOutcomeSessions, 1),
+                s.ConversionRate);
+            Assert.Equal(
+                Math.Round((s.AgreedCount + s.DeclinedCount) * 100.0 / s.EligibleOutcomeSessions, 1),
+                s.DecisionRate);
+        }
         Assert.True(s.AvgDaysToDecision >= 0);
     }
 
@@ -253,7 +296,7 @@ public class CounselingAnalyticsServiceTests : IDisposable
     public async Task ZeroSessions_RatesAreZero_NotNaN()
     {
         var emptyTenant = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
-        var s = await _svc.GetSummaryAsync(emptyTenant, null, null, 30, null, null, FixedUtc);
+        var s = await _svc.GetSummaryAsync(emptyTenant, AllBranches(), null, null, 30, null, null, FixedUtc);
         Assert.Equal(0, s.TotalSessions);
         Assert.Equal(0, s.ConversionRate);
         Assert.Equal(0, s.DecisionRate);
@@ -265,7 +308,7 @@ public class CounselingAnalyticsServiceTests : IDisposable
     [Fact]
     public async Task Aging_UsesPendingDecision_NotActiveIntentions()
     {
-        var aging = await _svc.GetFollowupAgingAsync(_tenant, null, null, 365, null, null, FixedUtc);
+        var aging = await _svc.GetFollowupAgingAsync(_tenant, AllBranches(), null, null, 365, null, null, FixedUtc);
         Assert.Equal("PendingDecision", aging.Population);
         Assert.True(aging.TotalPending >= 3);
         Assert.Equal(
@@ -279,7 +322,7 @@ public class CounselingAnalyticsServiceTests : IDisposable
     [Fact]
     public async Task Aging_Buckets_ClassifyByDaysSinceSession()
     {
-        var aging = await _svc.GetFollowupAgingAsync(_tenant, _branchA, null, 365, null, null, FixedUtc);
+        var aging = await _svc.GetFollowupAgingAsync(_tenant, new[] { _branchA }, _branchA, null, 365, null, null, FixedUtc);
         Assert.True(aging.Counts.Bucket03 >= 1); // p0 today
         Assert.True(aging.Counts.Bucket47 >= 1); // p5
         Assert.True(aging.Counts.Bucket15Plus >= 1); // p20
@@ -288,8 +331,8 @@ public class CounselingAnalyticsServiceTests : IDisposable
     [Fact]
     public async Task CallbackMetrics_HonorCounselorViaSession()
     {
-        var a = await _svc.GetSummaryAsync(_tenant, null, _counselorA, 30, null, null, FixedUtc);
-        var b = await _svc.GetSummaryAsync(_tenant, null, _counselorB, 30, null, null, FixedUtc);
+        var a = await _svc.GetSummaryAsync(_tenant, AllBranches(), null, _counselorA, 30, null, null, FixedUtc);
+        var b = await _svc.GetSummaryAsync(_tenant, AllBranches(), null, _counselorB, 30, null, null, FixedUtc);
         Assert.Equal(1, a.CallbackTotal);
         Assert.Equal(1, a.CallbackCompleted);
         Assert.Equal(1, b.CallbackTotal);

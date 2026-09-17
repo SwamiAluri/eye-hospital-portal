@@ -11,12 +11,29 @@ export const counsellingCopy = {
   nextPatientDecision: 'Next: Patient Decision',
   nextSessionNotes: 'Next: Session Notes',
   back: 'Back',
-  saveSession: 'Save Session',
+  /** Final counselling completion CTA (maps to existing save_session / complete flow). */
+  completeSession: 'Complete Session',
+  /** @deprecated Prefer completeSession — kept for any legacy imports. */
+  saveSession: 'Complete Session',
   counsellingSession: 'Counselling Session',
   patient: 'Patient',
   patientDetails: 'Patient Details',
+  patientDetailsSubtitle: 'Key information for this patient',
   viewClinicalDetails: 'View clinical details',
   consultingDoctor: 'Consulting doctor',
+  /** Header action + sheet title for attributed clinical recommendation summary. */
+  clinicalRecommendations: 'Clinical Recommendations',
+  clinicalRecommendationsSubtitle: 'Key recommendations from the clinical team',
+  /** Session header action — opens existing SessionHistoryModal. */
+  sessionHistory: 'History',
+  sessionHistoryAria: 'View session history',
+  clinicalRecommendationDoctor: 'Doctor',
+  clinicalRecommendationDoctorHint: 'Recommendation',
+  clinicalRecommendationOptometrist: 'Optometrist',
+  clinicalRecommendationOptometristHint: 'Key points',
+  clinicalRecommendationsCallout:
+    'These recommendations support your counselling session. Doctor content comes from this session’s clinical recommendation; optometrist points are UX placeholders until clinical sources are connected.',
+  /** @deprecated Prefer clinicalRecommendationDoctor — legacy single-strip label. */
   recommendedProcedure: 'Doctor recommends',
   operativeEye: 'Eye',
   sessionStatus: 'Session status',
@@ -42,6 +59,8 @@ export const counsellingCopy = {
   selectCategoryToBrowse: 'Select a category',
   searchProcedures: 'Search by procedure name or code…',
   searchPackages: 'Search packages by name or code…',
+  packageTemplatesUnavailable:
+    'Package templates are not available for your access level. You can still quote procedures and investigations.',
   searchDiagnostics: 'Search diagnostics…',
   searchLabTests: 'Search laboratory tests…',
   subtotal: 'Subtotal',
@@ -51,7 +70,7 @@ export const counsellingCopy = {
   discountValuePercent: 'Discount (%)',
   discountValueFlat: 'Discount amount (₹)',
   discountValuePercentPlaceholder: 'e.g. 10',
-  discountReasonLabel: 'Reason (optional)',
+  discountReasonLabel: 'Discount reason',
   discountReasonPlaceholder: 'e.g. Staff referral, promotional offer',
   applyDiscountAction: 'Apply discount',
   discountExceededCap: 'Discount exceeds cap — applied amount is capped.',
@@ -71,6 +90,11 @@ export const counsellingCopy = {
   printEstimate: 'Print Estimate',
   print: 'Print',
   saveDraft: 'Save Draft',
+  close: 'Close',
+  saveAndClose: 'Save & Close',
+  leaveWithoutSaving: 'Leave Without Saving',
+  unsavedChangesTitle: 'You have unsaved changes.',
+  unsavedChangesMessage: 'Save your draft before leaving?',
 
   // Workflow sections
   payment: 'Payment',

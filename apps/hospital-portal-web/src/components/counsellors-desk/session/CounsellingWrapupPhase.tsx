@@ -104,7 +104,8 @@ export function CounsellingWrapupPhase({
       className={cn(
         counsellingSessionTokens.sessionWidget,
         counsellingSessionTokens.sessionWidgetPad,
-        'flex h-full min-h-0 flex-col gap-3 overflow-hidden',
+        // overflow-x-hidden only — avoid clipping Doctor notes under Additional Options
+        'flex h-full min-h-0 flex-col gap-3 overflow-x-hidden',
       )}
     >
       <h2 className={cn(counsellingSessionTokens.sessionWidgetTitle, 'shrink-0')}>
@@ -122,54 +123,59 @@ export function CounsellingWrapupPhase({
         </p>
       ) : null}
 
-      <div
-        data-testid={counsellingTestIds.notesDocumentationSection}
-        className="min-h-0 flex-1 space-y-2"
-      >
-        {noteFields.map(({ id, testId, label, placeholder, value, rows, minClass, onChange }) => (
-          <div key={id} className="space-y-1">
-            <CounsellingLabel
-              htmlFor={`counselling-note-${id}`}
-              className="text-xs font-medium text-counselling-muted-foreground"
-            >
-              {label}
-            </CounsellingLabel>
-            <CounsellingTextarea
-              id={`counselling-note-${id}`}
-              data-testid={testId}
-              rows={rows}
-              value={value}
-              placeholder={isReadOnly ? undefined : placeholder}
-              readOnly={isReadOnly}
-              disabled={isReadOnly}
-              className={cn(
-                minClass,
-                'resize-none border-counselling-border/80 bg-counselling-card py-1.5',
-              )}
-              onChange={(e) => {
-                if (!isReadOnly) onChange(e.target.value);
-              }}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div
+          data-testid={counsellingTestIds.notesDocumentationSection}
+          className="space-y-2.5"
+        >
+          {noteFields.map(({ id, testId, label, placeholder, value, rows, minClass, onChange }) => (
+            <div key={id} className="shrink-0 space-y-1">
+              <CounsellingLabel
+                htmlFor={`counselling-note-${id}`}
+                className="text-xs font-medium text-counselling-muted-foreground"
+              >
+                {label}
+              </CounsellingLabel>
+              <CounsellingTextarea
+                id={`counselling-note-${id}`}
+                data-testid={testId}
+                rows={rows}
+                value={value}
+                placeholder={isReadOnly ? undefined : placeholder}
+                readOnly={isReadOnly}
+                className={cn(
+                  minClass,
+                  'resize-none border-counselling-border/80 bg-counselling-card py-1.5',
+                  isReadOnly && 'bg-counselling-muted/20',
+                )}
+                onChange={(e) => {
+                  if (!isReadOnly) onChange(e.target.value);
+                }}
+              />
+            </div>
+          ))}
+        </div>
+
+        <div
+          data-testid={counsellingTestIds.notesAdditionalOptionsSection}
+          className="mt-auto shrink-0 space-y-1.5 border-t border-counselling-border/50 pt-3.5"
+        >
+          <p className={counsellingSessionTokens.sessionAdditionalOptionsLabel}>
+            {counsellingCopy.additionalOptions}
+          </p>
+          <div data-testid={counsellingTestIds.notesAdditionalOptions}>
+            <CounsellingAdditionalOptionsSection
+              embedded
+              wantToSeeDoctor={wantToSeeDoctor}
+              setWantToSeeDoctor={setWantToSeeDoctor}
+              interestedToUpgrade={interestedToUpgrade}
+              setInterestedToUpgrade={setInterestedToUpgrade}
+              notRequiredPreAuth={notRequiredPreAuth}
+              setNotRequiredPreAuth={setNotRequiredPreAuth}
+              isReadOnly={isReadOnly}
+              markDirty={markDirty}
             />
           </div>
-        ))}
-      </div>
-
-      <div className="shrink-0 space-y-1.5 border-t border-counselling-border/50 pt-2.5">
-        <p className={counsellingSessionTokens.sessionAdditionalOptionsLabel}>
-          {counsellingCopy.additionalOptions}
-        </p>
-        <div data-testid={counsellingTestIds.notesAdditionalOptions}>
-          <CounsellingAdditionalOptionsSection
-            embedded
-            wantToSeeDoctor={wantToSeeDoctor}
-            setWantToSeeDoctor={setWantToSeeDoctor}
-            interestedToUpgrade={interestedToUpgrade}
-            setInterestedToUpgrade={setInterestedToUpgrade}
-            notRequiredPreAuth={notRequiredPreAuth}
-            setNotRequiredPreAuth={setNotRequiredPreAuth}
-            isReadOnly={isReadOnly}
-            markDirty={markDirty}
-          />
         </div>
       </div>
     </section>

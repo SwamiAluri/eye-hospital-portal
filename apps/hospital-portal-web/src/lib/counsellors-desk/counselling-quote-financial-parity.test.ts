@@ -99,46 +99,57 @@ const actionBarBase: BuildSessionActionBarInput = {
 };
 
 describe('action bar after decision completion', () => {
-  it('offers phase next only while decision is incomplete on estimate step', () => {
+  it('offers phase next on Quote while decision incomplete', () => {
     expect(
       shouldOfferPhaseNextAction({
         ...actionBarBase,
         phaseCompletion: { estimate: true, decision: false, wrapup: false },
       }),
     ).toBe(true);
+  });
+
+  it('offers Quote → Decision even after decision is complete (revisit)', () => {
     expect(
       shouldOfferPhaseNextAction({
         ...actionBarBase,
         phaseCompletion: { estimate: true, decision: true, wrapup: false },
+        decision: 'DateForSurgery',
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it('navigates to insurance when decision is complete on estimate step', () => {
+  it('navigates Decision → Insurance when decision phase is complete', () => {
     const model = buildSessionActionBarModel({
       ...actionBarBase,
+      activePhase: 'decision',
       phaseCompletion: { estimate: true, decision: true, wrapup: false },
       decision: 'DateForSurgery',
+      coverageTabAvailable: true,
     });
     expect(model.primary?.kind).toBe('navigate');
     expect(model.primary?.label).toBe('Next: Insurance');
-    expect(model.primary?.label).not.toBe('Next: Patient Decision');
     expect(model.primary?.navigateTab).toBe('coverage');
   });
 
-  it('navigates to insurance when decision field is set but phaseCompletion lags', () => {
+  it('does not skip Quote → Notes when decision field is set but incomplete', () => {
     const model = buildSessionActionBarModel({
       ...actionBarBase,
-      phaseCompletion: { estimate: false, decision: false, wrapup: false },
-      decision: 'DateForSurgery',
+      activePhase: 'estimate',
+      phaseCompletion: { estimate: true, decision: false, wrapup: false },
+      decision: 'NeedsTime',
+      showCoverageWorkflow: false,
+      coverageTabAvailable: false,
     });
-    expect(model.primary?.label).toBe('Next: Insurance');
+    expect(model.primary?.label).toBe('Next: Patient Decision');
+    expect(model.primary?.kind).toBe('phase_next');
   });
 
-  it('navigates to close for cash when decision is complete', () => {
+  it('navigates Decision → Notes for cash when decision is complete', () => {
     const model = buildSessionActionBarModel({
       ...actionBarBase,
+      activePhase: 'decision',
       showCoverageWorkflow: false,
+      coverageTabAvailable: false,
       paymentType: 'Cash',
       phaseCompletion: { estimate: true, decision: true, wrapup: false },
       decision: 'DateForSurgery',
