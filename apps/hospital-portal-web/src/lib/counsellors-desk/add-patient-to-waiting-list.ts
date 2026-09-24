@@ -18,12 +18,17 @@ export type PatientMatchResult =
   | { ok: true; patient: UnifiedPatientHit }
   | { ok: false; message: string };
 
-/** Queue statuses that mean the patient is already actively on the counsellor waiting list. */
+/** Queue statuses that block creating another counselling session for the same patient. */
 export const ACTIVE_WAITING_LIST_STATUSES = [
   'Pending',
   'Processed',
   'AddOnSurgery',
+  'Done',
+  'RepeatCounselling',
 ] as const;
+
+/** SurgeryDone is historical — a new episode may be created (PD-C). */
+export const HISTORICAL_WAITING_LIST_STATUSES = ['SurgeryDone'] as const;
 
 function displayName(p: UnifiedPatientHit): string {
   return `${p.firstName} ${p.lastName}`.trim();
@@ -100,7 +105,7 @@ export function matchPatientForAddWaitingList(
   return { ok: true, patient };
 }
 
-/** True when an open counsellor-queue row already exists for this patient identifier. */
+/** True when a reusable counsellor-queue row already exists for this patient identifier. */
 export function findActiveWaitingListDuplicate(args: {
   uhid: string;
   patientDisplayName: string;
@@ -109,11 +114,27 @@ export function findActiveWaitingListDuplicate(args: {
   const key = args.uhid.trim().toLowerCase();
   const nameKey = args.patientDisplayName.trim().toLowerCase();
   return args.rows.find((r) => {
+    if ((HISTORICAL_WAITING_LIST_STATUSES as readonly string[]).includes(r.status)) return false;
     if (!(ACTIVE_WAITING_LIST_STATUSES as readonly string[]).includes(r.status)) return false;
     const rowUhid = (r.uhid ?? '').trim().toLowerCase();
     if (rowUhid && rowUhid === key) return true;
     return nameKey.length > 0 && (r.patientName ?? '').trim().toLowerCase() === nameKey && rowUhid === key;
   });
+}
+
+/** Concise Add Patient block copy (PD-C). */
+export function waitingListDuplicateCreateMessage(dup: {
+  patientName: string;
+  status: string;
+}): string {
+  const name = dup.patientName?.trim() || 'Patient';
+  if (dup.status === 'Done') {
+    return `${name}: existing counselling is completed but surgery is not done. ReEvaluate the existing counselling session instead of creating another.`;
+  }
+  if (dup.status === 'RepeatCounselling') {
+    return `${name} already has an open counselling episode. Continue the existing session instead of creating another.`;
+  }
+  return `${name} is already on the waiting list (${dup.status}). Open their existing row instead of adding again.`;
 }
 
 export interface CreateCounsellingSessionFromWaitingListInput {

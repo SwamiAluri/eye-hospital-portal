@@ -95,7 +95,7 @@ describe('Notes workspace UI (Wave 2E-5R)', () => {
     expect(html).toContain(`data-testid="${counsellingTestIds.notesCounsellorField}"`);
     expect(html).toContain(`data-testid="${counsellingTestIds.notesPatientField}"`);
     expect(html).toContain(`data-testid="${counsellingTestIds.notesDoctorField}"`);
-    expect(html).toContain('>Counsellor<');
+    expect(html).toContain('>Counsellor Notes<');
     expect(html).toContain('>Patient<');
     expect(html).toContain('>Doctor<');
   });
@@ -170,6 +170,25 @@ describe('Notes workspace UI (Wave 2E-5R)', () => {
     expect(html).toContain('Want to see doctor again');
     expect(html).toContain('Interested to upgrade');
     expect(html).toContain('Not required pre-authorization');
+  });
+
+  it('does not render ReQueue events inside Notes (History owns that surface)', () => {
+    const html = renderNotes();
+    expect(html).not.toContain(`data-testid="${counsellingTestIds.notesRequeueEvents}"`);
+    expect(html).not.toContain('Re-queued');
+    expect(html).not.toContain('[Re-queue');
+    expect(html).toContain('Counsellor Notes');
+    expect(html).toContain(`data-testid="${counsellingTestIds.notesCounsellorField}"`);
+  });
+
+  it('Counsellor Notes remain editable (not read-only) for open sessions', () => {
+    const html = renderNotes();
+    expect(html).toContain(`data-testid="${counsellingTestIds.notesCounsellorField}"`);
+    expect(html).not.toMatch(
+      new RegExp(
+        `data-testid="${counsellingTestIds.notesCounsellorField}"[^>]*readonly`,
+      ),
+    );
   });
 });
 

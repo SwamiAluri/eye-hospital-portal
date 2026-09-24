@@ -18,9 +18,11 @@ export type WaitingListLifecycleAction = {
 };
 
 /**
- * Phase 3I Lifecycle Ownership Claim — Waiting List primary CTA.
- * Done/Repeat always expose lifecycle actions (not generic Assign).
- * Ownership resolution happens after the user chooses the lifecycle action.
+ * Phase 3I — Waiting List primary CTA (ownership-safe).
+ * Pending/Processing + NULL → Assign.
+ * PD-B: unassigned RepeatCounselling + canAssign → Assign (Admin/explicit Assign).
+ * Done always exposes Re-evaluate (claim-for-lifecycle when ownership would change).
+ * Owned / peer RepeatCounselling → Start Repeat.
  */
 export function resolveWaitingListLifecycleAction(input: {
   status: WaitingListStatus;

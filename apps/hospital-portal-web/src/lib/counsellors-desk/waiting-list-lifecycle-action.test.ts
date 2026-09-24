@@ -17,12 +17,12 @@ describe('resolveWaitingListLifecycleAction — ownership claim matrix', () => {
     { status: 'Pending', counselorId: peer, label: 'View', kind: 'view' },
     { status: 'Processed', counselorId: me, label: 'Continue', kind: 'continue' },
     { status: 'Processed', counselorId: peer, label: 'View', kind: 'view' },
-    { status: 'Processed', counselorId: null, label: 'View', kind: 'view' },
+    { status: 'Processed', counselorId: null, label: 'Assign', kind: 'assign' },
     { status: 'Done', counselorId: me, label: 'Re-evaluate', kind: 're-evaluate' },
     { status: 'Done', counselorId: null, label: 'Re-evaluate', kind: 're-evaluate' },
     { status: 'Done', counselorId: peer, label: 'Re-evaluate', kind: 're-evaluate' },
     { status: 'RepeatCounselling', counselorId: me, label: 'Start Repeat', kind: 'start-repeat' },
-    { status: 'RepeatCounselling', counselorId: null, label: 'Start Repeat', kind: 'start-repeat' },
+    { status: 'RepeatCounselling', counselorId: null, label: 'Assign', kind: 'assign' },
     { status: 'RepeatCounselling', counselorId: peer, label: 'Start Repeat', kind: 'start-repeat' },
     { status: 'AddOnSurgery', counselorId: me, label: 'View', kind: 'view' },
     { status: 'SurgeryDone', counselorId: me, label: 'View', kind: 'view' },
@@ -43,17 +43,35 @@ describe('resolveWaitingListLifecycleAction — ownership claim matrix', () => {
     },
   );
 
-  it('never shows Assign on Done / Repeat', () => {
-    for (const status of ['Done', 'RepeatCounselling'] as WaitingListStatus[]) {
-      expect(
-        resolveWaitingListLifecycleAction({
-          status,
-          counselorId: null,
-          currentUserId: me,
-          activeTab: 'All',
-          canAssign: true,
-        }).kind,
-      ).not.toBe('assign');
-    }
+  it('never shows Assign on Done; unassigned RepeatCounselling shows Assign when canAssign', () => {
+    expect(
+      resolveWaitingListLifecycleAction({
+        status: 'Done',
+        counselorId: null,
+        currentUserId: me,
+        activeTab: 'All',
+        canAssign: true,
+      }).kind,
+    ).not.toBe('assign');
+
+    expect(
+      resolveWaitingListLifecycleAction({
+        status: 'RepeatCounselling',
+        counselorId: null,
+        currentUserId: me,
+        activeTab: 'All',
+        canAssign: true,
+      }).kind,
+    ).toBe('assign');
+
+    expect(
+      resolveWaitingListLifecycleAction({
+        status: 'RepeatCounselling',
+        counselorId: null,
+        currentUserId: me,
+        activeTab: 'All',
+        canAssign: false,
+      }).kind,
+    ).toBe('start-repeat');
   });
 });

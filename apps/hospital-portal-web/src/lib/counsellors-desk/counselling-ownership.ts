@@ -88,3 +88,47 @@ export function isOwnershipReadOnly(input: {
 export function isPendingLifecycleReadOnly(queueStatus?: string | null): boolean {
   return (queueStatus ?? '') === 'Pending';
 }
+
+/** Shared disabled-action copy for sealed / non-owner counselling content. */
+export const COUNSELLING_CONTENT_READ_ONLY_REASON = 'Session is read-only';
+
+/**
+ * FE gate for Save Draft CTA + handleSaveDraft early-return.
+ * Ownership lock must disable Save Draft for viewable non-owners (Admin included).
+ * Does not grant mutation rights — backend owner ACL remains authoritative.
+ */
+export function resolveSaveDraftDisabledReason(input: {
+  isSurgeryDoneState: boolean;
+  pendingLocksMutations: boolean;
+  ownershipLocksMutations: boolean;
+  isSaving: boolean;
+  isSavingDraft: boolean;
+  isRepeatState: boolean;
+}): string | null {
+  if (input.isSurgeryDoneState) return COUNSELLING_CONTENT_READ_ONLY_REASON;
+  if (input.ownershipLocksMutations) return COUNSELLING_CONTENT_READ_ONLY_REASON;
+  if (input.pendingLocksMutations) return 'Start counselling to continue';
+  if (input.isSaving || input.isSavingDraft) return 'Saving…';
+  if (input.isRepeatState) return 'Start repeat session to continue';
+  return null;
+}
+
+/**
+ * FE gate for Complete Session CTA.
+ * Ownership / pending / surgery-done seals take precedence over decision validation.
+ */
+export function resolveCompleteSessionDisabledReason(input: {
+  isSurgeryDoneState: boolean;
+  pendingLocksMutations: boolean;
+  ownershipLocksMutations: boolean;
+  isSaving: boolean;
+  isSavingDraft: boolean;
+  decisionValidationError: string | null;
+}): string | null {
+  if (input.isSurgeryDoneState) return COUNSELLING_CONTENT_READ_ONLY_REASON;
+  if (input.ownershipLocksMutations) return COUNSELLING_CONTENT_READ_ONLY_REASON;
+  if (input.pendingLocksMutations) return 'Start counselling to continue';
+  if (input.isSaving) return 'Completing session…';
+  if (input.isSavingDraft) return 'Saving…';
+  return input.decisionValidationError;
+}

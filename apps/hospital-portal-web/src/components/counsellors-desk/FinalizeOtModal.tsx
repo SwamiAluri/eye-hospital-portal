@@ -47,11 +47,27 @@ import {
 import { CounsellingSessionWidget } from '@/components/counsellors-desk/session/CounsellingSessionWidget';
 import { CounsellingStatusMessage } from '@/components/counsellors-desk/session/primitives/CounsellingStatusMessage';
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
-import { shouldShowCancellationReason } from '@/components/counsellors-desk/finalize-ot-modal-presentation';
+import { shouldShowCancellationReason, resolveFinalizeOtModalFooterActions } from '@/components/counsellors-desk/finalize-ot-modal-presentation';
 import {
   buildOtDetailsSavePayload,
   mergeOtDetailsSaveIntoRecord,
 } from '@/lib/counsellors-desk/ot-details-save-payload';
+import {
+  isCancelReasonPresent,
+  isReportingTimeValid,
+} from '@/lib/counsellors-desk/finalize-surgery-package1';
+import {
+  CounsellingAlertDialog,
+  CounsellingAlertDialogAction,
+  CounsellingAlertDialogCancel,
+  CounsellingAlertDialogContent,
+  CounsellingAlertDialogDescription,
+  CounsellingAlertDialogFooter,
+  CounsellingAlertDialogHeader,
+  CounsellingAlertDialogTitle,
+  CounsellingLabel,
+  CounsellingTextarea,
+} from '@/components/counsellors-desk/session/primitives';
 import { cn } from '@/lib/utils';
 
 const STATUS_COLORS: Record<FinalizeStatus, string> = {
@@ -328,6 +344,9 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
   const [isActioning, setIsActioning] = useState(false);
   const [scheduleDate, setScheduleDate] = useState<string>('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelReasonDraft, setCancelReasonDraft] = useState('');
+  const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
 
   const isLocked = detail ? LOCKED_STATUSES.includes(detail.status) : false;
   const cannotFinalize = !canMutateOt;
@@ -453,7 +472,11 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.reportingTime) e.reportingTime = 'Reporting time is required to confirm';
+    if (!form.reportingTime?.trim()) {
+      e.reportingTime = 'Reporting time is required to confirm';
+    } else if (!isReportingTimeValid(form.reportingTime)) {
+      e.reportingTime = 'Enter a valid reporting time (HH:MM)';
+    }
     if (anesthetistConflict) {
       e.anesthetistName = 'Select the existing anaesthetist or enter a different name';
     }
@@ -513,9 +536,16 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
         case 'finalise':
           updated = await counsellorsDeskApi.finaliseOtSchedule(scheduleId);
           break;
-        case 'cancel':
-          updated = await counsellorsDeskApi.cancelOtSchedule(scheduleId);
+        case 'cancel': {
+          if (!isCancelReasonPresent(cancelReason)) {
+            toast.error('Cancellation reason is required');
+            return;
+          }
+          updated = await counsellorsDeskApi.cancelOtSchedule(scheduleId, {
+            cancelReason: cancelReason!.trim(),
+          });
           break;
+        }
         case 'reopen':
           updated = await counsellorsDeskApi.reopenOtCase(scheduleId);
           break;
@@ -530,10 +560,33 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
     }
   };
 
+  const openCancelDialog = () => {
+    if (cannotFinalize || isActioning || isSaving) return;
+    setCancelReasonDraft('');
+    setCancelReasonError(null);
+    setCancelDialogOpen(true);
+  };
+
+  const confirmCancelSurgery = async () => {
+    if (!isCancelReasonPresent(cancelReasonDraft)) {
+      setCancelReasonError('Cancellation reason is required');
+      return;
+    }
+    setCancelReasonError(null);
+    setCancelDialogOpen(false);
+    await runAction('cancel', cancelReasonDraft.trim());
+  };
+
   const status = detail?.status ?? 'NotConfirmed';
   const isCataractSurgery = detail?.surgeryName?.toLowerCase().includes('cataract')
     || detail?.surgeryName?.toLowerCase().includes('phaco');
   const showCancelReason = shouldShowCancellationReason(status);
+  const footerActions = resolveFinalizeOtModalFooterActions(status);
+  const showSave = footerActions.includes('save') || footerActions.includes('save_will_revert');
+  const saveWillRevert = footerActions.includes('save_will_revert');
+  const showConfirm = footerActions.includes('confirm');
+  const showCancelSurgery = footerActions.includes('cancel_surgery');
+  const showReopen = footerActions.includes('reopen');
 
   return (
     <div className="counselling-session fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
@@ -921,100 +974,33 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
             </CounsellingButton>
 
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-              {status === 'NotConfirmed' && (
-                <>
-                  <CounsellingButton
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={denseBtn}
-                    onClick={handleSave}
-                    disabled={isSaving || isActioning || cannotFinalize}
-                  >
-                    {isSaving ? 'Saving…' : 'Save'}
-                  </CounsellingButton>
-                  <CounsellingButton
-                    type="button"
-                    size="sm"
-                    className={cn(denseBtn, 'bg-counselling-primary text-white hover:bg-counselling-primary/90')}
-                    onClick={() => runAction('confirm')}
-                    disabled={isSaving || isActioning || cannotFinalize}
-                  >
-                    {isActioning ? 'Processing…' : 'Confirm'}
-                  </CounsellingButton>
-                  <CounsellingButton
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn(denseBtn, 'border-red-300 text-red-700 hover:bg-red-50')}
-                    onClick={() => runAction('cancel')}
-                    disabled={isSaving || isActioning || cannotFinalize}
-                  >
-                    Cancel Surgery
-                  </CounsellingButton>
-                </>
+              {showSave && (
+                <CounsellingButton
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    denseBtn,
+                    saveWillRevert && 'border-amber-300 text-amber-900 hover:bg-amber-50',
+                  )}
+                  onClick={handleSave}
+                  disabled={isSaving || isActioning || cannotFinalize}
+                >
+                  {isSaving ? 'Saving…' : saveWillRevert ? 'Save (will revert)' : 'Save'}
+                </CounsellingButton>
               )}
-
-              {status === 'Confirmed' && (
-                <>
-                  <CounsellingButton
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn(denseBtn, 'border-amber-300 text-amber-900 hover:bg-amber-50')}
-                    onClick={handleSave}
-                    disabled={isSaving || isActioning || cannotFinalize}
-                  >
-                    {isSaving ? 'Saving…' : 'Save (will revert)'}
-                  </CounsellingButton>
-                  <CounsellingButton
-                    type="button"
-                    size="sm"
-                    className={cn(denseBtn, 'bg-counselling-primary text-white hover:bg-counselling-primary/90')}
-                    onClick={() => runAction('finalise')}
-                    disabled={isSaving || isActioning || cannotFinalize}
-                  >
-                    {isActioning ? 'Processing…' : 'Finalise'}
-                  </CounsellingButton>
-                  <CounsellingButton
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn(denseBtn, 'border-red-300 text-red-700 hover:bg-red-50')}
-                    onClick={() => runAction('cancel')}
-                    disabled={isSaving || isActioning || cannotFinalize}
-                  >
-                    Cancel Surgery
-                  </CounsellingButton>
-                </>
+              {showConfirm && (
+                <CounsellingButton
+                  type="button"
+                  size="sm"
+                  className={cn(denseBtn, 'bg-counselling-primary text-white hover:bg-counselling-primary/90')}
+                  onClick={() => runAction('confirm')}
+                  disabled={isSaving || isActioning || cannotFinalize}
+                >
+                  {isActioning ? 'Processing…' : 'Confirm'}
+                </CounsellingButton>
               )}
-
-              {status === 'Finalised' && (
-                <>
-                  <CounsellingButton
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn(denseBtn, 'border-amber-300 text-amber-900 hover:bg-amber-50')}
-                    onClick={handleSave}
-                    disabled={isSaving || isActioning || cannotFinalize}
-                  >
-                    {isSaving ? 'Saving…' : 'Save (will revert)'}
-                  </CounsellingButton>
-                  <CounsellingButton
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn(denseBtn, 'border-red-300 text-red-700 hover:bg-red-50')}
-                    onClick={() => runAction('cancel')}
-                    disabled={isSaving || isActioning || cannotFinalize}
-                  >
-                    Cancel Surgery
-                  </CounsellingButton>
-                </>
-              )}
-
-              {status === 'OTPrepared' && (
+              {showReopen && (
                 <CounsellingButton
                   type="button"
                   variant="outline"
@@ -1026,23 +1012,70 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                   {isActioning ? 'Processing…' : 'Reopen Case'}
                 </CounsellingButton>
               )}
-
-              {status === 'Cancelled' && (
+              {showCancelSurgery && (
                 <CounsellingButton
                   type="button"
                   variant="outline"
                   size="sm"
-                  className={cn(denseBtn, 'border-amber-300 text-amber-900 hover:bg-amber-50')}
-                  onClick={() => runAction('reopen')}
-                  disabled={isActioning || cannotFinalize}
+                  className={cn(denseBtn, 'border-red-300 text-red-700 hover:bg-red-50')}
+                  onClick={openCancelDialog}
+                  disabled={isSaving || isActioning || cannotFinalize}
                 >
-                  {isActioning ? 'Processing…' : 'Reopen Case'}
+                  Cancel Surgery
                 </CounsellingButton>
               )}
             </div>
           </div>
         )}
       </div>
+
+      <CounsellingAlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <CounsellingAlertDialogContent data-testid="finalize-cancel-confirm-dialog">
+          <CounsellingAlertDialogHeader>
+            <CounsellingAlertDialogTitle>Cancel surgery?</CounsellingAlertDialogTitle>
+            <CounsellingAlertDialogDescription>
+              This cancels the surgery schedule. A reason is required.
+            </CounsellingAlertDialogDescription>
+          </CounsellingAlertDialogHeader>
+          <div className="space-y-2">
+            <CounsellingLabel htmlFor="finalize-cancel-reason">Cancellation reason</CounsellingLabel>
+            <CounsellingTextarea
+              id="finalize-cancel-reason"
+              value={cancelReasonDraft}
+              onChange={(e) => {
+                setCancelReasonDraft(e.target.value);
+                if (cancelReasonError) setCancelReasonError(null);
+              }}
+              rows={3}
+              aria-invalid={!!cancelReasonError}
+              aria-describedby={cancelReasonError ? 'finalize-cancel-reason-error' : undefined}
+              data-testid="finalize-cancel-reason-input"
+            />
+            {cancelReasonError ? (
+              <p id="finalize-cancel-reason-error" className="text-sm text-red-600" role="alert">
+                {cancelReasonError}
+              </p>
+            ) : null}
+          </div>
+          <CounsellingAlertDialogFooter>
+            <CounsellingAlertDialogCancel type="button" disabled={isActioning}>
+              Keep surgery
+            </CounsellingAlertDialogCancel>
+            <CounsellingAlertDialogAction
+              type="button"
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmCancelSurgery();
+              }}
+              disabled={isActioning}
+              data-testid="finalize-cancel-confirm-submit"
+            >
+              Cancel surgery
+            </CounsellingAlertDialogAction>
+          </CounsellingAlertDialogFooter>
+        </CounsellingAlertDialogContent>
+      </CounsellingAlertDialog>
     </div>
   );
 }

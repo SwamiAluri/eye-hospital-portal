@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Users } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { counsellingAzureApi } from '@/lib/api/counselling-azure.api';
@@ -19,7 +20,16 @@ import {
 import { WaitingListQueueWidget } from '@/components/counsellors-desk/waiting-list/WaitingListQueueWidget';
 import { WaitingListQueuePagination } from '@/components/counsellors-desk/waiting-list/WaitingListQueuePagination';
 import { WaitingListWorkRow } from '@/components/counsellors-desk/waiting-list/WaitingListWorkRow';
-import { WaitingListOtReturnedRow } from '@/components/counsellors-desk/waiting-list/WaitingListOtReturnedRow';
+import { startOtReturnedCounselling } from '@/lib/counsellors-desk/start-ot-returned-counselling';
+import type { OtReturnedCreateSessionPayload } from '@/lib/counsellors-desk/start-ot-returned-counselling';
+import {
+  filterOtReturnedOperationalRows,
+  type OtReturnedProjectedRow,
+  type OtReturnedSessionLite,
+} from '@/lib/counsellors-desk/ot-returned-membership';
+import { toOtReturnedWaitingListPatient } from '@/lib/counsellors-desk/ot-returned-work-row';
+import { getApi } from '@/lib/api';
+import { counselingSessionsApi } from '@/lib/api/counseling-sessions.api';
 import { WaitingListPatientDetailSheet } from '@/components/counsellors-desk/waiting-list/WaitingListPatientDetailSheet';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useWaitingListQuery, useInvalidateCounsellorsDesk } from '@/hooks/use-counsellors-desk-queries';
@@ -32,11 +42,22 @@ import { isWaitingListPreAuthQueue } from '@/lib/counsellors-desk/waiting-list-p
 import { applyWaitingListClientFilters } from '@/lib/counsellors-desk/waiting-list-client-filters';
 import type { WaitingListOwnerFilter } from '@/lib/counsellors-desk/waiting-list-client-filters';
 import {
-  WAITING_LIST_DEFAULT_PAGE_SIZE,
   getWaitingListTotalPages,
   sliceWaitingListPage,
   type WaitingListPageSize,
 } from '@/lib/counsellors-desk/waiting-list-pagination';
+import {
+  applyWaitingListUrlState,
+  parseWaitingListUrlState,
+  resetWaitingListUrlFilters,
+  type WaitingListUrlState,
+  type WaitingListUrlTab,
+  type WaitingListUrlType,
+} from '@/lib/counsellors-desk/waiting-list-url-state';
+import {
+  resolveWaitingListEmptyCopy,
+  resolveWaitingListQueueTitle,
+} from '@/lib/counsellors-desk/waiting-list-empty-copy';
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
   COUNSELLING_SESSIONS_READ_PERMISSION,
@@ -48,6 +69,11 @@ import {
   isWaitingListEligibleForInitialAssign,
 } from '@/lib/counsellors-desk/counselling-auth';
 import { resolveLifecycleOwnershipDecision } from '@/lib/counsellors-desk/counselling-ownership';
+import {
+  buildLifecycleOwnershipConfirmCopy,
+  formatCounsellorDisplayName,
+  shouldOpenProcessingAfterAssign,
+} from '@/lib/counsellors-desk/lifecycle-ownership-confirm';
 import type { WaitingListLifecycleActionKind } from '@/lib/counsellors-desk/waiting-list-lifecycle-action';
 import type { WaitingListPatient, WaitingListFilters, AddPatientFormData } from '@/types/counsellors-desk';
 import { cn } from '@/lib/utils';
@@ -56,6 +82,10 @@ import { WaitingListAssignDialog } from '@/components/counsellors-desk/waiting-l
 import { WaitingListReassignDialog } from '@/components/counsellors-desk/waiting-list/WaitingListReassignDialog';
 import { useConfirmation } from '@/components/common/ConfirmationDialog';
 import { getApiErrorMessage } from '@/lib/auth-interceptors';
+import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
 
 const AddPatientModal = dynamic(
   () => import('@/components/counsellors-desk/AddPatientModal').then(m => ({ default: m.AddPatientModal })),
@@ -77,6 +107,8 @@ export default function CounsellorWaitingListPage() {
 
 function CounsellorWaitingListPageContent() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { invalidateWaitingList } = useInvalidateCounsellorsDesk();
   const { user, roles } = useAuthStore();
   const { showConfirmation, ConfirmationComponent } = useConfirmation();
@@ -97,27 +129,124 @@ function CounsellorWaitingListPageContent() {
     hasReassignPermission,
   });
 
-  const [otReturnedRows, setOtReturnedRows]  = useState<PatientJourneyRowDto[]>([]);
+  const urlView = useMemo(
+    () => parseWaitingListUrlState(searchParams),
+    [searchParams],
+  );
+
+  const activeTab = urlView.tab;
+  const ownerFilter = urlView.owner;
+  const page = urlView.page;
+  const pageSize = urlView.pageSize;
+
+  const [otReturnedRows, setOtReturnedRows] = useState<
+    Array<OtReturnedProjectedRow<PatientJourneyRowDto>>
+  >([]);
   const [otReturnedLoading, setOtReturnedLoading] = useState(false);
-  const [activeTab, setActiveTab]           = useState('All');
-  const [selectedId, setSelectedId]         = useState<string | null>(null);
+  const [startCounsellingJourneyId, setStartCounsellingJourneyId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [quickSearch, setQuickSearch]       = useState('');
+  /** Local draft for typing; URL `q` is SoT after debounce sync. */
+  const [quickSearch, setQuickSearch] = useState(urlView.search);
   const debouncedQuickSearch = useDebouncedValue(quickSearch, 300);
-  const [ownerFilter, setOwnerFilter] = useState<WaitingListOwnerFilter>('All');
+  const searchHydratedRef = useRef(false);
   const [demographicsPatient, setDemographicsPatient] = useState<WaitingListPatient | null>(null);
   const [assignPatient, setAssignPatient] = useState<WaitingListPatient | null>(null);
   const [reassignPatient, setReassignPatient] = useState<WaitingListPatient | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<WaitingListPageSize>(WAITING_LIST_DEFAULT_PAGE_SIZE);
 
   const [filters, setFilters] = useState<WaitingListFilters>({
-    fromDate: '', toDate: '', patientName: '', mrd: '', type: 'All', status: '',
+    fromDate: '', toDate: '', patientName: '', mrd: '', type: urlView.type, status: '',
   });
   /** Date / name / MRD sent to API after Apply. Type is client-side only (§6). */
   const [appliedFilters, setAppliedFilters] = useState<WaitingListFilters>({
     fromDate: '', toDate: '', patientName: '', mrd: '', type: 'All', status: '',
   });
+
+  const replaceSearchParams = useCallback(
+    (next: URLSearchParams) => {
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  const writeUrlView = useCallback(
+    (patch: Partial<WaitingListUrlState>) => {
+      const nextState: WaitingListUrlState = {
+        tab: patch.tab ?? activeTab,
+        type: patch.type ?? (filters.type as WaitingListUrlType),
+        owner: patch.owner ?? ownerFilter,
+        search: patch.search ?? debouncedQuickSearch,
+        page: patch.page ?? page,
+        pageSize: patch.pageSize ?? pageSize,
+      };
+      replaceSearchParams(
+        applyWaitingListUrlState(new URLSearchParams(searchParams.toString()), nextState),
+      );
+    },
+    [
+      activeTab,
+      filters.type,
+      ownerFilter,
+      debouncedQuickSearch,
+      page,
+      pageSize,
+      replaceSearchParams,
+      searchParams,
+    ],
+  );
+
+  // Hydrate local search draft when URL `q` changes (Back/Forward / deep link).
+  useEffect(() => {
+    setQuickSearch(urlView.search);
+    searchHydratedRef.current = true;
+  }, [urlView.search]);
+
+  // Keep filters.type aligned with URL type SoT.
+  useEffect(() => {
+    setFilters((prev) =>
+      prev.type === urlView.type ? prev : { ...prev, type: urlView.type },
+    );
+  }, [urlView.type]);
+
+  // Debounced search → URL (page resets to 1). Skip first paint after hydrate.
+  useEffect(() => {
+    if (!searchHydratedRef.current) return;
+    if (debouncedQuickSearch === urlView.search) return;
+    writeUrlView({ search: debouncedQuickSearch, page: 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: sync debounce → URL only
+  }, [debouncedQuickSearch]);
+
+  const setActiveTab = useCallback(
+    (key: string) => {
+      writeUrlView({ tab: key as WaitingListUrlTab, page: 1 });
+    },
+    [writeUrlView],
+  );
+
+  const setOwnerFilter = useCallback(
+    (value: WaitingListOwnerFilter) => {
+      writeUrlView({ owner: value, page: 1 });
+    },
+    [writeUrlView],
+  );
+
+  const setPage = useCallback(
+    (nextPage: number) => {
+      writeUrlView({ page: nextPage });
+    },
+    [writeUrlView],
+  );
+
+  const handleFiltersChange = useCallback(
+    (next: WaitingListFilters) => {
+      setFilters(next);
+      if (next.type !== filters.type) {
+        writeUrlView({ type: next.type as WaitingListUrlType, page: 1 });
+      }
+    },
+    [filters.type, writeUrlView],
+  );
 
   const apiFilters = useMemo(
     (): WaitingListFilters => ({
@@ -147,7 +276,96 @@ function CounsellorWaitingListPageContent() {
           clinicalState: 'ReadyForSurgery',
         });
         if (cancelled) return;
-        setOtReturnedRows(rows.filter((r) => !!r.otReturnReason));
+
+        const candidates = rows.filter((r) => !!r.otReturnReason);
+        const patientIds = [
+          ...new Set(
+            candidates
+              .map((r) => r.patientId?.trim())
+              .filter((id): id is string => !!id),
+          ),
+        ];
+
+        const sessionsByPatientId = new Map<string, OtReturnedSessionLite[]>();
+        await Promise.all(
+          patientIds.map(async (patientId) => {
+            try {
+              const list = await counselingSessionsApi.getPatientSessions(patientId);
+              sessionsByPatientId.set(
+                patientId,
+                (list ?? [])
+                  .filter((s) => !!s.id?.trim())
+                  .map((s) => ({
+                    id: s.id.trim(),
+                    status: (s.status || s.sessionStatus || '').toString(),
+                    patientAgreedToSurgery: s.patientAgreedToSurgery ?? null,
+                    additionalNotes: s.additionalNotes ?? null,
+                    createdAt: s.createdAt ?? null,
+                    counselorId: s.counselorId != null ? String(s.counselorId) : null,
+                    counselorName: s.counselorName ?? null,
+                    patientType: s.patientType ?? null,
+                    version: s.version ?? null,
+                  })),
+              );
+            } catch {
+              sessionsByPatientId.set(patientId, []);
+            }
+          }),
+        );
+
+        if (cancelled) return;
+
+        // Authoritative WL lifecycle when the patient is already on the counselling queue.
+        const waitingListByPatientId = new Map<
+          string,
+          {
+            id: string;
+            status: (typeof patients)[number]['status'];
+            counselorId?: string | null;
+            counselorName?: string | null;
+            patientType?: string | null;
+            version?: number | null;
+          }
+        >();
+        for (const p of patients) {
+          const key = (p as WaitingListPatient & { patientId?: string }).patientId?.trim();
+          // Waiting list rows are keyed by session id; patientId may be present on enriched rows.
+          const pid =
+            key ||
+            (p as { patientId?: string }).patientId ||
+            '';
+          if (!pid) continue;
+          if (!waitingListByPatientId.has(pid)) {
+            waitingListByPatientId.set(pid, {
+              id: p.id,
+              status: p.status,
+              counselorId: p.counselorId,
+              counselorName: p.counselorName,
+              patientType: p.patientType,
+              version: p.version,
+            });
+          }
+        }
+
+        // Also index by matching session id → patient from sessions map when WL patientId missing.
+        for (const [patientId, sessions] of sessionsByPatientId) {
+          if (waitingListByPatientId.has(patientId)) continue;
+          const match = patients.find((p) => sessions.some((s) => s.id === p.id));
+          if (match) {
+            waitingListByPatientId.set(patientId, {
+              id: match.id,
+              status: match.status,
+              counselorId: match.counselorId,
+              counselorName: match.counselorName,
+              patientType: match.patientType,
+              version: match.version,
+            });
+          }
+        }
+
+        setOtReturnedRows(
+          filterOtReturnedOperationalRows(candidates, sessionsByPatientId, waitingListByPatientId),
+        );
       } catch {
         if (cancelled) return;
         setOtReturnedRows([]);
@@ -168,7 +386,7 @@ function CounsellorWaitingListPageContent() {
       cancelled = true;
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [branchId]);
+  }, [branchId, patients]);
 
   const refetchWaitingList = waitingListQuery.refetch;
 
@@ -185,12 +403,87 @@ function CounsellorWaitingListPageContent() {
     if (waitingListQuery.isError) toast.error('Failed to load waiting list');
   }, [waitingListQuery.isError]);
 
+  const handleStartOtReturnedCounselling = useCallback(
+    async (row: OtReturnedProjectedRow<PatientJourneyRowDto>) => {
+      if (startCounsellingJourneyId) return;
+      setStartCounsellingJourneyId(row.id);
+      try {
+        const result = await startOtReturnedCounselling(
+          {
+            journeyId: row.id,
+            patientId: row.patientId,
+            branchId,
+            otReturnReason: row.otReturnReason,
+            procedureName: row.procedureName,
+            eye: row.eyeOperated,
+          },
+          {
+            getJourneyDetail: async (journeyId) => {
+              const detail = await ipManagementApi.getJourneyDetail(journeyId);
+              if (!detail) return null;
+              const raw = detail as PatientJourneyRowDto & {
+                admittingDoctorId?: string | null;
+              };
+              return {
+                patientId: detail.patientId,
+                primarySurgeonId: detail.primarySurgeonId,
+                admittingDoctorId: raw.admittingDoctorId ?? null,
+                procedureName: detail.procedureName,
+                eyeOperated: detail.eyeOperated,
+                otReturnReason: detail.otReturnReason,
+              };
+            },
+            getPatientSessions: async (patientId) => {
+              const list = await counselingSessionsApi.getPatientSessions(patientId);
+              return (list ?? []).map((s) => ({
+                id: s.id,
+                referredByDoctorId:
+                  (s as { referredByDoctorId?: string | null }).referredByDoctorId ?? null,
+                status: s.status || s.sessionStatus,
+              }));
+            },
+            createSession: async (payload: OtReturnedCreateSessionPayload) => {
+              try {
+                const response = await getApi().post('/Counseling/sessions', payload);
+                return { status: response.status, data: response.data };
+              } catch (err: unknown) {
+                const axiosErr = err as {
+                  response?: {
+                    status?: number;
+                    data?: { success?: boolean; sessionId?: string; message?: string };
+                  };
+                };
+                if (axiosErr.response?.status) {
+                  return {
+                    status: axiosErr.response.status,
+                    data: axiosErr.response.data,
+                  };
+                }
+                throw err;
+              }
+            },
+          },
+        );
+        router.push(result.href);
+      } catch (err: unknown) {
+        toast.error(
+          getApiErrorMessage(err) ||
+            (err instanceof Error ? err.message : 'Failed to start counselling'),
+        );
+      } finally {
+        setStartCounsellingJourneyId(null);
+      }
+    },
+    [branchId, router, startCounsellingJourneyId],
+  );
+
   const handleSearch = () => {
     // Apply date / name / MRD only — type already filters immediately client-side.
     setAppliedFilters({
       ...filters,
       type: 'All',
     });
+    writeUrlView({ page: 1 });
   };
 
   const handleReset = () => {
@@ -200,7 +493,9 @@ function CounsellorWaitingListPageContent() {
     setFilters(blank);
     setAppliedFilters(blank);
     setQuickSearch('');
-    setOwnerFilter('All');
+    replaceSearchParams(
+      resetWaitingListUrlFilters(new URLSearchParams(searchParams.toString())),
+    );
   };
 
   const coveragePatients = useMemo(
@@ -260,13 +555,21 @@ function CounsellorWaitingListPageContent() {
       const added = await counsellorsDeskApi.addPatientToWaitingList(data, {
         branchId: branchId ?? undefined,
       });
-      setActiveTab('Pending');
       setQuickSearch('');
-      setOwnerFilter('All');
       setFilters((f) => ({ ...f, type: 'All', patientName: '', mrd: '' }));
       setAppliedFilters({
         fromDate: '', toDate: '', patientName: '', mrd: '', type: 'All', status: '',
       });
+      replaceSearchParams(
+        applyWaitingListUrlState(new URLSearchParams(searchParams.toString()), {
+          tab: 'Pending',
+          type: 'All',
+          owner: 'All',
+          search: '',
+          page: 1,
+          pageSize,
+        }),
+      );
       await invalidateWaitingList();
       await refetchWaitingList();
       toast.success(`${added.patientName} scheduled for counselling — check Pending (${added.uhid})`);
@@ -295,12 +598,12 @@ function CounsellorWaitingListPageContent() {
 
   const handleRowClick = useCallback((patient: WaitingListPatient) => {
     setSelectedId(patient.id);
-    // Pending + Unassigned only: Assign dialog (Slice 3). Done/Repeat use explicit CTAs.
+    // Pending/Processing/unassigned RepeatCounselling: Assign dialog. Done uses explicit CTAs.
     if (isWaitingListEligibleForInitialAssign(patient)) {
       if (canAssign) setAssignPatient(patient);
       return;
     }
-    // Done/Repeat row click = view only — never silently start lifecycle or claim ownership.
+    // Done/owned Repeat row click = view only — never silently start lifecycle or claim ownership.
     navigateToSession(patient);
   }, [canAssign, navigateToSession]);
 
@@ -320,13 +623,9 @@ function CounsellorWaitingListPageContent() {
         canAssignToMe,
       });
       const intent = kind === 're-evaluate' ? 'ReEvaluate' : 'StartRepeat';
-      const confirmLabel =
-        kind === 're-evaluate' ? 'Assign to me & Re-evaluate' : 'Assign to me & Start Repeat';
-      const title =
-        kind === 're-evaluate' ? 'Re-evaluate Session' : 'Start Repeat Session';
 
       if (decision.path === 'continue') {
-        // Current owner: preserve existing Re-evaluate confirmation (not Assign-to-me).
+        // Current owner: no ownership mutation — direct continuation.
         // Start Repeat has no separate Waiting List confirmation — session lifecycle consumes intent once.
         if (kind === 're-evaluate') {
           showConfirmation({
@@ -350,26 +649,48 @@ function CounsellorWaitingListPageContent() {
         return;
       }
 
-      // NULL or other owner — lifecycle-specific claim (not Slice 3 Assign, not General Reassign).
+      const copy = buildLifecycleOwnershipConfirmCopy({
+        kind,
+        currentOwnerName: patient.counselorName,
+        continueAsName: formatCounsellorDisplayName({
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          fallback: 'You',
+        }),
+      });
+
+      // NULL or other owner — lifecycle-specific claim (not Assign, not General Reassign).
       showConfirmation({
-        title,
-        message:
-          kind === 're-evaluate'
-            ? 'Assign this session to yourself to continue re-evaluation.'
-            : 'Assign this session to yourself to continue repeat counselling.',
-        confirmText: confirmLabel,
+        title: copy.title,
+        message: (
+          <div className="space-y-3 text-sm" data-testid="lifecycle-ownership-confirm">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Current owner</p>
+              <p className="font-medium text-foreground">{copy.currentOwnerLabel}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Continue as</p>
+              <p className="font-medium text-foreground">{copy.continueAsLabel}</p>
+            </div>
+          </div>
+        ),
+        confirmText: 'Continue as me',
         variant: 'warning',
+        confirmTestId: 'lifecycle-ownership-continue-as-me',
+        dataTestId: 'lifecycle-ownership-confirm-dialog',
         onConfirm: async () => {
           try {
             await counsellorsDeskApi.claimSessionForLifecycle(patient.id, {
               expectedCounselorId: decision.expectedCounselorId,
               intent,
+              version: patient.version,
             });
             runLifecycleAfterOwnership(patient, kind);
           } catch (err) {
-            const status = (err as { response?: { status?: number } })?.response?.status;
-            if (status === 409) {
-              toast.error('Session ownership changed. Refreshing the waiting list.');
+            if (isSessionConcurrencyConflict(err)) {
+              // Phase 3I Slice 7 (PD-S7-06): server distinguishes stale-ownership vs stale-Version
+              // via the 409 message body — surface it verbatim, no auto-retry.
+              toast.error(getSessionConcurrencyMessage(err));
               await waitingListQuery.refetch();
               return;
             }
@@ -381,6 +702,8 @@ function CounsellorWaitingListPageContent() {
     },
     [
       user?.id,
+      user?.firstName,
+      user?.lastName,
       canAssignToMe,
       navigateToSession,
       showConfirmation,
@@ -424,11 +747,28 @@ function CounsellorWaitingListPageContent() {
     setAssignPatient(patient);
   }, []);
 
-  const handleAssigned = useCallback(async () => {
-    setAssignPatient(null);
-    await invalidateWaitingList();
-    await waitingListQuery.refetch();
-  }, [invalidateWaitingList, waitingListQuery]);
+  const handleAssigned = useCallback(
+    async (result: { sessionId: string; counselorId: string; counselorName: string | null }) => {
+      const patient = assignPatient;
+      setAssignPatient(null);
+      await invalidateWaitingList();
+      await waitingListQuery.refetch();
+
+      // Processing + assigned to current user → open counselling workflow (no StartSession).
+      // Peer assign or Pending assign → stay on Waiting List (Pending still requires Start Counseling).
+      if (
+        patient &&
+        shouldOpenProcessingAfterAssign({
+          sessionStatus: patient.status,
+          assignedCounselorId: result.counselorId,
+          currentUserId: user?.id,
+        })
+      ) {
+        navigateToSession(patient);
+      }
+    },
+    [assignPatient, invalidateWaitingList, navigateToSession, user?.id, waitingListQuery],
+  );
 
   const handleReassignOpen = useCallback((patient: WaitingListPatient) => {
     setReassignPatient(patient);
@@ -447,7 +787,20 @@ function CounsellorWaitingListPageContent() {
   const hasActiveFilters = !!(
     appliedFilters.fromDate || appliedFilters.toDate ||
     filters.type !== 'All' ||
-    ownerFilter !== 'All'
+    ownerFilter !== 'All' ||
+    quickSearch.trim() ||
+    activeTab !== 'All'
+  );
+
+  const hasRestrictiveClientScope = !!(
+    filters.type !== 'All' ||
+    ownerFilter !== 'All' ||
+    debouncedQuickSearch.trim() ||
+    appliedFilters.patientName.trim() ||
+    appliedFilters.mrd.trim() ||
+    appliedFilters.fromDate ||
+    appliedFilters.toDate ||
+    (activeTab !== 'All' && activeTab !== 'OtReturned')
   );
 
   const isOtTab = activeTab === 'OtReturned';
@@ -455,14 +808,13 @@ function CounsellorWaitingListPageContent() {
   const queueLoading = isOtTab ? otReturnedLoading : isLoading;
   const queueEmpty = isOtTab ? !otReturnedLoading && otReturnedRows.length === 0 : !isLoading && filtered.length === 0;
 
-  // Reset to page 1 when the visible queue scope changes (client-side pagination only).
-  useEffect(() => {
-    setPage(1);
-  }, [activeTab, filters.type, ownerFilter, debouncedQuickSearch, appliedFilters.patientName, appliedFilters.mrd, pageSize]);
-
+  // Clamp page when queue shrinks (client-side pagination only).
   useEffect(() => {
     const totalPages = getWaitingListTotalPages(queueCount, pageSize);
-    if (page > totalPages) setPage(totalPages);
+    if (page > totalPages) {
+      writeUrlView({ page: totalPages });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clamp only when page exceeds total
   }, [queueCount, pageSize, page]);
 
   const pagedPatients = useMemo(
@@ -474,45 +826,45 @@ function CounsellorWaitingListPageContent() {
     [otReturnedRows, page, pageSize],
   );
 
-  const emptyContent = isOtTab ? (
+  const emptyCopy = resolveWaitingListEmptyCopy({
+    activeTab,
+    hasRestrictiveClientScope,
+    hasAnyPatientsInBranch: patients.length > 0 || isOtTab,
+  });
+
+  const emptyContent = (
     <>
-      <p className="text-sm font-medium text-counselling-foreground">No OT-returned patients</p>
-      <p className="max-w-sm text-xs leading-relaxed text-counselling-muted-foreground">
-        Empty until OT returns a patient with a reason to Ready for Surgery.
-      </p>
-    </>
-  ) : (
-    <>
-      <p className="text-sm font-medium text-counselling-foreground">
-        {activeTab === 'RepeatCounselling'
-          ? 'No repeat counselling patients'
-          : 'No patients match your filters or search'}
-      </p>
-      <p className="max-w-md text-xs leading-relaxed text-counselling-muted-foreground">
-        {activeTab === 'RepeatCounselling'
-          ? 'Create via session: Patient Decision → Not Interested or Needs Time → Complete Session.'
-          : 'Try adjusting your filters or search'}
+      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-counselling-muted/60">
+        <Users className="h-5 w-5 text-counselling-muted-foreground opacity-60" aria-hidden />
+      </div>
+      <p role="status" className="text-sm font-medium text-counselling-foreground">
+        {emptyCopy.title}
       </p>
     </>
   );
 
-  const handlePageSizeChange = useCallback((next: WaitingListPageSize) => {
-    setPageSize(next);
-    setPage(1);
-  }, []);
+  const handlePageSizeChange = useCallback(
+    (next: WaitingListPageSize) => {
+      writeUrlView({ pageSize: next, page: 1 });
+    },
+    [writeUrlView],
+  );
 
   return (
     <div
       className={cn(
         counsellingSessionTokens.shellPage,
-        'staff-page-fit h-full overflow-hidden gap-0.5 px-2.5 pb-1 pt-0.5',
-        'min-[1600px]:gap-2.5 min-[1600px]:px-4 min-[1600px]:pb-4 min-[1600px]:pt-2.5',
+        'staff-page-fit h-full overflow-hidden gap-1 px-2.5 pb-1 pt-0.5',
+        'min-[1600px]:gap-2 min-[1600px]:px-4 min-[1600px]:pb-4 min-[1600px]:pt-2',
       )}
     >
-      <header className="flex shrink-0 flex-col justify-center px-0.5 py-0 leading-none min-[1600px]:py-0.5">
+      <header className="flex shrink-0 flex-col justify-center gap-0.5 px-0.5 py-0 leading-none min-[1600px]:py-0.5">
         <h1 className="staff-page-title font-semibold tracking-tight text-counselling-foreground max-[1599px]:text-base max-[1599px]:leading-5 min-[1600px]:text-[1.375rem]">
           Waiting List
         </h1>
+        <p className="text-[11px] leading-4 text-counselling-muted-foreground min-[1600px]:text-xs min-[1600px]:leading-5">
+          Shared counselling queue · scan, filter, then act
+        </p>
       </header>
 
       <WaitingListSummaryWidget
@@ -523,7 +875,7 @@ function CounsellorWaitingListPageContent() {
 
       <WaitingListQueueWidget
         className="min-h-0 flex-1"
-        title={isOtTab ? 'OT Returned' : activeTab === 'PreAuthQueue' ? 'Pre-Auth Queue' : 'Patient Queue'}
+        title={resolveWaitingListQueueTitle(activeTab)}
         count={queueCount}
         mode={isOtTab ? 'ot-returned' : 'counselling'}
         isLoading={queueLoading}
@@ -535,13 +887,15 @@ function CounsellorWaitingListPageContent() {
             quickSearch={quickSearch}
             onQuickSearchChange={setQuickSearch}
             filters={filters}
-            onFiltersChange={setFilters}
+            onFiltersChange={handleFiltersChange}
             onApply={handleSearch}
             onReset={handleReset}
             ownerFilter={ownerFilter}
             onOwnerFilterChange={setOwnerFilter}
             hasActiveFilters={hasActiveFilters}
             onAddPatient={() => setIsAddModalOpen(true)}
+            appliedFromDate={appliedFilters.fromDate}
+            appliedToDate={appliedFilters.toDate}
           />
         }
         footer={
@@ -558,14 +912,43 @@ function CounsellorWaitingListPageContent() {
         }
       >
         {isOtTab
-          ? pagedOtRows.map((row, idx) => (
-              <WaitingListOtReturnedRow
-                key={row.id}
-                row={row}
-                index={(page - 1) * pageSize + idx}
-                onNavigate={(href) => router.push(href)}
-              />
-            ))
+          ? pagedOtRows.map((row, idx) => {
+              const otPatient = toOtReturnedWaitingListPatient(
+                row,
+                (page - 1) * pageSize + idx,
+              );
+              return (
+                <WaitingListWorkRow
+                  key={row.id}
+                  patient={otPatient}
+                  isSelected={selectedId === otPatient.id}
+                  activeTab={activeTab}
+                  hasCcmsCase={false}
+                  currentUserId={user?.id}
+                  onRowClick={(p) => {
+                    if (row.needsSessionCreate) return;
+                    handleRowClick(p);
+                  }}
+                  onDemographics={handleDemographics}
+                  onPreAuth={handlePreAuth}
+                  onAssign={handleAssignOpen}
+                  onReassign={handleReassignOpen}
+                  onLifecycleAction={handleLifecycleAction}
+                  canAssign={canAssign}
+                  canReassign={canReassign}
+                  otReturnReason={row.otReturnReason}
+                  onOtStartCounselling={
+                    row.needsSessionCreate
+                      ? () => {
+                          void handleStartOtReturnedCounselling(row);
+                        }
+                      : undefined
+                  }
+                  otStartPending={startCounsellingJourneyId === row.id}
+                  data-testid="waiting-list-ot-returned-row"
+                />
+              );
+            })
           : pagedPatients.map((patient) => {
               const { hasCcmsCase, ccmsState } = ccmsPropsFromBadge(ccmsBadges[patient.id]);
               return (
@@ -601,11 +984,12 @@ function CounsellorWaitingListPageContent() {
         sessionId={assignPatient?.id ?? null}
         patientName={assignPatient?.patientName}
         sessionBranchId={assignPatient?.branchId}
+        sessionVersion={assignPatient?.version}
         onOpenChange={(open) => {
           if (!open) setAssignPatient(null);
         }}
-        onAssigned={() => {
-          void handleAssigned();
+        onAssigned={(result) => {
+          void handleAssigned(result);
         }}
       />
 
@@ -616,6 +1000,7 @@ function CounsellorWaitingListPageContent() {
         currentOwnerId={reassignPatient?.counselorId ?? null}
         currentOwnerName={reassignPatient?.counselorName}
         sessionBranchId={reassignPatient?.branchId}
+        sessionVersion={reassignPatient?.version}
         onOpenChange={(open) => {
           if (!open) setReassignPatient(null);
         }}

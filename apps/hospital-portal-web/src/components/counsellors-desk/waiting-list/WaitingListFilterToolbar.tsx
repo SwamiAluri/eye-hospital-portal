@@ -47,6 +47,9 @@ export type WaitingListFilterToolbarProps = {
   onOwnerFilterChange?: (value: WaitingListOwnerFilter) => void;
   hasActiveFilters: boolean;
   onAddPatient: () => void;
+  /** Applied date range (after Apply) — for active-filter chips only. */
+  appliedFromDate?: string;
+  appliedToDate?: string;
   className?: string;
   'data-testid'?: string;
 };
@@ -68,6 +71,8 @@ export function WaitingListFilterToolbar({
   onOwnerFilterChange,
   hasActiveFilters,
   onAddPatient,
+  appliedFromDate = '',
+  appliedToDate = '',
   className,
   'data-testid': testId = 'waiting-list-filter-toolbar',
 }: WaitingListFilterToolbarProps) {
@@ -78,11 +83,25 @@ export function WaitingListFilterToolbar({
   /** Beat CounsellingButton touchTarget (min-h-11) for dense worklist chrome. */
   const denseBtn = 'min-h-8 !min-h-8';
 
+  const ownerLabel =
+    WAITING_LIST_OWNER_FILTER_OPTIONS.find((o) => o.value === ownerFilter)?.label ??
+    ownerFilter;
+
+  const activeChips: string[] = [];
+  if (filters.type !== 'All') activeChips.push(`Type: ${filters.type}`);
+  if (ownerFilter !== 'All') activeChips.push(`Owner: ${ownerLabel}`);
+  if (appliedFromDate || appliedToDate) {
+    activeChips.push(
+      `Dates: ${appliedFromDate || '…'} → ${appliedToDate || '…'}`,
+    );
+  }
+  if (quickSearch.trim()) activeChips.push('Search active');
+
   return (
     <div
       data-testid={testId}
       className={cn(
-        'waiting-list-filter-toolbar flex shrink-0 flex-col gap-1 bg-transparent',
+        'waiting-list-filter-toolbar flex shrink-0 flex-col gap-1.5 bg-transparent',
         'min-[1600px]:gap-2',
         className,
       )}
@@ -245,10 +264,28 @@ export function WaitingListFilterToolbar({
           className={denseBtn}
           onClick={onApply}
           data-testid="waiting-list-filters-apply"
+          aria-label="Apply date filters"
         >
-          Apply
+          Apply dates
         </CounsellingButton>
       </div>
+
+      {activeChips.length > 0 ? (
+        <div
+          className="flex min-w-0 flex-wrap items-center gap-1.5"
+          data-testid="waiting-list-active-filters"
+          aria-label="Active filters"
+        >
+          {activeChips.map((chip) => (
+            <span
+              key={chip}
+              className="inline-flex max-w-full truncate rounded-md border border-counselling-border/60 bg-counselling-muted/40 px-2 py-0.5 text-[11px] font-medium text-counselling-foreground"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

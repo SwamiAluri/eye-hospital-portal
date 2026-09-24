@@ -24,6 +24,10 @@ import { useAuthStore } from '@/lib/auth-store';
 import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import { canShowCounsellingAssignToMe } from '@/lib/counsellors-desk/counselling-auth';
 import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
+import {
   counselorOptionLabel,
   filterCounselorsByQuery,
   formatEligibleCounsellorCount,
@@ -37,11 +41,17 @@ export type WaitingListAssignDialogProps = {
   patientName?: string;
   /** Session branch for same-branch counsellor discovery (UX). */
   sessionBranchId?: string | null;
+  /**
+   * Optimistic concurrency token for CounselingSession.Version (Phase 3I Slice 7 / PD-S7-01).
+   * `undefined` until the waiting-list API projection exposes it — see WaitingListPatient.version.
+   */
+  sessionVersion?: number;
   onOpenChange: (open: boolean) => void;
   onAssigned: (result: {
     sessionId: string;
     counselorId: string;
     counselorName: string | null;
+    version?: number;
   }) => void;
 };
 
@@ -50,6 +60,7 @@ export function WaitingListAssignDialog({
   sessionId,
   patientName,
   sessionBranchId,
+  sessionVersion,
   onOpenChange,
   onAssigned,
 }: WaitingListAssignDialogProps) {
@@ -130,16 +141,23 @@ export function WaitingListAssignDialog({
     if (!sessionId || !targetId || submitting) return;
     setSubmitting(true);
     try {
-      const result = await counsellorsDeskApi.assignSession(sessionId, targetId);
+      const result = await counsellorsDeskApi.assignSession(sessionId, targetId, sessionVersion);
       toast.success(successLabel);
       onAssigned({
         sessionId,
         counselorId: result.counselorId,
         counselorName: result.counselorName,
+        version: result.version,
       });
       onOpenChange(false);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Failed to assign session.'));
+      // Phase 3I Slice 7 (PD-S7-06): stale-ownership vs stale-Version share the 409 status;
+      // surface the server's message verbatim (falls back to the standard stale-session copy).
+      if (isSessionConcurrencyConflict(err)) {
+        toast.error(getSessionConcurrencyMessage(err));
+      } else {
+        toast.error(getApiErrorMessage(err, 'Failed to assign session.'));
+      }
     } finally {
       setSubmitting(false);
     }

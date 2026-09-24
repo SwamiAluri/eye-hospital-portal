@@ -406,4 +406,90 @@ This is an automated message. Please do not reply to this email.";
         string htmlBody,
         string? plainTextBody = null)
         => SendEmailAsync(toEmail, subject, htmlBody, plainTextBody);
+
+    public async Task<(bool Success, string? MessageId, string? Error)> SendPasswordResetEmailAsync(
+        string toEmail,
+        string userName,
+        string resetUrl,
+        int expiryHours = 1)
+    {
+        var subject = "Password Reset - Hospital Portal";
+        var safeName = System.Net.WebUtility.HtmlEncode(userName);
+        var safeUrl = System.Net.WebUtility.HtmlEncode(resetUrl);
+
+        var htmlBody = $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: #0066cc; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
+        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }}
+        .reset-button {{
+            display: inline-block;
+            padding: 15px 40px;
+            background: #0066cc;
+            color: white !important;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            margin: 20px 0;
+        }}
+        .warning {{ background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class=""container"">
+        <div class=""header"">
+            <h1>Hospital Portal</h1>
+        </div>
+        <div class=""content"">
+            <h2>Hello {safeName},</h2>
+            <p>We received a request to reset your Hospital Portal password.</p>
+            <div style=""text-align: center;"">
+                <a href=""{safeUrl}"" class=""reset-button"">Reset Password</a>
+            </div>
+            <div class=""warning"">
+                <strong>Important:</strong>
+                <ul>
+                    <li>This link expires in {expiryHours} hour(s)</li>
+                    <li>If you did not request a password reset, ignore this email</li>
+                    <li>Never share this link with anyone</li>
+                </ul>
+            </div>
+            <p style=""color: #6b7280; font-size: 14px;"">
+                If the button does not work, copy and paste this URL into your browser:<br>
+                <a href=""{safeUrl}"">{safeUrl}</a>
+            </p>
+        </div>
+        <div class=""footer"">
+            <p>This is an automated email from Hospital Portal. Please do not reply.</p>
+            <p>&copy; 2026 Hospital Portal. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>";
+
+        var plainTextBody = $@"Password Reset - Hospital Portal
+
+Hello {userName},
+
+We received a request to reset your Hospital Portal password.
+
+Reset your password: {resetUrl}
+
+Important:
+- This link expires in {expiryHours} hour(s)
+- If you did not request a password reset, ignore this email
+- Never share this link with anyone
+
+---
+This is an automated email from Hospital Portal. Please do not reply.
+© 2026 Hospital Portal. All rights reserved.";
+
+        // SendEmailAsync logs recipient + subject only — not the token-bearing URL.
+        return await SendEmailAsync(toEmail, subject, htmlBody, plainTextBody);
+    }
 }

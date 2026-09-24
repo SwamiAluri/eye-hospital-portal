@@ -42,6 +42,14 @@ import { CounsellingButton } from '@/components/counsellors-desk/session/primiti
 import { PermissionGate } from '@/components/permissions/PermissionGate';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnalyticsPrintReport } from '@/components/counselor/AnalyticsPrintReport';
+import { useHasPermission } from '@/hooks/use-permissions';
+import { COUNSELLING_SESSIONS_REASSIGN_PERMISSION } from '@/lib/counsellors-desk/counselling-auth';
+import {
+  ANALYTICS_AUTHORIZED_BRANCH_LABEL,
+  ANALYTICS_MY_WORK_LABEL,
+  analyticsCounselorScopeLabel,
+  resolveInitialAnalyticsCounselorId,
+} from '@/lib/counsellors-desk/analytics-scope';
 
 /** Summary/trends period presets — 7/14/30 days. */
 export const ANALYTICS_PERIODS = [
@@ -206,10 +214,21 @@ export function CounselorAnalyticsTab() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, selectedBranchId } = useAuthStore();
+  const hasReassignPermission = useHasPermission(COUNSELLING_SESSIONS_REASSIGN_PERMISSION);
+  const currentUserId = user?.id ?? null;
   const branchId = selectedBranchId ?? user?.branchId;
   const [period, setPeriod] = useState(30);
   const [agingPeriod, setAgingPeriod] = useState(365);
-  const [counselorId, setCounselorId] = useState<string | null>(null);
+  /** undefined = use PD-S11-08 default; null = Authorized Branch; string = counselor scope */
+  const [counselorIdOverride, setCounselorIdOverride] = useState<
+    string | null | undefined
+  >(undefined);
+  const defaultCounselorId = resolveInitialAnalyticsCounselorId({
+    hasReassignPermission,
+    currentUserId,
+  });
+  const counselorId =
+    counselorIdOverride === undefined ? defaultCounselorId : counselorIdOverride;
   const counselorPicker = useCounselorOptions();
 
   const analyticsFilters = { branchId, counselorId, period };
@@ -237,9 +256,13 @@ export function CounselorAnalyticsTab() {
   const trendsQuery = useCounselorAnalyticsTrends(analyticsFilters);
   const agingQuery = useCounselorFollowupAging({ ...agingFilters, period: agingPeriod });
 
-  const selectedCounselorLabel = counselorId
-    ? (counselorPicker.options.find((c) => c.id === counselorId)?.label ?? counselorId)
-    : 'All counselors';
+  const selectedCounselorLabel = analyticsCounselorScopeLabel({
+    counselorId,
+    currentUserId,
+    selectedCounselorName: counselorId
+      ? counselorPicker.options.find((c) => c.id === counselorId)?.label
+      : null,
+  });
 
   const handleFunnelStage = (stage: FunnelStageKey) => {
     switch (stage) {
@@ -394,14 +417,19 @@ export function CounselorAnalyticsTab() {
             <span className="sr-only">Counselor</span>
             <select
               value={counselorId ?? ''}
-              onChange={(e) => setCounselorId(e.target.value || null)}
+              onChange={(e) => setCounselorIdOverride(e.target.value || null)}
               disabled={counselorPicker.isPending || counselorPicker.isError}
               className="h-8 max-w-[12rem] truncate rounded-md border border-counselling-border bg-counselling-card px-2 text-xs text-counselling-foreground disabled:opacity-60"
               data-testid="analytics-counselor-select"
               aria-label="Filter by counselor"
             >
-              <option value="">All counselors</option>
-              {counselorPicker.options.map((c) => (
+              <option value="">{ANALYTICS_AUTHORIZED_BRANCH_LABEL}</option>
+              {currentUserId && (
+                <option value={currentUserId}>{ANALYTICS_MY_WORK_LABEL}</option>
+              )}
+              {counselorPicker.options
+                .filter((c) => c.id !== currentUserId)
+                .map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
                 </option>

@@ -13,7 +13,7 @@ import {
 import type { AnalyticsSummary } from '@/hooks/use-counselor-analytics';
 
 describe('counselor analytics filter propagation', () => {
-  it('All counselors omits counselorId from query params', () => {
+  it('Authorized Branch omits counselorId from query params', () => {
     const params = buildAnalyticsParams({
       branchId: 'b1',
       counselorId: null,

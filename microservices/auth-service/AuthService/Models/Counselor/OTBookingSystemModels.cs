@@ -434,5 +434,8 @@ namespace AuthService.Models.Counselor
         public Guid? ScheduleId { get; set; }
         public string? ScheduleNumber { get; set; }
         public string? Message { get; set; }
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-02) — CounselingSession.Version after the decision-flag update.</summary>
+        public int SessionVersion { get; set; }
     }
 }

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('Waiting List open guard + Assign dialog (Slice 3 final)', () => {
-  it('Pending+Unassigned row click opens Assign dialog directly (no toast, no navigate)', () => {
+  it('Pending/Processing+Unassigned row click opens Assign dialog directly (no toast, no navigate)', () => {
     const page = readFileSync(
       resolve(__dirname, '../../../app/dashboard/counsellors-desk/waiting-list/page.tsx'),
       'utf8',
@@ -52,7 +52,7 @@ describe('Waiting List open guard + Assign dialog (Slice 3 final)', () => {
     expect(src).toContain('data-testid="waiting-list-assign-confirm"');
     expect(src).toContain('handleConfirmPeer');
     expect(src).toContain('completeAssign(selectedId');
-    expect(src).toContain('counsellorsDeskApi.assignSession(sessionId, targetId)');
+    expect(src).toContain('counsellorsDeskApi.assignSession(sessionId, targetId, sessionVersion)');
   });
 });
 
@@ -87,9 +87,15 @@ describe('Waiting List Assign dialog — UAT UX refinement', () => {
     expect(src).toContain('disabled={assignDisabled}');
   });
 
-  it('does not change Assign API contract (counselorId only)', () => {
-    expect(src).toContain('assignSession(sessionId, targetId)');
+  it('does not change Assign API contract (counselorId + optional Version only, no object body)', () => {
+    expect(src).toContain('assignSession(sessionId, targetId, sessionVersion)');
     expect(src).not.toContain('reason:');
     expect(src).not.toMatch(/assignSession\([^)]+,\s*\{/);
+  });
+
+  it('surfaces 409 concurrency conflicts via the shared session-concurrency helper (Phase 3I Slice 7)', () => {
+    expect(src).toContain('isSessionConcurrencyConflict');
+    expect(src).toContain('getSessionConcurrencyMessage');
+    expect(src).toContain('sessionVersion?: number');
   });
 });

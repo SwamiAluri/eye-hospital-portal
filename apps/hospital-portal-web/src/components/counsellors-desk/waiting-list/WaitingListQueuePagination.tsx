@@ -52,7 +52,7 @@ export function WaitingListQueuePagination({
         className,
       )}
     >
-      <p data-testid="waiting-list-pagination-summary">
+      <p data-testid="waiting-list-pagination-summary" aria-live="polite">
         Showing{' '}
         <span className="font-medium tabular-nums text-counselling-foreground">{start}</span>
         –
@@ -60,6 +60,9 @@ export function WaitingListQueuePagination({
         {' of '}
         <span className="font-medium tabular-nums text-counselling-foreground">{totalCount}</span>
         {` ${itemLabel}`}
+        <span className="sr-only">
+          {`, page ${page} of ${totalPages}`}
+        </span>
         {isRefreshing ? (
           <span className="ml-2 inline-flex items-center gap-1.5">
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-counselling-border border-t-counselling-primary" />

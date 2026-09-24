@@ -1,5 +1,6 @@
 using AuthService.Context;
 using AuthService.Models.Domain;
+using AuthService.Models.Identity;
 using AuthService.Services;
 using AuthService.Tests;
 using Microsoft.Extensions.Configuration;
@@ -20,13 +21,14 @@ public class OtFinalizeUpdateDetailsPersistenceTests
     {
         await using var db = TestDbContextFactory.CreateInMemory();
         var tenantId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
+        var (userId, branchId) = SeedActor(db, tenantId);
         var scheduleId = Guid.NewGuid();
 
         db.OtFinalizeSchedules.Add(new OtFinalizeSchedule
         {
             Id = scheduleId,
             TenantId = tenantId,
+            BranchId = branchId,
             PatientId = Guid.NewGuid(),
             Uhid = "UAT-ANES-01",
             PatientName = "Persistence Patient",
@@ -57,7 +59,7 @@ public class OtFinalizeUpdateDetailsPersistenceTests
         Assert.Equal("John Smith", row.AnesthetistName);
         Assert.Equal("UAT anaesthesia persistence test", row.Remarks);
 
-        var detail = await svc.GetByIdAsync(scheduleId, tenantId);
+        var detail = await svc.GetByIdAsync(scheduleId, tenantId, userId);
         Assert.Equal("Topical", detail.AnesthesiaType);
         Assert.Equal("John Smith", detail.AnesthetistName);
         Assert.Equal("UAT anaesthesia persistence test", detail.Remarks);
@@ -68,13 +70,14 @@ public class OtFinalizeUpdateDetailsPersistenceTests
     {
         await using var db = TestDbContextFactory.CreateInMemory();
         var tenantId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
+        var (userId, branchId) = SeedActor(db, tenantId);
         var scheduleId = Guid.NewGuid();
 
         db.OtFinalizeSchedules.Add(new OtFinalizeSchedule
         {
             Id = scheduleId,
             TenantId = tenantId,
+            BranchId = branchId,
             PatientId = Guid.NewGuid(),
             Uhid = "UAT-ANES-02",
             PatientName = "Partial Patient",
@@ -105,12 +108,14 @@ public class OtFinalizeUpdateDetailsPersistenceTests
     {
         await using var db = TestDbContextFactory.CreateInMemory();
         var tenantId = Guid.NewGuid();
+        var (userId, branchId) = SeedActor(db, tenantId);
         var scheduleId = Guid.NewGuid();
 
         db.OtFinalizeSchedules.Add(new OtFinalizeSchedule
         {
             Id = scheduleId,
             TenantId = tenantId,
+            BranchId = branchId,
             PatientId = Guid.NewGuid(),
             Uhid = "UAT-ANES-03",
             PatientName = "Keep Patient",
@@ -127,7 +132,7 @@ public class OtFinalizeUpdateDetailsPersistenceTests
         await svc.UpdateDetailsAsync(scheduleId, new UpdateOtDetailsRequest
         {
             DoctorName = "Dr. Nair",
-        }, tenantId, Guid.NewGuid());
+        }, tenantId, userId);
 
         var row = await db.OtFinalizeSchedules.FindAsync(scheduleId);
         Assert.Equal("Topical", row!.AnesthesiaType);
@@ -136,10 +141,41 @@ public class OtFinalizeUpdateDetailsPersistenceTests
         Assert.Equal("Dr. Nair", row.DoctorName);
     }
 
+    private static (Guid UserId, Guid BranchId) SeedActor(AppDbContext db, Guid tenantId)
+    {
+        var branchId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        db.Users.Add(new AppUser
+        {
+            Id = userId,
+            TenantId = tenantId,
+            UserName = $"{userId:N}@test",
+            NormalizedUserName = $"{userId:N}@TEST",
+            Email = $"{userId:N}@test",
+            NormalizedEmail = $"{userId:N}@TEST",
+            FirstName = "OT",
+            LastName = "Actor",
+            BranchId = branchId,
+            UserType = "Counsellor",
+        });
+        db.UserBranches.Add(new UserBranch
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            UserId = userId,
+            BranchId = branchId,
+            Status = "active",
+            EffectiveFrom = DateTime.UtcNow.AddDays(-30),
+        });
+        return (userId, branchId);
+    }
+
     private static OtFinalizeService CreateService(AppDbContext db)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var httpFactory = new Mock<System.Net.Http.IHttpClientFactory>();
-        return new OtFinalizeService(db, httpFactory.Object, config, NullLogger<OtFinalizeService>.Instance);
+        return new OtFinalizeService(
+            db, httpFactory.Object, config, NullLogger<OtFinalizeService>.Instance,
+            new FollowupBranchAccessService(db));
     }
 }

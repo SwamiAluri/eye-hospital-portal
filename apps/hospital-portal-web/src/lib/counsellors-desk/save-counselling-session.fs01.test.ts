@@ -28,6 +28,7 @@ const saveSession = vi.fn();
 const saveInvestigations = vi.fn();
 const completeSession = vi.fn();
 const markAddOnSurgery = vi.fn();
+const getSession = vi.fn();
 
 vi.mock('@/lib/api/counsellors-desk.api', () => ({
   counsellorsDeskApi: {
@@ -37,6 +38,7 @@ vi.mock('@/lib/api/counsellors-desk.api', () => ({
     editOtScheduleSlot: (...args: unknown[]) => editOtScheduleSlot(...args),
     completeSession: (...args: unknown[]) => completeSession(...args),
     markAddOnSurgery: (...args: unknown[]) => markAddOnSurgery(...args),
+    getSession: (...args: unknown[]) => getSession(...args),
   },
 }));
 
@@ -132,11 +134,11 @@ function buildParams(
 describe('FS-01 counselling → OT handoff', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    saveSession.mockResolvedValue(undefined);
+    saveSession.mockResolvedValue({ version: undefined });
     saveInvestigations.mockResolvedValue(undefined);
     upsertOtSchedule.mockResolvedValue({ id: 'ot-1' });
     editOtScheduleSlot.mockResolvedValue({ id: 'ot-1' });
-    completeSession.mockResolvedValue(undefined);
+    completeSession.mockResolvedValue({ version: undefined });
     markAddOnSurgery.mockResolvedValue(undefined);
   });
 
@@ -207,7 +209,8 @@ describe('FS-01 counselling → OT handoff', () => {
 
     expect(saveSession).toHaveBeenCalledOnce();
     expect(upsertOtSchedule).toHaveBeenCalledOnce();
-    expect(completeSession).toHaveBeenCalledWith('sess-1');
+    // Phase 3I Slice 7 (PD-S7-01): expected Version is forwarded — undefined here since baseSession() has none.
+    expect(completeSession).toHaveBeenCalledWith('sess-1', undefined);
     expect(params.onSuccess).toHaveBeenCalledOnce();
     expect(toast.success).toHaveBeenCalledWith('Session completed successfully');
   });
@@ -365,5 +368,80 @@ describe('FS-01 counselling → OT handoff', () => {
     await expect(saveCounsellingSession(params)).rejects.toThrow(/Counselling details were saved/);
     expect(params.onSuccess).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe('Phase 3I Slice 7 — CounselingSession.Version concurrency', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    saveSession.mockResolvedValue({ version: undefined });
+    saveInvestigations.mockResolvedValue(undefined);
+    upsertOtSchedule.mockResolvedValue({ id: 'ot-1' });
+    editOtScheduleSlot.mockResolvedValue({ id: 'ot-1' });
+    completeSession.mockResolvedValue({ version: undefined });
+    markAddOnSurgery.mockResolvedValue(undefined);
+  });
+
+  function axiosConflict(message: string) {
+    return {
+      isAxiosError: true,
+      message: 'Request failed with status code 409',
+      response: { status: 409, data: { message } },
+    };
+  }
+
+  it('sends the session Version on saveSession and forwards the bumped Version to completeSession', async () => {
+    saveSession.mockResolvedValue({ version: 6 });
+    completeSession.mockResolvedValue({ version: 7 });
+    const params = buildParams({ session: { ...baseSession(), version: 5 } });
+
+    await saveCounsellingSession(params);
+
+    expect(saveSession).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({ version: 5 }),
+    );
+    expect(completeSession).toHaveBeenCalledWith('sess-1', 6);
+    expect(params.onSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({ version: 7 }),
+    );
+  });
+
+  it('saveSession 409 invalidates the session, syncs Version, and throws the stale-session message (no auto-retry)', async () => {
+    saveSession.mockRejectedValue(axiosConflict('This session was updated by another user. Refresh to continue.'));
+    getSession.mockResolvedValue({ version: 9 });
+    const onConcurrencyVersionSync = vi.fn();
+    const params = buildParams({
+      session: { ...baseSession(), version: 5 },
+      onConcurrencyVersionSync,
+    });
+
+    await expect(saveCounsellingSession(params)).rejects.toThrow(
+      'This session was updated by another user. Refresh to continue.',
+    );
+    expect(params.invalidateSession).toHaveBeenCalledWith('sess-1');
+    expect(getSession).toHaveBeenCalledWith('sess-1', { skipCatalogFallback: true });
+    expect(onConcurrencyVersionSync).toHaveBeenCalledWith(9);
+    expect(upsertOtSchedule).not.toHaveBeenCalled();
+    expect(completeSession).not.toHaveBeenCalled();
+    expect(params.onSuccess).not.toHaveBeenCalled();
+  });
+
+  it('completeSession 409 surfaces a partial-save message, invalidates the session, and does not retry', async () => {
+    completeSession.mockRejectedValue(axiosConflict('This session was updated by another user. Refresh to continue.'));
+    getSession.mockResolvedValue({ version: 10 });
+    const onConcurrencyVersionSync = vi.fn();
+    const params = buildParams({
+      session: { ...baseSession(), version: 5 },
+      onConcurrencyVersionSync,
+    });
+
+    await expect(saveCounsellingSession(params)).rejects.toThrow(
+      /Counselling details were saved, but completion could not be confirmed/,
+    );
+    expect(params.invalidateSession).toHaveBeenCalledWith('sess-1');
+    expect(completeSession).toHaveBeenCalledOnce();
+    expect(onConcurrencyVersionSync).toHaveBeenCalledWith(10);
+    expect(params.onSuccess).not.toHaveBeenCalled();
   });
 });

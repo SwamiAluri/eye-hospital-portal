@@ -28,9 +28,13 @@ describe('Waiting List lifecycle status sync contracts', () => {
       'const executeReEvaluate = useCallback(async () => {',
       'const handleReEvaluate = useCallback(() => {',
     );
-    expect(block).toMatch(/counsellorsDeskApi\.startSession\(sessionId\)/);
+    expect(block).toMatch(
+      /counsellorsDeskApi\.startSession\(\s*sessionId,\s*undefined,\s*mutationSession\?\.version,?/,
+    );
     expect(block).toMatch(/counsellingAzureApi\.reEvaluate\(sessionId\)/);
-    const authIdx = block.indexOf('counsellorsDeskApi.startSession(sessionId)');
+    const authIdx = block.search(
+      /counsellorsDeskApi\.startSession\(\s*sessionId,\s*undefined,\s*mutationSession\?\.version,?/,
+    );
     const azureIdx = block.indexOf('counsellingAzureApi.reEvaluate(sessionId)');
     expect(authIdx).toBeGreaterThanOrEqual(0);
     expect(azureIdx).toBeGreaterThan(authIdx);
@@ -42,7 +46,9 @@ describe('Waiting List lifecycle status sync contracts', () => {
       'const handleStartRepeatSession = useCallback(async () => {',
       '// Waiting List Re-evaluate CTA',
     );
-    expect(block).toMatch(/counsellorsDeskApi\.startSession\(sessionId,\s*repeatSessionTypeCode\)/);
+    expect(block).toMatch(
+      /counsellorsDeskApi\.startSession\(\s*sessionId,\s*repeatSessionTypeCode,\s*mutationSession\?\.version,?/,
+    );
   });
 
   it('current-owner Re-evaluate uses existing Continue confirmation before navigate', () => {
@@ -61,6 +67,14 @@ describe('Waiting List lifecycle status sync contracts', () => {
     expect(continueBlock).toContain("kind === 're-evaluate'");
     expect(continueBlock).toContain('showConfirmation');
     expect(continueBlock).not.toContain('Assign to me');
+    expect(continueBlock).not.toContain('Continue as me');
+    expect(continueBlock).not.toContain('claimSessionForLifecycle');
+  });
+
+  it('NULL/other-owner path uses Continue as me + claim-for-lifecycle', () => {
+    expect(pageSrc).toContain('Continue as me');
+    expect(pageSrc).toContain('buildLifecycleOwnershipConfirmCopy');
+    expect(pageSrc).toContain('claimSessionForLifecycle');
   });
 
   it('lifecycle query still consumed once on session page (no second prompt)', () => {
@@ -75,7 +89,7 @@ describe('Waiting List lifecycle status sync contracts', () => {
   it('Pending Start Counseling uses Auth startSession (not silent Pending auto-start)', () => {
     expect(controllerSrc).toContain('handleStartCounselingSession');
     expect(controllerSrc).toMatch(
-      /const handleStartCounselingSession[\s\S]*?counsellorsDeskApi\.startSession\(sessionId\)/,
+      /const handleStartCounselingSession[\s\S]*?counsellorsDeskApi\.startSession\(\s*sessionId,\s*undefined,\s*mutationSession\?\.version,?/,
     );
     expect(controllerSrc).toContain('assertCounsellingStartReachedProcessing');
     expect(controllerSrc).not.toMatch(

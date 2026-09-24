@@ -2229,6 +2229,26 @@ namespace AuthService.Context
                 entity.HasIndex(e => e.IsLocked);
             });
 
+            // Phase 3I Slice 7 (PD-S7-01) — optimistic concurrency token for CounselingSession.
+            // Other CounselingSession columns already map via [Column] attributes on the entity.
+            builder.Entity<CounselingSession>(entity =>
+            {
+                entity.Property(e => e.Version)
+                    .HasColumnName("version")
+                    .IsConcurrencyToken()
+                    .HasDefaultValue(1);
+            });
+
+            // Phase 3I Slice 8 — active CounselorQueue row unique per session.
+            // Soft-deleted historical rows may share session_id; two DeletedAt=NULL rows must not.
+            builder.Entity<CounselorQueueItem>(entity =>
+            {
+                entity.HasIndex(e => e.SessionId)
+                    .IsUnique()
+                    .HasFilter("deleted_at IS NULL")
+                    .HasDatabaseName("ux_counselor_queue_session_id_active");
+            });
+
             builder.Entity<OpdBillPayment>(entity =>
             {
                 entity.ToTable("opd_bill_payments");
@@ -3203,6 +3223,15 @@ namespace AuthService.Context
                 rowVersion.CurrentValue = rowVersion.OriginalValue + 1;
             }
 
+            // Phase 3I Slice 7 (PD-S7-01) — bump CounselingSession.Version on every tracked mutation,
+            // mirroring the OpdBill.RowVersion pattern above.
+            foreach (var entry in ChangeTracker.Entries<CounselingSession>()
+                .Where(e => e.State == EntityState.Modified))
+            {
+                var version = entry.Property(s => s.Version);
+                version.CurrentValue = version.OriginalValue + 1;
+            }
+
             try
             {
                 return await base.SaveChangesAsync(cancellationToken);
@@ -3211,6 +3240,8 @@ namespace AuthService.Context
             {
                 if (ex.Entries.Any(e => e.Entity is OpdBill))
                     throw new InvalidOperationException(BillConcurrency.StaleMessage);
+                if (ex.Entries.Any(e => e.Entity is CounselingSession))
+                    throw new InvalidOperationException(SessionConcurrency.StaleMessage);
                 throw;
             }
         }

@@ -1,4 +1,4 @@
-/** Staff anaesthetist option from GET /users/anesthetists (UI + match helpers). */
+/** Staff anaesthetist option from GET /Counseling/anesthetists (UI + match helpers). */
 export interface AnesthetistOption {
   id: string;
   name: string;

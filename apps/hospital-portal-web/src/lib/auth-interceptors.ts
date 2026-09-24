@@ -11,6 +11,25 @@ export type AuthAxiosRequestConfig = InternalAxiosRequestConfig & {
 
 type RetryConfig = AuthAxiosRequestConfig;
 
+/**
+ * Public auth endpoints return 401 for bad credentials / MFA codes.
+ * Those must not be rewritten as "session expired" via logoutEverywhere.
+ */
+export const AUTH_SESSION_LOGOUT_SKIP_PATHS = [
+  '/auth/login',
+  '/auth/mfa',
+  '/auth/forgot-password',
+  '/auth/validate-reset-token',
+  '/auth/reset-password',
+  '/auth/refresh',
+  '/auth/login-with-otp',
+] as const;
+
+export function shouldSkipSessionExpiredLogout(url: string): boolean {
+  const path = (url || '').toLowerCase();
+  return AUTH_SESSION_LOGOUT_SKIP_PATHS.some((p) => path.includes(p));
+}
+
 /** Attach tenant + bearer token; proactively refresh when near expiry. */
 export function attachAuthRequestInterceptor(instance: AxiosInstance): void {
   instance.interceptors.request.use(async (config) => {
@@ -67,7 +86,9 @@ export function attachAuthResponseInterceptor(
         return Promise.reject(error);
       }
 
-      const skip = options?.skipLogoutUrls?.some((path) => url.includes(path));
+      const skip =
+        shouldSkipSessionExpiredLogout(url) ||
+        options?.skipLogoutUrls?.some((path) => url.includes(path));
       if (skip) return Promise.reject(error);
 
       config._authRetry = true;

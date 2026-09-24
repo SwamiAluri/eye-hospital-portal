@@ -256,4 +256,6 @@ public class OpdClinicalSnapshotDto
     public string? EyePhrase { get; set; }
     public string? Diagnosis { get; set; }
     public string? DiagnosisJson { get; set; }
+    /// <summary>Phase 3I Slice 7 — set after refresh-from-opd mutates CounselingSession (bumped Version).</summary>
+    public int? Version { get; set; }
 }

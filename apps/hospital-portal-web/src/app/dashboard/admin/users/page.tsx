@@ -225,25 +225,16 @@ export default function UsersPage() {
       confirmText: 'Send Email',
       onConfirm: async () => {
         try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5073/api';
-          const token = localStorage.getItem('token');
-          const tenantId = localStorage.getItem('tenantId');
-
-          const response = await fetch(`${apiUrl}/users/${user.id}/reset-password`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'X-Tenant-ID': tenantId || ''
-            }
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Failed to reset password');
-          }
+          setError('');
+          await usersApi.requestPasswordReset(user.id);
         } catch (err: any) {
-          console.error('Error resetting password:', err);
-          setError(err.message || 'Failed to reset password');
+          const message =
+            err.response?.data?.message ||
+            err.message ||
+            'Failed to send password reset email';
+          setError(message);
+          // Re-throw so ConfirmationDialog stays open and does not treat as success.
+          throw err;
         }
       },
     });

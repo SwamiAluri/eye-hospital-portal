@@ -228,8 +228,12 @@ public class CounselingAnalyticsServiceTests : IDisposable
         Assert.NotEqual(agingA.TotalPending, agingB.TotalPending);
     }
 
+    /// <summary>
+    /// Phase 3I Slice 11 (PD-S11-04) — CreatedBy fallback removed.
+    /// NULL CounselorId + matching CreatedByUserId must NOT inflate counselor-scoped My Work.
+    /// </summary>
     [Fact]
-    public async Task CounselorFilter_UsesCreatedByWhenCounselorIdNull()
+    public async Task CounselorFilter_ExcludesCreatedByOnlyWhenCounselorIdNull()
     {
         var creator = Guid.Parse("55555555-5555-5555-5555-555555555555");
         var other = Guid.Parse("66666666-6666-6666-6666-666666666666");
@@ -256,9 +260,12 @@ public class CounselingAnalyticsServiceTests : IDisposable
             _tenant, new[] { _branchA }, _branchA, creator, 30, null, null, FixedUtc);
         var forOther = await _svc.GetSummaryAsync(
             _tenant, new[] { _branchA }, _branchA, other, 30, null, null, FixedUtc);
+        var branchAggregate = await _svc.GetSummaryAsync(
+            _tenant, new[] { _branchA }, _branchA, null, 30, null, null, FixedUtc);
 
-        Assert.True(forCreator.TotalSessions >= 1);
+        Assert.Equal(0, forCreator.TotalSessions);
         Assert.Equal(0, forOther.TotalSessions);
+        Assert.True(branchAggregate.TotalSessions >= 1);
         Assert.Equal(creator, forCreator.CounselorId);
     }
 

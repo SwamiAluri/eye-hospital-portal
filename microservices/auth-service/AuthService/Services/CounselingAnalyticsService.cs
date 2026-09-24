@@ -422,9 +422,8 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
                      && s.SessionDate < window.ToExclusive
                      && s.BranchId != null
                      && branchIds.Contains(s.BranchId.Value)
-                     && (counselorId == null
-                         || s.CounselorId == counselorId
-                         || (s.CounselorId == null && s.CreatedByUserId == counselorId)));
+                     // Phase 3I Slice 11 (PD-S11-03/04): strict CounselorId only — CreatedBy is never ownership.
+                     && (counselorId == null || s.CounselorId == counselorId));
     }
 
     internal IQueryable<CounselorCallbackRequest> BuildCallbackQuery(
@@ -453,13 +452,12 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
         if (counselorId == null)
             return callbacks;
 
-        // Effective owner: CounselorId, else CreatedByUserId when CounselorId is unset.
+        // Phase 3I Slice 11 (PD-S11-04): strict session CounselorId — CreatedBy is never ownership.
         return from c in callbacks
                join s in _context.CounselingSession.AsNoTracking() on c.SessionId equals s.Id
                where s.TenantId == tenantId
                   && s.DeletedAt == null
-                  && (s.CounselorId == counselorId
-                      || (s.CounselorId == null && s.CreatedByUserId == counselorId))
+                  && s.CounselorId == counselorId
                select c;
     }
 
@@ -488,9 +486,8 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
                      && s.SessionDate < window.ToExclusive
                      && s.BranchId != null
                      && branchIds.Contains(s.BranchId.Value)
-                     && (counselorId == null
-                         || s.CounselorId == counselorId
-                         || (s.CounselorId == null && s.CreatedByUserId == counselorId)));
+                     // Phase 3I Slice 11 (PD-S11-03/04): strict CounselorId only — CreatedBy is never ownership.
+                     && (counselorId == null || s.CounselorId == counselorId));
     }
 
     private sealed class SessionOutcomeRow

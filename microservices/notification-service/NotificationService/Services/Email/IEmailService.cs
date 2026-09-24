@@ -37,4 +37,10 @@ public interface IEmailService
         string subject,
         string htmlBody,
         string? plainTextBody = null);
+
+    Task<(bool Success, string? MessageId, string? Error)> SendPasswordResetEmailAsync(
+        string toEmail,
+        string userName,
+        string resetUrl,
+        int expiryHours = 1);
 }

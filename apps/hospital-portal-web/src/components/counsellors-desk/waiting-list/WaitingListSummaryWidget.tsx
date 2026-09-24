@@ -27,7 +27,8 @@ const WORKLOAD_STATS = [
 ] as const;
 
 /**
- * Stats widget (informational) + Surgery Finalization–style pill status tabs.
+ * Compact workload strip (subordinate) + status pill tabs (primary queue nav).
+ * Values come from existing tabCounts — no new KPI calculations.
  */
 export function WaitingListSummaryWidget({
   activeTab,
@@ -40,28 +41,29 @@ export function WaitingListSummaryWidget({
   return (
     <div
       data-testid={testId}
-      className={cn('flex w-full min-w-0 shrink-0 flex-col gap-0.5 min-[1600px]:gap-2.5', className)}
+      className={cn('flex w-full min-w-0 shrink-0 flex-col gap-1 min-[1600px]:gap-1.5', className)}
     >
       <div
         className={cn(
-          counsellingSessionTokens.sessionStatusStrip,
-          'shrink-0',
+          'shrink-0 rounded-md border border-counselling-border/40 bg-counselling-card/60 px-2.5 py-1.5',
+          'min-[1600px]:px-3 min-[1600px]:py-2',
         )}
         data-testid="waiting-list-stats"
         aria-label="Queue statistics"
       >
         <dl
           className={cn(
-            counsellingSessionTokens.sessionStatusDetails,
-          'grid-cols-2 gap-x-2 gap-y-1 sm:grid-cols-3 lg:grid-cols-5 min-[1600px]:gap-x-4 min-[1600px]:gap-y-2',
+            'grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3 lg:grid-cols-5',
           )}
         >
           {WORKLOAD_STATS.map(({ key, label, testId: statTestId }) => (
             <div key={key} className="min-w-0" data-testid={statTestId}>
-              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
+              <dd className="text-sm font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-base">
                 {tabCounts[key] ?? 0}
               </dd>
-              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>{label}</dt>
+              <dt className="text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:text-[11px]">
+                {label}
+              </dt>
             </div>
           ))}
         </dl>

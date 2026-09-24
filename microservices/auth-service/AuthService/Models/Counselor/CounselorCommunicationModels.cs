@@ -26,10 +26,16 @@ namespace AuthService.Models.Counselor
         public Guid? TemplateId { get; set; }
         public DateTime CreatedAt { get; set; }
         public Guid CreatedByUserId { get; set; }
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-02 / M18) — CounselingSession.Version after this comm log's session-field update.</summary>
+        public int SessionVersion { get; set; }
     }
 
     public class CreateCommLogRequest
     {
+        /// <summary>Phase 3I Slice 7 (PD-S7-02 / M18) — required expected CounselingSession Version.</summary>
+        public int? Version { get; set; }
+
         [Required]
         public string Channel { get; set; } = null!; // Phone | SMS | WhatsApp | Email | InPerson | VideoCall
 
@@ -134,6 +140,9 @@ namespace AuthService.Models.Counselor
 
     public class QuickBookFromSessionRequest
     {
+        /// <summary>Phase 3I Slice 7 (PD-S7-02) — required expected CounselingSession Version.</summary>
+        public int? Version { get; set; }
+
         [Required]
         public Guid SurgeonId { get; set; }
 
@@ -160,6 +169,19 @@ namespace AuthService.Models.Counselor
 
     public class ReQueueSessionRequest
     {
+        /// <summary>Phase 3I Slice 8 (PD-S8-06) — required expected CounselingSession.Version.</summary>
+        public int? Version { get; set; }
+
+        /// <summary>
+        /// Phase 3I Slice 8 (PD-S8-14) — expected current owner.
+        /// Null when the session is already unassigned.
+        /// </summary>
+        public Guid? ExpectedCounselorId { get; set; }
+
+        /// <summary>Phase 3I Slice 8 (PD-S8-08) — required concise requeue reason (ownership trail).</summary>
+        [Required]
+        public string Reason { get; set; } = null!;
+
         /// <summary>Updated patient intention, e.g. WillingCallToConfirm, WillingWeek etc.</summary>
         public string? NewIntention { get; set; }
 

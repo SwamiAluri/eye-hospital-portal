@@ -1,6 +1,7 @@
 using AuthService.Context;
 using AuthService.Models;
 using AuthService.Models.Domain;
+using AuthService.Models.Identity;
 using AuthService.Services;
 using AuthService.Tests;
 using Microsoft.Extensions.Configuration;
@@ -19,7 +20,8 @@ public class OtFinalizeOpdCopyTests
         var tenantId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
-        SeedSession(db, tenantId, patientId, sessionId, iol: "+21.00 D", eye: "RE", surgery: "Phaco + IOL");
+        var (userId, branchId) = SeedActor(db, tenantId);
+        SeedSession(db, tenantId, patientId, sessionId, branchId, iol: "+21.00 D", eye: "RE", surgery: "Phaco + IOL");
         await db.SaveChangesAsync();
 
         var svc = CreateService(db);
@@ -32,12 +34,13 @@ public class OtFinalizeOpdCopyTests
             Eye = null,
             CounsellingSessionId = sessionId,
             StartTime = DateTime.UtcNow.Date.AddDays(3).AddHours(9),
-        }, tenantId, Guid.NewGuid());
+        }, tenantId, userId);
 
         var row = await db.OtFinalizeSchedules.FindAsync(result.Id);
         Assert.Equal("+21.00 D", row!.IolPower);
         Assert.Equal("RE", row.Eye);
         Assert.Equal("Phaco + IOL", row.SurgeryName);
+        Assert.Equal(branchId, row.BranchId);
     }
 
     [Fact]
@@ -47,7 +50,8 @@ public class OtFinalizeOpdCopyTests
         var tenantId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
-        SeedSession(db, tenantId, patientId, sessionId, iol: "+21.00 D", eye: "RE", surgery: "Phaco + IOL");
+        var (userId, branchId) = SeedActor(db, tenantId);
+        SeedSession(db, tenantId, patientId, sessionId, branchId, iol: "+21.00 D", eye: "RE", surgery: "Phaco + IOL");
         await db.SaveChangesAsync();
 
         var svc = CreateService(db);
@@ -61,7 +65,7 @@ public class OtFinalizeOpdCopyTests
             IolPower = "+21.00 D",
             CounsellingSessionId = sessionId,
             StartTime = DateTime.UtcNow.Date.AddDays(3).AddHours(9),
-        }, tenantId, Guid.NewGuid());
+        }, tenantId, userId);
 
         var second = await svc.UpsertFromCounsellorAsync(new UpsertOtScheduleRequest
         {
@@ -73,7 +77,7 @@ public class OtFinalizeOpdCopyTests
             IolPower = null,
             CounsellingSessionId = sessionId,
             StartTime = DateTime.UtcNow.Date.AddDays(4).AddHours(9),
-        }, tenantId, Guid.NewGuid());
+        }, tenantId, userId);
 
         Assert.Equal(first.Id, second.Id);
         var row = await db.OtFinalizeSchedules.FindAsync(second.Id);
@@ -87,7 +91,8 @@ public class OtFinalizeOpdCopyTests
         var tenantId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
-        SeedSession(db, tenantId, patientId, sessionId, iol: null, eye: "RE", surgery: "Phaco + IOL");
+        var (userId, branchId) = SeedActor(db, tenantId);
+        SeedSession(db, tenantId, patientId, sessionId, branchId, iol: null, eye: "RE", surgery: "Phaco + IOL");
         db.BiometryRecords.Add(new BiometryRecord
         {
             Id = Guid.NewGuid(),
@@ -115,8 +120,9 @@ public class OtFinalizeOpdCopyTests
             PatientName = "Meena Iyer",
             Uhid = "UAT-002",
             CounsellingSessionId = sessionId,
+            SessionVersion = 1,
             StartTime = DateTime.UtcNow.Date.AddDays(3).AddHours(9),
-        }, tenantId, Guid.NewGuid());
+        }, tenantId, userId);
 
         var row = await db.OtFinalizeSchedules.FindAsync(result.Id);
         Assert.Equal("+21.00 D", row!.IolPower);
@@ -129,7 +135,8 @@ public class OtFinalizeOpdCopyTests
         var tenantId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
-        SeedSession(db, tenantId, patientId, sessionId, iol: "+21.00 D", eye: "RE", surgery: "Phaco + IOL",
+        var (_, branchId) = SeedActor(db, tenantId);
+        SeedSession(db, tenantId, patientId, sessionId, branchId, iol: "+21.00 D", eye: "RE", surgery: "Phaco + IOL",
             clinicalSummary: """{"diagnosis":"Immature cataract OD"}""");
         await db.SaveChangesAsync();
 
@@ -148,8 +155,8 @@ public class OtFinalizeOpdCopyTests
         var tenantId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
-        var actorId = Guid.NewGuid();
-        SeedSession(db, tenantId, patientId, sessionId, iol: null, eye: "RE", surgery: "Phaco + IOL");
+        var (actorId, branchId) = SeedActor(db, tenantId);
+        SeedSession(db, tenantId, patientId, sessionId, branchId, iol: null, eye: "RE", surgery: "Phaco + IOL");
 
         var cataract = new DiagnosisCode
         {
@@ -217,11 +224,13 @@ public class OtFinalizeOpdCopyTests
         var tenantId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
-        SeedSession(db, tenantId, patientId, sessionId, iol: null, eye: "RE", surgery: "Phaco + IOL",
+        var (userId, branchId) = SeedActor(db, tenantId);
+        SeedSession(db, tenantId, patientId, sessionId, branchId, iol: null, eye: "RE", surgery: "Phaco + IOL",
             clinicalSummary: """{"diagnosis":"Immature cataract OD"}""");
         var schedule = new OtFinalizeSchedule
         {
             TenantId = tenantId,
+            BranchId = branchId,
             PatientId = patientId,
             PatientName = "Meena Iyer",
             Uhid = "UAT-002",
@@ -235,7 +244,7 @@ public class OtFinalizeOpdCopyTests
         db.OtFinalizeSchedules.Add(schedule);
         await db.SaveChangesAsync();
 
-        var detail = await CreateService(db).GetByIdAsync(schedule.Id, tenantId);
+        var detail = await CreateService(db).GetByIdAsync(schedule.Id, tenantId, userId);
         Assert.Equal("Immature cataract OD", detail.Diagnosis);
         Assert.NotEqual("Phaco + IOL", detail.Diagnosis);
     }
@@ -247,10 +256,12 @@ public class OtFinalizeOpdCopyTests
         var tenantId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
-        SeedSession(db, tenantId, patientId, sessionId, iol: null, eye: "RE", surgery: "Phaco + IOL");
+        var (userId, branchId) = SeedActor(db, tenantId);
+        SeedSession(db, tenantId, patientId, sessionId, branchId, iol: null, eye: "RE", surgery: "Phaco + IOL");
         var schedule = new OtFinalizeSchedule
         {
             TenantId = tenantId,
+            BranchId = branchId,
             PatientId = patientId,
             PatientName = "Meena Iyer",
             Uhid = "UAT-002",
@@ -264,19 +275,49 @@ public class OtFinalizeOpdCopyTests
         db.OtFinalizeSchedules.Add(schedule);
         await db.SaveChangesAsync();
 
-        var detail = await CreateService(db).GetByIdAsync(schedule.Id, tenantId);
+        var detail = await CreateService(db).GetByIdAsync(schedule.Id, tenantId, userId);
         Assert.True(detail.BiometryMissingForEye);
         Assert.Null(detail.IolPower);
     }
 
+    private static (Guid UserId, Guid BranchId) SeedActor(AppDbContext db, Guid tenantId, Guid? branchId = null)
+    {
+        var branch = branchId ?? Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        db.Users.Add(new AppUser
+        {
+            Id = userId,
+            TenantId = tenantId,
+            UserName = $"{userId:N}@test",
+            NormalizedUserName = $"{userId:N}@TEST",
+            Email = $"{userId:N}@test",
+            NormalizedEmail = $"{userId:N}@TEST",
+            FirstName = "OT",
+            LastName = "Actor",
+            BranchId = branch,
+            UserType = "Counsellor",
+        });
+        db.UserBranches.Add(new UserBranch
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            UserId = userId,
+            BranchId = branch,
+            Status = "active",
+            EffectiveFrom = DateTime.UtcNow.AddDays(-30),
+        });
+        return (userId, branch);
+    }
+
     private static void SeedSession(
-        AppDbContext db, Guid tenantId, Guid patientId, Guid sessionId,
+        AppDbContext db, Guid tenantId, Guid patientId, Guid sessionId, Guid branchId,
         string? iol, string eye, string surgery, string? clinicalSummary = null)
     {
         db.CounselingSession.Add(new CounselingSession
         {
             Id = sessionId,
             TenantId = tenantId,
+            BranchId = branchId,
             PatientId = patientId,
             ReferredByDoctorId = Guid.NewGuid(),
             SessionDate = DateTime.UtcNow.Date,
@@ -295,6 +336,8 @@ public class OtFinalizeOpdCopyTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>())
             .Build();
-        return new OtFinalizeService(db, httpFactory.Object, config, NullLogger<OtFinalizeService>.Instance);
+        return new OtFinalizeService(
+            db, httpFactory.Object, config, NullLogger<OtFinalizeService>.Instance,
+            new FollowupBranchAccessService(db));
     }
 }

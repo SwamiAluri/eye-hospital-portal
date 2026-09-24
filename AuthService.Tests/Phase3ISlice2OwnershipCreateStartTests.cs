@@ -111,6 +111,9 @@ public class Phase3ISlice2OwnershipCreateStartTests : IDisposable
         _db.SaveChanges();
     }
 
+    private async Task<int> CurrentVersionAsync(Guid sessionId) =>
+        (await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId)).Version;
+
     private CreateCounselingSessionRequest BaseCreateRequest(Guid? clientCounselorId = null) => new()
     {
         TenantId = _tenant,
@@ -174,7 +177,7 @@ public class Phase3ISlice2OwnershipCreateStartTests : IDisposable
         var before = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == created.SessionId);
         Assert.Null(before.CounselorId);
 
-        var started = await _svc.StartSessionAsync(_tenant, created.SessionId!.Value, _counsellor);
+        var started = await _svc.StartSessionAsync(_tenant, created.SessionId!.Value, _counsellor, await CurrentVersionAsync(created.SessionId!.Value));
 
         Assert.False(started.Success);
         Assert.Equal(SessionOperationFailureKind.Forbidden, started.FailureKind);
@@ -191,7 +194,7 @@ public class Phase3ISlice2OwnershipCreateStartTests : IDisposable
         owned.CounselorId = _otherCounsellor;
         await _db.SaveChangesAsync();
 
-        var started = await _svc.StartSessionAsync(_tenant, created.SessionId!.Value, _counsellor);
+        var started = await _svc.StartSessionAsync(_tenant, created.SessionId!.Value, _counsellor, await CurrentVersionAsync(created.SessionId!.Value));
 
         Assert.False(started.Success);
         Assert.Equal(SessionOperationFailureKind.Forbidden, started.FailureKind);
@@ -208,7 +211,7 @@ public class Phase3ISlice2OwnershipCreateStartTests : IDisposable
         owned.CounselorId = _counsellor;
         await _db.SaveChangesAsync();
 
-        var started = await _svc.StartSessionAsync(_tenant, created.SessionId!.Value, _counsellor);
+        var started = await _svc.StartSessionAsync(_tenant, created.SessionId!.Value, _counsellor, await CurrentVersionAsync(created.SessionId!.Value));
 
         Assert.True(started.Success);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == created.SessionId);
@@ -265,7 +268,7 @@ public class Phase3ISlice2OwnershipCreateStartTests : IDisposable
         await _db.SaveChangesAsync();
 
         var before = await _db.CounselingSessionAuditLog.CountAsync();
-        await _svc.StartSessionAsync(_tenant, created.SessionId!.Value, _counsellor);
+        await _svc.StartSessionAsync(_tenant, created.SessionId!.Value, _counsellor, await CurrentVersionAsync(created.SessionId!.Value));
         var after = await _db.CounselingSessionAuditLog.CountAsync();
         Assert.Equal(before, after);
     }

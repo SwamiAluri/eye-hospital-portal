@@ -377,6 +377,7 @@ export const counsellingTestIds = {
   notesWorkspaceStatus: 'counselling-notes-workspace-status',
   notesInlineBlocker: 'counselling-notes-inline-blocker',
   notesCounsellorField: 'counselling-notes-counsellor',
+  notesRequeueEvents: 'counselling-notes-requeue-events',
   notesPatientField: 'counselling-notes-patient',
   notesDoctorField: 'counselling-notes-doctor',
   notesAdditionalOptions: 'counselling-notes-additional-options',

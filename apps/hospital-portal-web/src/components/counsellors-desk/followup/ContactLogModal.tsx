@@ -5,6 +5,10 @@ import { X, Phone, MessageSquare, Mail, Calendar, Clock, User } from 'lucide-rea
 import { toast } from 'react-hot-toast';
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { getApiErrorMessage } from '@/lib/auth-interceptors';
+import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
 import { useCounsellorMasterOptions } from '@/hooks/use-counsellor-master-options';
 import {
   callbackChannelToDb,
@@ -84,11 +88,37 @@ export default function ContactLogModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Phase 3I Slice 7 (PD-S7-02) — ContactLogModal has no session context of its own (opened from a
+   * followup row that only carries sessionId/patientName/phone), so it fetches the current
+   * CounselingSession.Version lazily on open and sends it back as the expected Version on the
+   * comm-log write. `skipCatalogFallback: true` avoids the heavy catalog-priced-surgeries fetch —
+   * this modal only needs the Version field.
+   */
+  const [sessionVersion, setSessionVersion] = useState<number | undefined>(undefined);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [versionError, setVersionError] = useState<string | null>(null);
+
+  const loadSessionVersion = () => {
+    setVersionLoading(true);
+    setVersionError(null);
+    counsellorsDeskApi
+      .getSession(sessionId, { skipCatalogFallback: true })
+      .then((s) => setSessionVersion(s.version))
+      .catch((err) => {
+        setSessionVersion(undefined);
+        setVersionError(getApiErrorMessage(err, 'Could not load session details.'));
+      })
+      .finally(() => setVersionLoading(false));
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     if (channelChoices.length > 0) setChannelCode(channelChoices[0].value);
     if (callbackChoices.length > 0) setCallbackTypeCode(callbackChoices[0].value);
-  }, [isOpen, channelChoices, callbackChoices]);
+    loadSessionVersion();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, sessionId, channelChoices, callbackChoices]);
 
   if (!isOpen) return null;
 
@@ -96,11 +126,20 @@ export default function ContactLogModal({
   const showDuration = apiChannel === 'Phone' || apiChannel === 'WhatsApp';
 
   const handleSubmit = async () => {
+    if (typeof sessionVersion !== 'number') {
+      setError(
+        versionError
+          ? `Could not verify the session version (${versionError}). Close and reopen to retry.`
+          : 'Session version is still loading. Please wait a moment and try again.',
+      );
+      return;
+    }
     setSaving(true);
     setError(null);
     let contactPersisted = false;
     try {
-      await counsellorsDeskApi.logCommunication(sessionId, {
+      const logResult = await counsellorsDeskApi.logCommunication(sessionId, {
+        version: sessionVersion,
         channel: apiChannel,
         direction: 'Outbound',
         communicationAt: new Date().toISOString(),
@@ -109,6 +148,9 @@ export default function ContactLogModal({
         responseSummary: notes || undefined,
       });
       contactPersisted = true;
+      if (typeof logResult.sessionVersion === 'number') {
+        setSessionVersion(logResult.sessionVersion);
+      }
 
       if (scheduleCallback && callbackDate) {
         try {
@@ -140,6 +182,11 @@ export default function ContactLogModal({
           'Contact was logged, but a follow-up step failed. Do not log the same contact again.',
         );
         onLogged();
+      } else if (isSessionConcurrencyConflict(err)) {
+        // Phase 3I Slice 7 (PD-S7-06): stale Version — no auto-retry of the write, but refresh the
+        // Version we hold so the next manual "Log Contact" click has a fair chance of succeeding.
+        setError(getSessionConcurrencyMessage(err));
+        loadSessionVersion();
       } else {
         setError(`Failed to log contact: ${getApiErrorMessage(err, 'Please try again.')}`);
       }
@@ -157,6 +204,8 @@ export default function ContactLogModal({
     setScheduleCallback(false);
     setCallbackDate('');
     setError(null);
+    setSessionVersion(undefined);
+    setVersionError(null);
   };
 
   const handleClose = () => {
@@ -189,9 +238,9 @@ export default function ContactLogModal({
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          {error && (
+          {(error || versionError) && (
             <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {error}
+              {error ?? `Could not load session details (${versionError}).`}
             </div>
           )}
 
@@ -331,10 +380,10 @@ export default function ContactLogModal({
             <button
               type="button"
               onClick={() => void handleSubmit()}
-              disabled={saving}
+              disabled={saving || versionLoading || typeof sessionVersion !== 'number'}
               className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
             >
-              {saving ? 'Logging…' : 'Log Contact'}
+              {saving ? 'Logging…' : versionLoading ? 'Loading…' : 'Log Contact'}
             </button>
           </div>
         </div>

@@ -24,7 +24,8 @@ namespace AuthService.Services
             public const string Assigned = "OwnershipAssigned";
             public const string Claimed = "OwnershipClaimed";
             public const string Reassigned = "OwnershipReassigned";
-            // Reserved (do not emit until Slice 8): OwnershipRequeued
+            /// <summary>Phase 3I Slice 8 — owned ReQueue clears CounselorId to NULL.</summary>
+            public const string Requeued = "OwnershipRequeued";
         }
 
         private readonly AppDbContext _context;
@@ -124,6 +125,15 @@ namespace AuthService.Services
         }
 
         /// <inheritdoc />
+        /// <summary>
+        /// M19 (PD-S7-01, APPROVED Class A system writer) — CCMS fire-and-forget callback.
+        /// No client-supplied Version: this is a trusted internal system writer, not a UI mutation.
+        /// Relies on the CounselingSession concurrency token purely to detect a genuine race against
+        /// another writer between load and save; on that race, SaveChangesAsync's central handler
+        /// (see AppDbContext) throws <c>InvalidOperationException(SessionConcurrency.StaleMessage)</c>,
+        /// which the caller (InternalCcmsCallbackController) maps to 409 — distinct from the
+        /// `false` return used for NotFound.
+        /// </summary>
         public async Task<bool> ApplyCcmsCallbackAsync(
             Guid sessionId,
             Guid? tenantId,
@@ -148,6 +158,8 @@ namespace AuthService.Services
 
             session.PackageAddonsJson = merged;
             session.UpdatedAt = DateTime.UtcNow;
+            // Throws InvalidOperationException(SessionConcurrency.StaleMessage) on a genuine concurrent
+            // write race (DbUpdateConcurrencyException mapped centrally in AppDbContext.SaveChangesAsync).
             await _context.SaveChangesAsync();
             return true;
         }
@@ -290,10 +302,8 @@ namespace AuthService.Services
                 if (filters.CounselorId.HasValue)
                 {
                     var cid = filters.CounselorId.Value;
-                    // Effective owner: CounselorId, else CreatedByUserId when CounselorId unset (PD15 drill parity).
-                    query = query.Where(s =>
-                        s.CounselorId == cid
-                        || (s.CounselorId == null && s.CreatedByUserId == cid));
+                    // Phase 3I Slice 11 (PD-S11-04 / PD15 parity): strict CounselorId — same predicate as Analytics.
+                    query = query.Where(s => s.CounselorId == cid);
                 }
 
                 if (filters.ReferredByDoctorId.HasValue)
@@ -360,6 +370,12 @@ namespace AuthService.Services
                     query = query.Where(s => s.SessionNumber != null && s.SessionNumber.Contains(filters.Search));
                 }
 
+                // Phase 3I Slice 12 (PD-S12-02 / PD-S12-14) — Reassignment Required operational filter.
+                if (filters.ReassignmentRequired == true)
+                {
+                    query = ApplyReassignmentRequiredFilter(query, filters.TenantId);
+                }
+
                 var totalCount = await query.CountAsync();
 
                 var sessions = await query
@@ -395,6 +411,7 @@ namespace AuthService.Services
                         DecisionDate = s.DecisionDate,
                         ReasonsForDelay = s.ReasonsForDelay,
                         Status = s.Status,
+                        Version = s.Version,
                         CreatedAt = s.CreatedAt,
                         SurgeryTentativeDate = s.SurgeryTentativeDate,
                         SurgeryTentativeSurgeonId = s.SurgeryTentativeSurgeonId,
@@ -522,6 +539,7 @@ namespace AuthService.Services
                         DecisionDate = s.DecisionDate,
                         ReasonsForDelay = s.ReasonsForDelay,
                         Status = s.Status,
+                        Version = s.Version,
                         CreatedAt = s.CreatedAt,
                         // Package financials + counsellor JSON blob
                         SelectedPackageId = s.SelectedPackageId,
@@ -834,6 +852,11 @@ namespace AuthService.Services
 
         public async Task<SessionOperationResult> CreateSessionAsync(CreateCounselingSessionRequest request, Guid currentUserId)
         {
+            // PD-C: authoritative reuse vs new episode (SurgeryDone from OtFinalizeSchedules only).
+            var reuseBlock = await TryGetCreateSessionReuseBlockAsync(request.TenantId, request.PatientId);
+            if (reuseBlock != null)
+                return reuseBlock;
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -972,6 +995,11 @@ namespace AuthService.Services
                         Message = "Session not found"
                     };
                 }
+
+                // Phase 3I Slice 7 (PD-S7-02/05): expected Version is required; stale → Conflict (409).
+                var versionDeny = DenyUnlessExpectedVersion(session, request.Version);
+                if (versionDeny != null)
+                    return versionDeny;
 
                 // Phase 3I Slice 4 (S4-D2): CounselorId must not change via Update.
                 if (request.CounselorId.HasValue)
@@ -1188,6 +1216,7 @@ namespace AuthService.Services
             Guid tenantId,
             Guid sessionId,
             Guid targetCounselorId,
+            int? expectedVersion,
             Guid actorUserId)
         {
             try
@@ -1202,10 +1231,21 @@ namespace AuthService.Services
                     };
                 }
 
+                // Phase 3I Slice 7 (PD-S7-03/05): fail closed on missing expected Version.
+                if (!expectedVersion.HasValue)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.BadRequest,
+                        Message = "Version is required.",
+                    };
+                }
+
                 var sessionMeta = await _context.CounselingSession
                     .AsNoTracking()
                     .Where(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
-                    .Select(s => new { s.Id, s.BranchId, s.CounselorId })
+                    .Select(s => new { s.Id, s.BranchId, s.CounselorId, s.Version, s.PatientAgreedToSurgery })
                     .FirstOrDefaultAsync();
 
                 if (sessionMeta == null)
@@ -1230,9 +1270,44 @@ namespace AuthService.Services
                     };
                 }
 
+                // Phase 3I Slice 7 (PD-S7-04/06): stale Version → Conflict (409), before eligibility/branch checks.
+                if (sessionMeta.Version != expectedVersion.Value)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Conflict,
+                        Message = SessionConcurrency.StaleMessage,
+                        SessionId = sessionId,
+                        CounselorId = sessionMeta.CounselorId,
+                    };
+                }
+
+                // Phase 3I Slice 9 (PD-S9-19): SurgeryDone seals ownership mutations — Assign rejected.
+                // Historical CounselorId is retained (not cleared). Matches Claim/Reassign/ReQueue.
+                var isSurgeryDone = await _context.OtFinalizeSchedules
+                    .AsNoTracking()
+                    .AnyAsync(o =>
+                        o.CounsellingSessionId == sessionId
+                        && o.TenantId == tenantId
+                        && o.DeletedAt == null
+                        && o.Status == OtFinalizeStatus.SurgeryDone);
+
+                if (isSurgeryDone)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.BadRequest,
+                        Message = "SurgeryDone sessions cannot be assigned.",
+                        SessionId = sessionId,
+                    };
+                }
+
                 // Assign eligibility (server-derived queue status — never trust client status):
-                // Certified Slice 3: Waiting (Pending) + NULL only.
-                // Done/Repeat NULL ownership uses claim-for-lifecycle (not this endpoint).
+                // Waiting (Pending) OR InProgress/Called (Processing) + NULL.
+                // PD-B: also Completed + PatientAgreedToSurgery != true + NULL (explicit Assign only).
+                // Completed + PatientAgreedToSurgery == true remains claim-for-lifecycle (ReEvaluate).
                 var queueStatuses = await _context.CounselorQueue
                     .AsNoTracking()
                     .Where(q =>
@@ -1242,15 +1317,18 @@ namespace AuthService.Services
                     .Select(q => q.Status)
                     .ToListAsync();
 
-                var isPendingQueue = queueStatuses.Any(s => s == "Waiting");
+                var isAssignableQueue = queueStatuses.Any(s =>
+                    s == "Waiting" || s == "InProgress" || s == "Called")
+                    || (queueStatuses.Any(s => s == "Completed")
+                        && sessionMeta.PatientAgreedToSurgery != true);
 
-                if (!isPendingQueue)
+                if (!isAssignableQueue)
                 {
                     return new AssignSessionResult
                     {
                         Success = false,
                         FailureKind = AssignSessionFailureKind.BadRequest,
-                        Message = "Only Pending unassigned sessions can be assigned.",
+                        Message = "Only unassigned Pending or Processing sessions can be assigned.",
                         SessionId = sessionId,
                     };
                 }
@@ -1310,35 +1388,22 @@ namespace AuthService.Services
                     };
                 }
 
-                if (!await IsAssignableCounsellorAsync(targetCounselorId, target.UserType, target.Designation))
+                // Phase 3I Slice 12 (PD-S12-17) — unavailable users cannot be ownership targets.
+                var targetAvailability = await EvaluateOwnershipTargetAvailabilityAsync(
+                    tenantId, targetCounselorId, sessionMeta.BranchId);
+                if (!targetAvailability.IsAvailable)
                 {
                     return new AssignSessionResult
                     {
                         Success = false,
-                        FailureKind = AssignSessionFailureKind.BadRequest,
-                        Message = "Target user is not a counsellor.",
-                        SessionId = sessionId,
-                    };
-                }
-
-                // Target must belong to the same authorized branch as the session.
-                try
-                {
-                    await _followupBranchAccess.ResolveAccessibleBranchesAsync(
-                        tenantId, targetCounselorId, sessionMeta.BranchId);
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    return new AssignSessionResult
-                    {
-                        Success = false,
-                        FailureKind = AssignSessionFailureKind.Forbidden,
-                        Message = "Target counsellor is not authorized for this session branch.",
+                        FailureKind = targetAvailability.FailureKind,
+                        Message = targetAvailability.Message ?? "Target counsellor is unavailable for ownership.",
                         SessionId = sessionId,
                     };
                 }
 
                 var now = DateTime.UtcNow;
+                int? newVersion = null;
                 await using var ownershipTx = await _context.Database.BeginTransactionAsync();
                 try
                 {
@@ -1352,26 +1417,28 @@ namespace AuthService.Services
                             .Where(s => s.Id == sessionId
                                      && s.TenantId == tenantId
                                      && s.DeletedAt == null
-                                     && s.CounselorId == null)
+                                     && s.CounselorId == null
+                                     && s.Version == expectedVersion.Value)
                             .ExecuteUpdateAsync(setters => setters
                                 .SetProperty(s => s.CounselorId, targetCounselorId)
                                 .SetProperty(s => s.UpdatedAt, now)
-                                .SetProperty(s => s.UpdatedByUserId, actorUserId));
+                                .SetProperty(s => s.UpdatedByUserId, actorUserId)
+                                .SetProperty(s => s.Version, s => s.Version + 1));
 
                         if (affected > 0)
                         {
                             assignedViaBulk = true;
+                            newVersion = expectedVersion.Value + 1;
                         }
                         else
                         {
-                            var currentOwner = await _context.CounselingSession
+                            var current = await _context.CounselingSession
                                 .AsNoTracking()
                                 .Where(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
-                                .Select(s => s.CounselorId)
+                                .Select(s => new { s.CounselorId, s.Version })
                                 .FirstOrDefaultAsync();
 
-                            if (!await _context.CounselingSession.AnyAsync(
-                                    s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null))
+                            if (current == null)
                             {
                                 await ownershipTx.RollbackAsync();
                                 return new AssignSessionResult
@@ -1387,9 +1454,11 @@ namespace AuthService.Services
                             {
                                 Success = false,
                                 FailureKind = AssignSessionFailureKind.Conflict,
-                                Message = "Session is already assigned.",
+                                Message = current.CounselorId.HasValue
+                                    ? "Session is already assigned."
+                                    : SessionConcurrency.StaleMessage,
                                 SessionId = sessionId,
-                                CounselorId = currentOwner,
+                                CounselorId = current.CounselorId,
                             };
                         }
                     }
@@ -1424,6 +1493,19 @@ namespace AuthService.Services
                             };
                         }
 
+                        if (session.Version != expectedVersion.Value)
+                        {
+                            await ownershipTx.RollbackAsync();
+                            return new AssignSessionResult
+                            {
+                                Success = false,
+                                FailureKind = AssignSessionFailureKind.Conflict,
+                                Message = SessionConcurrency.StaleMessage,
+                                SessionId = sessionId,
+                                CounselorId = session.CounselorId,
+                            };
+                        }
+
                         session.CounselorId = targetCounselorId;
                         session.UpdatedAt = now;
                         session.UpdatedByUserId = actorUserId;
@@ -1442,6 +1524,15 @@ namespace AuthService.Services
 
                     await _context.SaveChangesAsync();
                     await ownershipTx.CommitAsync();
+
+                    if (!assignedViaBulk)
+                    {
+                        newVersion = await _context.CounselingSession
+                            .AsNoTracking()
+                            .Where(s => s.Id == sessionId)
+                            .Select(s => (int?)s.Version)
+                            .FirstOrDefaultAsync();
+                    }
                 }
                 catch (Exception)
                 {
@@ -1461,6 +1552,7 @@ namespace AuthService.Services
                     SessionId = sessionId,
                     CounselorId = targetCounselorId,
                     CounselorName = string.IsNullOrWhiteSpace(name) ? null : name,
+                    Version = newVersion,
                 };
             }
             catch (Exception ex)
@@ -1484,6 +1576,7 @@ namespace AuthService.Services
             Guid sessionId,
             Guid? expectedCounselorId,
             string intent,
+            int? expectedVersion,
             Guid actorUserId)
         {
             try
@@ -1497,6 +1590,17 @@ namespace AuthService.Services
                         Success = false,
                         FailureKind = AssignSessionFailureKind.BadRequest,
                         Message = "Intent must be ReEvaluate or StartRepeat.",
+                    };
+                }
+
+                // Phase 3I Slice 7 (PD-S7-03/05): fail closed on missing expected Version.
+                if (!expectedVersion.HasValue)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.BadRequest,
+                        Message = "Version is required.",
                     };
                 }
 
@@ -1550,6 +1654,7 @@ namespace AuthService.Services
                         s.BranchId,
                         s.CounselorId,
                         s.PatientAgreedToSurgery,
+                        s.Version,
                     })
                     .FirstOrDefaultAsync();
 
@@ -1603,6 +1708,7 @@ namespace AuthService.Services
                             SessionId = sessionId,
                             CounselorId = actorUserId,
                             CounselorName = string.IsNullOrWhiteSpace(selfName) ? null : selfName,
+                            Version = sessionMeta.Version,
                         };
                     }
 
@@ -1617,6 +1723,19 @@ namespace AuthService.Services
                             CounselorId = sessionMeta.CounselorId,
                         };
                     }
+                }
+
+                // Phase 3I Slice 7 (PD-S7-04/06): stale Version → Conflict (409).
+                if (sessionMeta.Version != expectedVersion.Value)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Conflict,
+                        Message = SessionConcurrency.StaleMessage,
+                        SessionId = sessionId,
+                        CounselorId = sessionMeta.CounselorId,
+                    };
                 }
 
                 var queueStatuses = await _context.CounselorQueue
@@ -1698,6 +1817,7 @@ namespace AuthService.Services
                 }
 
                 var now = DateTime.UtcNow;
+                int? newVersion = null;
                 await using var ownershipTx = await _context.Database.BeginTransactionAsync();
                 try
                 {
@@ -1712,11 +1832,13 @@ namespace AuthService.Services
                                 .Where(s => s.Id == sessionId
                                          && s.TenantId == tenantId
                                          && s.DeletedAt == null
-                                         && s.CounselorId == null)
+                                         && s.CounselorId == null
+                                         && s.Version == expectedVersion.Value)
                                 .ExecuteUpdateAsync(setters => setters
                                     .SetProperty(s => s.CounselorId, actorUserId)
                                     .SetProperty(s => s.UpdatedAt, now)
-                                    .SetProperty(s => s.UpdatedByUserId, actorUserId));
+                                    .SetProperty(s => s.UpdatedByUserId, actorUserId)
+                                    .SetProperty(s => s.Version, s => s.Version + 1));
                         }
                         else
                         {
@@ -1724,23 +1846,26 @@ namespace AuthService.Services
                                 .Where(s => s.Id == sessionId
                                          && s.TenantId == tenantId
                                          && s.DeletedAt == null
-                                         && s.CounselorId == expectedCounselorId)
+                                         && s.CounselorId == expectedCounselorId
+                                         && s.Version == expectedVersion.Value)
                                 .ExecuteUpdateAsync(setters => setters
                                     .SetProperty(s => s.CounselorId, actorUserId)
                                     .SetProperty(s => s.UpdatedAt, now)
-                                    .SetProperty(s => s.UpdatedByUserId, actorUserId));
+                                    .SetProperty(s => s.UpdatedByUserId, actorUserId)
+                                    .SetProperty(s => s.Version, s => s.Version + 1));
                         }
 
                         if (affected > 0)
                         {
                             claimed = true;
+                            newVersion = expectedVersion.Value + 1;
                         }
                         else
                         {
-                            var currentOwner = await _context.CounselingSession
+                            var current = await _context.CounselingSession
                                 .AsNoTracking()
                                 .Where(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
-                                .Select(s => s.CounselorId)
+                                .Select(s => new { s.CounselorId, s.Version })
                                 .FirstOrDefaultAsync();
 
                             await ownershipTx.RollbackAsync();
@@ -1748,9 +1873,11 @@ namespace AuthService.Services
                             {
                                 Success = false,
                                 FailureKind = AssignSessionFailureKind.Conflict,
-                                Message = "Session ownership changed.",
+                                Message = current != null && current.Version != expectedVersion.Value
+                                    ? SessionConcurrency.StaleMessage
+                                    : "Session ownership changed.",
                                 SessionId = sessionId,
-                                CounselorId = currentOwner,
+                                CounselorId = current?.CounselorId,
                             };
                         }
                     }
@@ -1800,6 +1927,19 @@ namespace AuthService.Services
                             };
                         }
 
+                        if (session.Version != expectedVersion.Value)
+                        {
+                            await ownershipTx.RollbackAsync();
+                            return new AssignSessionResult
+                            {
+                                Success = false,
+                                FailureKind = AssignSessionFailureKind.Conflict,
+                                Message = SessionConcurrency.StaleMessage,
+                                SessionId = sessionId,
+                                CounselorId = session.CounselorId,
+                            };
+                        }
+
                         session.CounselorId = actorUserId;
                         session.UpdatedAt = now;
                         session.UpdatedByUserId = actorUserId;
@@ -1819,6 +1959,15 @@ namespace AuthService.Services
 
                     await _context.SaveChangesAsync();
                     await ownershipTx.CommitAsync();
+
+                    if (!claimed)
+                    {
+                        newVersion = await _context.CounselingSession
+                            .AsNoTracking()
+                            .Where(s => s.Id == sessionId)
+                            .Select(s => (int?)s.Version)
+                            .FirstOrDefaultAsync();
+                    }
                 }
                 catch (Exception)
                 {
@@ -1838,6 +1987,7 @@ namespace AuthService.Services
                     SessionId = sessionId,
                     CounselorId = actorUserId,
                     CounselorName = string.IsNullOrWhiteSpace(name) ? null : name,
+                    Version = newVersion,
                 };
             }
             catch (Exception ex)
@@ -1862,6 +2012,7 @@ namespace AuthService.Services
             Guid targetCounselorId,
             Guid expectedCounselorId,
             string reason,
+            int? expectedVersion,
             Guid actorUserId)
         {
             try
@@ -1907,10 +2058,21 @@ namespace AuthService.Services
                     };
                 }
 
+                // Phase 3I Slice 7 (PD-S7-03/05): fail closed on missing expected Version.
+                if (!expectedVersion.HasValue)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.BadRequest,
+                        Message = "Version is required.",
+                    };
+                }
+
                 var sessionMeta = await _context.CounselingSession
                     .AsNoTracking()
                     .Where(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
-                    .Select(s => new { s.Id, s.BranchId, s.CounselorId, s.Status })
+                    .Select(s => new { s.Id, s.BranchId, s.CounselorId, s.Status, s.Version })
                     .FirstOrDefaultAsync();
 
                 if (sessionMeta == null)
@@ -1941,6 +2103,19 @@ namespace AuthService.Services
                         Success = false,
                         FailureKind = AssignSessionFailureKind.Conflict,
                         Message = "Session ownership changed.",
+                        SessionId = sessionId,
+                        CounselorId = sessionMeta.CounselorId,
+                    };
+                }
+
+                // Phase 3I Slice 7 (PD-S7-04/06): stale Version → Conflict (409).
+                if (sessionMeta.Version != expectedVersion.Value)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Conflict,
+                        Message = SessionConcurrency.StaleMessage,
                         SessionId = sessionId,
                         CounselorId = sessionMeta.CounselorId,
                     };
@@ -2057,35 +2232,23 @@ namespace AuthService.Services
                     };
                 }
 
-                if (!await IsAssignableCounsellorAsync(targetCounselorId, target.UserType, target.Designation))
+                // Phase 3I Slice 12 (PD-S12-17) — unavailable users cannot be ownership targets.
+                var targetAvailability = await EvaluateOwnershipTargetAvailabilityAsync(
+                    tenantId, targetCounselorId, sessionMeta.BranchId);
+                if (!targetAvailability.IsAvailable)
                 {
                     return new AssignSessionResult
                     {
                         Success = false,
-                        FailureKind = AssignSessionFailureKind.BadRequest,
-                        Message = "Target user is not a counsellor.",
-                        SessionId = sessionId,
-                    };
-                }
-
-                try
-                {
-                    await _followupBranchAccess.ResolveAccessibleBranchesAsync(
-                        tenantId, targetCounselorId, sessionMeta.BranchId);
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    return new AssignSessionResult
-                    {
-                        Success = false,
-                        FailureKind = AssignSessionFailureKind.Forbidden,
-                        Message = "Target counsellor is not authorized for this session branch.",
+                        FailureKind = targetAvailability.FailureKind,
+                        Message = targetAvailability.Message ?? "Target counsellor is unavailable for ownership.",
                         SessionId = sessionId,
                     };
                 }
 
                 var previousOwner = sessionMeta.CounselorId.Value;
                 var now = DateTime.UtcNow;
+                int? newVersion = null;
                 await using var ownershipTx = await _context.Database.BeginTransactionAsync();
                 try
                 {
@@ -2097,26 +2260,28 @@ namespace AuthService.Services
                             .Where(s => s.Id == sessionId
                                      && s.TenantId == tenantId
                                      && s.DeletedAt == null
-                                     && s.CounselorId == expectedCounselorId)
+                                     && s.CounselorId == expectedCounselorId
+                                     && s.Version == expectedVersion.Value)
                             .ExecuteUpdateAsync(setters => setters
                                 .SetProperty(s => s.CounselorId, targetCounselorId)
                                 .SetProperty(s => s.UpdatedAt, now)
-                                .SetProperty(s => s.UpdatedByUserId, actorUserId));
+                                .SetProperty(s => s.UpdatedByUserId, actorUserId)
+                                .SetProperty(s => s.Version, s => s.Version + 1));
 
                         if (affected > 0)
                         {
                             reassignedViaBulk = true;
+                            newVersion = expectedVersion.Value + 1;
                         }
                         else
                         {
-                            var currentOwner = await _context.CounselingSession
+                            var current = await _context.CounselingSession
                                 .AsNoTracking()
                                 .Where(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
-                                .Select(s => s.CounselorId)
+                                .Select(s => new { s.CounselorId, s.Version })
                                 .FirstOrDefaultAsync();
 
-                            if (!await _context.CounselingSession.AnyAsync(
-                                    s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null))
+                            if (current == null)
                             {
                                 await ownershipTx.RollbackAsync();
                                 return new AssignSessionResult
@@ -2132,9 +2297,11 @@ namespace AuthService.Services
                             {
                                 Success = false,
                                 FailureKind = AssignSessionFailureKind.Conflict,
-                                Message = "Session ownership changed.",
+                                Message = current.CounselorId == expectedCounselorId
+                                    ? SessionConcurrency.StaleMessage
+                                    : "Session ownership changed.",
                                 SessionId = sessionId,
-                                CounselorId = currentOwner,
+                                CounselorId = current.CounselorId,
                             };
                         }
                     }
@@ -2170,6 +2337,19 @@ namespace AuthService.Services
                             };
                         }
 
+                        if (session.Version != expectedVersion.Value)
+                        {
+                            await ownershipTx.RollbackAsync();
+                            return new AssignSessionResult
+                            {
+                                Success = false,
+                                FailureKind = AssignSessionFailureKind.Conflict,
+                                Message = SessionConcurrency.StaleMessage,
+                                SessionId = sessionId,
+                                CounselorId = session.CounselorId,
+                            };
+                        }
+
                         session.CounselorId = targetCounselorId;
                         session.UpdatedAt = now;
                         session.UpdatedByUserId = actorUserId;
@@ -2189,6 +2369,15 @@ namespace AuthService.Services
 
                     await _context.SaveChangesAsync();
                     await ownershipTx.CommitAsync();
+
+                    if (!reassignedViaBulk)
+                    {
+                        newVersion = await _context.CounselingSession
+                            .AsNoTracking()
+                            .Where(s => s.Id == sessionId)
+                            .Select(s => (int?)s.Version)
+                            .FirstOrDefaultAsync();
+                    }
                 }
                 catch (Exception)
                 {
@@ -2208,6 +2397,7 @@ namespace AuthService.Services
                     SessionId = sessionId,
                     CounselorId = targetCounselorId,
                     CounselorName = string.IsNullOrWhiteSpace(name) ? null : name,
+                    Version = newVersion,
                 };
             }
             catch (Exception ex)
@@ -2218,6 +2408,410 @@ namespace AuthService.Services
                     Success = false,
                     FailureKind = AssignSessionFailureKind.BadRequest,
                     Message = "Error reassigning session",
+                };
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<ReQueueSessionResult> ReQueueSessionAsync(
+            Guid tenantId,
+            Guid sessionId,
+            int? expectedVersion,
+            Guid? expectedCounselorId,
+            string reason,
+            string? newIntention,
+            string? notes,
+            string? sessionType,
+            Guid actorUserId)
+        {
+            try
+            {
+                var trimmedReason = (reason ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(trimmedReason))
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.BadRequest,
+                        Message = "Reason is required.",
+                    };
+                }
+
+                if (!expectedVersion.HasValue)
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.BadRequest,
+                        Message = "Version is required.",
+                    };
+                }
+
+                var sessionMeta = await _context.CounselingSession
+                    .AsNoTracking()
+                    .Where(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
+                    .Select(s => new
+                    {
+                        s.Id,
+                        s.BranchId,
+                        s.PatientId,
+                        s.CounselorId,
+                        s.Status,
+                        s.Version,
+                        s.AdditionalNotes,
+                        s.PatientIntention,
+                        s.SessionType,
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (sessionMeta == null)
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.NotFound,
+                        Message = "Session not found",
+                    };
+                }
+
+                // PD-S8-14: SessionId + expectedCounselorId + expectedVersion must identify the row.
+                if (sessionMeta.CounselorId != expectedCounselorId)
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Conflict,
+                        Message = "Session ownership changed.",
+                        SessionId = sessionId,
+                        CounselorId = sessionMeta.CounselorId,
+                    };
+                }
+
+                if (sessionMeta.Version != expectedVersion.Value)
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Conflict,
+                        Message = SessionConcurrency.StaleMessage,
+                        SessionId = sessionId,
+                        CounselorId = sessionMeta.CounselorId,
+                    };
+                }
+
+                var isSurgeryDone = await _context.OtFinalizeSchedules
+                    .AsNoTracking()
+                    .AnyAsync(o =>
+                        o.CounsellingSessionId == sessionId
+                        && o.TenantId == tenantId
+                        && o.DeletedAt == null
+                        && o.Status == OtFinalizeStatus.SurgeryDone);
+
+                if (isSurgeryDone)
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.BadRequest,
+                        Message = "SurgeryDone sessions cannot be requeued.",
+                        SessionId = sessionId,
+                    };
+                }
+
+                try
+                {
+                    await _followupBranchAccess.ResolveAccessibleBranchesAsync(
+                        tenantId, actorUserId, sessionMeta.BranchId);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Forbidden,
+                        Message = "Not authorized to requeue this session.",
+                        SessionId = sessionId,
+                    };
+                }
+
+                string? normalizedIntention = null;
+                if (!string.IsNullOrEmpty(newIntention))
+                {
+                    try
+                    {
+                        normalizedIntention =
+                            FollowupQueryContracts.NormalizeWritablePatientIntention(newIntention);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        return new ReQueueSessionResult
+                        {
+                            Success = false,
+                            FailureKind = AssignSessionFailureKind.BadRequest,
+                            Message = ex.Message,
+                            SessionId = sessionId,
+                        };
+                    }
+                }
+
+                // Phase 3I Slice 8 fix — master UI codes (FOLLOW_UP) → DB CHECK values (Followup).
+                // Blank keeps existing SessionType; unknown fails closed before ExecuteUpdateAsync.
+                string? normalizedSessionType = null;
+                if (!CounselingSessionTypeContracts.TryNormalizeWritableSessionType(
+                        sessionType, out normalizedSessionType, out var sessionTypeError))
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.BadRequest,
+                        Message = sessionTypeError ?? "Session type is not valid.",
+                        SessionId = sessionId,
+                    };
+                }
+
+                var notesToAppend = !string.IsNullOrWhiteSpace(notes) ? notes.Trim() : trimmedReason;
+                var additionalNotes = sessionMeta.AdditionalNotes ?? string.Empty;
+                additionalNotes += $"\n[Re-queue {DateTime.UtcNow:yyyy-MM-dd}] {notesToAppend}";
+
+                var previousOwner = sessionMeta.CounselorId;
+                var ownershipChanged = previousOwner.HasValue;
+                var now = DateTime.UtcNow;
+                int? newVersion = null;
+                string? tokenNumber = null;
+                Guid? queueItemId = null;
+
+                await using var ownershipTx = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var clearedViaBulk = false;
+
+                    if (_context.Database.IsRelational())
+                    {
+                        var intentionValue = normalizedIntention ?? sessionMeta.PatientIntention;
+                        var sessionTypeValue = normalizedSessionType ?? sessionMeta.SessionType;
+
+                        var affected = await _context.CounselingSession
+                            .Where(s => s.Id == sessionId
+                                     && s.TenantId == tenantId
+                                     && s.DeletedAt == null
+                                     && s.CounselorId == expectedCounselorId
+                                     && s.Version == expectedVersion.Value)
+                            .ExecuteUpdateAsync(setters => setters
+                                .SetProperty(x => x.CounselorId, (Guid?)null)
+                                .SetProperty(x => x.UpdatedAt, now)
+                                .SetProperty(x => x.UpdatedByUserId, actorUserId)
+                                .SetProperty(x => x.Version, x => x.Version + 1)
+                                .SetProperty(x => x.AdditionalNotes, additionalNotes)
+                                .SetProperty(x => x.PatientIntention, intentionValue)
+                                .SetProperty(x => x.SessionType, sessionTypeValue));
+
+                        if (affected > 0)
+                        {
+                            clearedViaBulk = true;
+                            newVersion = expectedVersion.Value + 1;
+                        }
+                        else
+                        {
+                            var current = await _context.CounselingSession
+                                .AsNoTracking()
+                                .Where(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
+                                .Select(s => new { s.CounselorId, s.Version })
+                                .FirstOrDefaultAsync();
+
+                            await ownershipTx.RollbackAsync();
+
+                            if (current == null)
+                            {
+                                return new ReQueueSessionResult
+                                {
+                                    Success = false,
+                                    FailureKind = AssignSessionFailureKind.NotFound,
+                                    Message = "Session not found",
+                                };
+                            }
+
+                            return new ReQueueSessionResult
+                            {
+                                Success = false,
+                                FailureKind = AssignSessionFailureKind.Conflict,
+                                Message = current.CounselorId == expectedCounselorId
+                                    ? SessionConcurrency.StaleMessage
+                                    : "Session ownership changed.",
+                                SessionId = sessionId,
+                                CounselorId = current.CounselorId,
+                            };
+                        }
+                    }
+
+                    if (!clearedViaBulk)
+                    {
+                        var session = await _context.CounselingSession
+                            .FirstOrDefaultAsync(s =>
+                                s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null);
+
+                        if (session == null)
+                        {
+                            await ownershipTx.RollbackAsync();
+                            return new ReQueueSessionResult
+                            {
+                                Success = false,
+                                FailureKind = AssignSessionFailureKind.NotFound,
+                                Message = "Session not found",
+                            };
+                        }
+
+                        if (session.CounselorId != expectedCounselorId)
+                        {
+                            await ownershipTx.RollbackAsync();
+                            return new ReQueueSessionResult
+                            {
+                                Success = false,
+                                FailureKind = AssignSessionFailureKind.Conflict,
+                                Message = "Session ownership changed.",
+                                SessionId = sessionId,
+                                CounselorId = session.CounselorId,
+                            };
+                        }
+
+                        if (session.Version != expectedVersion.Value)
+                        {
+                            await ownershipTx.RollbackAsync();
+                            return new ReQueueSessionResult
+                            {
+                                Success = false,
+                                FailureKind = AssignSessionFailureKind.Conflict,
+                                Message = SessionConcurrency.StaleMessage,
+                                SessionId = sessionId,
+                                CounselorId = session.CounselorId,
+                            };
+                        }
+
+                        session.CounselorId = null;
+                        session.UpdatedAt = now;
+                        session.UpdatedByUserId = actorUserId;
+                        session.AdditionalNotes = additionalNotes;
+                        if (normalizedIntention != null)
+                            session.PatientIntention = normalizedIntention;
+                        if (normalizedSessionType != null)
+                            session.SessionType = normalizedSessionType;
+                    }
+
+                    // PD-S8-09/10 — soft-delete prior active/current queue rows (existing DeletedAt
+                    // lifecycle); reuse a single active Waiting when present.
+                    var existingQueues = await _context.CounselorQueue
+                        .Where(q =>
+                            q.SessionId == sessionId
+                            && q.TenantId == tenantId
+                            && q.DeletedAt == null)
+                        .OrderBy(q => q.AddedToQueueAt)
+                        .ToListAsync();
+
+                    var keepWaiting = existingQueues
+                        .FirstOrDefault(q => q.Status == "Waiting");
+
+                    foreach (var q in existingQueues)
+                    {
+                        if (keepWaiting != null && q.Id == keepWaiting.Id)
+                            continue;
+                        q.DeletedAt = now;
+                        q.UpdatedAt = now;
+                    }
+
+                    if (keepWaiting != null)
+                    {
+                        keepWaiting.UpdatedAt = now;
+                        keepWaiting.QueueType = "RepeatCounselling";
+                        tokenNumber = keepWaiting.TokenNumber;
+                        queueItemId = keepWaiting.Id;
+                    }
+                    else
+                    {
+                        var branchId = sessionMeta.BranchId ?? Guid.Empty;
+                        var maxPosition = await _context.CounselorQueue
+                            .Where(q => q.TenantId == tenantId
+                                     && q.BranchId == branchId
+                                     && q.Status == "Waiting"
+                                     && q.DeletedAt == null)
+                            .MaxAsync(q => (int?)q.QueuePosition) ?? 0;
+
+                        tokenNumber = $"FU-{now:yyMMdd}-{(maxPosition + 1):D3}";
+                        var queueItem = new CounselorQueueItem
+                        {
+                            Id = Guid.NewGuid(),
+                            TenantId = tenantId,
+                            BranchId = branchId,
+                            SessionId = sessionId,
+                            PatientId = sessionMeta.PatientId,
+                            TokenNumber = tokenNumber,
+                            QueueType = "RepeatCounselling",
+                            QueuePosition = maxPosition + 1,
+                            PriorityScore = 60.00m,
+                            UrgencyLevel = "Normal",
+                            Status = "Waiting",
+                            AddedToQueueAt = now,
+                            CreatedAt = now,
+                            UpdatedAt = now,
+                        };
+                        _context.CounselorQueue.Add(queueItem);
+                        queueItemId = queueItem.Id;
+                    }
+
+                    if (ownershipChanged)
+                    {
+                        await StageOwnershipTrailAsync(
+                            tenantId: tenantId,
+                            sessionId: sessionId,
+                            branchId: sessionMeta.BranchId,
+                            actorUserId: actorUserId,
+                            previousCounselorId: previousOwner,
+                            newCounselorId: null,
+                            changeType: OwnershipAuditEvents.Requeued,
+                            source: "Requeue",
+                            intent: "Requeue",
+                            reason: trimmedReason);
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await ownershipTx.CommitAsync();
+
+                    if (!clearedViaBulk)
+                    {
+                        newVersion = await _context.CounselingSession
+                            .AsNoTracking()
+                            .Where(s => s.Id == sessionId)
+                            .Select(s => (int?)s.Version)
+                            .FirstOrDefaultAsync();
+                    }
+                }
+                catch (Exception)
+                {
+                    await ownershipTx.RollbackAsync();
+                    throw;
+                }
+
+                _logger.LogInformation(
+                    "Requeued counseling session {SessionId} (previous owner {PreviousOwner}) by actor {ActorId}",
+                    sessionId, previousOwner, actorUserId);
+
+                return new ReQueueSessionResult
+                {
+                    Success = true,
+                    Message = "Patient re-queued to counselor waiting list",
+                    SessionId = sessionId,
+                    CounselorId = null,
+                    Version = newVersion,
+                    TokenNumber = tokenNumber,
+                    QueueItemId = queueItemId,
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error re-queuing counseling session {SessionId}", sessionId);
+                return new ReQueueSessionResult
+                {
+                    Success = false,
+                    FailureKind = AssignSessionFailureKind.BadRequest,
+                    Message = "Error re-queuing patient",
                 };
             }
         }
@@ -2248,7 +2842,176 @@ namespace AuthService.Services
             ).AnyAsync();
         }
 
-        public async Task<SessionOperationResult> StartSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, string? sessionType = null)
+        /// <summary>
+        /// Phase 3I Slice 12 — Reassignment Required list predicate (PD-S12-01 / PD-S12-02).
+        /// Operationally open + non-null owner who is unavailable (inactive, soft-deleted,
+        /// not counsellor-eligible, or unauthorized for the session branch).
+        /// </summary>
+        private IQueryable<CounselingSession> ApplyReassignmentRequiredFilter(
+            IQueryable<CounselingSession> query,
+            Guid? tenantId)
+        {
+            var now = DateTime.UtcNow;
+            var openStatuses = CounsellorOwnershipAvailability.OperationalOpenSessionStatuses;
+
+            // Owner ids that still satisfy counsellor eligibility heuristics.
+            var eligibleOwnerIds =
+                from u in _context.Users.AsNoTracking()
+                where u.DeletedAt == null
+                      && (!tenantId.HasValue || u.TenantId == tenantId.Value)
+                      && (
+                          (u.UserType != null && u.UserType.ToLower().Contains("counsel"))
+                          || (u.Designation != null && u.Designation.ToLower().Contains("counsel"))
+                          || (
+                              from ur in _context.UserRoles.Cast<AuthService.Models.Identity.AppUserRole>()
+                              join r in _context.Roles on ur.RoleId equals r.Id
+                              where ur.UserId == u.Id
+                                    && ur.IsActive
+                                    && r.NormalizedName != null
+                                    && r.NormalizedName.Contains("COUNSEL")
+                              select ur
+                          ).Any()
+                      )
+                select u.Id;
+
+            // Owner+branch pairs with current branch authorization (primary or active UserBranch).
+            var authorizedOwnerBranchPairs =
+                (
+                    from u in _context.Users.AsNoTracking()
+                    where u.DeletedAt == null
+                          && u.BranchId != null
+                          && (!tenantId.HasValue || u.TenantId == tenantId.Value)
+                    select new { OwnerId = u.Id, BranchId = u.BranchId!.Value }
+                )
+                .Concat(
+                    from ub in _context.UserBranches.AsNoTracking()
+                    where ub.Status == "active"
+                          && ub.EffectiveFrom <= now
+                          && (ub.EffectiveUntil == null || ub.EffectiveUntil > now)
+                          && (!tenantId.HasValue || ub.TenantId == tenantId.Value)
+                    select new { OwnerId = ub.UserId, BranchId = ub.BranchId }
+                )
+                .Distinct();
+
+            return
+                from s in query
+                where s.CounselorId != null
+                      && openStatuses.Contains(s.Status)
+                join u in _context.Users.AsNoTracking() on s.CounselorId equals u.Id into ownerJoin
+                from u in ownerJoin.DefaultIfEmpty()
+                let ownerMissing = u == null
+                let ownerSoftDeleted = u != null && u.DeletedAt != null
+                let ownerInactive = u != null && (
+                    u.UserStatus != null
+                    && (u.UserStatus.ToLower() == "inactive" || u.UserStatus.ToLower() == "suspended"))
+                let ownerNotEligible = u != null && u.DeletedAt == null && !eligibleOwnerIds.Contains(u.Id)
+                let ownerUnauthorizedForBranch =
+                    s.BranchId != null
+                    && u != null
+                    && u.DeletedAt == null
+                    && !authorizedOwnerBranchPairs.Any(p =>
+                        p.OwnerId == u.Id && p.BranchId == s.BranchId.Value)
+                where ownerMissing
+                      || ownerSoftDeleted
+                      || ownerInactive
+                      || ownerNotEligible
+                      || ownerUnauthorizedForBranch
+                select s;
+        }
+
+        private sealed class OwnershipTargetAvailability
+        {
+            public bool IsAvailable { get; init; }
+            public string? Message { get; init; }
+            public AssignSessionFailureKind FailureKind { get; init; } = AssignSessionFailureKind.BadRequest;
+        }
+
+        /// <summary>
+        /// Phase 3I Slice 12 (PD-S12-17) — Assign/Reassign target must be available:
+        /// not soft-deleted, not inactive, counsellor-eligible, PD16-authorized for session branch.
+        /// Branch denial remains Forbidden (existing PD16 contract); unavailable status is BadRequest.
+        /// </summary>
+        private async Task<OwnershipTargetAvailability> EvaluateOwnershipTargetAvailabilityAsync(
+            Guid tenantId,
+            Guid targetCounselorId,
+            Guid? sessionBranchId)
+        {
+            var target = await _context.Users
+                .AsNoTracking()
+                .Where(u => u.Id == targetCounselorId)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.TenantId,
+                    u.DeletedAt,
+                    u.UserStatus,
+                    u.UserType,
+                    u.Designation,
+                })
+                .FirstOrDefaultAsync();
+
+            if (target == null || target.DeletedAt != null)
+            {
+                return new OwnershipTargetAvailability
+                {
+                    IsAvailable = false,
+                    FailureKind = AssignSessionFailureKind.NotFound,
+                    Message = "Target counsellor not found.",
+                };
+            }
+
+            if (target.TenantId != tenantId)
+            {
+                return new OwnershipTargetAvailability
+                {
+                    IsAvailable = false,
+                    FailureKind = AssignSessionFailureKind.Forbidden,
+                    Message = "Target counsellor is not valid for this session.",
+                };
+            }
+
+            if (CounsellorOwnershipAvailability.IsUnavailableUserStatus(target.UserStatus))
+            {
+                return new OwnershipTargetAvailability
+                {
+                    IsAvailable = false,
+                    FailureKind = AssignSessionFailureKind.BadRequest,
+                    Message = "Target counsellor is unavailable for ownership.",
+                };
+            }
+
+            if (!await IsAssignableCounsellorAsync(targetCounselorId, target.UserType, target.Designation))
+            {
+                return new OwnershipTargetAvailability
+                {
+                    IsAvailable = false,
+                    FailureKind = AssignSessionFailureKind.BadRequest,
+                    Message = "Target user is not a counsellor.",
+                };
+            }
+
+            if (sessionBranchId.HasValue)
+            {
+                try
+                {
+                    await _followupBranchAccess.ResolveAccessibleBranchesAsync(
+                        tenantId, targetCounselorId, sessionBranchId);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return new OwnershipTargetAvailability
+                    {
+                        IsAvailable = false,
+                        FailureKind = AssignSessionFailureKind.Forbidden,
+                        Message = "Target counsellor is not authorized for this session branch.",
+                    };
+                }
+            }
+
+            return new OwnershipTargetAvailability { IsAvailable = true };
+        }
+
+        public async Task<SessionOperationResult> StartSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, int? expectedVersion, string? sessionType = null)
         {
             try
             {
@@ -2268,6 +3031,10 @@ namespace AuthService.Services
                 var ownerDeny = DenyUnlessSessionOwner(session, currentUserId);
                 if (ownerDeny != null)
                     return ownerDeny;
+
+                var versionDeny = DenyUnlessExpectedVersion(session, expectedVersion);
+                if (versionDeny != null)
+                    return versionDeny;
 
                 if (!string.IsNullOrWhiteSpace(sessionType))
                     session.SessionType = sessionType.Trim();
@@ -2326,7 +3093,7 @@ namespace AuthService.Services
             }
         }
 
-        public async Task<SessionOperationResult> CompleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId)
+        public async Task<SessionOperationResult> CompleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, int? expectedVersion)
         {
             try
             {
@@ -2346,6 +3113,10 @@ namespace AuthService.Services
                 var ownerDeny = DenyUnlessSessionOwner(session, currentUserId);
                 if (ownerDeny != null)
                     return ownerDeny;
+
+                var versionDeny = DenyUnlessExpectedVersion(session, expectedVersion);
+                if (versionDeny != null)
+                    return versionDeny;
 
                 session.Status = "Completed";
                 session.SessionEndTime = DateTime.UtcNow;
@@ -2557,7 +3328,7 @@ namespace AuthService.Services
             }
         }
 
-        public async Task<SessionOperationResult> CancelSessionAsync(Guid tenantId, Guid sessionId, string reason, Guid currentUserId)        {
+        public async Task<SessionOperationResult> CancelSessionAsync(Guid tenantId, Guid sessionId, string reason, Guid currentUserId, int? expectedVersion)        {
             try
             {
                 var session = await _context.CounselingSession
@@ -2576,6 +3347,10 @@ namespace AuthService.Services
                 var ownerDeny = DenyUnlessSessionOwner(session, currentUserId);
                 if (ownerDeny != null)
                     return ownerDeny;
+
+                var versionDeny = DenyUnlessExpectedVersion(session, expectedVersion);
+                if (versionDeny != null)
+                    return versionDeny;
 
                 session.Status = "Cancelled";
                 session.ReasonsForDelay = reason;
@@ -2617,7 +3392,7 @@ namespace AuthService.Services
             }
         }
 
-        public async Task<bool> DeleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId)
+        public async Task<SessionOperationResult> DeleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, int? expectedVersion)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -2626,7 +3401,23 @@ namespace AuthService.Services
                     .FirstOrDefaultAsync(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null);
 
                 if (session == null)
-                    return false;
+                {
+                    await transaction.RollbackAsync();
+                    return new SessionOperationResult
+                    {
+                        Success = false,
+                        FailureKind = SessionOperationFailureKind.NotFound,
+                        Message = "Session not found"
+                    };
+                }
+
+                // Phase 3I Slice 7 (PD-S7-02/05/06): expected Version required; stale → Conflict (409).
+                var versionDeny = DenyUnlessExpectedVersion(session, expectedVersion);
+                if (versionDeny != null)
+                {
+                    await transaction.RollbackAsync();
+                    return versionDeny;
+                }
 
                 // Soft delete queue items
                 var queueItems = await _context.CounselorQueue
@@ -2670,7 +3461,12 @@ namespace AuthService.Services
                 await transaction.CommitAsync();
 
                 _logger.LogInformation("Soft deleted counseling session {SessionId}", sessionId);
-                return true;
+                return new SessionOperationResult
+                {
+                    Success = true,
+                    Message = "Session deleted successfully",
+                    SessionId = sessionId,
+                };
             }
             catch (Exception ex)
             {
@@ -2967,6 +3763,7 @@ namespace AuthService.Services
                         SessionType = s.SessionType,
                         PatientType = s.PatientType,
                         Status = s.Status,
+                        Version = s.Version,
                         CreatedAt = s.CreatedAt
                     })
                     .FirstOrDefaultAsync();
@@ -2990,7 +3787,7 @@ namespace AuthService.Services
             }
         }
 
-        public async Task<bool> StartSessionFromQueueAsync(Guid tenantId, Guid queueItemId, Guid currentUserId)
+        public async Task<bool> StartSessionFromQueueAsync(Guid tenantId, Guid queueItemId, Guid currentUserId, int? expectedVersion = null)
         {
             try
             {
@@ -3009,6 +3806,11 @@ namespace AuthService.Services
                     var ownerDeny = DenyUnlessSessionOwner(session, currentUserId);
                     if (ownerDeny != null)
                         throw new UnauthorizedAccessException(ownerDeny.Message);
+
+                    // Phase 3I Slice 7 (M11): no HTTP route today. When a caller supplies an expected
+                    // Version, honor it (fail closed); tests-only callers that omit it are unaffected.
+                    if (expectedVersion.HasValue && session.Version != expectedVersion.Value)
+                        throw new InvalidOperationException(SessionConcurrency.StaleMessage);
                 }
 
                 queueItem.Status = "InProgress";
@@ -3659,6 +4461,118 @@ namespace AuthService.Services
         }
 
         /// <summary>
+        /// PD-C — block duplicate CounselingSession when a non-historical episode exists.
+        /// SurgeryDone is derived only from OtFinalizeSchedules (no session-level field).
+        /// Done (Completed + agreed) + !SurgeryDone → ReEvaluate; other non-historical → continue existing.
+        /// </summary>
+        private async Task<SessionOperationResult?> TryGetCreateSessionReuseBlockAsync(
+            Guid tenantId,
+            Guid patientId)
+        {
+            var candidates = await _context.CounselingSession
+                .AsNoTracking()
+                .Where(s =>
+                    s.TenantId == tenantId
+                    && s.PatientId == patientId
+                    && s.DeletedAt == null
+                    && s.Status != "Cancelled")
+                .Select(s => new
+                {
+                    s.Id,
+                    s.PatientAgreedToSurgery,
+                    s.Status,
+                })
+                .ToListAsync();
+
+            if (candidates.Count == 0)
+                return null;
+
+            var candidateIds = candidates.Select(c => c.Id).ToList();
+            var surgeryDoneIds = await _context.OtFinalizeSchedules
+                .AsNoTracking()
+                .Where(o =>
+                    o.TenantId == tenantId
+                    && o.DeletedAt == null
+                    && o.Status == OtFinalizeStatus.SurgeryDone
+                    && o.CounsellingSessionId != null
+                    && candidateIds.Contains(o.CounsellingSessionId.Value))
+                .Select(o => o.CounsellingSessionId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            var activeEpisodes = candidates
+                .Where(c => !surgeryDoneIds.Contains(c.Id))
+                .ToList();
+
+            if (activeEpisodes.Count == 0)
+                return null;
+
+            var episodeIds = activeEpisodes.Select(e => e.Id).ToList();
+            var queueRows = await _context.CounselorQueue
+                .AsNoTracking()
+                .Where(q =>
+                    q.TenantId == tenantId
+                    && q.DeletedAt == null
+                    && episodeIds.Contains(q.SessionId))
+                .Select(q => new { q.SessionId, q.Status })
+                .ToListAsync();
+
+            var queueBySession = queueRows
+                .GroupBy(q => q.SessionId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Status).ToList());
+
+            // Prefer Done + !SurgeryDone → ReEvaluate when present.
+            foreach (var episode in activeEpisodes)
+            {
+                if (!queueBySession.TryGetValue(episode.Id, out var statuses))
+                    statuses = new List<string>();
+                var hasCompletedQueue = statuses.Any(s => s == "Completed");
+                var sessionCompleted = episode.Status == "Completed";
+                if ((hasCompletedQueue || sessionCompleted) && episode.PatientAgreedToSurgery == true)
+                {
+                    return new SessionOperationResult
+                    {
+                        Success = false,
+                        FailureKind = SessionOperationFailureKind.Conflict,
+                        SessionId = episode.Id,
+                        Message =
+                            "Existing counselling is completed but surgery is not done. ReEvaluate the existing counselling session instead of creating another.",
+                    };
+                }
+            }
+
+            foreach (var episode in activeEpisodes)
+            {
+                if (!queueBySession.TryGetValue(episode.Id, out var statuses))
+                    statuses = new List<string>();
+                var hasActiveQueue = statuses.Any(s =>
+                    s == "Waiting" || s == "InProgress" || s == "Called" || s == "AddOnSurgery");
+                if (hasActiveQueue)
+                {
+                    return new SessionOperationResult
+                    {
+                        Success = false,
+                        FailureKind = SessionOperationFailureKind.Conflict,
+                        SessionId = episode.Id,
+                        Message =
+                            "Patient already has an active counselling session. Open the existing waiting list row instead of creating another.",
+                    };
+                }
+            }
+
+            // Any remaining non-SurgeryDone episode (e.g. Completed + not agreed) stays same-session.
+            var existing = activeEpisodes[0];
+            return new SessionOperationResult
+            {
+                Success = false,
+                FailureKind = SessionOperationFailureKind.Conflict,
+                SessionId = existing.Id,
+                Message =
+                    "Patient already has an open counselling episode. Continue the existing session instead of creating another.",
+            };
+        }
+
+        /// <summary>
         /// Phase 3I Slice 4 (PD-AUTH-01 / S4-D3–D5): owner-level counselling mutate
         /// requires current CounselorId == actor. Unassigned and non-owner → Forbidden.
         /// No Admin content bypass (Slice 6 for supervisory ops).
@@ -3685,6 +4599,37 @@ namespace AuthService.Services
                     Success = false,
                     FailureKind = SessionOperationFailureKind.Forbidden,
                     Message = "Only the assigned counsellor may mutate this session."
+                };
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Phase 3I Slice 7 (PD-S7-02/05/06): missing expected Version → BadRequest (fail closed, no LWW);
+        /// stale Version → Conflict (409), distinct from ownership Forbidden (403).
+        /// </summary>
+        private static SessionOperationResult? DenyUnlessExpectedVersion(
+            CounselingSession session,
+            int? expectedVersion)
+        {
+            if (!expectedVersion.HasValue)
+            {
+                return new SessionOperationResult
+                {
+                    Success = false,
+                    FailureKind = SessionOperationFailureKind.BadRequest,
+                    Message = "Version is required."
+                };
+            }
+
+            if (session.Version != expectedVersion.Value)
+            {
+                return new SessionOperationResult
+                {
+                    Success = false,
+                    FailureKind = SessionOperationFailureKind.Conflict,
+                    Message = SessionConcurrency.StaleMessage
                 };
             }
 

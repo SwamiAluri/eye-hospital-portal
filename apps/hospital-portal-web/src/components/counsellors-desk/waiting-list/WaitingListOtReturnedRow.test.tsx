@@ -76,7 +76,7 @@ function expandRow(props: WaitingListOtReturnedRowProps): ReactElement {
 }
 
 describe('WaitingListOtReturnedRow', () => {
-  it('renders procedure, return reason, OT grid, and Re-plan action', () => {
+  it('renders procedure, return reason, OT grid, and Continue Counselling action', () => {
     const html = renderToStaticMarkup(
       <WaitingListOtReturnedRow
         row={baseRow()}
@@ -91,12 +91,16 @@ describe('WaitingListOtReturnedRow', () => {
     expect(html).toContain('Ravi Kumar');
     expect(html).toContain('UHID-9001');
     expect(html).toContain('staff-worklist-row');
-    expect(html).toContain('Re-plan');
-    expect(html).toContain('waiting-list-ot-action-replan');
-    expect(html).not.toContain('border-l-2');
+    expect(html).toContain('Continue Counselling');
+    expect(html).toContain('waiting-list-ot-action-continue-counselling');
+    expect(html).not.toContain('Re-plan');
+    expect(html).not.toContain('Open journey');
+    expect(html).toContain('border-l-2');
+    expect(html).toContain('border-l-rose-400/70');
+    expect(html).toContain('OT returned:');
   });
 
-  it('navigates via resolveOtReturnedAction href on action click', () => {
+  it('navigates via continue href on action click', () => {
     const onNavigate = vi.fn();
     const tree = expandRow({
       row: baseRow({ counselingSessionId: 'session-42' }),
@@ -110,7 +114,10 @@ describe('WaitingListOtReturnedRow', () => {
         'data-testid'?: string;
         onClick?: (e: MouseEvent) => void;
       };
-      if (props['data-testid'] === 'waiting-list-ot-action-replan' && props.onClick) {
+      if (
+        props['data-testid'] === 'waiting-list-ot-action-continue-counselling' &&
+        props.onClick
+      ) {
         props.onClick({} as MouseEvent);
         clicked = true;
       }
@@ -122,16 +129,81 @@ describe('WaitingListOtReturnedRow', () => {
     );
   });
 
-  it('falls back to Open journey when counselingSessionId is missing', () => {
+  it('shows Start Counselling when counselingSessionId is missing', () => {
     const html = renderToStaticMarkup(
       <WaitingListOtReturnedRow
         row={baseRow({ counselingSessionId: null })}
         index={0}
         onNavigate={vi.fn()}
+        onStartCounselling={vi.fn()}
       />,
     );
 
-    expect(html).toContain('Open journey');
-    expect(html).toContain('waiting-list-ot-action-open-journey');
+    expect(html).toContain('Start Counselling');
+    expect(html).toContain('waiting-list-ot-action-start-counselling');
+    expect(html).not.toContain('Open journey');
+    expect(html).not.toContain('Continue Counselling');
+  });
+
+  it('invokes onStartCounselling for no-session rows', () => {
+    const onStart = vi.fn();
+    const row = baseRow({ counselingSessionId: null });
+    const tree = expandRow({
+      row,
+      index: 0,
+      onNavigate: vi.fn(),
+      onStartCounselling: onStart,
+    });
+
+    walkElements(tree, (el) => {
+      const props = el.props as {
+        'data-testid'?: string;
+        onClick?: (e: MouseEvent) => void;
+      };
+      if (
+        props['data-testid'] === 'waiting-list-ot-action-start-counselling' &&
+        props.onClick
+      ) {
+        props.onClick({} as MouseEvent);
+      }
+    });
+
+    expect(onStart).toHaveBeenCalledWith(row);
+  });
+
+  it('does not change action by otReturnReason when session is present', () => {
+    const reasons = [
+      'Equipment delay — lens unavailable',
+      'BP high',
+      'Anaesthesia Contraindication',
+    ];
+    for (const otReturnReason of reasons) {
+      const html = renderToStaticMarkup(
+        <WaitingListOtReturnedRow
+          row={baseRow({ otReturnReason, counselingSessionId: 'session-42' })}
+          index={0}
+          onNavigate={vi.fn()}
+        />,
+      );
+      expect(html).toContain('Continue Counselling');
+      expect(html).toContain('waiting-list-ot-action-continue-counselling');
+    }
+  });
+
+  it('does not change action by otReturnReason when session is absent', () => {
+    const reasons = ['Equipment delay', 'BP high', 'Uncontrolled Blood Sugar'];
+    for (const otReturnReason of reasons) {
+      const html = renderToStaticMarkup(
+        <WaitingListOtReturnedRow
+          row={baseRow({ otReturnReason, counselingSessionId: null })}
+          index={0}
+          onNavigate={vi.fn()}
+          onStartCounselling={vi.fn()}
+        />,
+      );
+      expect(html).toContain('Start Counselling');
+      expect(html).toContain('waiting-list-ot-action-start-counselling');
+      expect(html).not.toContain('Continue Counselling');
+    }
   });
 });

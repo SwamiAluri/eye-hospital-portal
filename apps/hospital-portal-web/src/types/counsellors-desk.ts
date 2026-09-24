@@ -77,6 +77,11 @@ export interface WaitingListPatient {
   counselorId?: string | null;
   /** Display name for counselorId when assigned. */
   counselorName?: string | null;
+  /**
+   * Optimistic concurrency token for the underlying CounselingSession (Phase 3I Slice 7 / PD-S7-01).
+   * Hydrated from waiting-list API `version` (Auth CounselingSession.Version).
+   */
+  version?: number;
   /** Queue/session branch — Assign picker filter (UX); server validates assignment. */
   branchId?: string | null;
   /** Patient demographics — returned from backend for quick display. */
@@ -178,6 +183,12 @@ export interface CounsellingSession {
   status: WaitingListStatus;
   /** Active counselling owner (Auth CounselorId). Null = unassigned. */
   counselorId?: string | null;
+  /**
+   * Optimistic concurrency token for CounselingSession.Version (Phase 3I Slice 7 / PD-S7-01).
+   * Hydrated from the session GET response; must be sent back as the expected Version on every
+   * covered mutation (save/start/complete/assign/claim/reassign/refresh-from-opd/communication-log).
+   */
+  version?: number;
   /** Master code from counsellor.session_type (e.g. INITIAL, FOLLOW_UP). */
   sessionTypeCode?: string;
   sessionStatus?: string;
@@ -435,7 +446,10 @@ export interface ActiveFollowupRecord {
   uhid: string | null;
   phone: string | null;
   branchId: string | null;
-  /** Authoritative owner — CounselingSession.CounselorId (Phase2X PD7). */
+  /**
+   * Historical/original counselling attribution — CounselingSession.CounselorId.
+   * Phase 3I Slice 10 / PD-FOLLOWUP-01: NOT Follow-up Center ACL.
+   */
   counselorId: string | null;
   /** Display name when resolvable; null when unassigned/unknown. */
   counselorName: string | null;
@@ -457,7 +471,10 @@ export interface ColdLeadRecord {
   uhid: string | null;
   phone: string | null;
   branchId: string | null;
-  /** Authoritative owner — CounselingSession.CounselorId (Phase2X PD7). */
+  /**
+   * Historical/original counselling attribution — CounselingSession.CounselorId.
+   * Phase 3I Slice 10 / PD-FOLLOWUP-01: NOT Follow-up Center ACL.
+   */
   counselorId: string | null;
   /** Display name when resolvable; null when unassigned/unknown. */
   counselorName: string | null;
@@ -552,10 +569,25 @@ export interface FollowupListQueryParams {
 }
 
 export interface ReQueuePayload {
+  /** Phase 3I Slice 8 (PD-S8-06) — expected CounselingSession.Version */
+  version: number;
+  /** Phase 3I Slice 8 (PD-S8-14) — expected owner; null when already unassigned */
+  expectedCounselorId: string | null;
+  /** Phase 3I Slice 8 (PD-S8-08) — required concise reason */
+  reason: string;
   newIntention?: PatientIntention;
   notes?: string;
   /** Master code from counsellor.session_type */
   sessionType?: string;
+}
+
+export interface ReQueueSessionResponse {
+  success: boolean;
+  tokenNumber: string;
+  queueItemId: string;
+  message: string;
+  counselorId?: string | null;
+  version?: number;
 }
 
 /** Master code from counsellor.reminder_type (or legacy API keys) */

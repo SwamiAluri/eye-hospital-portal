@@ -215,8 +215,9 @@ public class Phase3ISlice6ReassignOwnershipTests : IDisposable
         Guid target,
         Guid expected,
         Guid actor,
-        string reason = DefaultReason) =>
-        _svc.ReassignSessionAsync(_tenant, sessionId, target, expected, reason, actor);
+        string reason = DefaultReason,
+        int? expectedVersion = 1) =>
+        _svc.ReassignSessionAsync(_tenant, sessionId, target, expected, reason, expectedVersion, actor);
 
     [Fact]
     public async Task Reassign_PendingWaiting_AtoB_Succeeds_StatusQueueUnchanged_DualTrail()
@@ -477,11 +478,11 @@ public class Phase3ISlice6ReassignOwnershipTests : IDisposable
         var reassigned = await ReassignAsync(sessionId, _ravi, _amelia, _admin);
         Assert.True(reassigned.Success);
 
-        var oldOwnerStart = await _svc.StartSessionAsync(_tenant, sessionId, _amelia);
+        var oldOwnerStart = await _svc.StartSessionAsync(_tenant, sessionId, _amelia, reassigned.Version);
         Assert.False(oldOwnerStart.Success);
         Assert.Equal(SessionOperationFailureKind.Forbidden, oldOwnerStart.FailureKind);
 
-        var newOwnerStart = await _svc.StartSessionAsync(_tenant, sessionId, _ravi);
+        var newOwnerStart = await _svc.StartSessionAsync(_tenant, sessionId, _ravi, reassigned.Version);
         Assert.True(newOwnerStart.Success);
 
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);

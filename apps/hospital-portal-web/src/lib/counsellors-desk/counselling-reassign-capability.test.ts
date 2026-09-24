@@ -80,8 +80,13 @@ describe('Phase 3I Slice 6 — counselling reassign auth helpers', () => {
     );
     expect(src).toContain('reassignSession');
     expect(src).toContain('expectedCounselorId');
+    expect(src).toContain('reason: resolved.reason');
     expect(src).toContain('Reason is required');
-    expect(src).toContain('status === 409');
+    // Phase 3I Slice 7 (PD-S7-06): 409s (ownership or stale Version) go through the shared
+    // concurrency helper instead of a hardcoded status check.
+    expect(src).toContain('isSessionConcurrencyConflict');
+    expect(src).not.toContain('reasonCode');
+    expect(src).not.toContain('reasonId');
   });
 });
 

@@ -87,7 +87,7 @@ describe('WaitingListWorkRow lifecycle CTAs (ownership claim)', () => {
     expect(html).not.toContain('waiting-list-row-assign');
   });
 
-  it('Repeat + NULL shows Start Repeat (not Assign)', () => {
+  it('Repeat + NULL shows Assign (not Start Repeat) when canAssign — PD-B', () => {
     const html = renderToStaticMarkup(
       expandRow(
         baseProps({
@@ -95,8 +95,8 @@ describe('WaitingListWorkRow lifecycle CTAs (ownership claim)', () => {
         }),
       ),
     );
-    expect(html).toContain('waiting-list-row-lifecycle-start-repeat');
-    expect(html).not.toContain('waiting-list-row-assign');
+    expect(html).toContain('waiting-list-row-assign');
+    expect(html).not.toContain('waiting-list-row-lifecycle-start-repeat');
   });
 
   it('Done + current owner shows Re-evaluate', () => {

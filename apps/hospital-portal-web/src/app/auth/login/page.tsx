@@ -21,6 +21,7 @@ import {
   AuthCardBottomActions,
 } from '@/components/auth/AuthFormFields';
 import { AuthDevPanel } from '@/components/auth/AuthDevPanel';
+import { AUTH_NETWORK_HOSPITAL_FIELD } from '@/components/auth/network-hospital-login';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -231,17 +232,17 @@ export default function LoginPage() {
               {error && <AuthAlert variant="error">{error}</AuthAlert>}
 
               <AuthSelectField
-                id="hospital"
-                label="Hospital"
+                id={AUTH_NETWORK_HOSPITAL_FIELD.id}
+                label={AUTH_NETWORK_HOSPITAL_FIELD.label}
                 icon="clinical_notes"
                 value={tenantId}
                 onChange={(e) => setTenantId(e.target.value)}
                 loading={isLoadingTenants}
-                loadingText="Loading hospitals…"
+                loadingText={AUTH_NETWORK_HOSPITAL_FIELD.loadingText}
                 required
                 disabled={isLoadingTenants}
               >
-                <option value="">Select your hospital</option>
+                <option value="">{AUTH_NETWORK_HOSPITAL_FIELD.placeholder}</option>
                 {tenants.map((tenant) => (
                   <option key={tenant.id} value={tenant.id}>
                     {tenant.name}

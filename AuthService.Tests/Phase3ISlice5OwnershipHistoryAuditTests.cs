@@ -240,6 +240,10 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
         _db.CounselingSessionAuditLog.Count(h =>
             h.SessionId == sessionId && h.ChangeType == changeType);
 
+    /// <summary>Phase 3I Slice 7 (PD-S7-01) — fetch the current DB Version right before a mutation call.</summary>
+    private async Task<int> CurrentVersionAsync(Guid sessionId) =>
+        (await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId)).Version;
+
     [Fact]
     public async Task Create_Counsellor_WritesOwnershipEstablishedOnCreate_DualTrail()
     {
@@ -286,7 +290,7 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
     {
         var sessionId = await SeedUnassignedWaitingSessionAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _admin);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _admin);
 
         Assert.True(result.Success);
         Assert.Equal(_ravi, result.CounselorId);
@@ -313,7 +317,7 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
     {
         var sessionId = await SeedUnassignedWaitingSessionAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(1, HistoryCount(sessionId, "OwnershipAssigned"));
@@ -331,10 +335,10 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
     public async Task Assign_AlreadyOwned_Conflict_NoTrail()
     {
         var sessionId = await SeedUnassignedWaitingSessionAsync();
-        Assert.True((await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _admin)).Success);
+        Assert.True((await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _admin)).Success);
         _audit.Invocations.Clear();
 
-        var conflict = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _admin);
+        var conflict = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _admin);
 
         Assert.False(conflict.Success);
         Assert.Equal(AssignSessionFailureKind.Conflict, conflict.FailureKind);
@@ -358,7 +362,7 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
         await _db.SaveChangesAsync();
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, null, CounselingLifecycleClaimIntent.ReEvaluate, _ravi);
+            _tenant, sessionId, null, CounselingLifecycleClaimIntent.ReEvaluate, await CurrentVersionAsync(sessionId), _ravi);
 
         Assert.True(result.Success);
         Assert.Equal(_ravi, result.CounselorId);
@@ -383,7 +387,7 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
         var sessionId = await SeedOwnedCompletedSessionAsync(_amelia, agreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.ReEvaluate, _ravi);
+            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.ReEvaluate, await CurrentVersionAsync(sessionId), _ravi);
 
         Assert.True(result.Success);
         var hist = _db.CounselingSessionAuditLog.Single(h =>
@@ -399,7 +403,7 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
         var sessionId = await SeedOwnedCompletedSessionAsync(_amelia, agreed: false);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.StartRepeat, _ravi);
+            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.StartRepeat, await CurrentVersionAsync(sessionId), _ravi);
 
         Assert.True(result.Success);
         var hist = _db.CounselingSessionAuditLog.Single(h =>
@@ -413,7 +417,7 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
         var sessionId = await SeedOwnedCompletedSessionAsync(_amelia, agreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.ReEvaluate, _amelia);
+            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.ReEvaluate, await CurrentVersionAsync(sessionId), _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(0, HistoryCount(sessionId, "OwnershipClaimed"));
@@ -433,7 +437,7 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
         var sessionId = await SeedOwnedCompletedSessionAsync(_amelia, agreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, _ravi);
+            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, await CurrentVersionAsync(sessionId), _ravi);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Conflict, result.FailureKind);
@@ -457,7 +461,7 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
                 It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()))
             .ThrowsAsync(new InvalidOperationException("audit store unreachable"));
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _admin);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, await CurrentVersionAsync(sessionId), _admin);
 
         Assert.False(result.Success);
         var session = await _db.CounselingSession.AsNoTracking().SingleAsync(s => s.Id == sessionId);
@@ -469,10 +473,11 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
     public async Task UpdateSession_CounselorId_StillRejected_400()
     {
         var sessionId = await SeedUnassignedWaitingSessionAsync();
-        Assert.True((await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _admin)).Success);
+        Assert.True((await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _admin)).Success);
 
         var result = await _svc.UpdateSessionAsync(_tenant, sessionId, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(sessionId),
             CounselorId = _ravi,
             ClinicalSummary = "should not apply",
         }, _amelia);
@@ -485,37 +490,12 @@ public class Phase3ISlice5OwnershipHistoryAuditTests : IDisposable
     }
 
     [Fact]
-    public async Task Requeue_RetainsCounselorId_NoOwnershipRequeuedEvent()
+    public void Requeue_OwnershipClear_IsSlice8_NotSlice5()
     {
-        // Slice 5 must not clear ownership — exercise service-adjacent DB path used by controller.
-        var sessionId = await SeedOwnedCompletedSessionAsync(_amelia, agreed: true);
-        var session = await _db.CounselingSession.SingleAsync(s => s.Id == sessionId);
-        Assert.Equal(_amelia, session.CounselorId);
-
-        // Mirror controller ReQueueSession ownership retention (no CounselorId clear).
-        session.UpdatedAt = DateTime.UtcNow;
-        session.UpdatedByUserId = _amelia;
-        _db.CounselorQueue.Add(new CounselorQueueItem
-        {
-            Id = Guid.NewGuid(),
-            TenantId = _tenant,
-            BranchId = _branch,
-            SessionId = sessionId,
-            PatientId = _patient,
-            TokenNumber = "FU-S5",
-            QueueType = "RepeatCounselling",
-            QueuePosition = 99,
-            PriorityScore = 60,
-            UrgencyLevel = "Normal",
-            Status = "Waiting",
-            AddedToQueueAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-        await _db.SaveChangesAsync();
-
-        var after = await _db.CounselingSession.AsNoTracking().SingleAsync(s => s.Id == sessionId);
-        Assert.Equal(_amelia, after.CounselorId);
-        Assert.Equal(0, HistoryCount(sessionId, "OwnershipRequeued"));
+        // Slice 5 reserved OwnershipRequeued without emitting it.
+        // Slice 8 owns ReQueue → NULL; see Phase3ISlice8RequeueOwnershipTests.
+        Assert.Equal(
+            "OwnershipRequeued",
+            CounselingWorkflowService.OwnershipAuditEvents.Requeued);
     }
 }

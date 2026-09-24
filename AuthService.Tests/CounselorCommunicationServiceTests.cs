@@ -71,6 +71,7 @@ public class CounselorCommunicationServiceTests : IDisposable
             _session,
             new CreateCommLogRequest
             {
+                Version = 1,
                 Channel = "Phone",
                 Direction = "Outbound",
                 Outcome = "Answered",
@@ -93,6 +94,7 @@ public class CounselorCommunicationServiceTests : IDisposable
             _session,
             new CreateCommLogRequest
             {
+                Version = 1,
                 Channel = "Phone",
                 Direction = "Outbound",
                 Outcome = "LeftMessage",
@@ -130,6 +132,7 @@ public class CounselorCommunicationServiceTests : IDisposable
             _session,
             new CreateCommLogRequest
             {
+                Version = 1,
                 Channel = "Phone",
                 Direction = "Outbound",
                 Outcome = "Answered",
@@ -154,6 +157,44 @@ public class CounselorCommunicationServiceTests : IDisposable
 
         var session = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == _session);
         Assert.Equal("Declined", session.PatientIntention);
+    }
+
+    /// <summary>
+    /// Phase 3I Slice 10 (PD-S10-03 / PD-FOLLOWUP-01): contact actor attribution lives on the
+    /// communication log — must not overwrite CounselingSession.CounselorId.
+    /// </summary>
+    [Fact]
+    public async Task AddCommLog_DoesNotOverwriteSessionCounselorId_WhenActorDiffers()
+    {
+        var originalOwner = Guid.Parse("d00000c1-0000-0000-0000-0000000000c1");
+        var actor = _user;
+        Assert.NotEqual(originalOwner, actor);
+
+        var tracked = await _db.CounselingSession.FirstAsync(s => s.Id == _session);
+        tracked.CounselorId = originalOwner;
+        await _db.SaveChangesAsync();
+        var versionBefore = tracked.Version;
+
+        await _svc.AddCommLogAsync(
+            _session,
+            new CreateCommLogRequest
+            {
+                Version = versionBefore,
+                Channel = "Phone",
+                Direction = "Outbound",
+                Outcome = "Answered",
+                ResponseSummary = "Follow-up contact by peer",
+            },
+            _tenant,
+            actor);
+
+        var session = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == _session);
+        Assert.Equal(originalOwner, session.CounselorId);
+
+        var log = await _db.CounselorCommunicationLogs.AsNoTracking()
+            .SingleAsync(l => l.SessionId == _session && l.DeletedAt == null);
+        Assert.Equal(actor, log.CounselorId);
+        Assert.Equal(actor, log.CreatedByUserId);
     }
 
     [Fact]

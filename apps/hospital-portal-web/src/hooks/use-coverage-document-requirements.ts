@@ -1,12 +1,18 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { listDocumentRequirements } from '@/lib/api/ccms/ccms-master-data.api';
+import {
+  listDocumentRequirements,
+  type DocumentRequirement,
+} from '@/lib/api/ccms/ccms-master-data.api';
 import {
   countRequiredFromRequirementRows,
   slotsFromMasterOrFallback,
   withBiometrySlot,
   type SlotDef,
 } from '@/lib/ccms/ccms-document-slots';
+
+/** Stable empty fallback — inline `?? []` recreates identity every render and thrash dependents. */
+export const EMPTY_DOCUMENT_REQUIREMENTS: DocumentRequirement[] = [];
 
 export interface UseCoverageDocumentRequirementsOptions {
   caseId?: string;
@@ -50,7 +56,7 @@ export function useCoverageDocumentRequirements(
     staleTime: 60_000,
   });
 
-  const requirements = query.data ?? [];
+  const requirements = query.data ?? EMPTY_DOCUMENT_REQUIREMENTS;
   const usingMasterRequirements = requirements.length > 0;
 
   const slots = useMemo(

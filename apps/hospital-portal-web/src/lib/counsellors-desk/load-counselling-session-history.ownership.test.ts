@@ -14,4 +14,11 @@ describe('loadCounsellingSessionHistory ownership merge contract', () => {
     expect(src).toContain("if (e.changeType !== 'FieldChanged') return true");
     expect(src).toContain('counsellorsDeskApi.getSessionHistory');
   });
+
+  it('merges AdditionalNotes ReQueue markers into History only when OwnershipRequeued is missing', () => {
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(dir, 'load-counselling-session-history.ts'), 'utf8');
+    expect(src).toContain('requeueHistoryEntriesFromAdditionalNotes');
+    expect(src).toContain('additionalNotes');
+  });
 });

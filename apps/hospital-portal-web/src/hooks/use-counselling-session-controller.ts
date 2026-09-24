@@ -16,6 +16,8 @@ import {
   isCounsellingSessionOwner,
   isOwnershipReadOnly,
   isPendingLifecycleReadOnly,
+  resolveCompleteSessionDisabledReason,
+  resolveSaveDraftDisabledReason,
 } from '@/lib/counsellors-desk/counselling-ownership';
 import { useConfirmation } from '@/components/common/ConfirmationDialog';
 import { useMasterValues } from '@/hooks/use-master-values';
@@ -79,6 +81,7 @@ import {
   type CoverageProgressSnapshot,
 } from '@/lib/counsellors-desk/session-status-summary';
 import { saveCounsellingDraft } from '@/lib/counsellors-desk/save-counselling-draft';
+import { fetchCounsellingSessionVersion } from '@/lib/counsellors-desk/sync-counselling-session-version';
 import { planCounsellingDualDraftSave } from '@/lib/counsellors-desk/counselling-dual-draft-save';
 import type {
   CoverageDraftSaveOptions,
@@ -104,6 +107,16 @@ import { resolveSessionBackTarget } from '@/lib/counsellors-desk/counselling-ses
 import { assertCounsellingStartReachedProcessing } from '@/lib/counsellors-desk/counselling-start-persistence';
 import { isCounsellingTerminalOutcome, shouldAutoOpenFinishSummary } from '@/lib/counsellors-desk/counselling-finish-outcome';
 import { resolveCounsellingPrintDisabledReason } from '@/lib/counsellors-desk/counselling-print-gate';
+import { resolveMutationVersion } from '@/lib/counsellors-desk/session-version-authority';
+import {
+  composeCounsellorAdditionalNotes,
+  parseCounsellorAdditionalNotes,
+  type RequeueNoteEvent,
+} from '@/lib/counsellors-desk/requeue-notes-presentation';
+import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
 
 type MasterCatalogShape = {
   imaging: MasterCatalogItem[];
@@ -156,6 +169,45 @@ export function useCounsellingSessionController({
       : null;
 
   const [session, setSession] = useState<CounsellingSession | null>(null);
+  /**
+   * Sync authoritative Version for mutations. React `session.version` updates are async — after
+   * Start / Save Draft, an immediate Complete must not send the pre-mutation Version (false 409).
+   */
+  const sessionVersionRef = useRef<number | undefined>(undefined);
+  /**
+   * Phase 3I Slice 7 (PD-S7-01/06) — patch just `version` on local session state after a covered
+   * mutation succeeds. Never overwrites other in-progress form fields (unlike a full session reload).
+   */
+  const updateSessionVersion = useCallback((version?: number) => {
+    if (typeof version !== 'number') return;
+    sessionVersionRef.current = version;
+    setSession((prev) => (prev ? { ...prev, version } : prev));
+  }, []);
+  /** Refresh Version after CCMS/system writers without discarding dirty form fields. */
+  const syncSessionVersionFromServer = useCallback(async () => {
+    try {
+      const version = await fetchCounsellingSessionVersion(sessionId);
+      updateSessionVersion(version);
+      return version;
+    } catch {
+      return undefined;
+    }
+  }, [sessionId, updateSessionVersion]);
+  /** Fallback for mutations whose response does not echo the bumped Version (e.g. refresh-from-opd). */
+  const bumpSessionVersionLocally = useCallback(() => {
+    setSession((prev) => {
+      if (!prev || typeof prev.version !== 'number') return prev;
+      const next = prev.version + 1;
+      sessionVersionRef.current = next;
+      return { ...prev, version: next };
+    });
+  }, []);
+  /** Session object with sync Version for CounselingSession writes. */
+  const sessionForMutation = useCallback((): CounsellingSession | null => {
+    if (!session) return null;
+    const version = resolveMutationVersion(sessionVersionRef.current, session.version);
+    return version === session.version ? session : { ...session, version };
+  }, [session]);
   const sessionQuery = useCounsellingSessionQuery(sessionId);
   const sessionAppliedRef = useRef<string | null>(null);
   const investigationsHydratedRef = useRef<string | null>(null);
@@ -190,6 +242,8 @@ export function useCounsellingSessionController({
   const [decision, setDecision] = useState<DecisionType | ''>('');
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
   const [counsellorNotes, setCounsellorNotes] = useState('');
+  /** Historical ReQueue system lines — kept for AdditionalNotes compose; not shown in Notes UI. */
+  const requeueNoteEventsRef = useRef<RequeueNoteEvent[]>([]);
   const [patientRemarks, setPatientRemarks] = useState('');
   const [doctorNotes, setDoctorNotes] = useState('');
   const [wantToSeeDoctor, setWantToSeeDoctor] = useState(false);
@@ -404,10 +458,17 @@ export function useCounsellingSessionController({
 
   const handleCaseWorkspaceChange = useCallback(
     (snapshot: { ccmsCaseNumber?: string; ccmsCurrentState?: string }) => {
-      setWorkspaceCcmsCaseNumber(snapshot.ccmsCaseNumber);
-      setWorkspaceCcmsState(snapshot.ccmsCurrentState);
+      setWorkspaceCcmsCaseNumber((prev) =>
+        prev === snapshot.ccmsCaseNumber ? prev : snapshot.ccmsCaseNumber,
+      );
+      setWorkspaceCcmsState((prev) =>
+        prev === snapshot.ccmsCurrentState ? prev : snapshot.ccmsCurrentState,
+      );
+      // Coverage create/draft notifies Auth and bumps CounselingSession.Version — sync so
+      // the next Save Draft does not 409 as a false "another user" conflict.
+      void syncSessionVersionFromServer();
     },
-    [],
+    [syncSessionVersionFromServer],
   );
 
   const workspaceIntegrationContext = useMemo(
@@ -580,20 +641,40 @@ export function useCounsellingSessionController({
     pendingLocksMutations;
 
   const saveDisabledReason = useMemo((): string | null => {
-    if (isSurgeryDoneState) return 'Session is read-only';
-    if (pendingLocksMutations) return 'Start counselling to continue';
-    if (isSaving) return 'Completing session…';
-    if (isSavingDraft) return 'Saving…';
-    return validateSaveSessionDecision(phaseInput);
-  }, [isSurgeryDoneState, pendingLocksMutations, isSaving, isSavingDraft, phaseInput]);
+    return resolveCompleteSessionDisabledReason({
+      isSurgeryDoneState,
+      pendingLocksMutations,
+      ownershipLocksMutations,
+      isSaving,
+      isSavingDraft,
+      decisionValidationError: validateSaveSessionDecision(phaseInput),
+    });
+  }, [
+    isSurgeryDoneState,
+    pendingLocksMutations,
+    ownershipLocksMutations,
+    isSaving,
+    isSavingDraft,
+    phaseInput,
+  ]);
 
   const saveDraftDisabledReason = useMemo((): string | null => {
-    if (isSurgeryDoneState) return 'Session is read-only';
-    if (pendingLocksMutations) return 'Start counselling to continue';
-    if (isSaving || isSavingDraft) return 'Saving…';
-    if (isRepeatState) return 'Start repeat session to continue';
-    return null;
-  }, [isSurgeryDoneState, pendingLocksMutations, isSaving, isSavingDraft, isRepeatState]);
+    return resolveSaveDraftDisabledReason({
+      isSurgeryDoneState,
+      pendingLocksMutations,
+      ownershipLocksMutations,
+      isSaving,
+      isSavingDraft,
+      isRepeatState,
+    });
+  }, [
+    isSurgeryDoneState,
+    pendingLocksMutations,
+    ownershipLocksMutations,
+    isSaving,
+    isSavingDraft,
+    isRepeatState,
+  ]);
 
   const printDisabledReason = useMemo(
     (): string | null =>
@@ -822,6 +903,9 @@ export function useCounsellingSessionController({
     let cancelled = false;
 
     const applySessionData = (data: CounsellingSession) => {
+      if (typeof data.version === 'number') {
+        sessionVersionRef.current = data.version;
+      }
       setSession(data);
       setSelectedSurgeryId(data.selectedSurgeryId ?? null);
 
@@ -872,7 +956,9 @@ export function useCounsellingSessionController({
           ? { ...data.schedule, selectedDate: toCounsellingDateOnly(data.schedule.selectedDate) }
           : null,
       );
-      setCounsellorNotes(data.counsellorNotes);
+      const parsedNotes = parseCounsellorAdditionalNotes(data.counsellorNotes);
+      setCounsellorNotes(parsedNotes.workingNotes);
+      requeueNoteEventsRef.current = parsedNotes.requeueEvents;
       setPatientRemarks(data.patientRemarks);
       setDoctorNotes(data.doctorNotes);
       setWantToSeeDoctor(data.wantToSeeDoctor);
@@ -893,7 +979,7 @@ export function useCounsellingSessionController({
         decision: data.decision ?? '',
         followUpReason: data.followUpReason ?? '',
         followUpDate: data.followUpDate ?? '',
-        counsellorNotes: data.counsellorNotes ?? '',
+        counsellorNotes: parsedNotes.workingNotes,
         patientRemarks: data.patientRemarks ?? '',
         doctorNotes: data.doctorNotes ?? '',
         wantToSeeDoctor: data.wantToSeeDoctor ?? false,
@@ -1210,10 +1296,16 @@ export function useCounsellingSessionController({
   }, []);
 
   const executeReEvaluate = useCallback(async () => {
+    const mutationSession = sessionForMutation();
     try {
       // Auth StartSession is authoritative (Completed → InProgress, clear agreement flags).
       // Waiting List projects Processing from Auth queue — Azure alone must not drive status.
-      await counsellorsDeskApi.startSession(sessionId);
+      const started = await counsellorsDeskApi.startSession(
+        sessionId,
+        undefined,
+        mutationSession?.version,
+      );
+      updateSessionVersion(started.version);
       // Azure enrichment (Done → Processed) — best-effort; API client already swallows errors.
       await counsellingAzureApi.reEvaluate(sessionId);
       setQueueStatus('Processed');
@@ -1225,10 +1317,22 @@ export function useCounsellingSessionController({
       invalidateWaitingList();
       invalidateSession(sessionId);
       toast.success('Session reopened for re-evaluation');
-    } catch {
+    } catch (err) {
+      // Phase 3I Slice 7 (PD-S7-06): stop on 409 — never overwrite; no auto-retry.
+      if (isSessionConcurrencyConflict(err)) {
+        toast.error(getSessionConcurrencyMessage(err));
+        invalidateSession(sessionId);
+        try {
+          const fresh = await counsellorsDeskApi.getSession(sessionId, { skipCatalogFallback: true });
+          updateSessionVersion(fresh.version);
+        } catch {
+          /* best-effort */
+        }
+        return;
+      }
       toast.error('Failed to re-open session');
     }
-  }, [sessionId, invalidateWaitingList, invalidateSession]);
+  }, [sessionId, sessionForMutation, updateSessionVersion, invalidateWaitingList, invalidateSession]);
 
   const handleReEvaluate = useCallback(() => {
     if (!isCounsellingSessionOwner(session?.counselorId, authUser?.id)) {
@@ -1257,9 +1361,26 @@ export function useCounsellingSessionController({
       toast.error('Only the assigned counsellor can start repeat counselling');
       return;
     }
+    const mutationSession = sessionForMutation();
     try {
-      await counsellorsDeskApi.startSession(sessionId, repeatSessionTypeCode);
-      setSession((prev) => (prev ? { ...prev, sessionTypeCode: repeatSessionTypeCode } : prev));
+      const started = await counsellorsDeskApi.startSession(
+        sessionId,
+        repeatSessionTypeCode,
+        mutationSession?.version,
+      );
+      updateSessionVersion(started.version);
+      setSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              sessionTypeCode: repeatSessionTypeCode,
+              version:
+                typeof started.version === 'number'
+                  ? started.version
+                  : resolveMutationVersion(sessionVersionRef.current, prev.version),
+            }
+          : prev,
+      );
       setQueueStatus('Processed');
       setFinishSummaryActive(false);
       setActiveMainTab('counselling');
@@ -1269,7 +1390,19 @@ export function useCounsellingSessionController({
       invalidateWaitingList();
       invalidateSession(sessionId);
       toast.success('Repeat counselling session started');
-    } catch {
+    } catch (err) {
+      // Phase 3I Slice 7 (PD-S7-06): stop on 409 — never overwrite; no auto-retry.
+      if (isSessionConcurrencyConflict(err)) {
+        toast.error(getSessionConcurrencyMessage(err));
+        invalidateSession(sessionId);
+        try {
+          const fresh = await counsellorsDeskApi.getSession(sessionId, { skipCatalogFallback: true });
+          updateSessionVersion(fresh.version);
+        } catch {
+          /* best-effort */
+        }
+        return;
+      }
       toast.error('Failed to start repeat session');
     }
   }, [
@@ -1277,6 +1410,8 @@ export function useCounsellingSessionController({
     authUser?.id,
     sessionId,
     repeatSessionTypeCode,
+    sessionForMutation,
+    updateSessionVersion,
     invalidateWaitingList,
     invalidateSession,
   ]);
@@ -1287,13 +1422,22 @@ export function useCounsellingSessionController({
       toast.error('Only the assigned counsellor can start counselling');
       return false;
     }
+    const mutationSession = sessionForMutation();
     try {
-      await counsellorsDeskApi.startSession(sessionId);
+      // Prefer Start response Version immediately (sync ref) — do not wait for a second mutation.
+      const startedOp = await counsellorsDeskApi.startSession(
+        sessionId,
+        undefined,
+        mutationSession?.version,
+      );
+      updateSessionVersion(startedOp.version);
       // Verify Auth queue projection — do not show Processing if Waiting List would still be Pending.
+      // Also confirm Version when the Start body nested Session is incomplete.
       const started = await counsellorsDeskApi.getSession(sessionId, {
         skipCatalogFallback: true,
       });
       assertCounsellingStartReachedProcessing(started.status);
+      updateSessionVersion(started.version ?? startedOp.version);
       setQueueStatus('Processed');
       setFinishSummaryActive(false);
       setActiveMainTab('counselling');
@@ -1305,6 +1449,18 @@ export function useCounsellingSessionController({
       toast.success('Counselling session started');
       return true;
     } catch (err) {
+      // Phase 3I Slice 7 (PD-S7-06): stop on 409 — never overwrite; no auto-retry.
+      if (isSessionConcurrencyConflict(err)) {
+        toast.error(getSessionConcurrencyMessage(err));
+        invalidateSession(sessionId);
+        try {
+          const fresh = await counsellorsDeskApi.getSession(sessionId, { skipCatalogFallback: true });
+          updateSessionVersion(fresh.version);
+        } catch {
+          /* best-effort */
+        }
+        return false;
+      }
       const msg =
         err instanceof Error && err.message
           ? err.message
@@ -1316,6 +1472,8 @@ export function useCounsellingSessionController({
     session?.counselorId,
     authUser?.id,
     sessionId,
+    sessionForMutation,
+    updateSessionVersion,
     invalidateWaitingList,
     invalidateSession,
   ]);
@@ -1450,7 +1608,8 @@ export function useCounsellingSessionController({
   );
 
   const handleSaveDraft = useCallback(async (): Promise<boolean> => {
-    if (!session || saveDraftDisabledReason) {
+    const mutationSession = sessionForMutation();
+    if (!mutationSession || saveDraftDisabledReason) {
       if (saveDraftDisabledReason) toast.error(saveDraftDisabledReason);
       return false;
     }
@@ -1472,14 +1631,26 @@ export function useCounsellingSessionController({
 
     if (plan.saveCounselling && !validateCounsellingForSave()) return false;
 
+    const notesForPersist = composeCounsellorAdditionalNotes(
+      requeueNoteEventsRef.current,
+      counsellorNotes,
+    );
+
     setIsSavingDraft(true);
     let counsellingSaved = false;
     let coverageSaved = false;
     try {
+      // Insurance/CCMS may have advanced Version via Auth callback while this page stayed open.
+      if (showCoverageWorkflow || coverageTabMounted) {
+        await syncSessionVersionFromServer();
+      }
+
       if (plan.saveCounselling) {
+        // Re-resolve mutation session after Version sync so PUT uses the authoritative token.
+        const counsellingMutationSession = sessionForMutation() ?? mutationSession;
         await saveCounsellingDraft({
           sessionId,
-          session,
+          session: counsellingMutationSession,
           selectedSurgeryId,
           selectedVariantId,
           selectedEye,
@@ -1494,7 +1665,7 @@ export function useCounsellingSessionController({
           decision,
           followUpReason,
           followUpDate,
-          counsellorNotes,
+          counsellorNotes: notesForPersist,
           patientRemarks,
           doctorNotes,
           wantToSeeDoctor,
@@ -1505,10 +1676,12 @@ export function useCounsellingSessionController({
           mergedEstimate,
           savedSnapshot: savedSnapshotRef.current,
           isDoneState,
-          onSuccess: (snapshot) => {
+          onSuccess: (snapshot, version) => {
             savedSnapshotRef.current = snapshot;
             setIsDirty(false);
+            updateSessionVersion(version);
           },
+          onConcurrencyVersionSync: updateSessionVersion,
           invalidateSession,
         });
         counsellingSaved = true;
@@ -1516,6 +1689,8 @@ export function useCounsellingSessionController({
 
       if (plan.saveCoverage) {
         coverageSaved = await saveCoveragePanelDraft({ force: true });
+        // Coverage draft save notifies Auth and bumps Version — sync before leaving the flow.
+        await syncSessionVersionFromServer();
       } else if (plan.coverageSoftWarn) {
         toast('Counselling draft saved; open Insurance to save coverage details', {
           icon: 'ℹ️',
@@ -1546,9 +1721,11 @@ export function useCounsellingSessionController({
       setIsSavingDraft(false);
     }
   }, [
-    session,
+    sessionForMutation,
     saveDraftDisabledReason,
     showCoverageWorkflow,
+    coverageTabMounted,
+    syncSessionVersionFromServer,
     saveCoveragePanelDraft,
     validateCounsellingForSave,
     sessionId,
@@ -1577,6 +1754,7 @@ export function useCounsellingSessionController({
     mergedEstimate,
     isDoneState,
     invalidateSession,
+    updateSessionVersion,
   ]);
 
   const handleSaveDraftRef = useRef(handleSaveDraft);
@@ -1610,7 +1788,12 @@ export function useCounsellingSessionController({
   }, [isDirty, showConfirmation, router, sessionCloseHref]);
 
   const handleSave = useCallback(async () => {
-    if (!session) return;
+    const mutationSession = sessionForMutation();
+    if (!mutationSession) return;
+    if (saveDisabledReason) {
+      toast.error(saveDisabledReason);
+      return;
+    }
     if (!selectedSurgeryId) {
       toast('No procedure selected — saving decision and notes only', { icon: '⚠️' });
     }
@@ -1621,6 +1804,11 @@ export function useCounsellingSessionController({
       return;
     }
 
+    const notesForPersist = composeCounsellorAdditionalNotes(
+      requeueNoteEventsRef.current,
+      counsellorNotes,
+    );
+
     setIsSaving(true);
     try {
       if (showCoverageWorkflow && coveragePanelRef.current?.isDirty()) {
@@ -1630,7 +1818,7 @@ export function useCounsellingSessionController({
 
       await saveCounsellingSession({
         sessionId,
-        session,
+        session: mutationSession,
         selectedSurgeryId,
         selectedVariantId,
         selectedEye,
@@ -1645,7 +1833,7 @@ export function useCounsellingSessionController({
         decision,
         followUpReason,
         followUpDate,
-        counsellorNotes,
+        counsellorNotes: notesForPersist,
         patientRemarks,
         doctorNotes,
         wantToSeeDoctor,
@@ -1657,10 +1845,11 @@ export function useCounsellingSessionController({
         savedSnapshot: savedSnapshotRef.current,
         isDoneState,
         existingOtScheduleId,
-        onSuccess: ({ snapshot, queueStatus: nextStatus, openCoverageTab }) => {
+        onSuccess: ({ snapshot, queueStatus: nextStatus, openCoverageTab, version }) => {
           savedSnapshotRef.current = snapshot;
           setIsDirty(false);
           setQueueStatus(nextStatus);
+          updateSessionVersion(version);
           if (isCounsellingTerminalOutcome(nextStatus)) {
             setFinishSummaryActive(true);
             setActivePhase('wrapup');
@@ -1670,6 +1859,7 @@ export function useCounsellingSessionController({
             setActiveMainTab('coverage');
           }
         },
+        onConcurrencyVersionSync: updateSessionVersion,
         invalidateWaitingList,
         invalidateSession,
       });
@@ -1678,6 +1868,7 @@ export function useCounsellingSessionController({
         const editable = coveragePanelRef.current?.isCoverageDraftEditable?.() ?? true;
         if (coveragePanelRef.current?.saveDraft && editable) {
           await saveCoveragePanelDraft({ force: true });
+          await syncSessionVersionFromServer();
         } else if (!coveragePanelRef.current?.saveDraft) {
           toast('Session completed; open Insurance to sync coverage draft', { icon: 'ℹ️' });
         }
@@ -1702,7 +1893,8 @@ export function useCounsellingSessionController({
       setIsSaving(false);
     }
   }, [
-    session,
+    sessionForMutation,
+    saveDisabledReason,
     selectedSurgeryId,
     validateCounsellingForSave,
     phaseInput,
@@ -1717,6 +1909,7 @@ export function useCounsellingSessionController({
     insuranceCompany,
     insuranceProviderId,
     freeSurgeryReason,
+    decision,
     followUpReason,
     followUpDate,
     counsellorNotes,
@@ -1732,8 +1925,10 @@ export function useCounsellingSessionController({
     existingOtScheduleId,
     showCoverageWorkflow,
     saveCoveragePanelDraft,
+    syncSessionVersionFromServer,
     invalidateWaitingList,
     invalidateSession,
+    updateSessionVersion,
   ]);
 
   const handleScheduleSubmit = useCallback(
@@ -1769,6 +1964,9 @@ export function useCounsellingSessionController({
     session,
     isLoading,
     ConfirmationComponent,
+    /** Phase 3I Slice 7 (PD-S7-01) — patch local Version after out-of-band mutations (refresh-from-opd, comm log). */
+    updateSessionVersion,
+    bumpSessionVersionLocally,
     handleBack,
     handleClose,
     sessionFrom,
@@ -1780,6 +1978,7 @@ export function useCounsellingSessionController({
     isSurgeryDoneState,
     isReadOnly,
     isSessionOwner,
+    ownershipLocksMutations,
     lifecycleEntry,
     isSaving,
     isSavingDraft,

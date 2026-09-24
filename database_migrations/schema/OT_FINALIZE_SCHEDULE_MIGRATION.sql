@@ -75,13 +75,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_ot_finalize_patient_active
       AND deleted_at IS NULL;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 3. UNIQUE PARTIAL INDEX — one OTPrepared list per date per tenant
---    Prevents "Prepare OT List" from being submitted twice for the same date
+-- 3. REMOVED — ux_ot_finalize_prepared_date (one OTPrepared per tenant/date)
+--    Legacy unique partial index conflicted with multi-patient PrepareOtListAsync.
+--    Dropped by AuthService migration 20260923183000_DropOtFinalizePreparedDateUniqueIndex
+--    / Database/20260923183000_drop_ot_finalize_prepared_date_unique.sql (FS-G-13).
+--    Do NOT recreate on fresh installs.
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE UNIQUE INDEX IF NOT EXISTS ux_ot_finalize_prepared_date
-    ON ot_finalize_schedule(DATE(start_time AT TIME ZONE 'UTC'), tenant_id)
-    WHERE status = 'OTPrepared'
-      AND deleted_at IS NULL;
+-- CREATE UNIQUE INDEX IF NOT EXISTS ux_ot_finalize_prepared_date
+--     ON ot_finalize_schedule(DATE(start_time AT TIME ZONE 'UTC'), tenant_id)
+--     WHERE status = 'OTPrepared'
+--       AND deleted_at IS NULL;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 4. OT FINALIZE AUDIT LOG TABLE

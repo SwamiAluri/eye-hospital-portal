@@ -28,14 +28,22 @@ const queueWidgetSrc = readFileSync(
 describe('Waiting List lifecycle ownership claim contracts', () => {
   it('resolves ownership then continues via claim-for-lifecycle only (no Slice 3 Assign, no peer picker)', () => {
     expect(pageSrc).toContain('resolveLifecycleOwnershipDecision');
-    expect(pageSrc).toContain('Assign to me & Re-evaluate');
-    expect(pageSrc).toContain('Assign to me & Start Repeat');
+    expect(pageSrc).toContain('Continue as me');
+    expect(pageSrc).toContain('buildLifecycleOwnershipConfirmCopy');
     expect(pageSrc).toContain("kind === 're-evaluate' ? 'ReEvaluate' : 'StartRepeat'");
     expect(pageSrc).toContain('claimSessionForLifecycle');
     expect(pageSrc).toMatch(/expectedCounselorId:\s*decision\.expectedCounselorId/);
     expect(pageSrc).toMatch(/intent,/);
     expect(pageSrc).not.toMatch(/assignSession\(/);
     expect(pageSrc).not.toMatch(/claimSessionForLifecycle[\s\S]{0,400}getCounselors/);
+  });
+
+  it('Processing self-assign opens counselling workflow; Pending assign does not auto-start', () => {
+    expect(pageSrc).toContain('shouldOpenProcessingAfterAssign');
+    expect(pageSrc).toContain('navigateToSession(patient)');
+    expect(pageSrc).toMatch(
+      /shouldOpenProcessingAfterAssign[\s\S]{0,400}navigateToSession\(patient\)/,
+    );
   });
 
   it('Pending Start Counseling passes lifecycle=start-counseling (explicit start, not silent)', () => {
@@ -46,16 +54,24 @@ describe('Waiting List lifecycle ownership claim contracts', () => {
 
   it('Done/Repeat row click does not pass lifecycle query (no silent start)', () => {
     expect(pageSrc).toContain(
-      '// Done/Repeat row click = view only — never silently start lifecycle or claim ownership.',
+      '// Done/owned Repeat row click = view only — never silently start lifecycle or claim ownership.',
     );
     expect(pageSrc).toMatch(
-      /Done\/Repeat row click[\s\S]{0,200}navigateToSession\(patient\);/,
+      /Done\/owned Repeat row click[\s\S]{0,200}navigateToSession\(patient\);/,
     );
   });
 
-  it('409 ownership conflict refreshes list and does not navigate', () => {
-    expect(pageSrc).toContain('Session ownership changed. Refreshing the waiting list.');
-    expect(pageSrc).toMatch(/status === 409[\s\S]{0,200}waitingListQuery\.refetch/);
+  it('409 ownership/Version conflict surfaces the server message, refreshes list, and does not navigate', () => {
+    // Phase 3I Slice 7 (PD-S7-06/07): claim-for-lifecycle 409s cover both stale-ownership and
+    // stale-Version — the server message (SessionConcurrency.StaleMessage vs "Session ownership
+    // changed.") is surfaced verbatim via the shared concurrency helper, no auto-retry.
+    expect(pageSrc).toContain('isSessionConcurrencyConflict');
+    expect(pageSrc).toContain('getSessionConcurrencyMessage');
+    expect(pageSrc).toMatch(/isSessionConcurrencyConflict\(err\)[\s\S]{0,300}waitingListQuery\.refetch/);
+  });
+
+  it('claim-for-lifecycle sends the expected Version (Phase 3I Slice 7)', () => {
+    expect(pageSrc).toMatch(/version:\s*patient\.version/);
   });
 
   it('Done workspace no longer mounts large Re-evaluate banner', () => {
@@ -63,9 +79,12 @@ describe('Waiting List lifecycle ownership claim contracts', () => {
     expect(tabPanelSrc).not.toMatch(/title=["']Re-evaluate["']/);
   });
 
-  it('Waiting List start-repeat entry does not gate on Repeat banner', () => {
-    expect(sessionContentSrc).toContain('showRepeatStartControls = false');
-    expect(sessionContentSrc).toContain('no second banner gate');
+  it('Waiting List owns Start Repeat entry (session page does not add a second CTA gate)', () => {
+    expect(sessionContentSrc).toContain(
+      'Waiting List owns Start Repeat / Re-evaluate',
+    );
+    expect(pageSrc).toContain("kind === 'start-repeat'");
+    expect(pageSrc).toContain("qs.set('lifecycle', 'start-repeat')");
   });
 
   it('Attention column removed from Patient Queue cues', () => {

@@ -1,9 +1,12 @@
 import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import { counsellingAzureApi, type PriceOverrideRecord } from '@/lib/api/counselling-azure.api';
+import { requeueHistoryEntriesFromAdditionalNotes } from '@/lib/counsellors-desk/requeue-notes-presentation';
 import type { SessionAuditEntry } from '@/types/counsellors-desk';
 
 export async function loadCounsellingSessionHistory(
   sessionId: string,
+  /** Raw AdditionalNotes (may include `[Re-queue …]` markers) for History presentation fallback. */
+  additionalNotes?: string | null,
 ): Promise<SessionAuditEntry[]> {
   const [azureResult, authResult, overridesResult] = await Promise.allSettled([
     counsellingAzureApi.getHistory(sessionId),
@@ -72,7 +75,22 @@ export async function loadCounsellingSessionHistory(
     }
   }
 
-  return merged
-    .filter((e) => !consumed.has(e.id))
-    .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime());
+  const withoutGrouped = merged.filter((e) => !consumed.has(e.id));
+
+  // Prefer authoritative OwnershipRequeued History; fall back to AdditionalNotes markers only
+  // when Auth did not emit a trail (already-unassigned ReQueue). Never invent Actor.
+  const existingRequeueReasons = new Set(
+    withoutGrouped
+      .filter((e) => e.changeType === 'OwnershipRequeued')
+      .map((e) => (e.reason || '').trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const noteRequeues = requeueHistoryEntriesFromAdditionalNotes(
+    additionalNotes,
+    existingRequeueReasons,
+  );
+
+  return [...withoutGrouped, ...noteRequeues].sort(
+    (a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime(),
+  );
 }

@@ -242,6 +242,12 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           requiredPermission: 'counseling_sessions.read',
         },
         {
+          label: 'Counselling Sessions',
+          href: '/dashboard/counsellors-desk/sessions',
+          icon: FolderOpen,
+          requiredPermission: 'counseling_sessions.read',
+        },
+        {
           label: 'Finalize Surgery',
           href: '/dashboard/counsellors-desk/finalize-surgery',
           icon: FileCheck,

@@ -75,7 +75,7 @@ describe('WaitingListSummaryWidget', () => {
 
     expect(html).toContain('data-testid="waiting-list-summary"');
     expect(html).toContain('data-testid="waiting-list-stats"');
-    expect(html).toContain(counsellingSessionTokens.sessionStatusStrip);
+    expect(html).toContain('aria-label="Queue statistics"');
 
     expect(html).toContain('data-testid="waiting-list-summary-strip"');
     expect(html).toContain('role="tablist"');

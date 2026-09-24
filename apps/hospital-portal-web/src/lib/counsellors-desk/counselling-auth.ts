@@ -85,16 +85,22 @@ export function canShowCounsellingReassign(input: {
 }
 
 /**
- * Waiting List initial Assign eligibility (Slice 3):
- * Pending AND unassigned only.
- * Done/Repeat ownership for lifecycle uses Assign-to-me / claim-for-lifecycle — not this grid Assign CTA.
+ * Waiting List Assign eligibility (Phase 3I + PD-B):
+ * Pending OR Processing (Processed) + unassigned,
+ * OR Completed-not-agreed Waiting List status (RepeatCounselling) + unassigned.
+ * Done (agreed) ownership uses claim-for-lifecycle ReEvaluate — not this Assign CTA.
+ * SurgeryDone remains sealed.
  */
 export function isWaitingListEligibleForInitialAssign(input: {
   status?: string | null;
   counselorId?: string | null;
 }): boolean {
   if (input.counselorId) return false;
-  return input.status === 'Pending';
+  return (
+    input.status === 'Pending' ||
+    input.status === 'Processed' ||
+    input.status === 'RepeatCounselling'
+  );
 }
 
 /**

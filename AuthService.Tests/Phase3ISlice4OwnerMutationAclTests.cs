@@ -117,6 +117,9 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
         return id;
     }
 
+    private async Task<int> CurrentVersionAsync(Guid sessionId) =>
+        (await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId)).Version;
+
     [Fact]
     public async Task Update_WithClientCounselorId_Rejected_OwnershipUnchanged()
     {
@@ -124,6 +127,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
 
         var result = await _svc.UpdateSessionAsync(_tenant, id, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(id),
             CounselorId = _peer,
             ClinicalSummary = "tamper",
         }, _owner);
@@ -142,6 +146,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
 
         var result = await _svc.UpdateSessionAsync(_tenant, id, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(id),
             ClinicalSummary = "should not save",
         }, _owner);
 
@@ -159,6 +164,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
 
         var result = await _svc.UpdateSessionAsync(_tenant, id, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(id),
             ClinicalSummary = "peer write",
         }, _peer);
 
@@ -172,10 +178,11 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
     public async Task Update_Owner_Succeeds_CounselorIdUnchanged()
     {
         var id = await CreateOwnedSessionAsync(_owner);
-        Assert.True((await _svc.StartSessionAsync(_tenant, id, _owner)).Success);
+        Assert.True((await _svc.StartSessionAsync(_tenant, id, _owner, await CurrentVersionAsync(id))).Success);
 
         var result = await _svc.UpdateSessionAsync(_tenant, id, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(id),
             ClinicalSummary = "owner draft",
         }, _owner);
 
@@ -192,6 +199,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
 
         var result = await _svc.UpdateSessionAsync(_tenant, id, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(id),
             ClinicalSummary = "admin bypass",
         }, _admin);
 
@@ -206,7 +214,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
     {
         var id = await CreateUnassignedSessionAsync();
 
-        var result = await _svc.StartSessionAsync(_tenant, id, _owner);
+        var result = await _svc.StartSessionAsync(_tenant, id, _owner, await CurrentVersionAsync(id));
 
         Assert.False(result.Success);
         Assert.Equal(SessionOperationFailureKind.Forbidden, result.FailureKind);
@@ -220,7 +228,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
     {
         var id = await CreateOwnedSessionAsync(_owner);
 
-        var result = await _svc.StartSessionAsync(_tenant, id, _peer);
+        var result = await _svc.StartSessionAsync(_tenant, id, _peer, await CurrentVersionAsync(id));
 
         Assert.False(result.Success);
         Assert.Equal(SessionOperationFailureKind.Forbidden, result.FailureKind);
@@ -234,7 +242,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
     {
         var id = await CreateOwnedSessionAsync(_owner);
 
-        var result = await _svc.StartSessionAsync(_tenant, id, _owner);
+        var result = await _svc.StartSessionAsync(_tenant, id, _owner, await CurrentVersionAsync(id));
 
         Assert.True(result.Success);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == id);
@@ -250,7 +258,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
         owned.Status = "InProgress";
         await _db.SaveChangesAsync();
 
-        var result = await _svc.CompleteSessionAsync(_tenant, id, _peer);
+        var result = await _svc.CompleteSessionAsync(_tenant, id, _peer, await CurrentVersionAsync(id));
 
         Assert.False(result.Success);
         Assert.Equal(SessionOperationFailureKind.Forbidden, result.FailureKind);
@@ -267,7 +275,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
         owned.SessionStartTime = DateTime.UtcNow.AddMinutes(-10);
         await _db.SaveChangesAsync();
 
-        var result = await _svc.CompleteSessionAsync(_tenant, id, _owner);
+        var result = await _svc.CompleteSessionAsync(_tenant, id, _owner, await CurrentVersionAsync(id));
 
         Assert.True(result.Success);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == id);
@@ -280,7 +288,7 @@ public class Phase3ISlice4OwnerMutationAclTests : IDisposable
     {
         var id = await CreateOwnedSessionAsync(_owner);
 
-        var result = await _svc.CancelSessionAsync(_tenant, id, "test", _peer);
+        var result = await _svc.CancelSessionAsync(_tenant, id, "test", _peer, await CurrentVersionAsync(id));
 
         Assert.False(result.Success);
         Assert.Equal(SessionOperationFailureKind.Forbidden, result.FailureKind);

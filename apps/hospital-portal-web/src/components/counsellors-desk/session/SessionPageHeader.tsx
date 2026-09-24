@@ -120,7 +120,7 @@ export function SessionPageHeader({
     setHistoryLoading(true);
     try {
       const [entries, counselors] = await Promise.all([
-        loadCounsellingSessionHistory(session.id),
+        loadCounsellingSessionHistory(session.id, session.counsellorNotes),
         counsellorsDeskApi
           .getCounselors(session.branchId)
           .catch(() => [] as Awaited<ReturnType<typeof counsellorsDeskApi.getCounselors>>),

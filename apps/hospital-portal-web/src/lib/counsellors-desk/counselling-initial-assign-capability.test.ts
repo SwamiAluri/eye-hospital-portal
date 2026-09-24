@@ -67,21 +67,27 @@ describe('PD-ASSIGN-01 / UAT — initial Assign UI capability', () => {
     ).toBe(false);
   });
 
-  it('eligibility is Pending + Unassigned only', () => {
+  it('eligibility is Pending, Processing, or unassigned RepeatCounselling', () => {
     expect(
       isWaitingListEligibleForInitialAssign({ status: 'Pending', counselorId: null }),
+    ).toBe(true);
+    expect(
+      isWaitingListEligibleForInitialAssign({ status: 'Processed', counselorId: null }),
     ).toBe(true);
     expect(
       isWaitingListEligibleForInitialAssign({ status: 'Done', counselorId: null }),
     ).toBe(false);
     expect(
       isWaitingListEligibleForInitialAssign({ status: 'RepeatCounselling', counselorId: null }),
+    ).toBe(true);
+    expect(
+      isWaitingListEligibleForInitialAssign({ status: 'RepeatCounselling', counselorId: 'c1' }),
     ).toBe(false);
     expect(
       isWaitingListEligibleForInitialAssign({ status: 'Pending', counselorId: 'c1' }),
     ).toBe(false);
     expect(
-      isWaitingListEligibleForInitialAssign({ status: 'Processed', counselorId: null }),
+      isWaitingListEligibleForInitialAssign({ status: 'Processed', counselorId: 'c1' }),
     ).toBe(false);
     expect(
       isWaitingListEligibleForInitialAssign({ status: 'SurgeryDone', counselorId: null }),

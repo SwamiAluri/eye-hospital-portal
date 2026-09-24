@@ -24,17 +24,20 @@ namespace AuthService.Services
         private readonly IHttpClientFactory _httpFactory;
         private readonly IConfiguration _config;
         private readonly ILogger<OtFinalizeService> _logger;
+        private readonly IFollowupBranchAccessService _branchAccess;
 
         public OtFinalizeService(
             AppDbContext db,
             IHttpClientFactory httpFactory,
             IConfiguration config,
-            ILogger<OtFinalizeService> logger)
+            ILogger<OtFinalizeService> logger,
+            IFollowupBranchAccessService branchAccess)
         {
             _db = db;
             _httpFactory = httpFactory;
             _config = config;
             _logger = logger;
+            _branchAccess = branchAccess;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -61,6 +64,11 @@ namespace AuthService.Services
 
             await EnrichRequestFromOpdAsync(request, tenantId);
 
+            // Phase 3I Slice 9 (PD-S9-12): authoritative BranchId from linked CounselingSession.
+            // Do not copy CounselorId. Do not invent branch from client/browser state.
+            var sessionBranchId = await ResolveSessionBranchIdAsync(
+                request.CounsellingSessionId, tenantId);
+
             // Find existing active record for this patient (unique partial index)
             var existing = await _db.OtFinalizeSchedules
                 .Where(s => s.TenantId == tenantId
@@ -72,6 +80,16 @@ namespace AuthService.Services
 
             if (existing != null)
             {
+                // Heal BranchId from session when legacy row is NULL.
+                if (!existing.BranchId.HasValue && sessionBranchId.HasValue)
+                    existing.BranchId = sessionBranchId;
+
+                await EnsureActorCanAccessScheduleAsync(existing, tenantId, userId, persistHeal: true);
+
+                // Package C / PD-OTPREP-10: locked OTPrepared (IsLocked) must require Reopen
+                // before any Upsert mutation — align with UpdateDetails / UpdateSlot.
+                GuardLocked(existing);
+
                 // UPDATE — counsellor changed schedule while already in OT pipeline
                 var oldSnapshot = Snapshot(existing);
                 // Heal stored Uhid/PatientName if they were null when first created
@@ -97,6 +115,8 @@ namespace AuthService.Services
                 existing.AnesthetistName = request.AnesthetistName;
                 existing.IolPower        = OpdClinicalCopy.FirstNonEmpty(request.IolPower, existing.IolPower);
                 existing.Remarks         = request.Remarks;
+                if (request.CounsellingSessionId.HasValue)
+                    existing.CounsellingSessionId = request.CounsellingSessionId;
 
                 // Any change resets to NotConfirmed for revalidation
                 var oldStatus = existing.Status;
@@ -121,10 +141,17 @@ namespace AuthService.Services
             }
             else
             {
+                if (!sessionBranchId.HasValue)
+                    throw new ArgumentException(
+                        "Cannot create OT schedule without an authoritative counselling session branch.");
+
+                await _branchAccess.ResolveAccessibleBranchesAsync(tenantId, userId, sessionBranchId);
+
                 // INSERT — first time this patient enters the OT pipeline
                 var entity = new OtFinalizeSchedule
                 {
                     TenantId              = tenantId,
+                    BranchId              = sessionBranchId,
                     PatientId             = request.PatientId,
                     Uhid                  = request.Uhid,
                     PatientName           = request.PatientName,
@@ -170,10 +197,18 @@ namespace AuthService.Services
         // ─────────────────────────────────────────────────────────────────────
 
         public async Task<List<OtScheduleResponse>> GetFinalizeListAsync(
-            OtScheduleFilters filters, Guid tenantId)
+            OtScheduleFilters filters, Guid tenantId, IReadOnlyList<Guid> accessibleBranchIds)
         {
+            // Phase 3I Slice 9 (PD-S9-12): fail closed — no accessible branches → empty list.
+            if (accessibleBranchIds == null || accessibleBranchIds.Count == 0)
+                return new List<OtScheduleResponse>();
+
+            var branchSet = accessibleBranchIds.ToList();
             var query = _db.OtFinalizeSchedules
-                .Where(s => s.TenantId == tenantId && s.DeletedAt == null)
+                .Where(s => s.TenantId == tenantId
+                         && s.DeletedAt == null
+                         && s.BranchId != null
+                         && branchSet.Contains(s.BranchId.Value))
                 .AsQueryable();
 
             if (filters.Date.HasValue)
@@ -274,6 +309,7 @@ namespace AuthService.Services
             Guid id, UpdateSlotRequest request, Guid tenantId, Guid userId)
         {
             var entity = await GetOrThrowAsync(id, tenantId);
+            await EnsureActorCanAccessScheduleAsync(entity, tenantId, userId, persistHeal: true);
             GuardLocked(entity);
 
             var oldSnapshot = Snapshot(entity);
@@ -307,10 +343,15 @@ namespace AuthService.Services
         public async Task<OtScheduleResponse> ConfirmAsync(Guid id, Guid tenantId, Guid userId)
         {
             var entity = await GetOrThrowAsync(id, tenantId);
+            await EnsureActorCanAccessScheduleAsync(entity, tenantId, userId, persistHeal: true);
 
             if (entity.Status != OtFinalizeStatus.NotConfirmed)
                 throw new InvalidOperationException(
                     $"Cannot confirm: record is '{entity.Status}', expected 'NotConfirmed'.");
+
+            // Package 1 (PD-FS-03): Reporting Time is a business prerequisite for Confirm.
+            if (!entity.ReportingTime.HasValue)
+                throw new ArgumentException("Reporting time is required to confirm.");
 
             // Conflict check — exact start_time match with same doctor or same theatre
             if (entity.StartTime.HasValue)
@@ -364,6 +405,7 @@ namespace AuthService.Services
         public async Task<OtScheduleResponse> FinaliseAsync(Guid id, Guid tenantId, Guid userId)
         {
             var entity = await GetOrThrowAsync(id, tenantId);
+            await EnsureActorCanAccessScheduleAsync(entity, tenantId, userId, persistHeal: true);
 
             if (entity.Status != OtFinalizeStatus.Confirmed)
                 throw new InvalidOperationException(
@@ -385,12 +427,19 @@ namespace AuthService.Services
         // CANCEL + back-sync to counselling service
         // ─────────────────────────────────────────────────────────────────────
 
-        public async Task<OtScheduleResponse> CancelAsync(Guid id, Guid tenantId, Guid userId)
+        public async Task<OtScheduleResponse> CancelAsync(
+            Guid id, Guid tenantId, Guid userId, string cancelReason)
         {
             var entity = await GetOrThrowAsync(id, tenantId);
+            await EnsureActorCanAccessScheduleAsync(entity, tenantId, userId, persistHeal: true);
+
+            // Package 1 (PD-FS-04): reason required; reuse existing CancelReason column (no schema change).
+            if (string.IsNullOrWhiteSpace(cancelReason))
+                throw new ArgumentException("Cancellation reason is required.");
 
             var oldStatus = entity.Status;
             entity.Status    = OtFinalizeStatus.Cancelled;
+            entity.CancelReason = cancelReason.Trim();
             entity.IsLocked  = false;
             entity.Version++;
             entity.UpdatedAt       = DateTime.UtcNow;
@@ -400,7 +449,8 @@ namespace AuthService.Services
                                 null, Snapshot(entity), userId.ToString());
             await _db.SaveChangesAsync();
 
-            // Auto back-sync: if linked to a counselling session, set it to RepeatCounselling
+            // Best-effort outbound call only — destination may be missing (PD-FS-04 Option D).
+            // Do not treat this as authoritative counselling sync.
             if (entity.CounsellingSessionId.HasValue)
             {
                 await BackSyncToCounsellingAsync(entity.CounsellingSessionId.Value, entity.Id);
@@ -416,6 +466,7 @@ namespace AuthService.Services
         public async Task<OtScheduleResponse> ReopenAsync(Guid id, Guid tenantId, Guid userId)
         {
             var entity = await GetOrThrowAsync(id, tenantId);
+            await EnsureActorCanAccessScheduleAsync(entity, tenantId, userId, persistHeal: true);
 
             var oldStatus = entity.Status;
 
@@ -466,6 +517,10 @@ namespace AuthService.Services
                             s.TenantId == tenantId &&
                             s.DeletedAt == null)
                 .ToListAsync();
+
+            // Phase 3I Slice 9 (PD-S9-12): every schedule must be in an authorized branch.
+            foreach (var entity in entities)
+                await EnsureActorCanAccessScheduleAsync(entity, tenantId, userId, persistHeal: true);
 
             // Defense-in-depth: every submitted schedule must belong to the requested surgery date.
             // Half-open [date, date+1) matches GetOtList / conflict-check conventions (StartTime has time).
@@ -565,13 +620,20 @@ namespace AuthService.Services
         // GET OT LIST (OTPrepared records for a date)
         // ─────────────────────────────────────────────────────────────────────
 
-        public async Task<List<OtScheduleResponse>> GetOtListAsync(DateTime date, Guid tenantId)
+        public async Task<List<OtScheduleResponse>> GetOtListAsync(
+            DateTime date, Guid tenantId, IReadOnlyList<Guid> accessibleBranchIds)
         {
+            if (accessibleBranchIds == null || accessibleBranchIds.Count == 0)
+                return new List<OtScheduleResponse>();
+
+            var branchSet = accessibleBranchIds.ToList();
             var targetDate = date.Date;
             var results = await _db.OtFinalizeSchedules
                 .Where(s =>
                     s.TenantId == tenantId &&
                     s.DeletedAt == null &&
+                    s.BranchId != null &&
+                    branchSet.Contains(s.BranchId.Value) &&
                     s.Status == OtFinalizeStatus.OTPrepared &&
                     s.StartTime.HasValue &&
                     s.StartTime.Value.Date == targetDate)
@@ -647,6 +709,46 @@ namespace AuthService.Services
                 throw new KeyNotFoundException($"OT schedule record '{id}' not found.");
 
             return entity;
+        }
+
+        /// <summary>
+        /// Phase 3I Slice 9 (PD-S9-12): resolve BranchId from linked CounselingSession only.
+        /// Does not invent branch from actor selection or client input.
+        /// </summary>
+        private async Task<Guid?> ResolveSessionBranchIdAsync(Guid? counsellingSessionId, Guid tenantId)
+        {
+            if (!counsellingSessionId.HasValue)
+                return null;
+
+            return await _db.CounselingSession
+                .AsNoTracking()
+                .Where(s => s.Id == counsellingSessionId.Value
+                         && s.TenantId == tenantId
+                         && s.DeletedAt == null)
+                .Select(s => s.BranchId)
+                .FirstOrDefaultAsync();
+        }
+
+        /// <summary>
+        /// Phase 3I Slice 9 (PD-S9-12): authorize actor for the schedule's effective branch.
+        /// When BranchId is NULL, heal from CounselingSession.BranchId when authoritative.
+        /// Schedules with no resolvable branch are denied (not guessed).
+        /// </summary>
+        private async Task EnsureActorCanAccessScheduleAsync(
+            OtFinalizeSchedule entity, Guid tenantId, Guid userId, bool persistHeal)
+        {
+            if (!entity.BranchId.HasValue && entity.CounsellingSessionId.HasValue)
+            {
+                var sessionBranch = await ResolveSessionBranchIdAsync(entity.CounsellingSessionId, tenantId);
+                if (sessionBranch.HasValue && persistHeal)
+                    entity.BranchId = sessionBranch;
+            }
+
+            if (!entity.BranchId.HasValue)
+                throw new UnauthorizedAccessException(
+                    "OT schedule has no resolvable branch for authorization.");
+
+            await _branchAccess.ResolveAccessibleBranchesAsync(tenantId, userId, entity.BranchId);
         }
 
         private static void GuardLocked(OtFinalizeSchedule entity)
@@ -872,9 +974,12 @@ namespace AuthService.Services
         // GET BY ID (enriched detail for the modal)
         // ─────────────────────────────────────────────────────────────────────────
 
-        public async Task<OtScheduleDetailResponse> GetByIdAsync(Guid id, Guid tenantId)
+        public async Task<OtScheduleDetailResponse> GetByIdAsync(Guid id, Guid tenantId, Guid userId)
         {
             var entity = await GetOrThrowAsync(id, tenantId);
+            await EnsureActorCanAccessScheduleAsync(entity, tenantId, userId, persistHeal: true);
+            if (_db.ChangeTracker.HasChanges())
+                await _db.SaveChangesAsync();
 
             int? age = null;
             string? gender = null;
@@ -1033,6 +1138,7 @@ namespace AuthService.Services
             Guid id, UpdateOtDetailsRequest request, Guid tenantId, Guid userId)
         {
             var entity = await GetOrThrowAsync(id, tenantId);
+            await EnsureActorCanAccessScheduleAsync(entity, tenantId, userId, persistHeal: true);
             GuardLocked(entity);
 
             var oldSnapshot = Snapshot(entity);
@@ -1099,11 +1205,17 @@ namespace AuthService.Services
         }
 
         public async Task<OpdClinicalSnapshotDto> RefreshSessionFromOpdAsync(
-            Guid sessionId, Guid tenantId, Guid userId)
+            Guid sessionId, Guid tenantId, Guid userId, int? expectedVersion)
         {
             var session = await _db.CounselingSession
                 .FirstOrDefaultAsync(s => s.Id == sessionId && s.TenantId == tenantId)
                 ?? throw new InvalidOperationException("Counselling session not found.");
+
+            // Phase 3I Slice 7 (PD-S7-02/05/06 — M13): expected Version required; fail closed; stale → 409 upstream.
+            if (!expectedVersion.HasValue)
+                throw new ArgumentException("Version is required.");
+            if (session.Version != expectedVersion.Value)
+                throw new InvalidOperationException(SessionConcurrency.StaleMessage);
 
             var snap = await ResolveOpdSnapshotAsync(
                 tenantId, session.PatientId, session, session.SurgeryTentativeEye, preferBiometry: true);
@@ -1139,6 +1251,8 @@ namespace AuthService.Services
             if (ot != null)
                 _ = NotifyJourneyOpdCopyAsync(ot, tenantId, userId, forceRefresh: true);
 
+            // Phase 3I Slice 7 — echo bumped CounselingSession.Version for FE propagation (no local bump).
+            snap.Version = session.Version;
             return snap;
         }
 
@@ -1164,6 +1278,13 @@ namespace AuthService.Services
 
             if (session != null && OpdClinicalCopy.ShouldWrite(session.IolPower, snap.IolPower, forceRefresh: false))
             {
+                // Phase 3I Slice 7 (PD-S7-02/05/06 — M14): CS write requires expected session Version.
+                if (!request.SessionVersion.HasValue)
+                    throw new ArgumentException(
+                        "SessionVersion is required when CounsellingSessionId is set and OPD enrichment updates the session.");
+                if (session.Version != request.SessionVersion.Value)
+                    throw new InvalidOperationException(SessionConcurrency.StaleMessage);
+
                 session.IolPower = snap.IolPower;
                 session.UpdatedAt = DateTime.UtcNow;
             }

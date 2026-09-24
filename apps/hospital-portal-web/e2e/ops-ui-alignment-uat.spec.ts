@@ -125,17 +125,18 @@ test.describe('Ops UI alignment UAT', () => {
         await page.getByTestId('finalize-status-tab-All').click();
       }
     }
-    // OT Preparation is a separate workspace — not stacked under the queue
+    // OT Preparation is a separate workspace — Finalised worklist (RESP2), not stacked under the queue
     await expect(
       page.getByTestId('finalize-surgery-workspace').getByTestId('finalize-prepared-ot-list'),
     ).toHaveCount(0);
 
     await page.getByTestId('finalize-workspace-ot-preparation').click();
     await expect(page.getByTestId('finalize-ot-preparation-workspace')).toBeVisible();
-    await expect(page.getByTestId('finalize-prepared-ot-list')).toBeVisible();
-    await expect(page.getByText(/No prepared OT list for this date/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Load OT List' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Prepare New List' })).toBeVisible();
+    await expect(page.getByTestId('finalize-ot-prep-toolbar')).toBeVisible();
+    await expect(page.getByTestId('finalize-ot-prepare-selected')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Load OT List' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Prepare New List' })).toHaveCount(0);
+    await expect(page.getByTestId('finalize-ot-prepared-grid')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Manage' })).toHaveCount(0);
 
     await page.getByTestId('finalize-workspace-finalization').click();

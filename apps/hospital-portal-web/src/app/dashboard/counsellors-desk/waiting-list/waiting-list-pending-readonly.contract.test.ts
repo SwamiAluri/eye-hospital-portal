@@ -66,7 +66,7 @@ describe('Waiting List Pending read-only contracts (PD-PENDING-READONLY-01)', ()
     expect(controllerSrc).toContain("lifecycleParam !== 'start-counseling'");
     expect(controllerSrc).toContain('handleStartCounselingSession');
     expect(controllerSrc).toMatch(
-      /const handleStartCounselingSession[\s\S]*?counsellorsDeskApi\.startSession\(sessionId\)/,
+      /const handleStartCounselingSession[\s\S]*?counsellorsDeskApi\.startSession\(\s*sessionId,\s*undefined,\s*mutationSession\?\.version,?/,
     );
     expect(controllerSrc).toContain('assertCounsellingStartReachedProcessing');
   });

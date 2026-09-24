@@ -20,6 +20,7 @@ export const initializeApi = () => {
 
   // Add response interceptor for error handling + silent token refresh
   attachAuthResponseInterceptor(axiosInstance, {
+    // Auth public 401s are also skipped via shouldSkipSessionExpiredLogout.
     skipLogoutUrls: ['/patients', '/users', '/departments', '/appointments/stats'],
   });
 
@@ -120,6 +121,8 @@ export const usersApi = {
   create: (data: any) => getApi().post('/users', data),
   update: (id: string, data: any) => getApi().put(`/users/${id}`, data),
   deactivate: (id: string) => getApi().post(`/users/${id}/deactivate`),
+  /** Admin-initiated password reset email (POST /users/{id}/reset-password). */
+  requestPasswordReset: (id: string) => getApi().post(`/users/${id}/reset-password`),
 };
 
 export const rolesApi = {

@@ -35,7 +35,9 @@ namespace AuthService.Middleware
                 context.Request.Path.StartsWithSegments("/notificationHub") || // Skip NotificationHub - tenant from JWT claim
                 context.Request.Path.StartsWithSegments("/api/servicecatalog") || // Global catalog - no tenant context needed
                 context.Request.Path.StartsWithSegments("/api/internal") || // service-to-service; tenant is in body/query + X-Internal-Key
-                (context.Request.Path.StartsWithSegments("/api/tenants") && context.Request.Method == "GET"))
+                (context.Request.Path.StartsWithSegments("/api/tenants") && context.Request.Method == "GET") ||
+                IsAnonymousActivationPath(context.Request.Path) ||
+                IsAnonymousPasswordResetPath(context.Request.Path))
             {
                 await _next(context);
                 return;
@@ -78,6 +80,31 @@ namespace AuthService.Middleware
             context.Items["Tenant"] = tenant;
 
             await _next(context);
+        }
+
+        /// <summary>
+        /// /activate wizard is anonymous: tenant comes from the user/OTP identity, not login store.
+        /// These AllowAnonymous Auth endpoints must not require X-Tenant-ID from an unauthenticated browser.
+        /// </summary>
+        internal static bool IsAnonymousActivationPath(PathString path)
+        {
+            var value = path.Value ?? string.Empty;
+            return value.Contains("/set-activation-password", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("/accept-terms", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("/complete-activation", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("/professional-info", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Password-reset email links are anonymous: tenant is derived from the opaque reset token
+        /// (user lookup) or supplied in the ForgotPassword request body — not from login X-Tenant-ID.
+        /// </summary>
+        internal static bool IsAnonymousPasswordResetPath(PathString path)
+        {
+            var value = path.Value ?? string.Empty;
+            return value.Contains("/api/auth/forgot-password", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("/api/auth/validate-reset-token", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("/api/auth/reset-password", StringComparison.OrdinalIgnoreCase);
         }
     }
 

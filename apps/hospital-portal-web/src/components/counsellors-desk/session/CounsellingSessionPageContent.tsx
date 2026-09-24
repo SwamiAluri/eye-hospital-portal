@@ -54,6 +54,17 @@ export function CounsellingSessionPageContent() {
     return recommendedSurgeryName(surgeries);
   }, [ctx.session]);
 
+  /** Stable coverage-panel props — avoid Array.from / inline arrays recreating counsellingCtx every render. */
+  const sessionInvestigationsForCoverage = useMemo(() => {
+    if (ctx.selectedInvestigations.size === 0) return undefined;
+    return Array.from(ctx.selectedInvestigations.values());
+  }, [ctx.selectedInvestigations]);
+
+  const sessionEstimateLinesForCoverage = useMemo(() => {
+    const lines = ctx.counsellingEstimate.lines;
+    return lines.length > 0 ? lines : undefined;
+  }, [ctx.counsellingEstimate.lines]);
+
   if (ctx.isLoading) {
     return (
       <div className={cn(counsellingSessionTokens.shellPage, 'gap-2 p-4')} aria-busy>
@@ -233,16 +244,8 @@ export function CounsellingSessionPageContent() {
               sessionDoctor={ctx.schedule?.doctor || undefined}
               sessionTheatre={ctx.schedule?.operationTheatre || undefined}
               sessionEye={ctx.selectedEye || undefined}
-              sessionInvestigations={
-                ctx.selectedInvestigations.size > 0
-                  ? Array.from(ctx.selectedInvestigations.values())
-                  : undefined
-              }
-              sessionEstimateLines={
-                ctx.counsellingEstimate.lines.length > 0
-                  ? ctx.counsellingEstimate.lines
-                  : undefined
-              }
+              sessionInvestigations={sessionInvestigationsForCoverage}
+              sessionEstimateLines={sessionEstimateLinesForCoverage}
               sessionIsPackageMode={ctx.counsellingEstimate.isPackageMode}
               sessionPackageAmount={
                 ctx.counsellingEstimate.activeTemplate?.packageAmount
@@ -313,6 +316,7 @@ export function CounsellingSessionPageContent() {
         saveSessionTooltip={saveSessionHint}
         phaseAdvanceTooltip={phaseAdvanceHint}
         saveDraftDisabledReason={saveDraftHint ?? ctx.saveDraftDisabledReason}
+        contentMutationsLocked={ctx.ownershipLocksMutations}
         printDisabledReason={ctx.printDisabledReason}
         canSubmitToClaims={!!ctx.coverageProgress.canSubmitToClaims}
         submittingToClaims={!!ctx.coverageProgress.submittingToClaims}

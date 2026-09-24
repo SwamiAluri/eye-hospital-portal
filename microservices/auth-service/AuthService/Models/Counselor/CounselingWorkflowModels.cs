@@ -38,7 +38,10 @@ namespace AuthService.Models.Counselor
         public DateTime? DecisionDate { get; set; }
         public string? ReasonsForDelay { get; set; }
         public string Status { get; set; } = null!;
-        
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-01) — optimistic concurrency token. Send back as expected Version on the next mutation.</summary>
+        public int Version { get; set; } = 1;
+
         // Package Selection Data
         public Guid? SelectedPackageId { get; set; }
         public decimal? PackageAmount { get; set; }
@@ -228,6 +231,27 @@ namespace AuthService.Models.Counselor
         /// <summary>Master code from counsellor.session_type (e.g. INITIAL, FOLLOW_UP).</summary>
         [MaxLength(30)]
         public string? SessionType { get; set; }
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-02) — required expected Version. Nullable so missing is distinguishable from 0.</summary>
+        public int? Version { get; set; }
+    }
+
+    /// <summary>Phase 3I Slice 7 (PD-S7-02) — expected Version body for Complete (no other content today).</summary>
+    public class CompleteCounselingSessionRequest
+    {
+        public int? Version { get; set; }
+    }
+
+    /// <summary>Phase 3I Slice 7 (PD-S7-02) — DELETE body, mirrors RolesController RemovePermissions convention.</summary>
+    public class DeleteCounselingSessionRequest
+    {
+        public int? Version { get; set; }
+    }
+
+    /// <summary>Phase 3I Slice 7 (PD-S7-02) — expected Version for the refresh-from-OPD write.</summary>
+    public class RefreshFromOpdRequest
+    {
+        public int? Version { get; set; }
     }
 
     public class UpdateCounselingSessionRequest
@@ -235,6 +259,9 @@ namespace AuthService.Models.Counselor
         /// <summary>Master code from counsellor.session_type (e.g. INITIAL, FOLLOW_UP).</summary>
         [MaxLength(30)]
         public string? SessionType { get; set; }
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-02) — required expected Version. Nullable so missing is distinguishable from 0.</summary>
+        public int? Version { get; set; }
 
         public Guid? CounselorId { get; set; }
         public DateTime? SessionStartTime { get; set; }
@@ -346,6 +373,13 @@ namespace AuthService.Models.Counselor
         
         // Quick filter presets (Phase 4.2)
         public string? QuickFilter { get; set; } // urgent, today, overdue, pending
+
+        /// <summary>
+        /// Phase 3I Slice 12 — Reassignment Required operational filter (PD-S12-14).
+        /// When true: operationally open sessions whose CounselorId belongs to an unavailable counsellor.
+        /// Not a counselling lifecycle Status.
+        /// </summary>
+        public bool? ReassignmentRequired { get; set; }
         
         public DateTime? SessionDateFrom { get; set; }
         public DateTime? SessionDateTo { get; set; }
@@ -565,12 +599,14 @@ namespace AuthService.Models.Counselor
         public string? VerificationNotes { get; set; }
     }
 
-    /// <summary>Phase 3I Slice 4 — distinguish ownership ACL failures from validation errors.</summary>
+    /// <summary>Phase 3I Slice 4 — distinguish ownership ACL failures from validation errors.
+    /// Slice 7 (PD-S7-06) adds Conflict for stale/missing Version — distinct from Forbidden (403).</summary>
     public enum SessionOperationFailureKind
     {
         NotFound,
         Forbidden,
         BadRequest,
+        Conflict,
     }
 
     public class SessionOperationResult
@@ -588,6 +624,9 @@ namespace AuthService.Models.Counselor
     {
         [Required]
         public Guid CounselorId { get; set; }
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-03) — required expected Version.</summary>
+        public int? Version { get; set; }
     }
 
     /// <summary>Phase 3I — lifecycle ownership claim intents (not general Reassign).</summary>
@@ -613,6 +652,9 @@ namespace AuthService.Models.Counselor
         [Required]
         [MaxLength(30)]
         public string Intent { get; set; } = null!;
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-03) — required expected Version.</summary>
+        public int? Version { get; set; }
     }
 
     /// <summary>Phase 3I Slice 6 — supervisory General Reassign (owned A → B).</summary>
@@ -630,6 +672,9 @@ namespace AuthService.Models.Counselor
         [Required]
         [MaxLength(500)]
         public string Reason { get; set; } = null!;
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-03) — required expected Version.</summary>
+        public int? Version { get; set; }
     }
 
     public enum AssignSessionFailureKind
@@ -648,6 +693,24 @@ namespace AuthService.Models.Counselor
         public Guid? CounselorId { get; set; }
         public string? CounselorName { get; set; }
         public AssignSessionFailureKind? FailureKind { get; set; }
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-04) — new Version after a successful ownership mutation.</summary>
+        public int? Version { get; set; }
+    }
+
+    /// <summary>Phase 3I Slice 8 — ReQueue → NULL / Unassigned result.</summary>
+    public class ReQueueSessionResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = null!;
+        public Guid? SessionId { get; set; }
+        /// <summary>Always null after successful owned ReQueue; remains null when already unassigned.</summary>
+        public Guid? CounselorId { get; set; }
+        public AssignSessionFailureKind? FailureKind { get; set; }
+        /// <summary>Phase 3I Slice 8 (PD-S8-06) — new Version after a successful ReQueue.</summary>
+        public int? Version { get; set; }
+        public string? TokenNumber { get; set; }
+        public Guid? QueueItemId { get; set; }
     }
 
     // ============================================================================
@@ -692,6 +755,8 @@ namespace AuthService.Models.Counselor
         public string? CounselorName { get; set; }
         /// <summary>Session/queue branch — UX for Assign picker filtering; not a security boundary.</summary>
         public string? BranchId { get; set; }
+        /// <summary>Phase 3I Slice 7 (PD-S7-01) — CounselingSession.Version for ownership mutations from Waiting List.</summary>
+        public int Version { get; set; } = 1;
     }
 
     public class WaitingListFiltersRequest

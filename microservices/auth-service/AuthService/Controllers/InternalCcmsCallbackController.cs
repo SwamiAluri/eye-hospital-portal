@@ -72,6 +72,14 @@ public class InternalCcmsCallbackController : ControllerBase
 
             return Ok(new { success = true });
         }
+        // Phase 3I Slice 7 (PD-S7-01/06 — M19, approved): a genuine concurrent-write race is surfaced
+        // as 409 so the distinction from NotFound is visible in logs/metrics, even though the CCMS
+        // AuthServiceClient caller is fire-and-forget and only logs !IsSuccessStatusCode today.
+        catch (InvalidOperationException ex) when (SessionConcurrency.IsStale(ex))
+        {
+            _logger.LogWarning(ex, "CCMS callback hit a stale Version conflict for session {SessionId}.", sessionId);
+            return Conflict(new { success = false, error = ex.Message });
+        }
         catch (Exception ex)
         {
             // Fire-and-forget from CCMS — return 200 so CCMS workflow is never blocked.

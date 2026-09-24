@@ -39,6 +39,12 @@ namespace AuthService.Services
                 .FirstOrDefaultAsync(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
                 ?? throw new InvalidOperationException($"Session {sessionId} not found");
 
+            // Phase 3I Slice 7 (PD-S7-02/05/06 — M18): expected Version required; fail closed; stale → 409 upstream.
+            if (!request.Version.HasValue)
+                throw new ArgumentException("Version is required.");
+            if (session.Version != request.Version.Value)
+                throw new InvalidOperationException(SessionConcurrency.StaleMessage);
+
             var log = new CounselorCommunicationLog
             {
                 Id             = Guid.NewGuid(),
@@ -76,7 +82,9 @@ namespace AuthService.Services
                 session.EscalationStatus = "Normal";
 
             await _context.SaveChangesAsync();
-            return ToCommLogDto(log);
+            var dto = ToCommLogDto(log);
+            dto.SessionVersion = session.Version;
+            return dto;
         }
 
         // ── Callback Requests ─────────────────────────────────────────────────
@@ -279,6 +287,12 @@ namespace AuthService.Services
                 .FirstOrDefaultAsync(s => s.Id == sessionId && s.TenantId == tenantId && s.DeletedAt == null)
                 ?? throw new InvalidOperationException($"Session {sessionId} not found");
 
+            // Phase 3I Slice 7 (PD-S7-02/05/06 — M15): expected Version required; fail closed; stale → 409 upstream.
+            if (!request.Version.HasValue)
+                throw new ArgumentException("Version is required.");
+            if (session.Version != request.Version.Value)
+                throw new InvalidOperationException(SessionConcurrency.StaleMessage);
+
             var theater = await _context.OTTheaters
                 .FirstOrDefaultAsync(t => t.Id == request.TheaterId && t.TenantId == tenantId && t.DeletedAt == null)
                 ?? throw new InvalidOperationException($"Theater {request.TheaterId} not found");
@@ -342,7 +356,8 @@ namespace AuthService.Services
                 Success        = true,
                 ScheduleId     = schedule.Id,
                 ScheduleNumber = scheduleNumber,
-                Message        = $"Surgery booked successfully for {request.ScheduledDate:MMM dd, yyyy}"
+                Message        = $"Surgery booked successfully for {request.ScheduledDate:MMM dd, yyyy}",
+                SessionVersion = session.Version,
             };
         }
 

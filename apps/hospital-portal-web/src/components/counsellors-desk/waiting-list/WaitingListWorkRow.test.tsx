@@ -505,8 +505,9 @@ describe('WaitingListWorkRow', () => {
 
     const preAuthButtons = findButtonsByLabel(tree, 'Pre-Auth Required').filter(
       (el) =>
-        (el.props as { 'aria-label'?: string })['aria-label'] ===
-        'Start or view pre-authorization',
+        String((el.props as { 'aria-label'?: string })['aria-label'] ?? '').includes(
+          'Pre-authorization',
+        ),
     );
     expect(preAuthButtons.length).toBe(1);
 

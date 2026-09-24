@@ -3,6 +3,11 @@ import { counsellingAzureApi } from '@/lib/api/counselling-azure.api';
 import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import { buildCounsellingSessionPayload } from '@/lib/counsellors-desk/save-counselling-session';
 import type { SaveCounsellingSessionParams } from '@/lib/counsellors-desk/save-counselling-session';
+import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
+import { shouldRetryDraftSaveAfterVersionSync } from '@/lib/counsellors-desk/sync-counselling-session-version';
 
 export type SaveCounsellingDraftParams = Pick<
   SaveCounsellingSessionParams,
@@ -35,13 +40,17 @@ export type SaveCounsellingDraftParams = Pick<
   | 'isDoneState'
   | 'invalidateSession'
 > & {
-  onSuccess: (snapshot: Record<string, string>) => void;
+  /** `version` is the bumped CounselingSession.Version from the save response (Phase 3I Slice 7). */
+  onSuccess: (snapshot: Record<string, string>, version?: number) => void;
+  /** Phase 3I — patch local Version after a 409 refetch (preserve dirty form). */
+  onConcurrencyVersionSync?: (version?: number) => void;
 };
 
 /** Persist counselling progress without queue transition or completeSession. */
 export async function saveCounsellingDraft(params: SaveCounsellingDraftParams): Promise<void> {
   const {
     sessionId,
+    session,
     selectedVariantId,
     selectedEye,
     packageName,
@@ -54,18 +63,65 @@ export async function saveCounsellingDraft(params: SaveCounsellingDraftParams): 
     selectedInvestigations,
     mergedEstimate,
     onSuccess,
+    onConcurrencyVersionSync,
     invalidateSession,
   } = params;
 
   const { payload, currentSnapshot, fieldChanges } = buildCounsellingSessionPayload(params);
+  const fieldChangesPayload = fieldChanges.length > 0 ? fieldChanges : undefined;
 
-  try {
-    await counsellorsDeskApi.saveSession(sessionId, {
+  const putSession = (version: number | undefined) =>
+    counsellorsDeskApi.saveSession(sessionId, {
       ...payload,
-      fieldChanges: fieldChanges.length > 0 ? fieldChanges : undefined,
+      version,
+      fieldChanges: fieldChangesPayload,
     } as Parameters<typeof counsellorsDeskApi.saveSession>[1]);
+
+  let requestVersion = session.version;
+  let saveResult: { version?: number };
+  try {
+    saveResult = await putSession(requestVersion);
   } catch (err) {
-    throw new Error(`Session: ${getApiErrorMessage(err, 'Could not save session')}`);
+    // Phase 3I Slice 7 (PD-S7-06): stop on true multi-writer conflict.
+    // One Version-authority retry is allowed when Insurance/CCMS (or another system writer)
+    // advanced CounselingSession.Version while this same counsellor still holds a dirty form —
+    // that is not "another user"; retry with the authoritative Version, never overwrite blindly.
+    if (isSessionConcurrencyConflict(err)) {
+      invalidateSession(sessionId);
+      let freshVersion: number | undefined;
+      try {
+        const fresh = await counsellorsDeskApi.getSession(sessionId, { skipCatalogFallback: true });
+        freshVersion = fresh.version;
+        onConcurrencyVersionSync?.(freshVersion);
+      } catch {
+        /* best-effort Version sync only */
+      }
+
+      if (shouldRetryDraftSaveAfterVersionSync({ requestVersion, freshVersion })) {
+        try {
+          requestVersion = freshVersion;
+          saveResult = await putSession(freshVersion);
+        } catch (retryErr) {
+          if (isSessionConcurrencyConflict(retryErr)) {
+            invalidateSession(sessionId);
+            try {
+              const freshAgain = await counsellorsDeskApi.getSession(sessionId, {
+                skipCatalogFallback: true,
+              });
+              onConcurrencyVersionSync?.(freshAgain.version);
+            } catch {
+              /* best-effort */
+            }
+            throw new Error(getSessionConcurrencyMessage(retryErr));
+          }
+          throw new Error(`Session: ${getApiErrorMessage(retryErr, 'Could not save session')}`);
+        }
+      } else {
+        throw new Error(getSessionConcurrencyMessage(err));
+      }
+    } else {
+      throw new Error(`Session: ${getApiErrorMessage(err, 'Could not save session')}`);
+    }
   }
 
   if (selectedInvestigations.size > 0) {
@@ -101,6 +157,6 @@ export async function saveCounsellingDraft(params: SaveCounsellingDraftParams): 
     ...(decision === 'NeedsTime' && followUpReason ? { followUpReason } : {}),
   });
 
-  onSuccess(currentSnapshot);
+  onSuccess(currentSnapshot, saveResult.version);
   invalidateSession(sessionId);
 }

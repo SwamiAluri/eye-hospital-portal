@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COUNSELLING_CONTENT_READ_ONLY_REASON,
   isCounsellingSessionOwner,
   isOwnershipReadOnly,
   isPendingLifecycleReadOnly,
+  resolveCompleteSessionDisabledReason,
   resolveLifecycleOwnershipDecision,
   resolveOwnershipRelation,
+  resolveSaveDraftDisabledReason,
 } from './counselling-ownership';
 
 describe('counselling-ownership', () => {
@@ -111,5 +114,71 @@ describe('counselling-ownership', () => {
           queueStatus: 'Pending',
         }),
     ).toBe(true);
+  });
+
+  describe('Save Draft / Complete Session mutation gates (UAT non-owner viewer)', () => {
+    const idle = {
+      isSurgeryDoneState: false,
+      pendingLocksMutations: false,
+      ownershipLocksMutations: false,
+      isSaving: false,
+      isSavingDraft: false,
+      isRepeatState: false,
+    };
+
+    it('current owner + Processing: Save Draft remains usable', () => {
+      const ownershipLocksMutations = isOwnershipReadOnly({
+        counselorId: 'amelia',
+        currentUserId: 'amelia',
+        queueStatus: 'Processed',
+      });
+      expect(ownershipLocksMutations).toBe(false);
+      expect(
+        resolveSaveDraftDisabledReason({ ...idle, ownershipLocksMutations }),
+      ).toBeNull();
+    });
+
+    it('non-owner viewer + Processing: Save Draft not usable', () => {
+      const ownershipLocksMutations = isOwnershipReadOnly({
+        counselorId: 'amelia',
+        currentUserId: 'admin',
+        queueStatus: 'Processed',
+      });
+      expect(ownershipLocksMutations).toBe(true);
+      expect(
+        resolveSaveDraftDisabledReason({ ...idle, ownershipLocksMutations }),
+      ).toBe(COUNSELLING_CONTENT_READ_ONLY_REASON);
+    });
+
+    it('Admin/non-owner viewer: Save Draft and Complete Session not usable', () => {
+      const ownershipLocksMutations = isOwnershipReadOnly({
+        counselorId: 'amelia',
+        currentUserId: 'admin',
+        queueStatus: 'Processed',
+      });
+      expect(
+        resolveSaveDraftDisabledReason({ ...idle, ownershipLocksMutations }),
+      ).toBe(COUNSELLING_CONTENT_READ_ONLY_REASON);
+      expect(
+        resolveCompleteSessionDisabledReason({
+          isSurgeryDoneState: false,
+          pendingLocksMutations: false,
+          ownershipLocksMutations,
+          isSaving: false,
+          isSavingDraft: false,
+          decisionValidationError: null,
+        }),
+      ).toBe(COUNSELLING_CONTENT_READ_ONLY_REASON);
+    });
+
+    it('Pending: existing read-only Save Draft reason remains unchanged', () => {
+      expect(
+        resolveSaveDraftDisabledReason({
+          ...idle,
+          pendingLocksMutations: true,
+          ownershipLocksMutations: false,
+        }),
+      ).toBe('Start counselling to continue');
+    });
   });
 });

@@ -49,6 +49,12 @@ export interface BuildSessionActionBarInput extends BuildSessionStatusSummaryInp
   finishSummaryActive?: boolean;
   /** Insurance tab viewable for coverage payment types (even if pre-auth not required). */
   coverageTabAvailable?: boolean;
+  /**
+   * Ownership / sealed content lock (FE UX). When true, counselling-content mutation CTAs
+   * (Save Draft, Complete Session, Submit Claims, phase-next) are hidden — same pattern as Pending.
+   * History / Clinical Recommendations / Patient Details / Close remain available via chrome.
+   */
+  contentMutationsLocked?: boolean;
 }
 
 function isAtNavigationTarget(
@@ -123,6 +129,24 @@ export function buildSessionActionBarModel(
         finishSummaryActive: input.finishSummaryActive,
       }),
       statusHint: 'Start counselling from the Waiting List to edit',
+    };
+  }
+
+  // Non-owner / ownership-sealed viewer (e.g. Admin viewing Amelia's Processing session).
+  // Hide mutation CTAs; do not present enabled Save Draft. Backend ACL unchanged.
+  if (input.contentMutationsLocked) {
+    return {
+      ...base,
+      primary: null,
+      showSaveDraft: false,
+      showPhaseBack: shouldShowSessionBack({
+        activeMainTab: input.activeMainTab,
+        activePhase: input.activePhase,
+        showCoverageWorkflow: input.showCoverageWorkflow,
+        coverageTabAvailable: input.coverageTabAvailable,
+        finishSummaryActive: input.finishSummaryActive,
+      }),
+      statusHint: 'Session read-only',
     };
   }
 

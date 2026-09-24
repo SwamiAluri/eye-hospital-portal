@@ -2,16 +2,19 @@
 
 import type { ReactNode } from 'react';
 import { Users } from 'lucide-react';
-import {
-  WAITING_LIST_OT_GRID,
-  WAITING_LIST_WORK_GRID,
-} from '@/lib/counsellors-desk/waiting-list-layout';
+import { WAITING_LIST_WORK_GRID } from '@/lib/counsellors-desk/waiting-list-layout';
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { cn } from '@/lib/utils';
 
 export type WaitingListQueueWidgetProps = {
+  /**
+   * Optional accessible name for the queue region only — never rendered as a
+   * visible section heading (selected tab already provides that context).
+   */
   title?: string;
+  /** Row count for callers/pagination; not rendered as a duplicate section counter. */
   count: number;
+  /** @deprecated OT Returned uses the same counselling work grid; kept for call-site compat. */
   mode?: 'counselling' | 'ot-returned';
   isLoading?: boolean;
   isEmpty?: boolean;
@@ -28,16 +31,13 @@ export type WaitingListQueueWidgetProps = {
   'data-testid'?: string;
 };
 
-function WorklistSkeleton({ mode }: { mode: 'counselling' | 'ot-returned' }) {
+function WorklistSkeleton() {
   return (
     <div className="divide-y divide-counselling-border/40" aria-hidden>
       {Array.from({ length: 7 }).map((_, i) => (
         <div
           key={i}
-          className={cn(
-            'staff-worklist-row items-center px-1',
-            mode === 'ot-returned' ? WAITING_LIST_OT_GRID : WAITING_LIST_WORK_GRID,
-          )}
+          className={cn('staff-worklist-row items-center px-1', WAITING_LIST_WORK_GRID)}
         >
           <div className="h-3 max-w-[80%] animate-pulse rounded-full bg-counselling-muted" />
           <div className="hidden h-3 max-w-[70%] animate-pulse rounded-full bg-counselling-muted sm:block" />
@@ -52,7 +52,7 @@ function WorklistSkeleton({ mode }: { mode: 'counselling' | 'ot-returned' }) {
   );
 }
 
-const COUNSELLING_CUES = [
+const COLUMN_CUES = [
   'Patient',
   'Visit',
   'Procedure / Eye',
@@ -61,17 +61,16 @@ const COUNSELLING_CUES = [
   'Status',
   'Action',
 ] as const;
-const OT_CUES = ['UHID / Patient', 'Procedure', 'Return Reason', 'Surgery Date', 'Action'] as const;
 
 /**
- * Queue Workspace — the single Waiting List functional surface.
- * Height model: shrink-0 chrome (toolbar / title / cues / pagination) +
- * flex-1 min-h-0 scrollable worklist body. Page does not scroll rows.
+ * Queue Workspace — toolbar → column cues → rows → footer.
+ * Does not render a selected-tab section title or duplicate count
+ * (tabs + pagination already own that context).
  */
 export function WaitingListQueueWidget({
-  title = 'Patient Queue',
-  count,
-  mode = 'counselling',
+  title,
+  count: _count,
+  mode: _mode = 'counselling',
   isLoading = false,
   isEmpty = false,
   emptyContent,
@@ -83,14 +82,15 @@ export function WaitingListQueueWidget({
   className,
   'data-testid': testId = 'waiting-list-queue',
 }: WaitingListQueueWidgetProps) {
-  const cues = mode === 'ot-returned' ? OT_CUES : COUNSELLING_CUES;
-  const gridClass = mode === 'ot-returned' ? WAITING_LIST_OT_GRID : WAITING_LIST_WORK_GRID;
   const showFooter = Boolean(footer) || Boolean(footerLabel) || isRefreshing;
+  const regionLabel = title?.trim()
+    ? `${title.trim()} patient queue`
+    : 'Queue workspace';
 
   return (
     <section
       data-testid={testId}
-      aria-label="Queue workspace"
+      aria-label={regionLabel}
       className={cn(
         counsellingSessionTokens.sessionWidget,
         'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
@@ -107,25 +107,16 @@ export function WaitingListQueueWidget({
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col px-2.5 pb-1 pt-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:pb-3 min-[1600px]:pt-3">
-        <div className="flex shrink-0 items-center justify-between gap-2 pb-0.5 min-[1600px]:pb-2">
-          <h2 className={cn(counsellingSessionTokens.sessionWidgetTitle, 'max-[1599px]:text-sm max-[1599px]:leading-5')}>{title}</h2>
-          <span className="text-xs font-medium text-counselling-muted-foreground">
-            <span className="tabular-nums text-counselling-foreground">{count}</span>
-            {' '}
-            patients
-          </span>
-        </div>
-
         {!isLoading && !isEmpty ? (
           <div
             className={cn(
-              gridClass,
+              WAITING_LIST_WORK_GRID,
               'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-1 max-md:hidden min-[1600px]:py-2',
             )}
             role="row"
             data-testid="waiting-list-queue-column-cues"
           >
-            {cues.map((cue) => (
+            {COLUMN_CUES.map((cue) => (
               <p
                 key={cue}
                 role="columnheader"
@@ -140,13 +131,12 @@ export function WaitingListQueueWidget({
           </div>
         ) : null}
 
-        {/* Flexible work area — owns vertical scroll; pagination stays outside */}
         <div
           data-testid="waiting-list-worklist-body"
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]"
         >
           {isLoading ? (
-            <WorklistSkeleton mode={mode} />
+            <WorklistSkeleton />
           ) : isEmpty ? (
             <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
               {emptyContent ?? (
@@ -154,7 +144,12 @@ export function WaitingListQueueWidget({
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-counselling-muted/60">
                     <Users className="h-5 w-5 text-counselling-muted-foreground opacity-60" />
                   </div>
-                  <p className="text-sm font-medium text-counselling-foreground">No patients in queue</p>
+                  <p
+                    role="status"
+                    className="text-sm font-medium text-counselling-foreground"
+                  >
+                    No patients found
+                  </p>
                 </>
               )}
             </div>

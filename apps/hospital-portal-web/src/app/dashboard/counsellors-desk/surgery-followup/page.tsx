@@ -18,7 +18,7 @@ import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
 import type { ReQueuePayload } from '@/types/counsellors-desk';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { SessionTypeSelect } from '@/components/counsellors-desk/SessionTypeSelect';
-import { defaultSessionTypeCode } from '@/lib/counsellors-desk/counsellor-master-maps';
+import { defaultSessionTypeCode, sessionTypeCodeToDb } from '@/lib/counsellors-desk/counsellor-master-maps';
 import {
   FOLLOWUP_PAGE_SIZE,
   useActiveFollowupsQuery,
@@ -41,10 +41,16 @@ import {
   POST_DISCHARGE_AGING_KPI_LABEL,
   formatFollowupAverage,
   formatFollowupShortDate,
+  formatOriginalCounsellorAttribution,
   intentionPillClass,
   INTENTION_LABEL,
   type FollowupTabId,
 } from '@/lib/counsellors-desk/followup-presentation';
+import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
+import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import { useAuthStore } from '@/lib/auth-store';
 import { cn } from '@/lib/utils';
 
@@ -69,32 +75,89 @@ type KpiItem = { label: string; value: string | number };
 function ReQueueModal({
   sessionId,
   patientName,
+  counselorId,
   onClose,
   onQueued,
 }: {
   isOpen: boolean;
   sessionId: string;
   patientName: string;
+  /** Current session owner; null when already unassigned (PD-S8-02/14). */
+  counselorId: string | null;
   onClose: () => void;
   onQueued: () => void;
 }) {
-  const [notes, setNotes] = useState('');
-  const [sessionType, setSessionType] = useState(defaultSessionTypeCode());
+  const [reason, setReason] = useState('');
+  const [sessionType, setSessionType] = useState(defaultSessionTypeCode('requeue'));
   const [saving, setSaving] = useState(false);
+  const [sessionVersion, setSessionVersion] = useState<number | undefined>(undefined);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const loadSessionVersion = () => {
+    setVersionLoading(true);
+    setVersionError(null);
+    counsellorsDeskApi
+      .getSession(sessionId, { skipCatalogFallback: true })
+      .then((s) => setSessionVersion(s.version))
+      .catch((err) => {
+        setSessionVersion(undefined);
+        setVersionError(getApiErrorMessage(err, 'Could not load session details.'));
+      })
+      .finally(() => setVersionLoading(false));
+  };
+
+  useEffect(() => {
+    loadSessionVersion();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  const canSubmit =
+    reason.trim().length > 0 &&
+    typeof sessionVersion === 'number' &&
+    !versionLoading &&
+    !saving;
 
   const handleSubmit = async () => {
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setFormError('Reason is required.');
+      return;
+    }
+    if (typeof sessionVersion !== 'number') {
+      setFormError(
+        versionError
+          ? `Could not verify the session version (${versionError}). Close and reopen to retry.`
+          : 'Session version is still loading. Please wait a moment and try again.',
+      );
+      return;
+    }
+
     setSaving(true);
+    setFormError(null);
     try {
       const payload: ReQueuePayload = {
-        notes: notes.trim() || undefined,
-        sessionType: sessionType || undefined,
+        version: sessionVersion,
+        expectedCounselorId: counselorId,
+        reason: trimmedReason,
+        // Master UI code → DB CHECK value (Initial|Followup|Recheck|Urgent). Backend also normalizes.
+        sessionType: sessionType ? sessionTypeCodeToDb(sessionType) : undefined,
       };
-      await counsellorsDeskApi.reQueueSession(sessionId, payload);
+      const result = await counsellorsDeskApi.reQueueSession(sessionId, payload);
+      if (typeof result.version === 'number') {
+        setSessionVersion(result.version);
+      }
       toast.success(`${patientName} re-queued to waiting list`);
       onQueued();
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to re-queue');
+      if (isSessionConcurrencyConflict(err)) {
+        toast.error(getSessionConcurrencyMessage(err));
+        loadSessionVersion();
+        return;
+      }
+      toast.error(getApiErrorMessage(err, 'Failed to re-queue'));
     } finally {
       setSaving(false);
     }
@@ -117,23 +180,47 @@ function ReQueueModal({
         </div>
         <div className="space-y-3 px-4 py-3">
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-counselling-muted-foreground">
+            <label
+              htmlFor="followup-requeue-session-type"
+              className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-counselling-muted-foreground"
+            >
               Session type
             </label>
-            <SessionTypeSelect value={sessionType} onChange={setSessionType} />
+            <SessionTypeSelect
+              id="followup-requeue-session-type"
+              value={sessionType}
+              onChange={setSessionType}
+            />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-counselling-muted-foreground">
-              Notes
+            <label
+              htmlFor="followup-requeue-reason"
+              className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-counselling-muted-foreground"
+            >
+              Reason <span className="text-counselling-destructive">*</span>
             </label>
             <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              id="followup-requeue-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
               placeholder="Reason for re-queuing…"
               rows={3}
+              required
+              aria-required="true"
+              data-testid="followup-requeue-reason"
               className="w-full resize-none rounded-lg border border-counselling-border bg-counselling-card px-3 py-2 text-sm text-counselling-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40"
             />
           </div>
+          {formError ? (
+            <p className="text-xs text-counselling-destructive" role="alert">
+              {formError}
+            </p>
+          ) : null}
+          {versionError && typeof sessionVersion !== 'number' ? (
+            <p className="text-xs text-counselling-destructive" role="alert">
+              {versionError}
+            </p>
+          ) : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-counselling-border/60 bg-counselling-muted/20 px-4 py-2.5">
           <CounsellingButton type="button" variant="outline" size="sm" className={denseBtn} onClick={onClose}>
@@ -143,7 +230,8 @@ function ReQueueModal({
             type="button"
             size="sm"
             className={cn(denseBtn, 'bg-counselling-primary text-white hover:bg-counselling-primary/90')}
-            disabled={saving}
+            disabled={!canSubmit}
+            data-testid="followup-requeue-submit"
             onClick={() => void handleSubmit()}
           >
             {saving ? 'Queuing…' : 'Re-queue'}
@@ -259,7 +347,7 @@ function SurgeryFollowupPageContent() {
   const router = useRouter();
   const { user, selectedBranchId } = useAuthStore();
   const branchId = selectedBranchId ?? user?.branchId ?? undefined;
-  const { invalidateFollowups } = useInvalidateCounsellorsDesk();
+  const { invalidateFollowups, invalidateWaitingList } = useInvalidateCounsellorsDesk();
 
   const [activeTab, setActiveTab] = useState<FollowupTabId>('active');
   const [search, setSearch] = useState('');
@@ -349,6 +437,7 @@ function SurgeryFollowupPageContent() {
   const [reQueueModal, setReQueueModal] = useState<{
     sessionId: string;
     patientName: string;
+    counselorId: string | null;
   } | null>(null);
   const [reminderModal, setReminderModal] = useState<{
     patientId: string;
@@ -359,7 +448,8 @@ function SurgeryFollowupPageContent() {
 
   const handleRefresh = useCallback(() => {
     void invalidateFollowups();
-  }, [invalidateFollowups]);
+    void invalidateWaitingList();
+  }, [invalidateFollowups, invalidateWaitingList]);
 
   const stats = statsQuery.data;
   const kpiLoading = statsQuery.isPending && !stats;
@@ -677,11 +767,10 @@ function SurgeryFollowupPageContent() {
                     <p className="truncate text-xs tabular-nums text-counselling-muted-foreground">
                       {row.uhid ? `#${row.uhid}` : '—'}
                       {row.phone ? ` · ${row.phone}` : ''}
-                      {row.counselorName
-                        ? ` · Owner: ${row.counselorName}`
-                        : row.counselorId
-                          ? ' · Owner: Unresolved'
-                          : ' · Owner: Unassigned'}
+                      {formatOriginalCounsellorAttribution({
+                        counselorId: row.counselorId,
+                        counselorName: row.counselorName,
+                      })}
                     </p>
                   </div>
                   <div className="hidden min-w-0 sm:block">
@@ -736,7 +825,11 @@ function SurgeryFollowupPageContent() {
                       })
                     }
                     onReQueue={() =>
-                      setReQueueModal({ sessionId: row.sessionId, patientName: row.patientName })
+                      setReQueueModal({
+                        sessionId: row.sessionId,
+                        patientName: row.patientName,
+                        counselorId: row.counselorId ?? null,
+                      })
                     }
                     onReevaluate={() =>
                       router.push(`/dashboard/counsellors-desk/${row.sessionId}?from=follow-up`)
@@ -761,11 +854,10 @@ function SurgeryFollowupPageContent() {
                     <p className="truncate text-xs tabular-nums text-counselling-muted-foreground">
                       {row.uhid ? `#${row.uhid}` : '—'}
                       {row.phone ? ` · ${row.phone}` : ''}
-                      {row.counselorName
-                        ? ` · Owner: ${row.counselorName}`
-                        : row.counselorId
-                          ? ' · Owner: Unresolved'
-                          : ' · Owner: Unassigned'}
+                      {formatOriginalCounsellorAttribution({
+                        counselorId: row.counselorId,
+                        counselorName: row.counselorName,
+                      })}
                     </p>
                   </div>
                   <div className="hidden min-w-0 sm:block">
@@ -813,7 +905,11 @@ function SurgeryFollowupPageContent() {
                       })
                     }
                     onReQueue={() =>
-                      setReQueueModal({ sessionId: row.sessionId, patientName: row.patientName })
+                      setReQueueModal({
+                        sessionId: row.sessionId,
+                        patientName: row.patientName,
+                        counselorId: row.counselorId ?? null,
+                      })
                     }
                     onReevaluate={() =>
                       router.push(`/dashboard/counsellors-desk/${row.sessionId}?from=follow-up`)
@@ -1000,6 +1096,7 @@ function SurgeryFollowupPageContent() {
           isOpen={!!reQueueModal}
           sessionId={reQueueModal.sessionId}
           patientName={reQueueModal.patientName}
+          counselorId={reQueueModal.counselorId}
           onClose={() => setReQueueModal(null)}
           onQueued={handleRefresh}
         />

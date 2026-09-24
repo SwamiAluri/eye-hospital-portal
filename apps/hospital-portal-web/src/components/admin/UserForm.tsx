@@ -15,6 +15,7 @@ interface Props {
 export default function UserForm({ initialUser, onClose, onSuccess }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { types: qualificationTypes } = useQualificationTypes();
   
   // Dropdown data from database
   const [roles, setRoles] = useState<Array<{ id: string; name: string }>>([]);

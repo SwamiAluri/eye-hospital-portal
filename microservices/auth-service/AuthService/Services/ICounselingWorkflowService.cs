@@ -24,6 +24,7 @@ namespace AuthService.Services
             Guid tenantId,
             Guid sessionId,
             Guid targetCounselorId,
+            int? expectedVersion,
             Guid actorUserId);
 
         /// <summary>
@@ -35,6 +36,7 @@ namespace AuthService.Services
             Guid sessionId,
             Guid? expectedCounselorId,
             string intent,
+            int? expectedVersion,
             Guid actorUserId);
 
         /// <summary>
@@ -47,13 +49,33 @@ namespace AuthService.Services
             Guid targetCounselorId,
             Guid expectedCounselorId,
             string reason,
+            int? expectedVersion,
             Guid actorUserId);
 
-        Task<SessionOperationResult> StartSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, string? sessionType = null);
-        Task<SessionOperationResult> CompleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId);
-        Task<SessionOperationResult> CancelSessionAsync(Guid tenantId, Guid sessionId, string reason, Guid currentUserId);
+        /// <summary>
+        /// Phase 3I Slice 8 — ReQueue releases ownership (A → NULL), ensures one active Waiting,
+        /// dual-trails OwnershipRequeued when ownership actually changes.
+        /// </summary>
+        Task<ReQueueSessionResult> ReQueueSessionAsync(
+            Guid tenantId,
+            Guid sessionId,
+            int? expectedVersion,
+            Guid? expectedCounselorId,
+            string reason,
+            string? newIntention,
+            string? notes,
+            string? sessionType,
+            Guid actorUserId);
+
+        Task<SessionOperationResult> StartSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, int? expectedVersion, string? sessionType = null);
+        Task<SessionOperationResult> CompleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, int? expectedVersion);
+        Task<SessionOperationResult> CancelSessionAsync(Guid tenantId, Guid sessionId, string reason, Guid currentUserId, int? expectedVersion);
         Task<SessionOperationResult> MarkAddOnSurgeryAsync(Guid tenantId, Guid sessionId, Guid currentUserId);
-        Task<bool> DeleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId);
+        Task<SessionOperationResult> DeleteSessionAsync(Guid tenantId, Guid sessionId, Guid currentUserId, int? expectedVersion);
+
+        /// <summary>Phase 3I — tests-only entry point (no HTTP route today). If exposed via a route later,
+        /// Version becomes required (PD-S7-05); kept optional/nullable here to match current callers.</summary>
+        Task<bool> StartSessionFromQueueAsync(Guid tenantId, Guid queueItemId, Guid currentUserId, int? expectedVersion = null);
 
         /// <summary>
         /// Merges CCMS case linkage fields into the session's PackageAddonsJson (internal callback).
@@ -76,7 +98,6 @@ namespace AuthService.Services
         Task<CounselorQueueItemDto> AddToQueueAsync(AddToQueueRequest request);
         Task<CounselorQueueItemDto> UpdateQueueItemStatusAsync(Guid tenantId, Guid queueItemId, string status, Guid currentUserId);
         Task<CallNextPatientResponse> CallNextPatientAsync(CallNextPatientRequest request, Guid currentUserId);
-        Task<bool> StartSessionFromQueueAsync(Guid tenantId, Guid queueItemId, Guid currentUserId);
         Task<bool> CompleteQueueItemAsync(Guid tenantId, Guid queueItemId, Guid currentUserId);
         Task<bool> RemoveFromQueueAsync(Guid tenantId, Guid queueItemId, string reason, Guid currentUserId);
 

@@ -7,6 +7,7 @@ import {
   restoreLensSelectionFromBlob,
 } from '@/lib/counsellors-desk/package-addons-blob';
 import { toCounsellingDateOnly } from '@/lib/counsellors-desk/session-utils';
+import { normalizeOtReportingTimeToHhMm } from '@/lib/counsellors-desk/counselling-time';
 import { resolveHydratedSelectedSurgeryId } from '@/lib/counsellors-desk/resolve-hydrated-selected-surgery-id';
 import type { CounsellingPackageAddonsBlob } from '@/types/counselling-estimate';
 import type {
@@ -130,7 +131,9 @@ export function mapOtRecord(r: any): FinalizeSurgeryRecord {
     // it from the raw ISO startTime before fmtOtTime reformats it.
     scheduleDate:     r.scheduleDate ?? (r.startTime?.includes('T') ? (r.startTime as string).slice(0, 10) : ''),
     startTime:        fmtOtTime(r.startTime),
-    reportingTime:    fmtOtTime(r.reportingTime),
+    // Package LA / UAT-FS-RT-01: keep machine-readable HH:mm for Confirm validation;
+    // display consumers format via formatCounsellingTimeDisplay.
+    reportingTime:    normalizeOtReportingTimeToHhMm(r.reportingTime),
     checklistSummary: r.checklistSummary ?? undefined,
   } as FinalizeSurgeryRecord;
 }
@@ -390,41 +393,63 @@ export const counsellorsDeskApi = {
         itemizedSubtotal: estimate.itemizedSubtotal,
         bundleSavings: estimate.bundleSavings,
         finalPayableAmount: estimate.finalPayableAmount,
+        // Phase 3I Slice 7 (PD-S7-01) — optimistic concurrency token; send back as expected `version`
+        // on the next mutation (save/start/complete/assign/claim/reassign/refresh/communication-log).
+        version: typeof raw.version === 'number' ? raw.version : undefined,
       };
     } catch (err) {
       throw err;
     }
   },
 
-  async saveSession(id: string, data: Partial<CounsellingSession>): Promise<void> {
-    await getApi().put(`/Counseling/sessions/${id}`, data);
+  /** Phase 3I Slice 7 (PD-S7-02) — `version` (expected) is required by the backend; response returns the bumped Version. */
+  async saveSession(
+    id: string,
+    data: Partial<CounsellingSession>,
+  ): Promise<{ version?: number }> {
+    // In-session mutation: ownership ACL 403 must stay on the counselling page (toast),
+    // not eject via global Access Denied redirect — same pattern as Assign/Claim/Reassign.
+    const response = await getApi().put(`/Counseling/sessions/${id}`, data, {
+      skipForbiddenRedirect: true,
+    });
+    const version = response.data?.session?.version ?? response.data?.version;
+    return { version: typeof version === 'number' ? version : undefined };
   },
 
-  async startSession(id: string, sessionType?: string): Promise<void> {
+  /** Phase 3I Slice 7 (PD-S7-02) — `version` (expected) is required by the backend. */
+  async startSession(
+    id: string,
+    sessionType?: string,
+    version?: number,
+  ): Promise<{ version?: number }> {
     // Master codes (FOLLOW_UP) must map to DB values (Followup) — check constraint on session_type.
-    const payload = sessionType
-      ? { sessionType: sessionTypeCodeToDb(sessionType) }
-      : {};
-    await getApi().post(`/Counseling/sessions/${id}/start`, payload);
+    const payload: { version?: number; sessionType?: string } = { version };
+    if (sessionType) payload.sessionType = sessionTypeCodeToDb(sessionType);
+    const response = await getApi().post(`/Counseling/sessions/${id}/start`, payload);
+    const nextVersion = response.data?.session?.version ?? response.data?.version;
+    return { version: typeof nextVersion === 'number' ? nextVersion : undefined };
   },
 
   /**
    * Phase 3I Slice 3 — explicit initial ownership assignment (NULL → target).
    * Does not use generic Update CounselorId mutation.
+   * Phase 3I Slice 7 (PD-S7-03/04) — `version` (expected) is required; response returns the bumped Version.
    */
   async assignSession(
     sessionId: string,
     counselorId: string,
+    version?: number,
   ): Promise<{
     success: boolean;
     message: string;
     sessionId: string;
     counselorId: string;
     counselorName: string | null;
+    version?: number;
   }> {
     const res = await getApi().post(
       `/Counseling/sessions/${sessionId}/assign`,
-      { counselorId },
+      { counselorId, version },
       // In-context mutation: keep 403/Conflict on Waiting List (toast), not Access Denied page.
       { skipForbiddenRedirect: true },
     );
@@ -435,6 +460,7 @@ export const counsellorsDeskApi = {
       sessionId: String(data.sessionId ?? sessionId),
       counselorId: String(data.counselorId ?? counselorId),
       counselorName: data.counselorName ?? null,
+      version: typeof data.version === 'number' ? data.version : undefined,
     };
   },
 
@@ -442,12 +468,14 @@ export const counsellorsDeskApi = {
    * Phase 3I — lifecycle ownership claim for Done ReEvaluate / Repeat StartRepeat.
    * Supports NULL → actor and other-owner → actor. Not general Reassign.
    * Does not use UpdateSession CounselorId write or Slice 3 Assign.
+   * Phase 3I Slice 7 (PD-S7-03/04) — `version` (expected) is required; response returns the bumped Version.
    */
   async claimSessionForLifecycle(
     sessionId: string,
     input: {
       expectedCounselorId: string | null;
       intent: 'ReEvaluate' | 'StartRepeat';
+      version?: number;
     },
   ): Promise<{
     success: boolean;
@@ -455,12 +483,14 @@ export const counsellorsDeskApi = {
     sessionId: string;
     counselorId: string;
     counselorName: string | null;
+    version?: number;
   }> {
     const res = await getApi().post(
       `/Counseling/sessions/${sessionId}/claim-for-lifecycle`,
       {
         expectedCounselorId: input.expectedCounselorId,
         intent: input.intent,
+        version: input.version,
       },
       { skipForbiddenRedirect: true },
     );
@@ -471,12 +501,14 @@ export const counsellorsDeskApi = {
       sessionId: String(data.sessionId ?? sessionId),
       counselorId: String(data.counselorId ?? ''),
       counselorName: data.counselorName ?? null,
+      version: typeof data.version === 'number' ? data.version : undefined,
     };
   },
 
   /**
    * Phase 3I Slice 6 — supervisory General Reassign (owned A → B).
    * Requires counseling_sessions.reassign. Not Assign; not lifecycle Claim.
+   * Phase 3I Slice 7 (PD-S7-03/04) — `version` (expected) is required; response returns the bumped Version.
    */
   async reassignSession(
     sessionId: string,
@@ -484,6 +516,7 @@ export const counsellorsDeskApi = {
       counselorId: string;
       expectedCounselorId: string;
       reason: string;
+      version?: number;
     },
   ): Promise<{
     success: boolean;
@@ -491,6 +524,7 @@ export const counsellorsDeskApi = {
     sessionId: string;
     counselorId: string;
     counselorName: string | null;
+    version?: number;
   }> {
     const res = await getApi().post(
       `/Counseling/sessions/${sessionId}/reassign`,
@@ -498,6 +532,7 @@ export const counsellorsDeskApi = {
         counselorId: input.counselorId,
         expectedCounselorId: input.expectedCounselorId,
         reason: input.reason,
+        version: input.version,
       },
       { skipForbiddenRedirect: true },
     );
@@ -508,6 +543,7 @@ export const counsellorsDeskApi = {
       sessionId: String(data.sessionId ?? sessionId),
       counselorId: String(data.counselorId ?? input.counselorId),
       counselorName: data.counselorName ?? null,
+      version: typeof data.version === 'number' ? data.version : undefined,
     };
   },
 
@@ -541,9 +577,12 @@ export const counsellorsDeskApi = {
    *   Completed + PatientAgreedToSurgery=true  → 'Done'
    *   Completed + PatientAgreedToSurgery=false → 'RepeatCounselling'
    * CS-01: must propagate failure — queue status is required for Finish/Done.
+   * Phase 3I Slice 7 (PD-S7-02) — `version` (expected) is required; response returns the bumped Version.
    */
-  async completeSession(id: string): Promise<void> {
-    await getApi().post(`/Counseling/sessions/${id}/complete`);
+  async completeSession(id: string, version?: number): Promise<{ version?: number }> {
+    const response = await getApi().post(`/Counseling/sessions/${id}/complete`, { version });
+    const nextVersion = response.data?.session?.version ?? response.data?.version;
+    return { version: typeof nextVersion === 'number' ? nextVersion : undefined };
   },
 
   /**
@@ -625,8 +664,13 @@ export const counsellorsDeskApi = {
     return response.data;
   },
 
-  async cancelOtSchedule(id: string): Promise<FinalizeSurgeryRecord> {
-    const response = await getApi().post(`/Counseling/ot-schedule/${id}/cancel`);
+  async cancelOtSchedule(
+    id: string,
+    payload: { cancelReason: string },
+  ): Promise<FinalizeSurgeryRecord> {
+    const response = await getApi().post(`/Counseling/ot-schedule/${id}/cancel`, {
+      cancelReason: payload.cancelReason,
+    });
     return response.data;
   },
 
@@ -683,15 +727,26 @@ export const counsellorsDeskApi = {
     } as OtScheduleDetail;
   },
 
-  async refreshSessionFromOpd(sessionId: string): Promise<{
+  /** Phase 3I Slice 7 (PD-S7-02 / M13) — `version` (expected) is required; response includes bumped `version`. */
+  async refreshSessionFromOpd(
+    sessionId: string,
+    version?: number,
+  ): Promise<{
     procedureName?: string | null;
     eyeOperated?: string | null;
     iolPower?: string | null;
     biometryMissing?: boolean;
     eyePhrase?: string | null;
+    version?: number;
   }> {
-    const response = await getApi().post(`/Counseling/sessions/${sessionId}/refresh-from-opd`);
-    return response.data;
+    const response = await getApi().post(`/Counseling/sessions/${sessionId}/refresh-from-opd`, {
+      version,
+    });
+    const nextVersion = response.data?.version;
+    return {
+      ...response.data,
+      version: typeof nextVersion === 'number' ? nextVersion : undefined,
+    };
   },
 
   async updateOtDetails(id: string, data: UpdateOtDetailsPayload): Promise<FinalizeSurgeryRecord> {
@@ -723,24 +778,31 @@ export const counsellorsDeskApi = {
   async getAnesthetists(): Promise<
     { id: string; name: string; employeeId?: string; jobTitle?: string; specialization?: string }[]
   > {
-    const response = await getApi().get('/users/anesthetists');
+    // CounselingController GET /anesthetists — counseling_sessions.read (not broad user.view).
+    // UsersController anesthetists endpoint remains user.view for admin/IAM callers.
+    const response = await getApi().get('/Counseling/anesthetists');
     const list = response.data ?? [];
-    return list.map(
-      (u: {
-        id: string;
-        fullName?: string;
-        name?: string;
-        employeeId?: string;
-        jobTitle?: string;
-        specialization?: string;
-      }) => ({
-        id: u.id,
-        name: (u.fullName ?? u.name ?? '').trim(),
-        employeeId: u.employeeId || undefined,
-        jobTitle: u.jobTitle || undefined,
-        specialization: u.specialization || undefined,
-      }),
-    );
+    return list
+      .map(
+        (u: {
+          id?: string;
+          Id?: string;
+          fullName?: string;
+          FullName?: string;
+          name?: string;
+          Name?: string;
+          employeeId?: string;
+          jobTitle?: string;
+          specialization?: string;
+        }) => ({
+          id: String(u.id ?? u.Id ?? '').trim(),
+          name: String(u.fullName ?? u.FullName ?? u.name ?? u.Name ?? '').trim(),
+          employeeId: u.employeeId || undefined,
+          jobTitle: u.jobTitle || undefined,
+          specialization: u.specialization || undefined,
+        }),
+      )
+      .filter((u: { id: string; name: string }) => Boolean(u.id && u.name));
   },
 
   async getOtTheaters(branchId?: string): Promise<{ id: string; name: string }[]> {
@@ -787,6 +849,7 @@ export const counsellorsDeskApi = {
       requireSelectedMpiPatient,
       buildCreateCounsellingSessionPayload,
       findActiveWaitingListDuplicate,
+      waitingListDuplicateCreateMessage,
       displayIdentifierForWaitingList,
       matchPatientForAddWaitingList,
     } = await import('@/lib/counsellors-desk/add-patient-to-waiting-list');
@@ -839,9 +902,7 @@ export const counsellorsDeskApi = {
         : undefined);
 
     if (duplicate) {
-      throw new Error(
-        `${displayName} is already on the waiting list (${duplicate.status}). Open their existing row instead of adding again.`,
-      );
+      throw new Error(waitingListDuplicateCreateMessage(duplicate));
     }
 
     const payload = buildCreateCounsellingSessionPayload({
@@ -921,13 +982,17 @@ export const counsellorsDeskApi = {
   },
 
   async reQueueSession(sessionId: string, payload: import('@/types/counsellors-desk').ReQueuePayload) {
-    const res = await getApi().post(`/Counseling/sessions/${sessionId}/re-queue`, payload);
-    return res.data as { success: boolean; tokenNumber: string; queueItemId: string; message: string };
+    const res = await getApi().post(`/Counseling/sessions/${sessionId}/re-queue`, payload, {
+      skipForbiddenRedirect: true,
+    });
+    return res.data as import('@/types/counsellors-desk').ReQueueSessionResponse;
   },
 
+  /** Phase 3I Slice 7 (PD-S7-02 / M18) — `version` (expected) is required; response `sessionVersion` is the bumped CounselingSession.Version. */
   async logCommunication(
     sessionId: string,
     payload: {
+      version?: number;
       channel: string;
       direction?: string;
       communicationAt?: string;
@@ -938,7 +1003,19 @@ export const counsellorsDeskApi = {
       nextAction?: string;
       nextActionDate?: string;
     }
-  ) {
+  ): Promise<{
+    id: string;
+    channel: string;
+    direction: string;
+    outcome: string | null;
+    communicationAt: string;
+    messageBody: string | null;
+    nextAction: string | null;
+    nextActionDate: string | null;
+    callDurationMinutes: number | null;
+    /** Phase 3I Slice 7 (PD-S7-02 / M18) — CounselingSession.Version after this comm log's write. */
+    sessionVersion?: number;
+  }> {
     const res = await getApi().post(`/Counseling/sessions/${sessionId}/communication-logs`, {
       ...payload,
       direction: payload.direction ?? 'Outbound',

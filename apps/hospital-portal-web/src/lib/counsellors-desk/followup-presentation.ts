@@ -75,3 +75,22 @@ export function formatFollowupAverage(value: number | null | undefined): string 
   if (value == null || Number.isNaN(value)) return '—';
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
+
+/**
+ * Phase 3I Slice 10 (PD-S10-02 / PD-FOLLOWUP-01):
+ * Compact Active/Cold attribution for CounselingSession.CounselorId.
+ * Historical/original counselling attribution — NOT Follow-up Center ACL / current owner.
+ * Do not use for Post-Surgery (no CounselorId projection).
+ */
+export function formatOriginalCounsellorAttribution(args: {
+  counselorId: string | null | undefined;
+  counselorName: string | null | undefined;
+}): string {
+  if (args.counselorName) {
+    return ` · Original Counsellor: ${args.counselorName}`;
+  }
+  if (args.counselorId) {
+    return ' · Original Counsellor: Unresolved';
+  }
+  return ' · Original Counsellor: Unassigned';
+}

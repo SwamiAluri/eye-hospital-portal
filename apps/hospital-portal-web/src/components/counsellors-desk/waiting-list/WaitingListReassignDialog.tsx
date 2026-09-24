@@ -11,7 +11,6 @@ import {
   CounsellingDialogHeader,
   CounsellingDialogTitle,
   CounsellingLabel,
-  CounsellingSearchInput,
   CounsellingSelect,
   CounsellingSelectContent,
   CounsellingSelectItem,
@@ -22,11 +21,21 @@ import {
 import { counsellorsDeskApi, type CounselingCounselorOption } from '@/lib/api/counsellors-desk.api';
 import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
+import {
   counselorOptionLabel,
-  filterCounselorsByQuery,
   formatEligibleCounsellorCount,
   resolveAssignCounsellorListState,
 } from '@/lib/counsellors-desk/ownership-display-name';
+import {
+  REASSIGN_OTHER_REASON,
+  REASSIGN_REASON_OPTIONS,
+  canSubmitReassignForm,
+  excludeCurrentOwnerFromTargets,
+  resolveReassignReasonPayload,
+} from '@/lib/counsellors-desk/reassign-dialog-form';
 import { cn } from '@/lib/utils';
 
 export type WaitingListReassignDialogProps = {
@@ -36,11 +45,17 @@ export type WaitingListReassignDialogProps = {
   currentOwnerId: string | null;
   currentOwnerName?: string | null;
   sessionBranchId?: string | null;
+  /**
+   * Optimistic concurrency token for CounselingSession.Version (Phase 3I Slice 7 / PD-S7-01).
+   * `undefined` until the waiting-list API projection exposes it — see WaitingListPatient.version.
+   */
+  sessionVersion?: number;
   onOpenChange: (open: boolean) => void;
   onReassigned: (result: {
     sessionId: string;
     counselorId: string;
     counselorName: string | null;
+    version?: number;
   }) => void;
   /** Called on 409 so the page can refresh ownership. */
   onOwnershipConflict?: () => void;
@@ -53,6 +68,7 @@ export function WaitingListReassignDialog({
   currentOwnerId,
   currentOwnerName,
   sessionBranchId,
+  sessionVersion,
   onOpenChange,
   onReassigned,
   onOwnershipConflict,
@@ -60,9 +76,9 @@ export function WaitingListReassignDialog({
   const [counselors, setCounselors] = useState<CounselingCounselorOption[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedId, setSelectedId] = useState('');
-  const [reason, setReason] = useState('');
+  const [reasonChoice, setReasonChoice] = useState('');
+  const [additionalReason, setAdditionalReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -71,11 +87,10 @@ export function WaitingListReassignDialog({
     setListError(null);
     try {
       const list = await counsellorsDeskApi.getCounselors(sessionBranchId);
-      const peers = currentOwnerId
-        ? list.filter((c) => c.id !== currentOwnerId)
-        : list;
+      const peers = excludeCurrentOwnerFromTargets(list, currentOwnerId);
       setCounselors(peers);
-      setSelectedId(peers[0]?.id ?? '');
+      // Explicit selection required — do not auto-pick first peer.
+      setSelectedId('');
     } catch (err) {
       setListError(getApiErrorMessage(err, 'Could not load counsellors.'));
       setCounselors([]);
@@ -87,53 +102,57 @@ export function WaitingListReassignDialog({
 
   useEffect(() => {
     if (open) {
-      setSearchQuery('');
-      setReason('');
+      setSelectedId('');
+      setReasonChoice('');
+      setAdditionalReason('');
       setReasonError(null);
       void loadCounselors();
     } else {
       setSelectedId('');
       setListError(null);
       setSubmitting(false);
-      setSearchQuery('');
-      setReason('');
+      setReasonChoice('');
+      setAdditionalReason('');
       setReasonError(null);
     }
   }, [open, loadCounselors]);
-
-  const filteredCounselors = useMemo(
-    () => filterCounselorsByQuery(counselors, searchQuery),
-    [counselors, searchQuery],
-  );
 
   const listState = resolveAssignCounsellorListState({
     loading: loadingList,
     error: listError,
     eligibleCount: counselors.length,
-    filteredCount: filteredCounselors.length,
-    query: searchQuery,
+    filteredCount: counselors.length,
+    query: '',
   });
 
-  useEffect(() => {
-    if (listState !== 'ready') {
-      if (listState === 'no-match' || listState === 'empty') setSelectedId('');
-      return;
-    }
-    if (!filteredCounselors.some((c) => c.id === selectedId)) {
-      setSelectedId(filteredCounselors[0]?.id ?? '');
-    }
-  }, [listState, filteredCounselors, selectedId]);
-
   const selected = useMemo(
-    () => filteredCounselors.find((c) => c.id === selectedId) ?? null,
-    [filteredCounselors, selectedId],
+    () => counselors.find((c) => c.id === selectedId) ?? null,
+    [counselors, selectedId],
   );
+
+  const isOtherReason = reasonChoice === REASSIGN_OTHER_REASON;
+
+  const canSubmit =
+    Boolean(sessionId && currentOwnerId && selected) &&
+    canSubmitReassignForm({
+      selectedCounselorId: selectedId,
+      reasonChoice,
+      additionalReason,
+      submitting,
+    });
 
   const handleReassign = async () => {
     if (!sessionId || !selectedId || !currentOwnerId || submitting) return;
-    const trimmed = reason.trim();
-    if (!trimmed) {
-      setReasonError('Reason is required.');
+    const resolved = resolveReassignReasonPayload({
+      reasonChoice,
+      additionalReason,
+    });
+    if (!resolved.ok) {
+      setReasonError(
+        isOtherReason
+          ? 'Additional reason is required.'
+          : 'Reason is required.',
+      );
       return;
     }
     setReasonError(null);
@@ -142,22 +161,22 @@ export function WaitingListReassignDialog({
       const result = await counsellorsDeskApi.reassignSession(sessionId, {
         counselorId: selectedId,
         expectedCounselorId: currentOwnerId,
-        reason: trimmed,
+        reason: resolved.reason,
+        version: sessionVersion,
       });
       toast.success('Session reassigned');
       onReassigned({
         sessionId,
         counselorId: result.counselorId,
         counselorName: result.counselorName,
+        version: result.version,
       });
       onOpenChange(false);
     } catch (err: unknown) {
-      const status =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { status?: number } }).response?.status
-          : undefined;
-      if (status === 409) {
-        toast.error('Session ownership changed. Refreshing…');
+      // Phase 3I Slice 7 (PD-S7-06): stale-ownership vs stale-Version share the 409 status;
+      // surface the server's message verbatim (falls back to the standard stale-session copy).
+      if (isSessionConcurrencyConflict(err)) {
+        toast.error(getSessionConcurrencyMessage(err));
         onOwnershipConflict?.();
         onOpenChange(false);
       } else {
@@ -169,8 +188,6 @@ export function WaitingListReassignDialog({
   };
 
   const ownerLabel = currentOwnerName?.trim() || 'Current owner';
-  const canSubmit =
-    Boolean(sessionId && selected && currentOwnerId && reason.trim()) && !submitting;
 
   return (
     <CounsellingDialog open={open} onOpenChange={onOpenChange}>
@@ -199,60 +216,59 @@ export function WaitingListReassignDialog({
           </div>
 
           <div>
-            <CounsellingLabel htmlFor="reassign-counsellor-search">
+            <CounsellingLabel htmlFor="reassign-new-owner">
               New owner
             </CounsellingLabel>
-            <CounsellingSearchInput
-              id="reassign-counsellor-search"
-              className="mt-1"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search counsellors"
-              disabled={loadingList || !!listError}
-              data-testid="waiting-list-reassign-search"
-            />
             {listState === 'loading' ? (
-              <CounsellingStatusMessage className="mt-2" tone="muted">
-                Loading counsellors…
-              </CounsellingStatusMessage>
+              <CounsellingStatusMessage
+                className="mt-2"
+                tone="loading"
+                title="Loading counsellors…"
+              />
             ) : null}
             {listState === 'error' ? (
-              <div className="mt-2 space-y-2">
-                <CounsellingStatusMessage tone="error">{listError}</CounsellingStatusMessage>
-                <CounsellingButton
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void loadCounselors()}
-                >
-                  Retry
-                </CounsellingButton>
-              </div>
+              <CounsellingStatusMessage
+                className="mt-2"
+                tone="error"
+                title={listError ?? 'Could not load counsellors.'}
+                action={
+                  <CounsellingButton
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void loadCounselors()}
+                  >
+                    Retry
+                  </CounsellingButton>
+                }
+              />
             ) : null}
             {listState === 'empty' ? (
-              <CounsellingStatusMessage className="mt-2" tone="muted">
-                No eligible counsellors available
-              </CounsellingStatusMessage>
-            ) : null}
-            {listState === 'no-match' ? (
-              <CounsellingStatusMessage className="mt-2" tone="muted">
-                No counsellors match your search
-              </CounsellingStatusMessage>
+              <CounsellingStatusMessage
+                className="mt-2"
+                tone="info"
+                title="No eligible counsellors available"
+              />
             ) : null}
             {listState === 'ready' ? (
               <>
                 <p className="mt-1 text-xs text-counselling-muted-foreground">
                   {formatEligibleCounsellorCount(counselors.length)}
                 </p>
-                <CounsellingSelect value={selectedId} onValueChange={setSelectedId}>
+                <CounsellingSelect
+                  value={selectedId || undefined}
+                  onValueChange={setSelectedId}
+                >
                   <CounsellingSelectTrigger
+                    id="reassign-new-owner"
                     className="mt-1"
+                    aria-label="New owner"
                     data-testid="waiting-list-reassign-select"
                   >
                     <CounsellingSelectValue placeholder="Select counsellor" />
                   </CounsellingSelectTrigger>
                   <CounsellingSelectContent>
-                    {filteredCounselors.map((c) => (
+                    {counselors.map((c) => (
                       <CounsellingSelectItem key={c.id} value={c.id}>
                         {counselorOptionLabel(c)}
                       </CounsellingSelectItem>
@@ -265,27 +281,36 @@ export function WaitingListReassignDialog({
 
           <div>
             <CounsellingLabel htmlFor="reassign-reason">Reason</CounsellingLabel>
-            <textarea
-              id="reassign-reason"
-              className={cn(
-                'mt-1 min-h-[72px] w-full rounded-md border border-counselling-border bg-background px-3 py-2 text-sm',
-                'text-counselling-foreground placeholder:text-counselling-muted-foreground',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
-                reasonError && 'border-destructive',
-              )}
-              value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
+            <CounsellingSelect
+              value={reasonChoice || undefined}
+              onValueChange={(value) => {
+                setReasonChoice(value);
+                if (value !== REASSIGN_OTHER_REASON) {
+                  setAdditionalReason('');
+                }
                 if (reasonError) setReasonError(null);
               }}
-              placeholder="Why is this session being reassigned?"
-              maxLength={500}
               disabled={submitting}
-              data-testid="waiting-list-reassign-reason"
-              aria-invalid={Boolean(reasonError)}
-              aria-describedby={reasonError ? 'reassign-reason-error' : undefined}
-            />
-            {reasonError ? (
+            >
+              <CounsellingSelectTrigger
+                id="reassign-reason"
+                className="mt-1"
+                aria-label="Reason"
+                aria-invalid={Boolean(reasonError)}
+                aria-describedby={reasonError ? 'reassign-reason-error' : undefined}
+                data-testid="waiting-list-reassign-reason"
+              >
+                <CounsellingSelectValue placeholder="Select reason" />
+              </CounsellingSelectTrigger>
+              <CounsellingSelectContent>
+                {REASSIGN_REASON_OPTIONS.map((option) => (
+                  <CounsellingSelectItem key={option} value={option}>
+                    {option}
+                  </CounsellingSelectItem>
+                ))}
+              </CounsellingSelectContent>
+            </CounsellingSelect>
+            {reasonError && !isOtherReason ? (
               <p
                 id="reassign-reason-error"
                 className="mt-1 text-xs text-destructive"
@@ -295,6 +320,46 @@ export function WaitingListReassignDialog({
               </p>
             ) : null}
           </div>
+
+          {isOtherReason ? (
+            <div>
+              <CounsellingLabel htmlFor="reassign-additional-reason">
+                Additional reason
+              </CounsellingLabel>
+              <textarea
+                id="reassign-additional-reason"
+                className={cn(
+                  'mt-1 min-h-[72px] w-full rounded-md border border-counselling-border bg-background px-3 py-2 text-sm',
+                  'text-counselling-foreground placeholder:text-counselling-muted-foreground',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
+                  reasonError && 'border-destructive',
+                )}
+                value={additionalReason}
+                onChange={(e) => {
+                  setAdditionalReason(e.target.value);
+                  if (reasonError) setReasonError(null);
+                }}
+                placeholder="Enter reason…"
+                maxLength={500}
+                disabled={submitting}
+                data-testid="waiting-list-reassign-additional-reason"
+                aria-invalid={Boolean(reasonError)}
+                aria-describedby={
+                  reasonError ? 'reassign-additional-reason-error' : undefined
+                }
+                aria-required
+              />
+              {reasonError ? (
+                <p
+                  id="reassign-additional-reason-error"
+                  className="mt-1 text-xs text-destructive"
+                  role="alert"
+                >
+                  {reasonError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <CounsellingDialogFooter>
@@ -309,7 +374,7 @@ export function WaitingListReassignDialog({
           <CounsellingButton
             type="button"
             onClick={() => void handleReassign()}
-            disabled={!canSubmit || listState !== 'ready'}
+            disabled={!canSubmit}
             data-testid="waiting-list-reassign-submit"
           >
             {submitting ? 'Reassigning…' : 'Reassign'}
@@ -319,4 +384,3 @@ export function WaitingListReassignDialog({
     </CounsellingDialog>
   );
 }
-

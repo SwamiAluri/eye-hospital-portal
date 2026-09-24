@@ -230,4 +230,25 @@ describe('WaitingListFilterToolbar', () => {
     });
     expect(onOwnerFilterChange).toHaveBeenCalledWith('Mine');
   });
+
+  it('shows active-filter chips when type/owner/search/dates applied', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListFilterToolbar
+        {...baseProps({
+          filters: { ...EMPTY_FILTERS, type: 'Surgery' },
+          ownerFilter: 'Mine',
+          onOwnerFilterChange: vi.fn(),
+          quickSearch: 'lens',
+          appliedFromDate: '2026-09-01',
+          appliedToDate: '2026-09-10',
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-testid="waiting-list-active-filters"');
+    expect(html).toContain('Type: Surgery');
+    expect(html).toContain('Owner: My Sessions');
+    expect(html).toContain('Search active');
+    expect(html).toContain('Apply dates');
+  });
 });

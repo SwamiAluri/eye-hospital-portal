@@ -21,7 +21,7 @@ public class NotificationClient : INotificationClient
     public NotificationClient(IConfiguration configuration, ILogger<NotificationClient> logger)
     {
         _logger = logger;
-        _notificationServiceUrl = configuration["NotificationService:BaseUrl"] ?? "http://localhost:7071";
+        _notificationServiceUrl = configuration["NotificationService:BaseUrl"] ?? "http://localhost:7073";
         _useMockService = configuration.GetValue<bool>("NotificationService:UseMockService", false);
         
         _httpClient = new HttpClient
@@ -226,7 +226,9 @@ public class NotificationClient : INotificationClient
                 return (true, null);
             }
 
-            // Call notification service to send real email
+            // Use StringContent + Content-Length (same pattern as SendActivationOtpAsync).
+            // Chunked JSON content without Content-Length is dropped by the Azure Functions
+            // isolated worker (empty body → 400) even when curl/PowerShell probes succeed.
             var requestBody = new
             {
                 userId,
@@ -237,18 +239,31 @@ public class NotificationClient : INotificationClient
                 templateType = "password_reset"
             };
 
-            var response = await _httpClient.PostAsJsonAsync("/api/notifications/password-reset", requestBody);
+            var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            var url = $"{_notificationServiceUrl.TrimEnd('/')}/api/notifications/password-reset";
+            _logger.LogInformation(
+                "[NotificationClient] Posting password-reset notification - Url: {Url}, PayloadBytes: {Bytes}",
+                url,
+                content.Headers.ContentLength);
+
+            var response = await _httpClient.PostAsync(url, content);
+            var responseBody = await response.Content.ReadAsStringAsync();
+            _logger.LogInformation(
+                "[NotificationClient] Password-reset notification response - Status: {StatusCode}",
+                response.StatusCode);
 
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("✅ Password reset email sent successfully to {Email}", email);
+                _logger.LogInformation("Password reset email accepted by notification service for user {UserId}", userId);
                 return (true, null);
             }
 
-            var errorContent = await response.Content.ReadAsStringAsync();
-            _logger.LogError("❌ Failed to send password reset email. Status: {Status}, Error: {Error}",
-                response.StatusCode, errorContent);
-            
+            _logger.LogError(
+                "Failed to send password reset email. Status: {Status}, Error: {Error}",
+                response.StatusCode,
+                responseBody);
+
             return (false, $"Failed to send email: {response.StatusCode}");
         }
         catch (Exception ex)

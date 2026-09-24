@@ -27,6 +27,7 @@ namespace AuthService.Controllers
         private readonly INotificationClient _notificationClient;
         private readonly INotificationService _notificationService;
         private readonly IActivationAuditService _activationAuditService;
+        private readonly IConfiguration _configuration;
         private readonly ILogger<UsersController> _logger;
 
         public UsersController(
@@ -37,6 +38,7 @@ namespace AuthService.Controllers
             INotificationClient notificationClient,
             INotificationService notificationService,
             IActivationAuditService activationAuditService,
+            IConfiguration configuration,
             ILogger<UsersController> logger)
         {
             _userManager = userManager;
@@ -46,6 +48,7 @@ namespace AuthService.Controllers
             _notificationClient = notificationClient;
             _notificationService = notificationService;
             _activationAuditService = activationAuditService;
+            _configuration = configuration;
             _logger = logger;
         }
 
@@ -729,7 +732,8 @@ namespace AuthService.Controllers
         }
 
         /// <summary>
-        /// Request password reset for a user (admin-triggered)
+        /// Request password reset email for a user (admin-triggered).
+        /// Reuses the same token + notification path as self-service Forgot Password.
         /// POST /api/users/{id}/reset-password
         /// </summary>
         [HttpPost("{id}/reset-password")]
@@ -741,38 +745,80 @@ namespace AuthService.Controllers
             var user = await _userManager.Users.FirstOrDefaultAsync(u => u.Id == id && u.TenantId == tenantId);
             if (user == null) return NotFound(new { message = "User not found" });
 
-            // Generate password reset token
-            var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
-            var resetTokenHash = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(resetToken));
+            if (string.IsNullOrWhiteSpace(user.Email))
+                return BadRequest(new { message = "User does not have an email address for password reset" });
 
-            user.PasswordResetToken = resetTokenHash;
-            user.ResetTokenExpiresAt = DateTime.UtcNow.AddHours(2); // 2 hours expiry
-            
+            // Compatible with AuthController ForgotPassword / ResetPassword token lookup
+            var resetToken = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+                .Replace("+", "-").Replace("/", "_").Replace("=", "");
+
+            user.PasswordResetToken = resetToken;
+            user.ResetTokenExpiresAt = DateTime.UtcNow.AddHours(1);
             await _userManager.UpdateAsync(user);
 
-            // Log reset request
+            var resetTokenHash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(resetToken)));
+
+            Guid? requestedBy = null;
+            if (Guid.TryParse(User.FindFirst("sub")?.Value, out var adminId))
+                requestedBy = adminId;
+
             await _context.Set<PasswordResetRequest>().AddAsync(new PasswordResetRequest
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenantId,
                 UserId = id,
                 ResetTokenHash = resetTokenHash,
-                RequestedByUserId = Guid.Parse(User.FindFirst("sub")?.Value ?? Guid.Empty.ToString()),
+                RequestedByUserId = requestedBy,
                 ExpiresAt = user.ResetTokenExpiresAt.Value,
                 Status = "pending",
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
             });
             await _context.SaveChangesAsync();
 
-            // TODO: Send email with reset link
-            // var resetUrl = $"{Request.Scheme}://{Request.Host}/reset-password?token={resetToken}&userId={id}";
-            // await _emailService.SendPasswordResetEmail(user.Email, user.UserName, resetUrl);
+            var frontendBase = (_configuration["Frontend:BaseUrl"] ?? "http://localhost:3000").TrimEnd('/');
+            var resetUrl = $"{frontendBase}/auth/reset-password?token={Uri.EscapeDataString(resetToken)}";
 
-            return Ok(new { 
+            try
+            {
+                var emailResult = await _notificationClient.SendPasswordResetEmailAsync(
+                    user.Id,
+                    user.TenantId,
+                    user.Email!,
+                    resetUrl,
+                    user.FirstName ?? user.Email!);
+
+                if (!emailResult.Success)
+                {
+                    _logger.LogError(
+                        "Admin password reset email failed for user {UserId}: {Error}",
+                        id,
+                        emailResult.Error);
+                    return StatusCode(502, new
+                    {
+                        message = "Password reset was prepared but the email could not be sent. Please try again or contact support."
+                    });
+                }
+            }
+            catch (Exception emailEx)
+            {
+                _logger.LogError(emailEx, "Exception sending admin password reset email for user {UserId}", id);
+                return StatusCode(502, new
+                {
+                    message = "Password reset was prepared but the email could not be sent. Please try again or contact support."
+                });
+            }
+
+            _logger.LogInformation(
+                "Admin-initiated password reset email sent for user {UserId} by {AdminUserId}",
+                id,
+                requestedBy);
+
+            return Ok(new
+            {
                 message = "Password reset email sent to user",
                 email = user.Email,
-                expiresAt = user.ResetTokenExpiresAt,
-                resetToken = resetToken // REMOVE IN PRODUCTION - only for testing
+                expiresAt = user.ResetTokenExpiresAt
             });
         }
 
@@ -1009,17 +1055,19 @@ namespace AuthService.Controllers
         }
 
         /// <summary>
-        /// Reset password for a user (used during activation or password reset)
-        /// POST: /api/users/{id}/reset-password
+        /// Admin direct set-password (distinct from email reset initiation).
+        /// POST: /api/users/{id}/set-password
         /// </summary>
-        [HttpPost("{id}/reset-password")]
+        [HttpPost("{id}/set-password")]
         [RequirePermission("user.manage")]
-        public async Task<IActionResult> ResetPassword(string id, [FromBody] ResetPasswordRequest request)
+        public async Task<IActionResult> SetPassword(string id, [FromBody] ResetPasswordRequest request)
         {
-            _logger.LogInformation("Reset password request for user {UserId}", id);
+            _logger.LogInformation("Set password request for user {UserId}", id);
+
+            if (!TryGetTenantId(out var tenantId)) return BadRequest(new { success = false, message = "TenantId missing" });
 
             var user = await _userManager.FindByIdAsync(id);
-            if (user == null)
+            if (user == null || user.TenantId != tenantId)
             {
                 return NotFound(new { success = false, message = "User not found" });
             }
@@ -1055,7 +1103,7 @@ namespace AuthService.Controllers
             await _userManager.UpdateAsync(user);
 
             _logger.LogInformation(
-                "Password reset successfully for user {UserId}. Password expires at {ExpiryDate}",
+                "Password set successfully for user {UserId}. Password expires at {ExpiryDate}",
                 id,
                 user.PasswordExpiresAt
             );
@@ -1270,6 +1318,103 @@ namespace AuthService.Controllers
 
                 return StatusCode(500, new { success = false, message = "An error occurred recording compliance acceptance" });
             }
+        }
+
+        /// <summary>
+        /// Finalize user activation after password, terms, and MFA enrollment.
+        /// Called by /activate wizard on successful MFA verify. Does not bypass OTP/MFA —
+        /// requires prior password + terms + MFA enrollment already persisted.
+        /// POST: /api/users/{id}/complete-activation
+        /// </summary>
+        [HttpPost("{id}/complete-activation")]
+        [AllowAnonymous]
+        public async Task<IActionResult> CompleteActivation(string id)
+        {
+            _logger.LogInformation("Complete activation request for user {UserId}", id);
+
+            if (!Guid.TryParse(id, out var userId))
+                return BadRequest(new { success = false, message = "Invalid user id" });
+
+            var user = await _userManager.FindByIdAsync(id);
+            if (user == null)
+                return NotFound(new { success = false, message = "User not found" });
+
+            var status = user.UserStatus?.ToLowerInvariant() ?? "";
+            if (status is "active")
+            {
+                return Ok(new
+                {
+                    success = true,
+                    message = "Account already active",
+                    userStatus = user.UserStatus,
+                    activationStatus = user.ActivationStatus
+                });
+            }
+
+            if (status is not ("pending_activation" or "pending_invitation"))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = $"Cannot complete activation from status '{user.UserStatus}'"
+                });
+            }
+
+            if (!await _userManager.HasPasswordAsync(user))
+                return BadRequest(new { success = false, message = "Password must be set before completing activation" });
+
+            if (!user.AcceptedTerms || !user.AcceptedPrivacy || !user.AcceptedHipaa)
+                return BadRequest(new { success = false, message = "Compliance acceptances must be completed before activating" });
+
+            // MFA enrollment lives in notification tables (same DB). Require enrolled MFA.
+            var mfaEnrolled = await _context.Database
+                .SqlQueryRaw<int>(
+                    @"SELECT CASE WHEN EXISTS (
+                        SELECT 1 FROM user_mfa_settings
+                        WHERE user_id = {0} AND is_mfa_enabled = true
+                      ) THEN 1 ELSE 0 END AS ""Value""",
+                    userId)
+                .FirstOrDefaultAsync();
+
+            if (mfaEnrolled != 1)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "MFA enrollment must be completed before activating"
+                });
+            }
+
+            user.ActivationStatus = "active";
+            user.UserStatus = "active";
+            user.EmailVerified = true;
+            user.EmailConfirmed = true;
+            user.MustResetPassword = false;
+            user.MustChangePasswordOnLogin = false;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Failed to finalize activation",
+                    errors = result.Errors.Select(e => e.Description)
+                });
+            }
+
+            _logger.LogInformation(
+                "User {UserId} activation finalized. UserStatus=active, ActivationStatus=active",
+                id);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Account activated successfully",
+                userStatus = user.UserStatus,
+                activationStatus = user.ActivationStatus
+            });
         }
 
         /// <summary>

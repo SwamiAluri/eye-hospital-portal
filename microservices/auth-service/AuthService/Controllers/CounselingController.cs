@@ -93,6 +93,8 @@ namespace AuthService.Controllers
                 SessionOperationFailureKind.Forbidden => StatusCode(
                     StatusCodes.Status403Forbidden, result),
                 SessionOperationFailureKind.NotFound => NotFound(result),
+                // Phase 3I Slice 7 (PD-S7-06): stale/missing Version → 409, distinct from 403 ownership.
+                SessionOperationFailureKind.Conflict => Conflict(result),
                 _ => BadRequest(result),
             };
         }
@@ -270,7 +272,7 @@ namespace AuthService.Controllers
                 }
                 
                 var result = await _counselingService.CreateSessionAsync(request, currentUserId);
-                return result.Success ? Ok(result) : BadRequest(result);
+                return MapSessionOperationResult(result);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -331,7 +333,7 @@ namespace AuthService.Controllers
                 var actorUserId = GetCurrentUserId();
 
                 var result = await _counselingService.AssignSessionAsync(
-                    tenantId, id, request.CounselorId, actorUserId);
+                    tenantId, id, request.CounselorId, request.Version, actorUserId);
 
                 if (result.Success)
                     return Ok(result);
@@ -375,7 +377,7 @@ namespace AuthService.Controllers
                 var actorUserId = GetCurrentUserId();
 
                 var result = await _counselingService.ClaimSessionForLifecycleAsync(
-                    tenantId, id, request.ExpectedCounselorId, request.Intent, actorUserId);
+                    tenantId, id, request.ExpectedCounselorId, request.Intent, request.Version, actorUserId);
 
                 if (result.Success)
                     return Ok(result);
@@ -433,6 +435,7 @@ namespace AuthService.Controllers
                     request.CounselorId,
                     request.ExpectedCounselorId,
                     request.Reason,
+                    request.Version,
                     actorUserId);
 
                 if (result.Success)
@@ -478,18 +481,21 @@ namespace AuthService.Controllers
 
                 var updateRequest = new AuthService.Models.Counselor.UpdateCounselingSessionRequest
                 {
-                    CurrentStage = request.Stage.ToString()
+                    CurrentStage = request.Stage.ToString(),
+                    Version = request.Version,
                 };
 
                 var result = await _counselingService.UpdateSessionAsync(tenantId, id, updateRequest, currentUserId);
                 if (result.Success)
-                    return Ok(new { success = true, currentStage = request.Stage.ToString() });
+                    return Ok(new { success = true, currentStage = request.Stage.ToString(), version = result.Session?.Version });
 
                 return result.FailureKind switch
                 {
                     SessionOperationFailureKind.Forbidden => StatusCode(
                         StatusCodes.Status403Forbidden, new { message = result.Message }),
                     SessionOperationFailureKind.NotFound => NotFound(new { message = result.Message }),
+                    // Phase 3I Slice 7 (PD-S7-06): stale/missing Version → 409, distinct from 403 ownership.
+                    SessionOperationFailureKind.Conflict => Conflict(new { message = result.Message }),
                     _ => BadRequest(new { message = result.Message }),
                 };
             }
@@ -509,7 +515,7 @@ namespace AuthService.Controllers
                 var tenantId = GetTenantId();
                 var currentUserId = GetCurrentUserId();
                 
-                var result = await _counselingService.StartSessionAsync(tenantId, id, currentUserId, request?.SessionType);
+                var result = await _counselingService.StartSessionAsync(tenantId, id, currentUserId, request?.Version, request?.SessionType);
                 return MapSessionOperationResult(result);
             }
             catch (Exception ex)
@@ -521,14 +527,14 @@ namespace AuthService.Controllers
 
         [HttpPost("sessions/{id}/complete")]
         [RequirePermission("counseling_sessions.update")]
-        public async Task<IActionResult> CompleteSession(Guid id)
+        public async Task<IActionResult> CompleteSession(Guid id, [FromBody] CompleteCounselingSessionRequest? request)
         {
             try
             {
                 var tenantId = GetTenantId();
                 var currentUserId = GetCurrentUserId();
                 
-                var result = await _counselingService.CompleteSessionAsync(tenantId, id, currentUserId);
+                var result = await _counselingService.CompleteSessionAsync(tenantId, id, currentUserId, request?.Version);
                 return MapSessionOperationResult(result);
             }
             catch (Exception ex)
@@ -541,12 +547,21 @@ namespace AuthService.Controllers
         /// <summary>W-01 — copy latest OPD biometry / procedure onto the session (and journey if present).</summary>
         [HttpPost("sessions/{id}/refresh-from-opd")]
         [RequirePermission("counseling_sessions.update")]
-        public async Task<IActionResult> RefreshSessionFromOpd(Guid id)
+        public async Task<IActionResult> RefreshSessionFromOpd(Guid id, [FromBody] RefreshFromOpdRequest? request)
         {
             try
             {
-                var snap = await _otFinalizeService.RefreshSessionFromOpdAsync(id, GetTenantId(), GetCurrentUserId());
+                var snap = await _otFinalizeService.RefreshSessionFromOpdAsync(id, GetTenantId(), GetCurrentUserId(), request?.Version);
                 return Ok(snap);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            // Phase 3I Slice 7 (PD-S7-06): stale Version → 409, checked before the generic NotFound catch below.
+            catch (InvalidOperationException ex) when (SessionConcurrency.IsStale(ex))
+            {
+                return Conflict(new { message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
@@ -592,7 +607,7 @@ namespace AuthService.Controllers
                 var tenantId = GetTenantId();
                 var currentUserId = GetCurrentUserId();
                 
-                var result = await _counselingService.CancelSessionAsync(tenantId, id, request.Reason, currentUserId);
+                var result = await _counselingService.CancelSessionAsync(tenantId, id, request.Reason, currentUserId, request.Version);
                 return MapSessionOperationResult(result);
             }
             catch (Exception ex)
@@ -602,17 +617,29 @@ namespace AuthService.Controllers
             }
         }
 
+        /// <summary>Phase 3I Slice 7 (PD-S7-02) — DELETE body carries expected Version, mirrors
+        /// RolesController RemovePermissions convention.</summary>
         [HttpDelete("sessions/{id}")]
         [RequirePermission("counseling_sessions.delete")]
-        public async Task<IActionResult> DeleteSession(Guid id)
+        public async Task<IActionResult> DeleteSession(Guid id, [FromBody] DeleteCounselingSessionRequest? request)
         {
             try
             {
                 var tenantId = GetTenantId();
                 var currentUserId = GetCurrentUserId();
                 
-                var success = await _counselingService.DeleteSessionAsync(tenantId, id, currentUserId);
-                return success ? Ok(new { message = "Session deleted successfully" }) : NotFound(new { message = "Session not found" });
+                var result = await _counselingService.DeleteSessionAsync(tenantId, id, currentUserId, request?.Version);
+                if (result.Success)
+                    return Ok(new { message = result.Message });
+
+                return result.FailureKind switch
+                {
+                    SessionOperationFailureKind.NotFound => NotFound(new { message = result.Message }),
+                    SessionOperationFailureKind.Forbidden => StatusCode(
+                        StatusCodes.Status403Forbidden, new { message = result.Message }),
+                    SessionOperationFailureKind.Conflict => Conflict(new { message = result.Message }),
+                    _ => BadRequest(new { message = result.Message }),
+                };
             }
             catch (Exception ex)
             {
@@ -745,6 +772,7 @@ namespace AuthService.Controllers
                         s.DecisionDate,
                         s.ReasonsForDelay,
                         s.CounselorId,
+                        s.Version,
                         CounselorFirstName = c != null ? c.FirstName : null,
                         CounselorLastName  = c != null ? c.LastName  : null,
                         p.FirstName,
@@ -836,6 +864,7 @@ namespace AuthService.Controllers
                                 ? $"{item.CounselorFirstName} {item.CounselorLastName}".Trim()
                                 : null,
                             BranchId = item.QueueBranchId.ToString(),
+                            Version = item.Version,
                         };
                     })
                     .Where(item =>
@@ -1353,6 +1382,11 @@ namespace AuthService.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+            // Phase 3I Slice 7 (PD-S7-06 / M18): stale Version → 409, checked before the generic NotFound catch below.
+            catch (InvalidOperationException ex) when (SessionConcurrency.IsStale(ex))
+            {
+                return Conflict(new { message = ex.Message });
+            }
             catch (InvalidOperationException ex)
             {
                 return NotFound(new { message = ex.Message });
@@ -1491,6 +1525,11 @@ namespace AuthService.Controllers
                 var userId   = GetCurrentUserId();
                 var result = await _communicationService.QuickBookFromSessionAsync(sessionId, request, tenantId, userId);
                 return StatusCode(201, result);
+            }
+            // Phase 3I Slice 7 (PD-S7-06 / M15): stale Version → 409, checked before the generic BadRequest catch below.
+            catch (InvalidOperationException ex) when (SessionConcurrency.IsStale(ex))
+            {
+                return Conflict(new { success = false, message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
@@ -1644,76 +1683,62 @@ namespace AuthService.Controllers
             => _followupBranchAccess.ResolveAccessibleBranchesAsync(
                 GetTenantId(), GetCurrentUserId(), requestedBranchId);
 
-        /// <summary>POST /api/Counseling/sessions/{id}/re-queue — re-queue a patient to the counselor waiting list after call.</summary>
+        /// <summary>
+        /// Phase 3I Slice 8 — POST /api/Counseling/sessions/{id}/re-queue
+        /// Clears CounselorId → NULL, ensures one active Waiting, dual-trails OwnershipRequeued when owned.
+        /// Permission: counseling_sessions.update (PD-S8-03/16). Branch authorization enforced in service.
+        /// </summary>
         [HttpPost("sessions/{id}/re-queue")]
         [RequirePermission("counseling_sessions.update")]
         public async Task<IActionResult> ReQueueSession(Guid id, [FromBody] ReQueueSessionRequest request)
         {
             try
             {
+                if (request == null)
+                    return BadRequest(new { message = "Request body is required." });
+
+                if (string.IsNullOrWhiteSpace(request.Reason))
+                    return BadRequest(new { message = "Reason is required." });
+
                 var tenantId = GetTenantId();
-                var userId   = GetCurrentUserId();
+                var userId = GetCurrentUserId();
 
-                var session = await _context.CounselingSession
-                    .FirstOrDefaultAsync(s => s.Id == id && s.TenantId == tenantId && s.DeletedAt == null);
+                var result = await _counselingService.ReQueueSessionAsync(
+                    tenantId,
+                    id,
+                    request.Version,
+                    request.ExpectedCounselorId,
+                    request.Reason,
+                    request.NewIntention,
+                    request.Notes,
+                    request.SessionType,
+                    userId);
 
-                if (session == null)
-                    return NotFound(new { message = "Session not found" });
-
-                // Update patient intention — Phase2X write validation (Active/Cold/Orphan only)
-                if (!string.IsNullOrEmpty(request.NewIntention))
+                if (result.Success)
                 {
-                    session.PatientIntention =
-                        FollowupQueryContracts.NormalizeWritablePatientIntention(request.NewIntention);
+                    return Ok(new
+                    {
+                        success = true,
+                        tokenNumber = result.TokenNumber,
+                        queueItemId = result.QueueItemId,
+                        message = result.Message,
+                        counselorId = result.CounselorId,
+                        version = result.Version,
+                    });
                 }
 
-                if (!string.IsNullOrWhiteSpace(request.SessionType))
-                    session.SessionType = request.SessionType.Trim();
-
-                // Determine next queue position
-                var maxPosition = await _context.CounselorQueue
-                    .Where(q => q.TenantId == tenantId
-                             && q.BranchId == session.BranchId
-                             && q.Status == "Waiting"
-                             && q.DeletedAt == null)
-                    .MaxAsync(q => (int?)q.QueuePosition) ?? 0;
-
-                var tokenNumber = $"FU-{DateTime.UtcNow:yyMMdd}-{(maxPosition + 1):D3}";
-
-                var queueItem = new CounselorQueueItem
+                return result.FailureKind switch
                 {
-                    Id               = Guid.NewGuid(),
-                    TenantId         = tenantId,
-                    BranchId         = session.BranchId ?? Guid.Empty,
-                    SessionId        = session.Id,
-                    PatientId        = session.PatientId,
-                    TokenNumber      = tokenNumber,
-                    QueueType        = "RepeatCounselling",
-                    QueuePosition    = maxPosition + 1,
-                    PriorityScore    = 60.00m,
-                    UrgencyLevel     = "Normal",
-                    Status           = "Waiting",
-                    AddedToQueueAt   = DateTime.UtcNow,
-                    CreatedAt        = DateTime.UtcNow,
-                    UpdatedAt        = DateTime.UtcNow
+                    AssignSessionFailureKind.NotFound => NotFound(new { message = result.Message }),
+                    AssignSessionFailureKind.Forbidden => StatusCode(
+                        StatusCodes.Status403Forbidden, new { message = result.Message }),
+                    AssignSessionFailureKind.Conflict => Conflict(new { message = result.Message }),
+                    _ => BadRequest(new { message = result.Message }),
                 };
-
-                _context.CounselorQueue.Add(queueItem);
-
-                session.UpdatedAt       = DateTime.UtcNow;
-                session.UpdatedByUserId = userId;
-                if (!string.IsNullOrEmpty(request.Notes))
-                    session.AdditionalNotes = (session.AdditionalNotes ?? "") + $"\n[Re-queue {DateTime.UtcNow:yyyy-MM-dd}] {request.Notes}";
-
-                await _context.SaveChangesAsync();
-
-                return Ok(new
-                {
-                    success     = true,
-                    tokenNumber = tokenNumber,
-                    queueItemId = queueItem.Id,
-                    message     = "Patient re-queued to counselor waiting list"
-                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (ArgumentException ex)
             {
@@ -1722,7 +1747,7 @@ namespace AuthService.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error re-queuing session {Id}", id);
-                return StatusCode(500, new { message = "Error re-queuing patient", error = ex.Message });
+                return StatusCode(500, new { message = "Error re-queuing patient" });
             }
         }
 
@@ -1860,6 +1885,83 @@ namespace AuthService.Controllers
         }
 
         /// <summary>
+        /// GET /api/Counseling/anesthetists — anaesthetist dropdown for Finalize OT.
+        /// Uses counseling_sessions.read (not user.view). Same least-privilege pattern as GetSurgeons.
+        /// Does not invent a new IAM permission. UsersController anesthetists endpoint remains user.view.
+        /// </summary>
+        [HttpGet("anesthetists")]
+        [RequirePermission("counseling_sessions.read")]
+        public async Task<IActionResult> GetAnesthetists()
+        {
+            try
+            {
+                var tenantId = GetTenantId();
+
+                // Primary: users with anaesthesia-related role (US + UK spellings)
+                var anesthetists = await (
+                    from ur in _context.UserRoles.Cast<AppUserRole>()
+                    join u in _context.Users on ur.UserId equals u.Id
+                    join r in _context.Roles on ur.RoleId equals r.Id
+                    where u.TenantId == tenantId
+                          && u.DeletedAt == null
+                          && ur.IsActive
+                          && r.NormalizedName != null
+                          && (r.NormalizedName.Contains("ANESTHET")
+                              || r.NormalizedName.Contains("ANAESTHET")
+                              || r.NormalizedName.Contains("ANESTHES"))
+                    select new
+                    {
+                        id = u.Id,
+                        name = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
+                        employeeId = u.EmployeeId ?? "",
+                        specialization = u.Specialization ?? "",
+                        jobTitle = r.Name,
+                    }
+                ).Distinct().OrderBy(a => a.name).ToListAsync();
+
+                // Fallback: UserType / Designation fields (US + UK spellings)
+                if (anesthetists.Count == 0)
+                {
+                    anesthetists = await _context.Users
+                        .AsNoTracking()
+                        .Where(u => u.TenantId == tenantId
+                                    && u.DeletedAt == null
+                                    && (
+                                        u.UserType == "Anesthesiologist"
+                                        || u.UserType == "Anesthetist"
+                                        || u.UserType == "Anaesthetist"
+                                        || u.UserType == "Anaesthesiologist"
+                                        || (u.Designation != null && (
+                                            u.Designation.Contains("Anesthet")
+                                            || u.Designation.Contains("Anaesthet")
+                                            || u.Designation.Contains("Anesthes")))
+                                        || (u.Specialization != null && (
+                                            u.Specialization.Contains("Anesthet")
+                                            || u.Specialization.Contains("Anaesthet")
+                                            || u.Specialization.Contains("Anesthes")))
+                                    ))
+                        .Select(u => new
+                        {
+                            id = u.Id,
+                            name = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
+                            employeeId = u.EmployeeId ?? "",
+                            specialization = u.Specialization ?? "",
+                            jobTitle = u.Designation ?? u.UserType,
+                        })
+                        .OrderBy(a => a.name)
+                        .ToListAsync();
+                }
+
+                return Ok(anesthetists);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving anesthetists for counselling desk");
+                return StatusCode(500, new { message = "Error retrieving anesthetists", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// GET /api/Counseling/theaters — OT theater dropdown for Schedule Surgery / Finalize OT.
         /// Uses counseling_sessions.read (not ot.theaters.view). Same least-privilege pattern as GetSurgeons.
         /// Does not invent a new IAM permission. OTBookingController /otbooking/theaters remains ot.theaters.view.
@@ -1944,6 +2046,10 @@ namespace AuthService.Controllers
                           && ur.IsActive
                           && r.NormalizedName != null
                           && r.NormalizedName.Contains("COUNSEL")
+                          // Phase 3I Slice 12 (PD-S12-17) — exclude unavailable ownership targets from picker.
+                          && (u.UserStatus == null
+                              || (u.UserStatus.ToLower() != "inactive"
+                                  && u.UserStatus.ToLower() != "suspended"))
                     select new
                     {
                         id = u.Id,
@@ -1961,6 +2067,9 @@ namespace AuthService.Controllers
                         .AsNoTracking()
                         .Where(u => u.TenantId == tenantId
                                     && u.DeletedAt == null
+                                    && (u.UserStatus == null
+                                        || (u.UserStatus.ToLower() != "inactive"
+                                            && u.UserStatus.ToLower() != "suspended"))
                                     && (
                                         (u.UserType != null && u.UserType.ToLower().Contains("counsel"))
                                         || (u.Designation != null && u.Designation.ToLower().Contains("counsel"))
@@ -2183,6 +2292,25 @@ namespace AuthService.Controllers
                 var result   = await _otFinalizeService.UpsertFromCounsellorAsync(request, tenantId, userId);
                 return Ok(result);
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            // Phase 3I Slice 7 (PD-S7-06 / M14): stale Version → 409, checked before the generic 500 catch below.
+            catch (InvalidOperationException ex) when (SessionConcurrency.IsStale(ex))
+            {
+                return Conflict(new { message = ex.Message });
+            }
+            // Package C / PD-OTPREP-10: GuardLocked (and other non-stale InvalidOperation) → 409,
+            // consistent with UpdateOtSlot / UpdateOtDetails.
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error upserting OT schedule");
@@ -2198,11 +2326,14 @@ namespace AuthService.Controllers
             [FromQuery] string? uhid,
             [FromQuery] string? name,
             [FromQuery] string? status,
-            [FromQuery] Guid? sessionId)
+            [FromQuery] Guid? sessionId,
+            [FromQuery] Guid? branchId)
         {
             try
             {
                 var tenantId = GetTenantId();
+                // Phase 3I Slice 9 (PD-S9-12): server-side branch authorization (not FE-only).
+                var branches = await ResolveFollowupBranchesAsync(branchId);
                 var filters  = new OtScheduleFilters
                 {
                     Date = date,
@@ -2211,8 +2342,12 @@ namespace AuthService.Controllers
                     Status = status,
                     CounsellingSessionId = sessionId,
                 };
-                var results  = await _otFinalizeService.GetFinalizeListAsync(filters, tenantId);
+                var results  = await _otFinalizeService.GetFinalizeListAsync(filters, tenantId, branches);
                 return Ok(results);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -2232,6 +2367,10 @@ namespace AuthService.Controllers
                 var userId   = GetCurrentUserId();
                 var result   = await _otFinalizeService.UpdateSlotAsync(id, request, tenantId, userId);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (KeyNotFoundException ex)
             {
@@ -2260,9 +2399,17 @@ namespace AuthService.Controllers
                 var result   = await _otFinalizeService.ConfirmAsync(id, tenantId, userId);
                 return Ok(result);
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
             catch (KeyNotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
@@ -2287,6 +2434,10 @@ namespace AuthService.Controllers
                 var result   = await _otFinalizeService.FinaliseAsync(id, tenantId, userId);
                 return Ok(result);
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
             catch (KeyNotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
@@ -2302,21 +2453,30 @@ namespace AuthService.Controllers
             }
         }
 
-        /// <summary>POST /api/Counseling/ot-schedule/{id}/cancel — any → Cancelled (auto back-syncs counselling session).</summary>
+        /// <summary>POST /api/Counseling/ot-schedule/{id}/cancel — Cancelled + required reason (Package 1 PD-FS-04).</summary>
         [HttpPost("ot-schedule/{id}/cancel")]
         [RequirePermission("counseling_sessions.update")]
-        public async Task<IActionResult> CancelOtSchedule(Guid id)
+        public async Task<IActionResult> CancelOtSchedule(Guid id, [FromBody] CancelOtScheduleRequest? request)
         {
             try
             {
                 var tenantId = GetTenantId();
                 var userId   = GetCurrentUserId();
-                var result   = await _otFinalizeService.CancelAsync(id, tenantId, userId);
+                var result   = await _otFinalizeService.CancelAsync(
+                    id, tenantId, userId, request?.CancelReason ?? string.Empty);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (KeyNotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -2336,6 +2496,10 @@ namespace AuthService.Controllers
                 var userId   = GetCurrentUserId();
                 var result   = await _otFinalizeService.ReopenAsync(id, tenantId, userId);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (KeyNotFoundException ex)
             {
@@ -2364,6 +2528,10 @@ namespace AuthService.Controllers
                 await _otFinalizeService.PrepareOtListAsync(request, tenantId, userId);
                 return Ok(new { message = "OT list prepared and locked successfully" });
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
             catch (ArgumentException ex)
             {
                 return BadRequest(new { message = ex.Message });
@@ -2376,23 +2544,49 @@ namespace AuthService.Controllers
             {
                 return Conflict(new { message = ex.Message });
             }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Error preparing OT list (database update)");
+                var detail = ex.InnerException?.InnerException?.Message
+                    ?? ex.InnerException?.Message
+                    ?? ex.Message;
+                return StatusCode(500, new
+                {
+                    message = "Error preparing OT list",
+                    error = ex.Message,
+                    detail,
+                });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error preparing OT list");
-                return StatusCode(500, new { message = "Error preparing OT list", error = ex.Message });
+                var detail = ex.InnerException?.InnerException?.Message
+                    ?? ex.InnerException?.Message
+                    ?? ex.Message;
+                return StatusCode(500, new
+                {
+                    message = "Error preparing OT list",
+                    error = ex.Message,
+                    detail,
+                });
             }
         }
 
         /// <summary>GET /api/Counseling/ot-list?date=YYYY-MM-DD — locked OTPrepared list for a date.</summary>
         [HttpGet("ot-list")]
         [RequirePermission("counseling_sessions.read")]
-        public async Task<IActionResult> GetOtList([FromQuery] DateTime date)
+        public async Task<IActionResult> GetOtList([FromQuery] DateTime date, [FromQuery] Guid? branchId)
         {
             try
             {
                 var tenantId = GetTenantId();
-                var results  = await _otFinalizeService.GetOtListAsync(date, tenantId);
+                var branches = await ResolveFollowupBranchesAsync(branchId);
+                var results  = await _otFinalizeService.GetOtListAsync(date, tenantId, branches);
                 return Ok(results);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -2409,8 +2603,13 @@ namespace AuthService.Controllers
             try
             {
                 var tenantId = GetTenantId();
-                var result   = await _otFinalizeService.GetByIdAsync(id, tenantId);
+                var userId   = GetCurrentUserId();
+                var result   = await _otFinalizeService.GetByIdAsync(id, tenantId, userId);
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex)
@@ -2432,6 +2631,10 @@ namespace AuthService.Controllers
                 var result   = await _otFinalizeService.UpdateDetailsAsync(id, request, tenantId, userId);
                 return Ok(result);
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
             catch (Exception ex)
@@ -2446,6 +2649,9 @@ namespace AuthService.Controllers
     public class CancelSessionRequest
     {
         public string Reason { get; set; } = null!;
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-02) — required expected Version.</summary>
+        public int? Version { get; set; }
     }
 
     // Helper DTO for advance-stage request
@@ -2453,6 +2659,9 @@ namespace AuthService.Controllers
     {
         [System.ComponentModel.DataAnnotations.Range(1, 6)]
         public int Stage { get; set; }
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-02) — required expected Version.</summary>
+        public int? Version { get; set; }
     }
 
     // Cost Estimate Sharing DTOs

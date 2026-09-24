@@ -268,6 +268,9 @@ export function WaitingListPatientDetailSheet({
               >
                 {clinicalRows}
               </Section>
+              <p className="text-[11px] leading-4 text-counselling-muted-foreground">
+                Read-only context · empty fields omitted · viewing does not assign ownership
+              </p>
             </div>
           </>
         ) : null}

@@ -22,6 +22,10 @@ namespace AuthService.Services
         public DateTime? StartTime { get; set; }
         public DateTime? EndTime { get; set; }
         public Guid? CounsellingSessionId { get; set; }
+
+        /// <summary>Phase 3I Slice 7 (PD-S7-02 / M14) — required expected CounselingSession Version
+        /// when <see cref="CounsellingSessionId"/> is set and this upsert may write session fields.</summary>
+        public int? SessionVersion { get; set; }
         // Detail fields — populated when counsellor fills the modal
         public TimeSpan? ReportingTime { get; set; }
         public string? AnesthesiaType { get; set; }
@@ -123,6 +127,12 @@ namespace AuthService.Services
         public string? PreparedBy { get; set; }
     }
 
+    /// <summary>Package 1 (PD-FS-04) — Cancel requires a reason (persisted to CancelReason).</summary>
+    public class CancelOtScheduleRequest
+    {
+        public string? CancelReason { get; set; }
+    }
+
     /// <summary>Thrown when one or more submitted records share a start-time slot with an already-OTPrepared record.</summary>
     public class OtPrepareConflictException : Exception
     {
@@ -207,9 +217,13 @@ namespace AuthService.Services
         Task<OtScheduleResponse> UpsertFromCounsellorAsync(
             UpsertOtScheduleRequest request, Guid tenantId, Guid userId);
 
-        /// <summary>Returns the finalize list filtered by date / UHID / name / status.</summary>
+        /// <summary>
+        /// Returns the finalize list filtered by date / UHID / name / status.
+        /// Phase 3I Slice 9 (PD-S9-12): restricted to schedules whose BranchId is in
+        /// the actor's authorized branch set (NULL BranchId rows are excluded).
+        /// </summary>
         Task<List<OtScheduleResponse>> GetFinalizeListAsync(
-            OtScheduleFilters filters, Guid tenantId);
+            OtScheduleFilters filters, Guid tenantId, IReadOnlyList<Guid> accessibleBranchIds);
 
         /// <summary>
         /// Edits slot fields (doctor, theatre, start/end time).
@@ -221,6 +235,7 @@ namespace AuthService.Services
 
         /// <summary>
         /// Validates slot conflicts and transitions NotConfirmed → Confirmed.
+        /// Package 1 (PD-FS-03): ReportingTime is required.
         /// Throws ConflictException when the same doctor or theatre has an exact
         /// start_time clash with another active record.
         /// </summary>
@@ -231,9 +246,10 @@ namespace AuthService.Services
 
         /// <summary>
         /// Transitions any state → Cancelled.
-        /// Triggers auto back-sync: calls CounsellingApi to set the linked session → RepeatCounselling.
+        /// Package 1 (PD-FS-04): cancelReason is required and persisted to CancelReason.
+        /// Best-effort outbound counselling cancel-ot remains non-authoritative (may be missing).
         /// </summary>
-        Task<OtScheduleResponse> CancelAsync(Guid id, Guid tenantId, Guid userId);
+        Task<OtScheduleResponse> CancelAsync(Guid id, Guid tenantId, Guid userId, string cancelReason);
 
         /// <summary>
         /// Transitions OTPrepared → Confirmed and removes the lock.
@@ -247,14 +263,19 @@ namespace AuthService.Services
         /// </summary>
         Task PrepareOtListAsync(PrepareOtListRequest request, Guid tenantId, Guid userId);
 
-        /// <summary>Returns all OTPrepared records for a specific date (the locked OT list).</summary>
-        Task<List<OtScheduleResponse>> GetOtListAsync(DateTime date, Guid tenantId);
+        /// <summary>
+        /// Returns all OTPrepared records for a specific date (the locked OT list).
+        /// Phase 3I Slice 9 (PD-S9-12): branch-authorized.
+        /// </summary>
+        Task<List<OtScheduleResponse>> GetOtListAsync(
+            DateTime date, Guid tenantId, IReadOnlyList<Guid> accessibleBranchIds);
 
         /// <summary>
         /// Returns full detail for a single OT record, enriched with patient demographics
         /// and checklist data from the linked counselling session.
+        /// Phase 3I Slice 9 (PD-S9-12): actor must be authorized for the schedule branch.
         /// </summary>
-        Task<OtScheduleDetailResponse> GetByIdAsync(Guid id, Guid tenantId);
+        Task<OtScheduleDetailResponse> GetByIdAsync(Guid id, Guid tenantId, Guid userId);
 
         /// <summary>
         /// Saves all modal fields (slot, anesthesia, schedule, package, remarks).
@@ -276,7 +297,8 @@ namespace AuthService.Services
         Task<OpdClinicalSnapshotDto> GetOpdClinicalSnapshotAsync(
             Guid tenantId, Guid patientId, Guid? sessionId, string? eyeHint, bool preferBiometry);
 
-        /// <summary>W-01 — overwrite session (and linked OT) from latest OPD, then notify IP.</summary>
-        Task<OpdClinicalSnapshotDto> RefreshSessionFromOpdAsync(Guid sessionId, Guid tenantId, Guid userId);
+        /// <summary>W-01 — overwrite session (and linked OT) from latest OPD, then notify IP.
+        /// Phase 3I Slice 7 (PD-S7-02 / M13): expectedVersion required; stale throws SessionConcurrency.</summary>
+        Task<OpdClinicalSnapshotDto> RefreshSessionFromOpdAsync(Guid sessionId, Guid tenantId, Guid userId, int? expectedVersion);
     }
 }

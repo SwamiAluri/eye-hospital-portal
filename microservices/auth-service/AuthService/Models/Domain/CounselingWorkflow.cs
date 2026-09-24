@@ -258,6 +258,12 @@ namespace AuthService.Models.Domain
         [Column("sla_breach_at")]
         public DateTime? SlaBreachAt { get; set; }
 
+        // ── Phase 3I Slice 7 — Optimistic Concurrency (PD-S7-01) ──────────────
+        /// <summary>Concurrency token. Bumped on every persisted mutation (see AppDbContext.SaveChangesAsync).</summary>
+        [ConcurrencyCheck]
+        [Column("version")]
+        public int Version { get; set; } = 1;
+
         // Navigation Properties
         public virtual ICollection<CounselorQueueItem> QueueItems { get; set; } = new List<CounselorQueueItem>();
         public virtual ICollection<CounselingSessionNote> Notes { get; set; } = new List<CounselingSessionNote>();

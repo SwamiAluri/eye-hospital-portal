@@ -41,3 +41,29 @@ export function partsToHhMm(parts: CounsellingTimeParts): string {
   if (parts.period === 'PM') hour24 += 12;
   return `${pad2(hour24)}:${pad2(parts.minute)}`;
 }
+
+/**
+ * Package LA / UAT-FS-RT-01 — normalize backend ReportingTime (TimeSpan / ISO)
+ * to machine-readable `HH:mm` for list validation and form state.
+ * Does not accept 12-hour display strings (those are display-only).
+ */
+export function normalizeOtReportingTimeToHhMm(value?: string | null): string {
+  if (value == null) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  if (raw.includes('T')) {
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  }
+
+  // TimeSpan "HH:mm:ss" or already "HH:mm"
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(raw);
+  if (!m) return '';
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return '';
+  if (h < 0 || h > 23 || min < 0 || min > 59) return '';
+  return `${pad2(h)}:${pad2(min)}`;
+}

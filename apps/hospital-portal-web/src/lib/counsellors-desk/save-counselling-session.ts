@@ -5,6 +5,11 @@ import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import { COVERAGE_PAYMENT_TYPES, toCounsellingDateOnly } from '@/lib/counsellors-desk/session-utils';
 import { buildCounsellingFieldSnapshot } from '@/lib/counsellors-desk/counselling-field-snapshot';
 import { mergeEstimateIntoBlob } from '@/lib/counsellors-desk/package-addons-blob';
+import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
+import { resolveVersionAfterSave } from '@/lib/counsellors-desk/session-version-authority';
 import type { CounsellingEstimateState } from '@/types/counselling-estimate';
 import type {
   CombinedPaymentType,
@@ -85,7 +90,11 @@ export interface SaveCounsellingSessionParams {
     snapshot: Record<string, string>;
     queueStatus: WaitingListStatus;
     openCoverageTab: boolean;
+    /** Bumped CounselingSession.Version after save (+ complete/addon, when applicable) — Phase 3I Slice 7. */
+    version?: number;
   }) => void;
+  /** Phase 3I — patch local Version after a 409 refetch (preserve dirty form; no auto-retry). */
+  onConcurrencyVersionSync?: (version?: number) => void;
   invalidateWaitingList: () => void;
   invalidateSession: (id: string) => void;
 }
@@ -279,6 +288,7 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     isDoneState,
     existingOtScheduleId,
     onSuccess,
+    onConcurrencyVersionSync,
     invalidateWaitingList,
     invalidateSession,
   } = params;
@@ -290,10 +300,34 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
   const { payload, currentSnapshot, fieldChanges, isPackageUpgrade, prevPackageName, prevPackageAmount } =
     buildCounsellingSessionPayload({ ...params, schedule });
 
-  await counsellorsDeskApi.saveSession(sessionId, {
-    ...payload,
-    fieldChanges: fieldChanges.length > 0 ? fieldChanges : undefined,
-  } as unknown as CounsellingSession);
+  const expectedVersion = session.version;
+
+  let saveResult: { version?: number };
+  try {
+    saveResult = await counsellorsDeskApi.saveSession(sessionId, {
+      ...payload,
+      version: expectedVersion,
+      fieldChanges: fieldChanges.length > 0 ? fieldChanges : undefined,
+    } as unknown as CounsellingSession);
+  } catch (err) {
+    // Phase 3I Slice 7 (PD-S7-06): stop on 409 — never overwrite; no auto-retry.
+    if (isSessionConcurrencyConflict(err)) {
+      invalidateSession(sessionId);
+      try {
+        const fresh = await counsellorsDeskApi.getSession(sessionId, { skipCatalogFallback: true });
+        onConcurrencyVersionSync?.(fresh.version);
+      } catch {
+        /* best-effort Version sync only */
+      }
+      throw new Error(getSessionConcurrencyMessage(err));
+    }
+    throw err;
+  }
+  // Version after this save — Complete must use this, never the Version sent on Save.
+  let currentVersion = resolveVersionAfterSave({
+    responseVersion: saveResult.version,
+    requestVersion: expectedVersion,
+  });
 
   if (selectedInvestigations.size > 0) {
     await counsellorsDeskApi.saveInvestigations(
@@ -349,11 +383,27 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
   // CS-01: queue complete / add-on is required for Waiting List Done status — await + propagate.
   try {
     if (isPackageUpgrade) {
+      // markAddOnSurgery mutates the queue item only — not a CounselingSession.Version writer (Class C).
       await counsellorsDeskApi.markAddOnSurgery(sessionId);
     } else {
-      await counsellorsDeskApi.completeSession(sessionId);
+      const completeResult = await counsellorsDeskApi.completeSession(sessionId, currentVersion);
+      currentVersion = completeResult.version ?? currentVersion;
     }
   } catch (queueErr) {
+    // Phase 3I Slice 7 (PD-S7-06): stop on 409 — never overwrite; no auto-retry. Content is already
+    // persisted at this point, so use the same "saved, but…" partial-failure copy as other queue errors.
+    if (isSessionConcurrencyConflict(queueErr)) {
+      invalidateSession(sessionId);
+      try {
+        const fresh = await counsellorsDeskApi.getSession(sessionId, { skipCatalogFallback: true });
+        onConcurrencyVersionSync?.(fresh.version);
+      } catch {
+        /* best-effort Version sync only */
+      }
+      throw new Error(
+        `Counselling details were saved, but completion could not be confirmed: ${getSessionConcurrencyMessage(queueErr)}`,
+      );
+    }
     throw new Error(
       buildQueueTransitionFailureMessage(queueErr, isPackageUpgrade ? 'addon' : 'complete'),
     );
@@ -419,7 +469,7 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     COVERAGE_PAYMENT_TYPES.includes(paymentType as (typeof COVERAGE_PAYMENT_TYPES)[number]) &&
     !notRequiredPreAuth;
 
-  onSuccess({ snapshot: currentSnapshot, queueStatus: nextStatus, openCoverageTab });
+  onSuccess({ snapshot: currentSnapshot, queueStatus: nextStatus, openCoverageTab, version: currentVersion });
   invalidateWaitingList();
   invalidateSession(sessionId);
   toast.success('Session completed successfully');

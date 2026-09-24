@@ -303,6 +303,54 @@ public class ResendEmailService : IEmailService
             return (false, null, ex.Message);
         }
     }
+
+    public async Task<(bool Success, string? MessageId, string? Error)> SendPasswordResetEmailAsync(
+        string toEmail,
+        string userName,
+        string resetUrl,
+        int expiryHours = 1)
+    {
+        try
+        {
+            var fromEmail = _configuration["Resend:FromEmail"] ?? "noreply@yourhospital.com";
+            var fromName = _configuration["Resend:FromName"] ?? "Hospital Portal";
+            var safeName = System.Net.WebUtility.HtmlEncode(userName);
+            var safeUrl = System.Net.WebUtility.HtmlEncode(resetUrl);
+
+            var htmlBody = $@"
+<!DOCTYPE html>
+<html>
+<body style=""font-family: Arial, sans-serif;"">
+  <h2>Password Reset - Hospital Portal</h2>
+  <p>Hello <strong>{safeName}</strong>,</p>
+  <p>We received a request to reset your password. This link expires in {expiryHours} hour(s).</p>
+  <p><a href=""{safeUrl}"">Reset Password</a></p>
+  <p>If you did not request this, ignore this email.</p>
+</body>
+</html>";
+
+            var payload = new
+            {
+                from = $"{fromName} <{fromEmail}>",
+                to = new[] { toEmail },
+                subject = "Password Reset - Hospital Portal",
+                html = htmlBody,
+            };
+
+            var response = await _httpClient.PostAsJsonAsync("emails", payload);
+            if (!response.IsSuccessStatusCode)
+                return (false, null, await response.Content.ReadAsStringAsync());
+
+            var result = await response.Content.ReadFromJsonAsync<ResendEmailResponse>();
+            _logger.LogInformation("Password reset email sent to {Email}, MessageId: {MessageId}", toEmail, result?.Id);
+            return (true, result?.Id, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send password reset email to {Email}", toEmail);
+            return (false, null, ex.Message);
+        }
+    }
 }
 
 // Response model for Resend API

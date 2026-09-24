@@ -35,18 +35,19 @@ export function ProtectedRoute({
 
     if (!token) {
       console.warn('🔒 ProtectedRoute: No token - redirecting to login');
-      // Show session expired message if user was previously logged in
-      const wasLoggedIn = typeof window !== 'undefined' && localStorage.getItem('user');
-      if (wasLoggedIn) {
+      // Only claim session expiry when a prior access token existed.
+      // Presence of `user` alone can be stale and must not mask first-time login failures.
+      const hadAccessToken =
+        typeof window !== 'undefined' && !!localStorage.getItem('auth_token');
+      if (hadAccessToken) {
         setShowSessionExpired(prev => (prev ? prev : true));
-        // Clear any stale data
         localStorage.clear();
       }
       
       // Redirect to login after showing message
       setTimeout(() => {
         router.push('/auth/login');
-      }, 1500);
+      }, hadAccessToken ? 1500 : 0);
       return;
     }
 

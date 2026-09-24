@@ -199,7 +199,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     {
         var sessionId = await CreateUnassignedSessionAsync(_admin);
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _admin);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _admin);
 
         Assert.True(result.Success);
         Assert.Equal(_amelia, result.CounselorId);
@@ -210,7 +210,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     }
 
     [Fact]
-    public async Task Assign_NonPendingQueue_Rejected()
+    public async Task Assign_UnsupportedQueueStatus_Rejected()
     {
         var created = await _svc.CreateSessionAsync(BaseCreateRequest(), _admin);
         Assert.True(created.Success);
@@ -225,13 +225,13 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
             TokenNumber = "T-NP",
             QueueType = "Counseling",
             QueuePosition = 1,
-            Status = "InProgress",
+            Status = "Cancelled",
             AddedToQueueAt = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
         });
         await _db.SaveChangesAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.BadRequest, result.FailureKind);
@@ -244,7 +244,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     {
         var sessionId = await CreateUnassignedSessionAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(_amelia, result.CounselorId);
@@ -258,7 +258,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     {
         var sessionId = await CreateUnassignedSessionAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(_ravi, result.CounselorId);
@@ -273,7 +273,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     {
         var sessionId = await CreateUnassignedSessionAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _otherBranchCounsellor, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _otherBranchCounsellor, 1, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Forbidden, result.FailureKind);
@@ -286,7 +286,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     {
         var sessionId = await CreateUnassignedSessionAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _otherTenantCounsellor, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _otherTenantCounsellor, 1, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Forbidden, result.FailureKind);
@@ -299,7 +299,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     {
         var sessionId = await CreateUnassignedSessionAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _nonCounsellor, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _nonCounsellor, 1, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.BadRequest, result.FailureKind);
@@ -312,7 +312,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     {
         var sessionId = await CreateUnassignedSessionAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _otherBranchCounsellor);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _otherBranchCounsellor);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Forbidden, result.FailureKind);
@@ -324,10 +324,10 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     public async Task Assign_AlreadyOwned_DoesNotOverwrite()
     {
         var sessionId = await CreateUnassignedSessionAsync();
-        var first = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _amelia);
+        var first = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _amelia);
         Assert.True(first.Success);
 
-        var second = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var second = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _amelia);
 
         Assert.False(second.Success);
         Assert.Equal(AssignSessionFailureKind.Conflict, second.FailureKind);
@@ -342,7 +342,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
         var before = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
         Assert.Null(before.CounselorId);
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(_ravi, result.CounselorId);
@@ -355,10 +355,10 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
         // InMemory falls back to tracked assign-if-null; sequential second writer must Conflict.
         var sessionId = await CreateUnassignedSessionAsync();
 
-        var first = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var first = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _amelia);
         Assert.True(first.Success);
 
-        var second = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _ravi);
+        var second = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _ravi);
         Assert.False(second.Success);
         Assert.Equal(AssignSessionFailureKind.Conflict, second.FailureKind);
 
@@ -375,7 +375,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
         // Session is branch A. Target Ravi is branch A. Actor Amelia branch A.
         // Even if a caller "meant" another branch/tenant, Assign only takes counselorId.
         var sessionId = await CreateUnassignedSessionAsync();
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _amelia);
         Assert.True(result.Success);
         Assert.Equal(_ravi, result.CounselorId);
     }
@@ -385,7 +385,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     {
         // Slice 4: unassigned Start is Forbidden (PD-AUTH-01). Must still not stamp CounselorId.
         var sessionId = await CreateUnassignedSessionAsync();
-        var started = await _svc.StartSessionAsync(_tenant, sessionId, _amelia);
+        var started = await _svc.StartSessionAsync(_tenant, sessionId, _amelia, 1);
         Assert.False(started.Success);
         Assert.Equal(SessionOperationFailureKind.Forbidden, started.FailureKind);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
@@ -410,55 +410,164 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
         var session = await _db.CounselingSession.FirstAsync(s => s.Id == sessionId);
         session.PatientAgreedToSurgery = true;
         await _db.SaveChangesAsync();
+        var version = session.Version;
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, version, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.BadRequest, result.FailureKind);
-        Assert.Contains("Pending", result.Message);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
         Assert.Null(row.CounselorId);
     }
 
+    /// <summary>
+    /// PD-B — Completed + PatientAgreedToSurgery != true + NULL may be explicitly Assigned.
+    /// Admin actor assigns peer; Admin is not the owner. Claim remains counsellor-only.
+    /// </summary>
     [Fact]
-    public async Task Assign_RepeatCompletedQueue_NullOwner_Rejected_UseLifecycleClaim()
+    public async Task Assign_CompletedNotAgreed_NullOwner_AdminAssignsPeer_Succeeds()
     {
-        var sessionId = await CreateUnassignedSessionAsync();
+        var sessionId = await CreateUnassignedSessionAsync(_admin);
         var queue = await _db.CounselorQueue.FirstAsync(q => q.SessionId == sessionId);
         queue.Status = "Completed";
         var session = await _db.CounselingSession.FirstAsync(s => s.Id == sessionId);
         session.PatientAgreedToSurgery = false;
         await _db.SaveChangesAsync();
+        var versionBefore = session.Version;
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, versionBefore, _admin);
 
-        Assert.False(result.Success);
-        Assert.Equal(AssignSessionFailureKind.BadRequest, result.FailureKind);
-        Assert.Contains("Pending", result.Message);
+        Assert.True(result.Success);
+        Assert.Equal(_ravi, result.CounselorId);
+        Assert.Equal(versionBefore + 1, result.Version);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
-        Assert.Null(row.CounselorId);
+        Assert.Equal(_ravi, row.CounselorId);
+        Assert.NotEqual(_admin, row.CounselorId);
+        Assert.Equal(versionBefore + 1, row.Version);
+        Assert.Equal(1, _db.CounselingSessionAuditLog.Count(h =>
+            h.SessionId == sessionId && h.ChangeType == "OwnershipAssigned"));
     }
 
     [Fact]
-    public async Task Assign_ProcessedInProgress_NullOwner_Rejected()
+    public async Task Assign_CompletedAgreedNull_TreatedAsNotAgreed_Assignable()
+    {
+        var sessionId = await CreateUnassignedSessionAsync(_admin);
+        var queue = await _db.CounselorQueue.FirstAsync(q => q.SessionId == sessionId);
+        queue.Status = "Completed";
+        var session = await _db.CounselingSession.FirstAsync(s => s.Id == sessionId);
+        session.PatientAgreedToSurgery = null;
+        await _db.SaveChangesAsync();
+
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, session.Version, _admin);
+
+        Assert.True(result.Success);
+        Assert.Equal(_amelia, result.CounselorId);
+    }
+
+    [Fact]
+    public async Task Assign_Waiting_NullOwner_Succeeds()
+    {
+        var sessionId = await CreateUnassignedSessionAsync();
+
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _amelia);
+
+        Assert.True(result.Success);
+        Assert.Equal(_amelia, result.CounselorId);
+        var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
+        Assert.Equal(_amelia, row.CounselorId);
+        var queue = await _db.CounselorQueue.AsNoTracking().FirstAsync(q => q.SessionId == sessionId);
+        Assert.Equal("Waiting", queue.Status);
+    }
+
+    [Fact]
+    public async Task Assign_InProgress_NullOwner_Succeeds_PreservesLifecycle()
     {
         var sessionId = await CreateUnassignedSessionAsync();
         var queue = await _db.CounselorQueue.FirstAsync(q => q.SessionId == sessionId);
         queue.Status = "InProgress";
         await _db.SaveChangesAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _amelia);
+
+        Assert.True(result.Success);
+        Assert.Equal(_amelia, result.CounselorId);
+        var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
+        Assert.Equal(_amelia, row.CounselorId);
+        var queueAfter = await _db.CounselorQueue.AsNoTracking().FirstAsync(q => q.SessionId == sessionId);
+        Assert.Equal("InProgress", queueAfter.Status);
+    }
+
+    [Fact]
+    public async Task Assign_Called_NullOwner_Succeeds_PreservesLifecycle()
+    {
+        var sessionId = await CreateUnassignedSessionAsync();
+        var queue = await _db.CounselorQueue.FirstAsync(q => q.SessionId == sessionId);
+        queue.Status = "Called";
+        await _db.SaveChangesAsync();
+
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _ravi, 1, _amelia);
+
+        Assert.True(result.Success);
+        Assert.Equal(_ravi, result.CounselorId);
+        var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
+        Assert.Equal(_ravi, row.CounselorId);
+        var queueAfter = await _db.CounselorQueue.AsNoTracking().FirstAsync(q => q.SessionId == sessionId);
+        Assert.Equal("Called", queueAfter.Status);
+    }
+
+    [Fact]
+    public async Task Assign_SurgeryDone_StillRejected_PdBDoesNotWeakenSeal()
+    {
+        var sessionId = await CreateUnassignedSessionAsync(_admin);
+        var queue = await _db.CounselorQueue.FirstAsync(q => q.SessionId == sessionId);
+        queue.Status = "Completed";
+        var session = await _db.CounselingSession.FirstAsync(s => s.Id == sessionId);
+        session.PatientAgreedToSurgery = false;
+        _db.OtFinalizeSchedules.Add(new OtFinalizeSchedule
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant,
+            BranchId = _branchA,
+            PatientId = _patient,
+            PatientName = "Pat Ent",
+            SurgeryName = "Phaco",
+            CounsellingSessionId = sessionId,
+            Status = OtFinalizeStatus.SurgeryDone,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, session.Version, _admin);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.BadRequest, result.FailureKind);
+        Assert.Contains("SurgeryDone", result.Message);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
         Assert.Null(row.CounselorId);
     }
 
     [Fact]
+    public async Task Assign_InProgress_AlreadyOwned_Conflict()
+    {
+        var sessionId = await CreateUnassignedSessionAsync();
+        var queue = await _db.CounselorQueue.FirstAsync(q => q.SessionId == sessionId);
+        queue.Status = "InProgress";
+        var session = await _db.CounselingSession.FirstAsync(s => s.Id == sessionId);
+        session.CounselorId = _ravi;
+        await _db.SaveChangesAsync();
+
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 1, _amelia);
+
+        Assert.False(result.Success);
+        Assert.Equal(AssignSessionFailureKind.Conflict, result.FailureKind);
+        var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
+        Assert.Equal(_ravi, row.CounselorId);
+    }
+
+    [Fact]
     public async Task Assign_UnknownSession_NotFound()
     {
-        var result = await _svc.AssignSessionAsync(_tenant, Guid.NewGuid(), _ravi, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, Guid.NewGuid(), _ravi, 1, _amelia);
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.NotFound, result.FailureKind);
     }
@@ -467,7 +576,7 @@ public class Phase3ISlice3AssignOwnershipTests : IDisposable
     public async Task Assign_UnknownTarget_NotFoundOrBadRequest()
     {
         var sessionId = await CreateUnassignedSessionAsync();
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, Guid.NewGuid(), _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, Guid.NewGuid(), 1, _amelia);
         Assert.False(result.Success);
         Assert.True(
             result.FailureKind == AssignSessionFailureKind.NotFound

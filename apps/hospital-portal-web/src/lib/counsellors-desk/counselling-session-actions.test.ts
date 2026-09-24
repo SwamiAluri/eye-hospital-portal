@@ -207,6 +207,35 @@ describe('counselling-session-actions', () => {
     expect(model.primary?.label).toBe('Next: Patient Decision');
   });
 
+  it('ownership content lock: Processing non-owner hides Save Draft and mutation CTAs', () => {
+    const model = buildSessionActionBarModel({
+      ...baseInput,
+      queueStatus: 'Processed',
+      canAdvancePhase: true,
+      phaseAdvanceError: null,
+      contentMutationsLocked: true,
+      saveDraftDisabledReason: 'Session is read-only',
+    });
+    expect(model.showSaveDraft).toBe(false);
+    expect(model.primary).toBeNull();
+    expect(model.showClose).toBe(true);
+    expect(model.statusHint).toBe('Session read-only');
+  });
+
+  it('ownership content lock off: current-owner Processing keeps Save Draft usable', () => {
+    const model = buildSessionActionBarModel({
+      ...baseInput,
+      queueStatus: 'Processed',
+      canAdvancePhase: true,
+      phaseAdvanceError: null,
+      contentMutationsLocked: false,
+      saveDraftDisabledReason: null,
+    });
+    expect(model.showSaveDraft).toBe(true);
+    expect(model.saveDraftDisabledReason).toBeNull();
+    expect(model.primary?.label).toBe('Next: Patient Decision');
+  });
+
   it('after repeat start (Processed, finish sealed off) does not show Counselling completed', () => {
     const model = buildSessionActionBarModel({
       ...baseInput,

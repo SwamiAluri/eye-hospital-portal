@@ -60,7 +60,7 @@ export function CounsellingWrapupPhase({
     {
       id: 'counsellor',
       testId: counsellingTestIds.notesCounsellorField,
-      label: 'Counsellor',
+      label: 'Counsellor Notes',
       placeholder: 'Enter counsellor notes…',
       value: counsellorNotes,
       rows: 2,

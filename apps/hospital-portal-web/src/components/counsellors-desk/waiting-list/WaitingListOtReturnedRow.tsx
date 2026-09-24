@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { memo } from 'react';
-import { ExternalLink, RotateCcw } from 'lucide-react';
+import { Play, RotateCcw } from 'lucide-react';
 import { CounsellingButton } from '@/components/counsellors-desk/session/primitives/CounsellingButton';
 import { resolveOtReturnedAction } from '@/lib/counsellors-desk/ot-returned-action';
 import { WAITING_LIST_OT_GRID } from '@/lib/counsellors-desk/waiting-list-layout';
@@ -12,6 +12,9 @@ export type WaitingListOtReturnedRowProps = {
   row: PatientJourneyRowDto;
   index: number;
   onNavigate: (href: string) => void;
+  /** No-session Start Counselling — parent performs certified create + navigate. */
+  onStartCounselling?: (row: PatientJourneyRowDto) => void;
+  startPending?: boolean;
   className?: string;
   'data-testid'?: string;
 };
@@ -31,6 +34,8 @@ function WaitingListOtReturnedRowComponent({
   row,
   index,
   onNavigate,
+  onStartCounselling,
+  startPending = false,
   className,
   'data-testid': testId = 'waiting-list-ot-returned-row',
 }: WaitingListOtReturnedRowProps) {
@@ -43,13 +48,25 @@ function WaitingListOtReturnedRowComponent({
     counselingSessionId: row.counselingSessionId,
   });
 
+  const handleClick = () => {
+    if (action.kind === 'continue-counselling') {
+      onNavigate(action.href);
+      return;
+    }
+    if (startPending) return;
+    onStartCounselling?.(row);
+  };
+
   return (
     <div
       data-testid={testId}
       data-journey-id={row.id}
+      role="group"
+      aria-label={`OT returned: ${row.patientName?.trim() || 'patient'}, ${primaryReason}`}
       className={cn(
-        'staff-worklist-row bg-transparent px-1 transition-colors',
-        'hover:bg-rose-50/30',
+        'staff-worklist-row bg-rose-50/20 px-1 transition-colors',
+        'border-l-2 border-l-rose-400/70',
+        'hover:bg-rose-50/40',
         className,
       )}
     >
@@ -104,16 +121,20 @@ function WaitingListOtReturnedRowComponent({
             type="button"
             size="sm"
             className="!min-h-8 h-8 px-2.5 text-xs font-semibold"
-            onClick={() => onNavigate(action.href)}
+            onClick={handleClick}
+            disabled={action.kind === 'start-counselling' && startPending}
             aria-label={action.label}
+            aria-busy={action.kind === 'start-counselling' && startPending ? true : undefined}
             data-testid={`waiting-list-ot-action-${action.kind}`}
           >
-            {action.kind === 'replan' ? (
+            {action.kind === 'continue-counselling' ? (
               <RotateCcw className="h-3.5 w-3.5" aria-hidden />
             ) : (
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              <Play className="h-3.5 w-3.5" aria-hidden />
             )}
-            {action.label}
+            {action.kind === 'start-counselling' && startPending
+              ? 'Starting…'
+              : action.label}
           </CounsellingButton>
         </div>
       </div>

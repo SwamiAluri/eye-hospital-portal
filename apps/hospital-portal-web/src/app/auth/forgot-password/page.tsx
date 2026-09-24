@@ -12,6 +12,7 @@ import {
   AuthGradientButton,
 } from '@/components/auth/AuthGlassCard';
 import { AuthSelectField, AuthInputField, AuthCardBottomActions } from '@/components/auth/AuthFormFields';
+import { AUTH_NETWORK_HOSPITAL_FIELD } from '@/components/auth/network-hospital-login';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -33,7 +34,11 @@ export default function ForgotPasswordPage() {
 
     try {
       const api = getApi();
-      await api.post('/auth/forgot-password', { email, tenantId });
+      await api.post(
+        '/auth/forgot-password',
+        { email, tenantId },
+        { headers: tenantId ? { 'X-Tenant-ID': tenantId } : undefined },
+      );
       setMessage({
         type: 'success',
         text: 'If your email exists in our system, you will receive a password reset link shortly. Please check your inbox.',
@@ -72,17 +77,17 @@ export default function ForgotPasswordPage() {
 
           <form onSubmit={handleSubmit} className="auth-form">
             <AuthSelectField
-              id="hospital"
-              label="Hospital"
+              id={AUTH_NETWORK_HOSPITAL_FIELD.id}
+              label={AUTH_NETWORK_HOSPITAL_FIELD.label}
               icon="clinical_notes"
               value={tenantId}
               onChange={(e) => setTenantId(e.target.value)}
               loading={isLoadingTenants}
-              loadingText="Loading hospitals…"
+              loadingText={AUTH_NETWORK_HOSPITAL_FIELD.loadingText}
               required
               disabled={isLoadingTenants || loading}
             >
-              <option value="">Select your hospital</option>
+              <option value="">{AUTH_NETWORK_HOSPITAL_FIELD.placeholder}</option>
               {tenants.map((tenant) => (
                 <option key={tenant.id} value={tenant.id}>
                   {tenant.name}

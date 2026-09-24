@@ -41,6 +41,10 @@ const ACTION_CONFIG: Record<string, { label: string; tone: string }> = {
     label: 'Ownership reassigned',
     tone: 'text-violet-800',
   },
+  OwnershipRequeued: {
+    label: 'Re-queued',
+    tone: 'text-violet-800',
+  },
 };
 
 const OWNERSHIP_CHANGE_TYPES = new Set([
@@ -48,6 +52,7 @@ const OWNERSHIP_CHANGE_TYPES = new Set([
   'OwnershipAssigned',
   'OwnershipClaimed',
   'OwnershipReassigned',
+  'OwnershipRequeued',
 ]);
 
 const FIELD_LABELS: Record<string, string> = {
@@ -176,6 +181,36 @@ function OwnershipDetails({
   const to = formatOwnershipParty(entry.newValue, nameById);
   const isClaim = entry.changeType === 'OwnershipClaimed';
   const isReassign = entry.changeType === 'OwnershipReassigned';
+  const isRequeue = entry.changeType === 'OwnershipRequeued';
+
+  // ReQueue: operational History event — Reason + prior owner release. Actor is the table column
+  // (changedBy). Do not surface OwnershipRequeued / CounselorId / raw AdditionalNotes markers.
+  if (isRequeue) {
+    return (
+      <div className="space-y-1 text-xs text-muted-foreground">
+        {entry.reason ? (
+          <div>
+            <span className="text-muted-foreground/80">Reason</span>{' '}
+            <span className="font-medium text-foreground">{entry.reason}</span>
+          </div>
+        ) : null}
+        <div>
+          <span className="text-muted-foreground/80">Requeued by</span>{' '}
+          <span className="font-medium text-foreground">{entry.changedBy || '—'}</span>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <span>
+            <span className="text-muted-foreground/80">From</span>{' '}
+            <span className="font-medium text-foreground">{from}</span>
+          </span>
+          <span>
+            <span className="text-muted-foreground/80">To</span>{' '}
+            <span className="font-medium text-foreground">{to}</span>
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-1 text-xs text-muted-foreground">
@@ -463,12 +498,35 @@ export function SessionHistoryModal({
                       </p>
                       <dl className="mt-2 space-y-1.5 text-xs">
                         <div>
-                          <dt className="text-muted-foreground">Actor</dt>
+                          <dt className="text-muted-foreground">
+                            {entry.changeType === 'OwnershipRequeued' ? 'Requeued by' : 'Actor'}
+                          </dt>
                           <dd className="font-medium text-foreground">
                             {entry.changedBy || '—'}
                           </dd>
                         </div>
-                        {OWNERSHIP_CHANGE_TYPES.has(entry.changeType) ? (
+                        {entry.changeType === 'OwnershipRequeued' ? (
+                          <>
+                            {entry.reason ? (
+                              <div>
+                                <dt className="text-muted-foreground">Reason</dt>
+                                <dd className="font-medium text-foreground">{entry.reason}</dd>
+                              </div>
+                            ) : null}
+                            <div>
+                              <dt className="text-muted-foreground">From</dt>
+                              <dd className="font-medium text-foreground">
+                                {formatOwnershipParty(entry.oldValue, counselorNameById)}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">To</dt>
+                              <dd className="font-medium text-foreground">
+                                {formatOwnershipParty(entry.newValue, counselorNameById)}
+                              </dd>
+                            </div>
+                          </>
+                        ) : OWNERSHIP_CHANGE_TYPES.has(entry.changeType) ? (
                           <>
                             <div>
                               <dt className="text-muted-foreground">From</dt>

@@ -93,9 +93,14 @@ export interface CounselingSession {
   videoConsentRecorded?: boolean;
   consentFormsStatus?: string;
   
+  /** Active counselling owner (CounselorId). Display / ownership mutation — not a list visibility filter. */
+  counselorId?: string | null;
+  counselorName?: string | null;
   status: string;
   createdAt: string;
   updatedAt?: string;
+  /** Phase 3I Slice 7 (PD-S7-01) — optimistic concurrency token; send back as expected `version` on the next mutation. */
+  version?: number;
 }
 
 export interface SessionFilters {
@@ -121,6 +126,11 @@ export interface SessionFilters {
   search?: string;
   /** @deprecated use search */
   searchTerm?: string;
+  /**
+   * Phase 3I Slice 12 — Reassignment Required operational filter (PD-S12-14).
+   * Server-side: operationally open sessions owned by an unavailable counsellor.
+   */
+  reassignmentRequired?: boolean;
 }
 
 export interface SessionListResponse {
@@ -159,6 +169,8 @@ export interface CreateCounselingSessionRequest {
 }
 
 export interface UpdateCounselingSessionRequest {
+  /** Phase 3I Slice 7 (PD-S7-02) — required expected Version (optimistic concurrency). */
+  version?: number;
   counselorId?: string;
   sessionStartTime?: string;
   sessionEndTime?: string;
@@ -219,6 +231,9 @@ export const counselingSessionsApi = {
     if (filters?.recommendedSurgery) params.append('recommendedSurgery', filters.recommendedSurgery);
     const search = filters?.search ?? filters?.searchTerm;
     if (search) params.append('search', search);
+    if (filters?.reassignmentRequired === true) {
+      params.append('reassignmentRequired', 'true');
+    }
 
     const query = params.toString();
     const url = `/counseling/sessions${query ? `?${query}` : ''}`;
@@ -277,42 +292,66 @@ export const counselingSessionsApi = {
 
   /**
    * Start a counseling session
+   * Phase 3I Slice 7 (PD-S7-02) — `version` (expected) is required by the backend.
    */
-  start: async (id: string): Promise<{ success: boolean; message: string }> => {
-    const response = await getApi().post(`/counseling/sessions/${id}/start`);
+  start: async (
+    id: string,
+    version?: number,
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await getApi().post(`/counseling/sessions/${id}/start`, { version });
     return response.data;
   },
 
   /**
    * Complete a counseling session
+   * Phase 3I Slice 7 (PD-S7-02) — `version` (expected) is required by the backend.
    */
-  complete: async (id: string): Promise<{ success: boolean; message: string }> => {
-    const response = await getApi().post(`/counseling/sessions/${id}/complete`);
+  complete: async (
+    id: string,
+    version?: number,
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await getApi().post(`/counseling/sessions/${id}/complete`, { version });
     return response.data;
   },
 
   /**
    * Cancel a counseling session
+   * Phase 3I Slice 7 (PD-S7-02) — `version` (expected) is required by the backend.
    */
-  cancel: async (id: string, reason: string): Promise<{ success: boolean; message: string }> => {
-    const response = await getApi().post(`/counseling/sessions/${id}/cancel`, { reason });
+  cancel: async (
+    id: string,
+    reason: string,
+    version?: number,
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await getApi().post(`/counseling/sessions/${id}/cancel`, { reason, version });
     return response.data;
   },
 
   /**
    * Persist the current workflow step so it survives page refresh.
    * stage is 1-based (1–6).
+   * Phase 3I Slice 7 (PD-S7-02) — `version` (expected) is required by the backend.
    */
-  advanceStage: async (id: string, stage: number): Promise<{ success: boolean; currentStage: string }> => {
-    const response = await getApi().put(`/counseling/sessions/${id}/advance-stage`, { stage });
+  advanceStage: async (
+    id: string,
+    stage: number,
+    version?: number,
+  ): Promise<{ success: boolean; currentStage: string; version?: number }> => {
+    const response = await getApi().put(`/counseling/sessions/${id}/advance-stage`, {
+      stage,
+      version,
+    });
     return response.data;
   },
 
   /**
    * Delete a counseling session
+   * Phase 3I Slice 7 (PD-S7-02) — `version` (expected) is required by the backend (sent as DELETE body).
    */
-  delete: async (id: string): Promise<boolean> => {
-    const response = await getApi().delete(`/counseling/sessions/${id}`);
+  delete: async (id: string, version?: number): Promise<boolean> => {
+    const response = await getApi().delete(`/counseling/sessions/${id}`, {
+      data: { version },
+    });
     return response.status === 200;
   },
 

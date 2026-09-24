@@ -38,6 +38,18 @@ describe('Counsellor branch-context FE contracts', () => {
     expect(text).not.toContain('Branch is required. Select a branch and try again.');
   });
 
+  it('counsellorsDeskApi.getAnesthetists uses Counseling/anesthetists (not users/anesthetists)', async () => {
+    const text = await readFile(
+      join(process.cwd(), 'src/lib/api/counsellors-desk.api.ts'),
+      'utf8',
+    );
+    const start = text.indexOf('async getAnesthetists');
+    const end = text.indexOf('async getOtTheaters', start);
+    const fn = text.slice(start, end);
+    expect(fn).toContain('/Counseling/anesthetists');
+    expect(fn).not.toMatch(/get\(['"`]\/users\/anesthetists/);
+  });
+
   it('counsellorsDeskApi.getSurgeons uses Counseling/surgeons (not users/surgeons)', async () => {
     const text = await readFile(
       join(process.cwd(), 'src/lib/api/counsellors-desk.api.ts'),

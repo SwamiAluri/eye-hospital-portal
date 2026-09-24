@@ -44,6 +44,13 @@ export type WaitingListWorkRowProps = {
     patient: WaitingListPatient,
     kind: WaitingListLifecycleActionKind,
   ) => void;
+  /**
+   * OT Returned — no counselling session yet. Shows Start Counseling create CTA
+   * instead of lifecycle navigation (certified POST /Counseling/sessions).
+   */
+  otReturnReason?: string | null;
+  onOtStartCounselling?: () => void;
+  otStartPending?: boolean;
   /** When false, hide Assign even if unassigned (no update permission). Default true when onAssign set. */
   canAssign?: boolean;
   /** When false, hide Reassign (no reassign permission). */
@@ -74,12 +81,19 @@ function WaitingListWorkRowComponent({
   onAssign,
   onReassign,
   onLifecycleAction,
+  otReturnReason,
+  onOtStartCounselling,
+  otStartPending = false,
   canAssign = true,
   canReassign = false,
   className,
   'data-testid': testId = 'waiting-list-work-row',
 }: WaitingListWorkRowProps) {
   const statusBadge = getStatusBadge(patient.status);
+  const otReason = otReturnReason?.trim() || '';
+  const isOtReturnedRow = !!otReason;
+  /** Parent only passes onOtStartCounselling when no session exists (create path). */
+  const showOtStartCta = Boolean(onOtStartCounselling);
   const lifecycle = resolveWaitingListLifecycleAction({
     status: patient.status,
     counselorId: patient.counselorId,
@@ -90,12 +104,16 @@ function WaitingListWorkRowComponent({
   });
   const isCoverage = isCoveragePaymentTypeValue(patient.patientType);
   /** PreAuthQueue tab: Pre-Auth remains the primary Action CTA (existing business rule). */
-  const preAuthIsPrimary = lifecycle.kind === 'preauth';
+  const preAuthIsPrimary = !showOtStartCta && lifecycle.kind === 'preauth';
   /** Coverage rows: Pre-Auth context lives in Payment / Coverage (not Action clutter). */
   const showPreAuthInPaymentColumn = isCoverage && !preAuthIsPrimary;
   const showAssign =
-    Boolean(onAssign) && canAssign && lifecycle.kind === 'assign';
+    !showOtStartCta &&
+    Boolean(onAssign) &&
+    canAssign &&
+    lifecycle.kind === 'assign';
   const showReassign =
+    !showOtStartCta &&
     Boolean(onReassign) &&
     canReassign &&
     isWaitingListEligibleForReassign({
@@ -103,6 +121,7 @@ function WaitingListWorkRowComponent({
       counselorId: patient.counselorId,
     });
   const showLifecycleCta =
+    !showOtStartCta &&
     !showAssign &&
     !preAuthIsPrimary &&
     Boolean(onLifecycleAction) &&
@@ -173,6 +192,12 @@ function WaitingListWorkRowComponent({
     onLifecycleAction?.(patient, lifecycle.kind);
   };
 
+  const handleOtStart = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (otStartPending) return;
+    onOtStartCounselling?.();
+  };
+
   const doctor = formatWaitingListDoctorDisplay(patient.doctor);
   const sex = formatPatientSex(patient.gender);
   const identityLine = [
@@ -183,10 +208,15 @@ function WaitingListWorkRowComponent({
     .filter(Boolean)
     .join(' · ');
 
-  const visitSecondary = [doctor || null, displayTime(patient.time)]
-    .filter((p) => Boolean(p && String(p).trim() && p !== '—'))
-    .join(' · ');
+  const visitSecondary = isOtReturnedRow
+    ? [patient.time?.trim() || null, doctor || null]
+        .filter((p) => Boolean(p && String(p).trim() && p !== '—'))
+        .join(' · ')
+    : [doctor || null, displayTime(patient.time)]
+        .filter((p) => Boolean(p && String(p).trim() && p !== '—'))
+        .join(' · ');
 
+  const visitPrimary = isOtReturnedRow ? 'Surgery' : patient.type || '—';
   const procedurePrimary = patient.surgeryName?.trim() || '—';
   const eyeSecondary = patient.eye?.trim() || null;
 
@@ -247,7 +277,7 @@ function WaitingListWorkRowComponent({
 
         <div className="min-w-0" data-testid="waiting-list-row-visit">
           <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
-            {patient.type || '—'}
+            {visitPrimary}
           </p>
           <p className="mt-0 truncate text-xs leading-4 text-counselling-muted-foreground">
             {visitSecondary || '—'}
@@ -296,40 +326,80 @@ function WaitingListWorkRowComponent({
             <button
               type="button"
               className={cn(
-                'mt-0 max-w-full truncate text-left text-xs leading-4',
-                'text-counselling-muted-foreground underline decoration-counselling-border/60 underline-offset-2',
-                'hover:text-counselling-foreground hover:decoration-counselling-foreground/40',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40 rounded-sm',
+                'mt-0.5 inline-flex max-w-full items-center truncate rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-4',
+                'bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200/80',
+                'hover:bg-amber-100/80',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
               )}
               onClick={handlePreAuth}
-              aria-label="Start or view pre-authorization"
+              aria-label={`Pre-authorization: ${paymentPreAuthHint}. Open coverage`}
               data-testid="waiting-list-row-preauth"
             >
               {paymentPreAuthHint}
             </button>
           ) : paymentPreAuthHint && preAuthIsPrimary ? (
-            <p className="mt-0 truncate text-xs leading-4 text-counselling-muted-foreground">
+            <p
+              className={cn(
+                'mt-0.5 inline-flex max-w-full truncate rounded-md px-1.5 py-0.5 text-[11px] font-semibold leading-4',
+                'bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200/80',
+              )}
+              aria-label={`Pre-authorization: ${paymentPreAuthHint}`}
+            >
               {paymentPreAuthHint}
             </p>
           ) : null}
         </div>
 
-        <div className="min-w-0">
-          <span
-            className={cn(
-              counsellingSessionTokens.statusPill,
-              'max-w-full truncate',
-              statusBadge.cls,
-            )}
-          >
-            {statusBadge.label}
-          </span>
+        <div className="min-w-0" data-testid="waiting-list-row-status">
+          {isOtReturnedRow ? (
+            <div className="min-w-0">
+              <span
+                className={cn(
+                  counsellingSessionTokens.statusPill,
+                  'max-w-full truncate bg-rose-100 text-rose-900',
+                )}
+              >
+                OT Returned
+              </span>
+              <p
+                className="mt-0.5 truncate text-[11px] font-medium leading-4 text-counselling-muted-foreground"
+                title={otReason}
+              >
+                {otReason}
+              </p>
+            </div>
+          ) : (
+            <span
+              className={cn(
+                counsellingSessionTokens.statusPill,
+                'max-w-full truncate',
+                statusBadge.cls,
+              )}
+            >
+              {statusBadge.label}
+            </span>
+          )}
         </div>
 
         <div
           className="flex min-w-0 items-center justify-end gap-1"
           data-testid="waiting-list-row-action"
         >
+          {showOtStartCta ? (
+            <CounsellingButton
+              type="button"
+              size="sm"
+              variant="outline"
+              className="!min-h-8 h-8 px-2 text-xs font-medium border-counselling-border text-counselling-foreground"
+              onClick={handleOtStart}
+              disabled={otStartPending}
+              aria-label={`Start Counseling for ${patient.patientName}`}
+              aria-busy={otStartPending || undefined}
+              data-testid="waiting-list-row-ot-start-counselling"
+            >
+              {otStartPending ? 'Starting…' : 'Start Counseling'}
+            </CounsellingButton>
+          ) : null}
           {showAssign ? (
             <CounsellingButton
               type="button"

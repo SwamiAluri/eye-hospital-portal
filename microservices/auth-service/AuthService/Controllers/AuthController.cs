@@ -78,8 +78,12 @@ namespace AuthService.Controllers
                         return Unauthorized(new { success = false, message = "Invalid credentials" });
                     }
 
-                    // Get actual user from database
-                    var dbUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email && u.TenantId == tenantId);
+                    // Get actual user from database (case-insensitive email; tenant = Network Hospital)
+                    var dbUser = await LoginIdentityLookup.FindByEmailAndTenantAsync(
+                        _context.Users,
+                        request.Email,
+                        tenantId,
+                        email => _userManager.NormalizeEmail(email ?? string.Empty));
                     if (dbUser == null)
                     {
                         return Unauthorized(new { success = false, message = "User not found" });
@@ -130,8 +134,13 @@ namespace AuthService.Controllers
                 }
 
                 // Find user by email (real database authentication)
-                var user = await _userManager.Users
-                    .FirstOrDefaultAsync(u => u.Email == request.Email && u.TenantId == tenantId);
+                // Network Hospital = TenantId. Email match is case-insensitive via NormalizedEmail.
+                // Branch membership is NOT a login eligibility check.
+                var user = await LoginIdentityLookup.FindByEmailAndTenantAsync(
+                    _userManager.Users,
+                    request.Email,
+                    tenantId,
+                    email => _userManager.NormalizeEmail(email ?? string.Empty));
 
                 if (user == null)
                 {

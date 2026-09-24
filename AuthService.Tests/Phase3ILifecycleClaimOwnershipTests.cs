@@ -172,13 +172,21 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         return sessionId;
     }
 
+    /// <summary>Phase 3I Slice 7 (PD-S7-01) — fetch the current DB Version right before a mutation call,
+    /// since seed helpers above mutate the tracked CounselingSession (bumping Version past 1).</summary>
+    private async Task<int> VersionOf(Guid sessionId) =>
+        await _db.CounselingSession.AsNoTracking()
+            .Where(s => s.Id == sessionId)
+            .Select(s => s.Version)
+            .FirstAsync();
+
     [Fact]
     public async Task Claim_Done_OtherOwner_Succeeds_OwnerBecomesActor()
     {
         var sessionId = await CreateOwnedCompletedSessionAsync(_ravi, patientAgreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, _amelia);
+            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, await VersionOf(sessionId), _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(_amelia, result.CounselorId);
@@ -193,7 +201,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         var sessionId = await CreateOwnedCompletedSessionAsync(_ravi, patientAgreed: false);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.StartRepeat, _amelia);
+            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.StartRepeat, 2, _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(_amelia, result.CounselorId);
@@ -205,7 +213,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         var sessionId = await CreateOwnedCompletedSessionAsync(_ravi, patientAgreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.ReEvaluate, _amelia);
+            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.ReEvaluate, 2, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Conflict, result.FailureKind);
@@ -219,7 +227,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         var sessionId = await CreateOwnedCompletedSessionAsync(_ravi, patientAgreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, _otherBranchCounsellor);
+            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, 2, _otherBranchCounsellor);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Forbidden, result.FailureKind);
@@ -233,7 +241,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         var sessionId = await CreateOwnedCompletedSessionAsync(_ravi, patientAgreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, _admin);
+            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, 2, _admin);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Forbidden, result.FailureKind);
@@ -275,7 +283,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         await _db.SaveChangesAsync();
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, null, CounselingLifecycleClaimIntent.ReEvaluate, _amelia);
+            _tenant, sessionId, null, CounselingLifecycleClaimIntent.ReEvaluate, 2, _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(_amelia, result.CounselorId);
@@ -317,7 +325,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         await _db.SaveChangesAsync();
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, null, CounselingLifecycleClaimIntent.StartRepeat, _amelia);
+            _tenant, sessionId, null, CounselingLifecycleClaimIntent.StartRepeat, 1, _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(_amelia, result.CounselorId);
@@ -329,7 +337,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         var sessionId = await CreateOwnedCompletedSessionAsync(_ravi, patientAgreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.StartRepeat, _amelia);
+            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.StartRepeat, 2, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.BadRequest, result.FailureKind);
@@ -341,7 +349,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         var sessionId = await CreateOwnedCompletedSessionAsync(_amelia, patientAgreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.ReEvaluate, _amelia);
+            _tenant, sessionId, _amelia, CounselingLifecycleClaimIntent.ReEvaluate, 2, _amelia);
 
         Assert.True(result.Success);
         Assert.Equal(_amelia, result.CounselorId);
@@ -352,7 +360,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
     {
         var sessionId = await CreateOwnedCompletedSessionAsync(_ravi, patientAgreed: true);
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 2, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Conflict, result.FailureKind);
@@ -377,7 +385,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         await _db.SaveChangesAsync();
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, _amelia);
+            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, 2, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.BadRequest, result.FailureKind);
@@ -391,7 +399,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         var sessionId = await CreateOwnedCompletedSessionAsync(_ravi, patientAgreed: true);
 
         var result = await _svc.ClaimSessionForLifecycleAsync(
-            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, _otherTenantCounsellor);
+            _tenant, sessionId, _ravi, CounselingLifecycleClaimIntent.ReEvaluate, 2, _otherTenantCounsellor);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.Forbidden, result.FailureKind);
@@ -432,7 +440,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, _amelia);
+        var result = await _svc.AssignSessionAsync(_tenant, sessionId, _amelia, 2, _amelia);
 
         Assert.False(result.Success);
         Assert.Equal(AssignSessionFailureKind.BadRequest, result.FailureKind);
@@ -450,7 +458,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
     {
         var sessionId = await CreateOwnedCompletedSessionAsync(_amelia, patientAgreed: true);
 
-        var result = await _svc.StartSessionAsync(_tenant, sessionId, _amelia);
+        var result = await _svc.StartSessionAsync(_tenant, sessionId, _amelia, 2);
 
         Assert.True(result.Success);
         var session = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
@@ -467,7 +475,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
     {
         var sessionId = await CreateOwnedCompletedSessionAsync(_amelia, patientAgreed: false);
 
-        var result = await _svc.StartSessionAsync(_tenant, sessionId, _amelia, "Followup");
+        var result = await _svc.StartSessionAsync(_tenant, sessionId, _amelia, 2, "Followup");
 
         Assert.True(result.Success);
         var session = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);
@@ -491,7 +499,7 @@ public class Phase3ILifecycleClaimOwnershipTests : IDisposable
         session.Status = "Waiting";
         await _db.SaveChangesAsync();
 
-        var result = await _svc.StartSessionAsync(_tenant, sessionId, _amelia);
+        var result = await _svc.StartSessionAsync(_tenant, sessionId, _amelia, 3);
 
         Assert.True(result.Success);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId);

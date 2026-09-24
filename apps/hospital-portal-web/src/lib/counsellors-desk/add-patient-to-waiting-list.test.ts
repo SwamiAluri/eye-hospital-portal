@@ -5,6 +5,7 @@ import {
   findActiveWaitingListDuplicate,
   matchPatientForAddWaitingList,
   requireSelectedMpiPatient,
+  waitingListDuplicateCreateMessage,
   type UnifiedPatientHit,
 } from './add-patient-to-waiting-list';
 
@@ -85,16 +86,48 @@ describe('findActiveWaitingListDuplicate', () => {
     expect(dup?.status).toBe('Pending');
   });
 
-  it('ignores Done / RepeatCounselling / SurgeryDone for duplicate guard', () => {
-    const dup = findActiveWaitingListDuplicate({
-      uhid: 'UHID-100',
-      patientDisplayName: 'Meena Iyer',
-      rows: [
-        { uhid: 'UHID-100', patientName: 'Meena Iyer', status: 'RepeatCounselling' },
-        { uhid: 'UHID-100', patientName: 'Meena Iyer', status: 'Done' },
-      ],
+  it('PD-C: blocks Done and RepeatCounselling; allows SurgeryDone new episode', () => {
+    expect(
+      findActiveWaitingListDuplicate({
+        uhid: 'UHID-100',
+        patientDisplayName: 'Meena Iyer',
+        rows: [{ uhid: 'UHID-100', patientName: 'Meena Iyer', status: 'Done' }],
+      })?.status,
+    ).toBe('Done');
+
+    expect(
+      findActiveWaitingListDuplicate({
+        uhid: 'UHID-100',
+        patientDisplayName: 'Meena Iyer',
+        rows: [{ uhid: 'UHID-100', patientName: 'Meena Iyer', status: 'RepeatCounselling' }],
+      })?.status,
+    ).toBe('RepeatCounselling');
+
+    expect(
+      findActiveWaitingListDuplicate({
+        uhid: 'UHID-100',
+        patientDisplayName: 'Meena Iyer',
+        rows: [{ uhid: 'UHID-100', patientName: 'Meena Iyer', status: 'SurgeryDone' }],
+      }),
+    ).toBeUndefined();
+  });
+
+  it('PD-C: Done duplicate message directs to ReEvaluate', () => {
+    expect(
+      waitingListDuplicateCreateMessage({
+        patientName: 'Meena Iyer',
+        status: 'Done',
+      }),
+    ).toMatch(/ReEvaluate/i);
+  });
+
+  it('PD-C: RepeatCounselling message continues existing episode (not ReEvaluate)', () => {
+    const msg = waitingListDuplicateCreateMessage({
+      patientName: 'Meena Iyer',
+      status: 'RepeatCounselling',
     });
-    expect(dup).toBeUndefined();
+    expect(msg).toMatch(/existing session|open counselling episode/i);
+    expect(msg).not.toMatch(/ReEvaluate/i);
   });
 });
 

@@ -115,6 +115,9 @@ public class Phase3IPendingReadOnlyUpdateGuardTests : IDisposable
     private int HistoryCount(Guid sessionId) =>
         _db.CounselingSessionAuditLog.Count(a => a.SessionId == sessionId);
 
+    private async Task<int> CurrentVersionAsync(Guid sessionId) =>
+        (await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == sessionId)).Version;
+
     [Fact]
     public async Task Update_Scheduled_Owner_CounsellingContent_Rejected()
     {
@@ -125,6 +128,7 @@ public class Phase3IPendingReadOnlyUpdateGuardTests : IDisposable
 
         var result = await _svc.UpdateSessionAsync(_tenant, id, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(id),
             ClinicalSummary = "pre-start edit",
             RecommendedSurgery = "Phaco",
             FieldChanges =
@@ -159,10 +163,11 @@ public class Phase3IPendingReadOnlyUpdateGuardTests : IDisposable
     public async Task Update_AfterStart_InProgress_Owner_Succeeds_CounselorIdUnchanged()
     {
         var id = await CreateOwnedScheduledSessionAsync();
-        Assert.True((await _svc.StartSessionAsync(_tenant, id, _owner)).Success);
+        Assert.True((await _svc.StartSessionAsync(_tenant, id, _owner, await CurrentVersionAsync(id))).Success);
 
         var result = await _svc.UpdateSessionAsync(_tenant, id, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(id),
             ClinicalSummary = "post-start draft",
         }, _owner);
 
@@ -178,7 +183,7 @@ public class Phase3IPendingReadOnlyUpdateGuardTests : IDisposable
     {
         var id = await CreateOwnedScheduledSessionAsync();
 
-        var result = await _svc.StartSessionAsync(_tenant, id, _owner);
+        var result = await _svc.StartSessionAsync(_tenant, id, _owner, await CurrentVersionAsync(id));
 
         Assert.True(result.Success);
         var row = await _db.CounselingSession.AsNoTracking().FirstAsync(s => s.Id == id);
@@ -196,6 +201,7 @@ public class Phase3IPendingReadOnlyUpdateGuardTests : IDisposable
 
         var result = await _svc.UpdateSessionAsync(_tenant, id, new UpdateCounselingSessionRequest
         {
+            Version = await CurrentVersionAsync(id),
             CurrentStage = "2",
         }, _owner);
 

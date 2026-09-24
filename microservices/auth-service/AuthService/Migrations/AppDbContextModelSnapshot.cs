@@ -4791,7 +4791,10 @@ namespace AuthService.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SessionId");
+                    b.HasIndex("SessionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_counselor_queue_session_id_active")
+                        .HasFilter("deleted_at IS NULL");
 
                     b.ToTable("counselor_queue");
                 });

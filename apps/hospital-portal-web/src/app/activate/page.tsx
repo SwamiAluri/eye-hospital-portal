@@ -24,6 +24,7 @@ function ActivatePageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [userId, setUserId] = useState('');
+  const [tenantId, setTenantId] = useState('');
   const [userRole, setUserRole] = useState('');
   const [tokenValidated, setTokenValidated] = useState(false);
   const [validatingToken, setValidatingToken] = useState(true);
@@ -34,6 +35,10 @@ function ActivatePageContent() {
   const [specialization, setSpecialization] = useState('');
   const [registrationDate, setRegistrationDate] = useState('');
   const [requiresProfessionalInfo, setRequiresProfessionalInfo] = useState(false);
+
+  /** Auth API headers for anonymous activation — tenant from token validation, never user-typed. */
+  const activationAuthHeaders = () =>
+    tenantId ? { 'X-Tenant-ID': tenantId } : undefined;
 
   // Validate activation token on page load
   useEffect(() => {
@@ -53,7 +58,7 @@ function ActivatePageContent() {
       
       try {
         // Call notification service to validate the activation token
-        const notificationServiceUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:7071';
+        const notificationServiceUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:7073';
         const response = await fetch(`${notificationServiceUrl}/api/activation/validate-token`, {
           method: 'POST',
           headers: {
@@ -70,6 +75,9 @@ function ActivatePageContent() {
           setTokenValidated(true);
           setUserId(data.userId);
           setEmail(data.email);
+          if (data.tenantId) {
+            setTenantId(String(data.tenantId));
+          }
         } else {
           setError(data.error || 'Invalid or expired activation link');
         }
@@ -109,7 +117,7 @@ function ActivatePageContent() {
     setLoading(true);
 
     try {
-      const notificationServiceUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:7071';
+      const notificationServiceUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:7073';
       const response = await fetch(`${notificationServiceUrl}/api/activation/verify-otp`, {
         method: 'POST',
         headers: {
@@ -148,7 +156,7 @@ function ActivatePageContent() {
     setLoading(true);
 
     try {
-      const notificationServiceUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:7071';
+      const notificationServiceUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:7073';
       const tokenParam = searchParams.get('token');
       const emailParam = searchParams.get('email');
       
@@ -231,9 +239,11 @@ function ActivatePageContent() {
 
     try {
       const api = getApi();
-      const response = await api.post(`/users/${userId}/set-activation-password`, {
-        password: password,
-      });
+      const response = await api.post(
+        `/users/${userId}/set-activation-password`,
+        { password: password },
+        { headers: activationAuthHeaders() },
+      );
       
       console.log('Set password response:', { status: response.status, data: response.data });
       
@@ -279,12 +289,16 @@ function ActivatePageContent() {
 
     try {
       const api = getApi();
-      await api.post(`/users/${userId}/professional-info`, {
-        licenseNumber,
-        npiNumber: npiNumber || null,
-        specialization,
-        registrationDate: registrationDate || null,
-      });
+      await api.post(
+        `/users/${userId}/professional-info`,
+        {
+          licenseNumber,
+          npiNumber: npiNumber || null,
+          specialization,
+          registrationDate: registrationDate || null,
+        },
+        { headers: activationAuthHeaders() },
+      );
       
       setStep('accept-terms');
     } catch (err: any) {
@@ -307,12 +321,16 @@ function ActivatePageContent() {
 
     try {
       const api = getApi();
-      await api.post(`/users/${userId}/accept-terms`, {
-        acceptedTerms,
-        acceptedPrivacy,
-        acceptedHipaa,
-        acceptedAt: new Date().toISOString(),
-      });
+      await api.post(
+        `/users/${userId}/accept-terms`,
+        {
+          acceptedTerms,
+          acceptedPrivacy,
+          acceptedHipaa,
+          acceptedAt: new Date().toISOString(),
+        },
+        { headers: activationAuthHeaders() },
+      );
 
       // MFA is now MANDATORY
       setStep('setup-mfa');
@@ -329,7 +347,7 @@ function ActivatePageContent() {
     setLoading(true);
 
     try {
-      const notificationServiceUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:7071';
+      const notificationServiceUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:7073';
       
       if (mfaMethod === 'totp') {
         // If QR code exists and user entered code, verify it
@@ -354,7 +372,21 @@ function ActivatePageContent() {
             throw new Error(verifyData.Error || verifyData.error || 'Invalid verification code');
           }
 
-          // Verification successful, proceed to complete
+          // Persist authoritative active state in Auth (UI "complete" alone does not activate)
+          const api = getApi();
+          const completeResp = await api.post(
+            `/users/${userId}/complete-activation`,
+            {},
+            { headers: activationAuthHeaders() },
+          );
+          if (!(completeResp.data?.success || completeResp.data?.Success)) {
+            throw new Error(
+              completeResp.data?.message ||
+                completeResp.data?.Message ||
+                'Failed to finalize account activation'
+            );
+          }
+
           setStep('complete');
           return;
         }
@@ -399,9 +431,8 @@ function ActivatePageContent() {
         }
         }
       } else {
-        // SMS MFA - for now, just complete without actual setup
-        // TODO: Implement SMS MFA enrollment
-        setStep('complete');
+        // SMS MFA enrollment is not fully implemented; do not claim activation complete.
+        throw new Error('SMS MFA enrollment is not available. Please use Authenticator App (TOTP).');
       }
     } catch (err: any) {
       console.error('MFA setup error:', err);

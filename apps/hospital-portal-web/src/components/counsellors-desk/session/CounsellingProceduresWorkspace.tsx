@@ -22,6 +22,10 @@ import { useCounsellingSession } from '@/components/counsellors-desk/session/Cou
 import { useInvalidateCounsellorsDesk } from '@/hooks/use-counsellors-desk-queries';
 import { biometryMissingEyePhrase } from '@/lib/ip-management/iol-diopter';
 import { loadSuggestedIolPower } from '@/lib/ip-management/clinical-evaluation-prefill';
+import {
+  getSessionConcurrencyMessage,
+  isSessionConcurrencyConflict,
+} from '@/lib/counsellors-desk/session-concurrency';
 
 export type ProcedureWorkspacePart = 'lens' | 'biometry';
 
@@ -50,7 +54,7 @@ function CounsellorBiometryStatus({
   selectedEye: CounsellingEyeOption;
   isReadOnly: boolean;
 }) {
-  const { sessionId, session } = useCounsellingSession();
+  const { sessionId, session, updateSessionVersion } = useCounsellingSession();
   const { invalidateSession } = useInvalidateCounsellorsDesk();
   const [missing, setMissing] = useState(false);
   const [available, setAvailable] = useState(false);
@@ -76,17 +80,24 @@ function CounsellorBiometryStatus({
   async function refresh() {
     setRefreshing(true);
     try {
-      const snap = await counsellorsDeskApi.refreshSessionFromOpd(sessionId);
+      const snap = await counsellorsDeskApi.refreshSessionFromOpd(sessionId, session?.version);
       setMissing(snap.biometryMissing === true);
       setAvailable(snap.biometryMissing !== true);
       if (snap.iolPower) setPlannedPower(snap.iolPower);
+      updateSessionVersion(snap.version);
       invalidateSession(sessionId);
       if (snap.biometryMissing) {
         toast.error(`No biometry on file for the ${snap.eyePhrase ?? biometryMissingEyePhrase(selectedEye)}.`);
       } else {
         toast.success('Copied latest OPD biometry onto this session.');
       }
-    } catch {
+    } catch (err) {
+      // Phase 3I Slice 7 (PD-S7-06): stop on 409 — never overwrite; no auto-retry.
+      if (isSessionConcurrencyConflict(err)) {
+        toast.error(getSessionConcurrencyMessage(err));
+        invalidateSession(sessionId);
+        return;
+      }
       toast.error('Could not refresh from OPD.');
     } finally {
       setRefreshing(false);

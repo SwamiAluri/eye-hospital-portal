@@ -50,10 +50,32 @@ import {
   isValidPrepareOtSurgeryDate,
   selectFinalisedForPrepareDate,
 } from '@/lib/counsellors-desk/prepare-ot-date-scope';
+import { OT_PREP_SURGERY_DATE_CATALOG_FILTERS } from '@/lib/counsellors-desk/ot-preparation-surgery-date-catalog';
+import {
+  buildContinuedPrepareItems,
+  filterFinalisedForOtPrepWorklist,
+  highestOtPreparedSequenceForDate,
+  reconcileSelectionToVisible,
+  resolveSinglePrepareScheduleDate,
+  selectAllVisibleIds,
+  selectedRecordsInWorklistOrder,
+} from '@/lib/counsellors-desk/ot-preparation-resp2';
+import { openOtPreparationPreparedListPrint } from '@/lib/counsellors-desk/ot-preparation-prepared-list-print';
+import {
+  openOtSlipsPrint,
+  selectAllVisibleOtPreparedIds,
+  selectedOtPreparedRecordsInOrder,
+} from '@/lib/counsellors-desk/ot-slip-print';
 import {
   FINALIZE_OT_MUTATE_PERMISSION,
   resolveFinalizeQueuePrimaryAction,
 } from '@/lib/counsellors-desk/finalize-ot-authorization';
+import {
+  NEEDS_ATTENTION_KPI_LABEL,
+  countNeedsAttention,
+  isReportingTimeValid,
+} from '@/lib/counsellors-desk/finalize-surgery-package1';
+import { formatCounsellingTimeDisplay } from '@/lib/counsellors-desk/counselling-time';
 import { COUNSELLING_SESSIONS_READ_PERMISSION } from '@/lib/counsellors-desk/counselling-auth';
 import { useHasPermission } from '@/hooks/use-permissions';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -75,7 +97,9 @@ type ActionKey = 'confirm' | 'finalise' | 'cancel' | 'reopen';
 
 const denseBtn = 'min-h-8 !min-h-8 h-8 text-xs';
 const WORK_GRID = 'finalize-surgery-work-grid';
+const OT_PREP_WORK_GRID = 'finalize-ot-prep-work-grid';
 const COLUMN_CUES = ['Patient', 'Surgery', 'Status', 'Schedule', 'Action'] as const;
+const OT_PREP_COLUMN_CUES = ['', 'Patient', 'Surgery', 'Status', 'Schedule', 'Action'] as const;
 
 function formatScheduleDate(raw?: string): string {
   if (!raw) return '—';
@@ -101,13 +125,26 @@ function primaryActionForStatus(
 interface PrepareModalProps {
   finalisedRecords: FinalizeSurgeryRecord[];
   prepareDate: string;
+  /** Optional FE-supplied SequenceNo seeds (RESP2 continuation / conflict retry). */
+  initialSequences?: Record<string, number>;
   onClose: () => void;
   onSubmit: (items: PrepareOtListItem[]) => Promise<void>;
 }
 
-function PrepareOtListModal({ finalisedRecords, prepareDate, onClose, onSubmit }: PrepareModalProps) {
+function PrepareOtListModal({
+  finalisedRecords,
+  prepareDate,
+  initialSequences,
+  onClose,
+  onSubmit,
+}: PrepareModalProps) {
   const [sequences, setSequences] = useState<Record<string, string>>(
-    Object.fromEntries(finalisedRecords.map((r, i) => [r.id, String(i + 1)])),
+    Object.fromEntries(
+      finalisedRecords.map((r, i) => [
+        r.id,
+        String(initialSequences?.[r.id] ?? i + 1),
+      ]),
+    ),
   );
   const [submitting, setSubmitting] = useState(false);
   const [conflictingIds, setConflictingIds] = useState<string[]>([]);
@@ -319,6 +356,7 @@ function FinalizeWorkRow({
   onOpen,
   onAction,
   onPrint,
+  printSelection,
 }: {
   rec: FinalizeSurgeryRecord;
   isDuplicate: boolean;
@@ -327,6 +365,11 @@ function FinalizeWorkRow({
   onOpen: () => void;
   onAction: (action: ActionKey) => void;
   onPrint: () => void;
+  /** OT Prepared bulk print selection — current-page checkboxes only. */
+  printSelection?: {
+    checked: boolean;
+    onToggle: (next: boolean) => void;
+  };
 }) {
   const primary = primaryActionForStatus(rec.status, canMutateOt);
   const doctor = formatWaitingListDoctorDisplay(rec.surgeon);
@@ -364,123 +407,177 @@ function FinalizeWorkRow({
   };
 
   const stop = (e: MouseEvent) => e.stopPropagation();
+  const showPrintSelect = Boolean(printSelection);
+  const gridClass = showPrintSelect ? OT_PREP_WORK_GRID : WORK_GRID;
+  const checkboxId = `ot-prepared-print-select-${rec.id}`;
+
+  const patientCell = (
+    <div className="min-w-0">
+      <div className="flex items-start gap-1.5">
+        <p className="truncate text-sm font-semibold leading-5 text-counselling-foreground">
+          {rec.patientName}
+        </p>
+        {rec.isLocked ? (
+          <LockKeyhole
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-counselling-primary"
+            aria-label="Locked"
+          />
+        ) : null}
+        {isDuplicate ? (
+          <AlertCircle
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500"
+            aria-label="Possible duplicate booking"
+          />
+        ) : null}
+      </div>
+      <p className="mt-0 truncate text-[13px] font-medium leading-4 text-counselling-muted-foreground max-[1599px]:leading-[1.125rem]">
+        <span>{identityLine || '—'}</span>
+        {quietMeta ? (
+          <span className="min-[1600px]:hidden">{` · ${quietMeta}`}</span>
+        ) : null}
+      </p>
+      {quietMeta ? (
+        <p className="mt-0.5 hidden truncate text-xs leading-4 text-counselling-muted-foreground min-[1600px]:block">
+          {quietMeta}
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const surgeryCell = (
+    <div className="min-w-0">
+      <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
+        {rec.surgeryName || '—'}
+      </p>
+      {rec.anesthesiaType ? (
+        <p className="mt-0.5 truncate text-xs text-counselling-muted-foreground">
+          {rec.anesthesiaType}
+          {rec.reportingTime
+            ? ` · Report ${formatCounsellingTimeDisplay(rec.reportingTime) || rec.reportingTime}`
+            : ''}
+        </p>
+      ) : rec.reportingTime ? (
+        <p className="mt-0.5 truncate text-xs text-counselling-muted-foreground">
+          Report {formatCounsellingTimeDisplay(rec.reportingTime) || rec.reportingTime}
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const scheduleCell = (
+    <div className="min-w-0">
+      <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
+        {scheduleLine}
+      </p>
+      {rec.packageRate != null ? (
+        <p className="mt-0.5 truncate text-xs tabular-nums text-counselling-muted-foreground">
+          ₹{Number(rec.packageRate).toLocaleString('en-IN')}
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const actionCell = (
+    <div className="flex min-w-0 items-center justify-end gap-0.5" onClick={stop}>
+      {!showPrintSelect ? (
+        <CounsellingButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="!min-h-8 h-8 w-8 px-0 text-counselling-muted-foreground"
+          title="Print OT Slip"
+          aria-label="Print OT Slip"
+          onClick={onPrint}
+        >
+          <Printer className="h-3.5 w-3.5" />
+        </CounsellingButton>
+      ) : null}
+      <CounsellingButton
+        type="button"
+        size="sm"
+        variant={primary.variant === 'ghost' ? 'ghost' : primary.variant === 'outline' ? 'outline' : 'default'}
+        className={cn(
+          denseBtn,
+          'px-2.5',
+          primary.variant === 'primary' &&
+            'bg-counselling-primary text-white hover:bg-counselling-primary/90',
+          primary.variant === 'outline' &&
+            'border-amber-300 text-amber-900 hover:bg-amber-50',
+        )}
+        onClick={() => {
+          if (primary.openModal) onOpen();
+          else if (primary.action) onAction(primary.action);
+        }}
+      >
+        {primary.label}
+      </CounsellingButton>
+      {!showPrintSelect ? (
+        <ChevronRight
+          className="h-4 w-4 shrink-0 text-counselling-muted-foreground/50 transition-colors group-hover:text-counselling-muted-foreground"
+          aria-hidden
+        />
+      ) : null}
+    </div>
+  );
 
   return (
     <div
-      role="button"
-      tabIndex={0}
+      role={showPrintSelect ? undefined : 'button'}
+      tabIndex={showPrintSelect ? undefined : 0}
       data-testid="finalize-surgery-work-row"
       data-schedule-id={rec.id}
-      aria-pressed={isSelected}
-      aria-label={`${rec.patientName}, ${rec.status}. Activate to open surgery details.`}
-      onClick={onOpen}
-      onKeyDown={onKeyDown}
+      data-print-selected={printSelection?.checked ? 'true' : 'false'}
+      aria-pressed={showPrintSelect ? undefined : isSelected}
+      aria-label={
+        showPrintSelect
+          ? undefined
+          : `${rec.patientName}, ${rec.status}. Activate to open surgery details.`
+      }
+      onClick={showPrintSelect ? undefined : onOpen}
+      onKeyDown={showPrintSelect ? undefined : onKeyDown}
       className={cn(
-        'group staff-worklist-row cursor-pointer bg-transparent px-1 transition-colors',
-        'hover:bg-counselling-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/40',
-        isSelected && 'bg-counselling-accent/35',
-        rec.isLocked && 'bg-counselling-accent/15',
+        'group staff-worklist-row bg-transparent px-1 transition-colors',
+        !showPrintSelect &&
+          'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/40',
+        'hover:bg-counselling-muted/30',
+        (isSelected || printSelection?.checked) && 'bg-counselling-accent/35',
+        rec.isLocked && !printSelection?.checked && 'bg-counselling-accent/15',
       )}
     >
-      <div className={WORK_GRID}>
-        <div className="min-w-0">
-          <div className="flex items-start gap-1.5">
-            <p className="truncate text-sm font-semibold leading-5 text-counselling-foreground">
-              {rec.patientName}
-            </p>
-            {rec.isLocked ? (
-              <LockKeyhole
-                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-counselling-primary"
-                aria-label="Locked"
-              />
-            ) : null}
-            {isDuplicate ? (
-              <AlertCircle
-                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500"
-                aria-label="Possible duplicate booking"
-              />
-            ) : null}
+      <div className={gridClass}>
+        {printSelection ? (
+          <div className="flex items-center justify-center" onClick={stop}>
+            <input
+              id={checkboxId}
+              type="checkbox"
+              checked={printSelection.checked}
+              onChange={(e) => printSelection.onToggle(e.target.checked)}
+              className="h-4 w-4 rounded border-counselling-border text-counselling-primary focus-visible:ring-2 focus-visible:ring-counselling-primary/40"
+              data-testid={`finalize-ot-prepared-select-${rec.id}`}
+              aria-label={`Select ${rec.patientName} for OT slip print`}
+            />
           </div>
-          <p className="mt-0 truncate text-[13px] font-medium leading-4 text-counselling-muted-foreground max-[1599px]:leading-[1.125rem]">
-            <span>{identityLine || '—'}</span>
-            {quietMeta ? (
-              <span className="min-[1600px]:hidden">{` · ${quietMeta}`}</span>
-            ) : null}
-          </p>
-          {quietMeta ? (
-            <p className="mt-0.5 hidden truncate text-xs leading-4 text-counselling-muted-foreground min-[1600px]:block">
-              {quietMeta}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
-            {rec.surgeryName || '—'}
-          </p>
-          {rec.anesthesiaType ? (
-            <p className="mt-0.5 truncate text-xs text-counselling-muted-foreground">
-              {rec.anesthesiaType}
-              {rec.reportingTime ? ` · Report ${rec.reportingTime}` : ''}
-            </p>
-          ) : rec.reportingTime ? (
-            <p className="mt-0.5 truncate text-xs text-counselling-muted-foreground">
-              Report {rec.reportingTime}
-            </p>
-          ) : null}
-        </div>
-
+        ) : null}
+        {showPrintSelect ? (
+          <div
+            role="button"
+            tabIndex={0}
+            className="min-w-0 cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/40"
+            onClick={onOpen}
+            onKeyDown={onKeyDown}
+            aria-label={`${rec.patientName}, ${rec.status}. Activate to open surgery details.`}
+          >
+            {patientCell}
+          </div>
+        ) : (
+          patientCell
+        )}
+        {surgeryCell}
         <div className="min-w-0">
           <StatusBadge status={rec.status} size="sm" showDot />
         </div>
-
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
-            {scheduleLine}
-          </p>
-          {rec.packageRate != null ? (
-            <p className="mt-0.5 truncate text-xs tabular-nums text-counselling-muted-foreground">
-              ₹{Number(rec.packageRate).toLocaleString('en-IN')}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="flex min-w-0 items-center justify-end gap-0.5" onClick={stop}>
-          <CounsellingButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="!min-h-8 h-8 w-8 px-0 text-counselling-muted-foreground"
-            title="Print OT Slip"
-            aria-label="Print OT Slip"
-            onClick={onPrint}
-          >
-            <Printer className="h-3.5 w-3.5" />
-          </CounsellingButton>
-          <CounsellingButton
-            type="button"
-            size="sm"
-            variant={primary.variant === 'ghost' ? 'ghost' : primary.variant === 'outline' ? 'outline' : 'default'}
-            className={cn(
-              denseBtn,
-              'px-2.5',
-              primary.variant === 'primary' &&
-                'bg-counselling-primary text-white hover:bg-counselling-primary/90',
-              primary.variant === 'outline' &&
-                'border-amber-300 text-amber-900 hover:bg-amber-50',
-            )}
-            onClick={() => {
-              if (primary.openModal) onOpen();
-              else if (primary.action) onAction(primary.action);
-            }}
-          >
-            {primary.label}
-          </CounsellingButton>
-          <ChevronRight
-            className="h-4 w-4 shrink-0 text-counselling-muted-foreground/50 transition-colors group-hover:text-counselling-muted-foreground"
-            aria-hidden
-          />
-        </div>
+        {scheduleCell}
+        {actionCell}
       </div>
     </div>
   );
@@ -498,6 +595,182 @@ function WorklistSkeleton() {
           <div className="hidden h-7 w-16 justify-self-end animate-pulse rounded-md bg-counselling-muted sm:block" />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** RESP2 — Finalised row with explicit selection checkbox. */
+function OtPrepWorkRow({
+  rec,
+  checked,
+  onToggle,
+  onOpen,
+}: {
+  rec: FinalizeSurgeryRecord;
+  checked: boolean;
+  onToggle: (next: boolean) => void;
+  onOpen: () => void;
+}) {
+  const doctor = formatWaitingListDoctorDisplay(rec.surgeon);
+  const typeLabel =
+    rec.patientType === 'Insurance' ? 'Insurance / TPA' : rec.patientType || null;
+  const identityLine = [rec.uhid, typeLabel].filter(Boolean).join(' · ');
+  const scheduleLine = [
+    formatScheduleDate(rec.scheduleDate),
+    rec.eyes || null,
+    rec.startTime || null,
+    rec.theaterName || null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const quietMeta = [doctor || null, rec.packageName || null, rec.paymentMode || null]
+    .filter(Boolean)
+    .join(' · ');
+  const stop = (e: MouseEvent) => e.stopPropagation();
+  const checkboxId = `ot-prep-select-${rec.id}`;
+
+  return (
+    <div
+      data-testid={`finalize-ot-prep-row-${rec.id}`}
+      data-schedule-id={rec.id}
+      data-selected={checked ? 'true' : 'false'}
+      className={cn(
+        'group staff-worklist-row bg-transparent px-1 transition-colors',
+        'hover:bg-counselling-muted/30',
+        checked && 'bg-counselling-accent/35',
+      )}
+    >
+      <div className={OT_PREP_WORK_GRID}>
+        <div className="flex items-center justify-center" onClick={stop}>
+          <input
+            id={checkboxId}
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => onToggle(e.target.checked)}
+            className="h-4 w-4 rounded border-counselling-border text-counselling-primary focus-visible:ring-2 focus-visible:ring-counselling-primary/40"
+            data-testid={`finalize-ot-prep-select-${rec.id}`}
+            aria-label={`Select ${rec.patientName} for OT preparation`}
+          />
+        </div>
+        <div
+          role="button"
+          tabIndex={0}
+          className="min-w-0 cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/40"
+          onClick={onOpen}
+          onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onOpen();
+            }
+          }}
+          aria-label={`${rec.patientName}, Finalised. Activate to open surgery details.`}
+        >
+          <p className="truncate text-sm font-semibold leading-5 text-counselling-foreground">
+            {rec.patientName}
+          </p>
+          <p className="mt-0 truncate text-[13px] font-medium leading-4 text-counselling-muted-foreground">
+            {identityLine || '—'}
+            {quietMeta ? ` · ${quietMeta}` : ''}
+          </p>
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
+            {rec.surgeryName || '—'}
+          </p>
+        </div>
+        <div className="min-w-0">
+          <StatusBadge status={rec.status} size="sm" showDot />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium leading-5 text-counselling-foreground">
+            {scheduleLine}
+          </p>
+        </div>
+        <div className="flex min-w-0 items-center justify-end gap-0.5" onClick={stop}>
+          <CounsellingButton
+            type="button"
+            size="sm"
+            variant="outline"
+            className={cn(denseBtn, 'px-2.5')}
+            onClick={onOpen}
+            data-testid={`finalize-ot-prep-open-${rec.id}`}
+          >
+            Open
+          </CounsellingButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OtPrepPrepareConfirmDialog({
+  selectedCount,
+  scheduleDate,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  selectedCount: number;
+  scheduleDate: string;
+  submitting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const dateLabel = formatScheduleDate(scheduleDate);
+  return (
+    <div className="counselling-session fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        className={cn(
+          counsellingSessionTokens.sessionWidget,
+          'w-full max-w-md shadow-xl',
+        )}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="ot-prep-confirm-title"
+        aria-describedby="ot-prep-confirm-desc"
+        data-testid="finalize-ot-prep-confirm"
+      >
+        <div className="border-b border-counselling-border/60 px-5 py-3.5">
+          <h2
+            id="ot-prep-confirm-title"
+            className="text-lg font-semibold text-counselling-foreground"
+          >
+            Prepare OT
+          </h2>
+          <p
+            id="ot-prep-confirm-desc"
+            className="mt-1 text-sm text-counselling-muted-foreground"
+            data-testid="finalize-ot-prep-confirm-count"
+          >
+            Prepare {selectedCount} selected{' '}
+            {selectedCount === 1 ? 'surgery' : 'surgeries'} for {dateLabel}?
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3">
+          <CounsellingButton
+            type="button"
+            variant="outline"
+            size="sm"
+            className={denseBtn}
+            onClick={onCancel}
+            disabled={submitting}
+            data-testid="finalize-ot-prep-confirm-cancel"
+          >
+            Cancel
+          </CounsellingButton>
+          <CounsellingButton
+            type="button"
+            size="sm"
+            className={cn(denseBtn, 'bg-counselling-primary text-white hover:bg-counselling-primary/90')}
+            onClick={onConfirm}
+            loading={submitting}
+            disabled={submitting}
+            data-testid="finalize-ot-prep-confirm-submit"
+          >
+            Prepare OT
+          </CounsellingButton>
+        </div>
+      </div>
     </div>
   );
 }
@@ -524,21 +797,53 @@ function FinalizeSurgeryPageContent() {
   const isLoading = finalizeQuery.isLoading && records.length === 0;
   const isRefreshing = finalizeQuery.isFetching && records.length > 0;
 
+  // PD-OTPREP-01/02: existing GET ot-schedule with date omitted — full ScheduleDate universe for catalog.
+  const catalogQuery = useFinalizeListQuery({ ...OT_PREP_SURGERY_DATE_CATALOG_FILTERS });
+  const catalogRecords = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [prepareModalOpen, setPrepareModalOpen] = useState(false);
   const [prepareDate, setPrepareDate] = useState('');
+  const [prepareInitialSequences, setPrepareInitialSequences] = useState<
+    Record<string, number> | undefined
+  >(undefined);
+  const [prepareModalRecordsOverride, setPrepareModalRecordsOverride] = useState<
+    FinalizeSurgeryRecord[] | null
+  >(null);
 
-  const [otListDate, setOtListDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [otList, setOtList] = useState<FinalizeSurgeryRecord[]>([]);
-  const [otLoading, setOtLoading] = useState(false);
+  /** RESP2 OT Prep worklist filters (independent of Finalization filters). */
+  const [otPrepFilters, setOtPrepFilters] = useState<FinalizeListFilters>({
+    date: '',
+    uhid: '',
+    name: '',
+  });
+  const debouncedOtPrepFilters = useDebouncedValue(otPrepFilters, 300);
+  const [otPrepPage, setOtPrepPage] = useState(1);
+  const [otPrepPageSize, setOtPrepPageSize] = useState<WaitingListPageSize>(
+    WAITING_LIST_DEFAULT_PAGE_SIZE,
+  );
+  const [otPrepSelectedIds, setOtPrepSelectedIds] = useState<Set<string>>(() => new Set());
+  const [otPrepConfirmOpen, setOtPrepConfirmOpen] = useState(false);
+  const [otPrepPrepareSubmitting, setOtPrepPrepareSubmitting] = useState(false);
+  const [otPrepPrintBusy, setOtPrepPrintBusy] = useState(false);
+  /** Last successful Prepare date — for optional View OT Prepared. */
+  const [otPrepLastSuccess, setOtPrepLastSuccess] = useState<{
+    date: string;
+    count: number;
+  } | null>(null);
+
   /** UI workspace only — not a backend status. */
   const [activeWorkspace, setActiveWorkspace] = useState<'finalization' | 'ot-preparation'>(
     'finalization',
   );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<WaitingListPageSize>(WAITING_LIST_DEFAULT_PAGE_SIZE);
+  /** Finalization OT Prepared — bulk OT slip print selection (current page only). */
+  const [otPreparedPrintSelectedIds, setOtPreparedPrintSelectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   useEffect(() => {
     if (finalizeQuery.isError) toast.error('Failed to load finalize list');
@@ -555,11 +860,14 @@ function FinalizeSurgeryPageContent() {
 
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void finalizeQuery.refetch();
+      if (document.visibilityState === 'visible') {
+        void finalizeQuery.refetch();
+        void catalogQuery.refetch();
+      }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [finalizeQuery]);
+  }, [finalizeQuery, catalogQuery]);
 
   const filtered = useMemo(() => {
     if (activeTab === 'All') return records;
@@ -587,6 +895,36 @@ function FinalizeSurgeryPageContent() {
     [filtered, page, pageSize],
   );
 
+  const isOtPreparedTab = activeTab === 'OTPrepared';
+
+  useEffect(() => {
+    if (!isOtPreparedTab) {
+      setOtPreparedPrintSelectedIds(new Set());
+      return;
+    }
+    const visibleIds = pagedRecords.map((r) => r.id);
+    setOtPreparedPrintSelectedIds((prev) => reconcileSelectionToVisible(prev, visibleIds));
+  }, [isOtPreparedTab, pagedRecords]);
+
+  const otPreparedPrintSelectedCount = otPreparedPrintSelectedIds.size;
+
+  const toggleOtPreparedPrintRow = useCallback((id: string, next: boolean) => {
+    setOtPreparedPrintSelectedIds((prev) => {
+      const copy = new Set(prev);
+      if (next) copy.add(id);
+      else copy.delete(id);
+      return copy;
+    });
+  }, []);
+
+  const selectAllVisibleOtPreparedPrint = useCallback(() => {
+    setOtPreparedPrintSelectedIds(selectAllVisibleOtPreparedIds(pagedRecords));
+  }, [pagedRecords]);
+
+  const clearOtPreparedPrintSelection = useCallback(() => {
+    setOtPreparedPrintSelectedIds(new Set());
+  }, []);
+
   const handlePageSizeChange = useCallback((next: WaitingListPageSize) => {
     setPageSize(next);
     setPage(1);
@@ -605,42 +943,83 @@ function FinalizeSurgeryPageContent() {
     return selectFinalisedForPrepareDate(records, filters.date);
   }, [records, filters.date]);
 
-  const finalisedForOtListDate = useMemo(
-    () => selectFinalisedForPrepareDate(records, otListDate),
-    [records, otListDate],
+  const otPrepFiltered = useMemo(
+    () => filterFinalisedForOtPrepWorklist(catalogRecords, debouncedOtPrepFilters),
+    [catalogRecords, debouncedOtPrepFilters],
   );
+
+  useEffect(() => {
+    setOtPrepPage(1);
+  }, [
+    debouncedOtPrepFilters.date,
+    debouncedOtPrepFilters.uhid,
+    debouncedOtPrepFilters.name,
+    otPrepPageSize,
+  ]);
+
+  useEffect(() => {
+    const totalPages = getWaitingListTotalPages(otPrepFiltered.length, otPrepPageSize);
+    if (otPrepPage > totalPages) setOtPrepPage(totalPages);
+  }, [otPrepFiltered.length, otPrepPageSize, otPrepPage]);
+
+  const otPrepPaged = useMemo(
+    () => sliceWaitingListPage(otPrepFiltered, otPrepPage, otPrepPageSize),
+    [otPrepFiltered, otPrepPage, otPrepPageSize],
+  );
+
+  /** Cross-page selection not allowed — reconcile to current page visible ids. */
+  useEffect(() => {
+    const visibleIds = otPrepPaged.map((r) => r.id);
+    setOtPrepSelectedIds((prev) => {
+      const next = reconcileSelectionToVisible(prev, visibleIds);
+      if (next.size === prev.size && [...next].every((id) => prev.has(id))) return prev;
+      return next;
+    });
+  }, [otPrepPaged]);
+
+  const otPrepSelectedCount = otPrepSelectedIds.size;
+  const otPrepSameDateCheck = useMemo(
+    () => resolveSinglePrepareScheduleDate(otPrepFiltered, otPrepSelectedIds),
+    [otPrepFiltered, otPrepSelectedIds],
+  );
+  const canPrepareOtFromSelection =
+    canMutateOt && otPrepSelectedCount > 0 && otPrepSameDateCheck.ok;
+
+  const handleOtPrepPageSizeChange = useCallback((next: WaitingListPageSize) => {
+    setOtPrepPageSize(next);
+    setOtPrepPage(1);
+  }, []);
+
+  const toggleOtPrepRow = useCallback((id: string, next: boolean) => {
+    setOtPrepSelectedIds((prev) => {
+      const copy = new Set(prev);
+      if (next) copy.add(id);
+      else copy.delete(id);
+      return copy;
+    });
+  }, []);
+
+  const selectAllVisibleOtPrep = useCallback(() => {
+    setOtPrepSelectedIds(selectAllVisibleIds(otPrepPaged));
+  }, [otPrepPaged]);
+
+  const clearOtPrepSelection = useCallback(() => {
+    setOtPrepSelectedIds(new Set());
+  }, []);
+
+  const prepareModalRecords = useMemo(() => {
+    if (prepareModalRecordsOverride) return prepareModalRecordsOverride;
+    return selectFinalisedForPrepareDate(catalogRecords, prepareDate);
+  }, [catalogRecords, prepareDate, prepareModalRecordsOverride]);
+
+  const statsBar = useMemo(() => {
+    const pendingActions = countNeedsAttention(records);
+    const surgeryDone = records.filter((r) => r.status === 'SurgeryDone').length;
+    return { total: records.length, pendingActions, surgeryDone };
+  }, [records]);
 
   const canPrepareOt =
     canMutateOt && isValidPrepareOtSurgeryDate(filters.date) && finalisedForDate.length > 0;
-  const canPrepareOtFromOtWorkspace =
-    canMutateOt &&
-    isValidPrepareOtSurgeryDate(otListDate) &&
-    finalisedForOtListDate.length > 0;
-
-  const prepareModalRecords = useMemo(
-    () => selectFinalisedForPrepareDate(records, prepareDate),
-    [records, prepareDate],
-  );
-  const statsBar = useMemo(() => {
-    const pendingActions = records.filter(
-      (r) => r.status === 'NotConfirmed' || r.status === 'Confirmed',
-    ).length;
-    const surgeryDone = records.filter((r) => r.status === 'SurgeryDone').length;
-    const waitTimes = records
-      .filter((r) => r.counsellingDate && r.scheduleDate)
-      .map((r) =>
-        Math.round(
-          (new Date(r.scheduleDate!).getTime() - new Date(r.counsellingDate!).getTime()) /
-            86_400_000,
-        ),
-      )
-      .filter((d) => d >= 0);
-    const avgWait =
-      waitTimes.length > 0
-        ? Math.round(waitTimes.reduce((a, b) => a + b, 0) / waitTimes.length)
-        : 0;
-    return { total: records.length, pendingActions, surgeryDone, avgWait };
-  }, [records]);
 
   const duplicateIds = useMemo(() => {
     const groups: Record<string, string[]> = {};
@@ -657,38 +1036,26 @@ function FinalizeSurgeryPageContent() {
   }, [records]);
 
   const printOtSlip = (rec: FinalizeSurgeryRecord) => {
-    const w = window.open('', '_blank', 'width=620,height=540');
-    if (!w) return;
-    w.document.write(`<!DOCTYPE html><html><head><title>OT Slip – ${rec.patientName}</title><style>
-body{font-family:Arial,sans-serif;padding:20px;font-size:13px;}
-h1{font-size:15px;text-align:center;color:#1e40af;margin:0 0 14px;}
-table{width:100%;border-collapse:collapse;}
-td{padding:7px 10px;border:1px solid #e2e8f0;}
-td:first-child{font-weight:600;background:#f8fafc;width:42%;}
-.footer{font-size:10px;color:#94a3b8;text-align:center;margin-top:14px;}
-</style></head><body>
-<h1>OT Slip</h1>
-<table>
-<tr><td>Patient Name</td><td>${rec.patientName}</td></tr>
-<tr><td>UHID</td><td>${rec.uhid}</td></tr>
-<tr><td>Surgery</td><td>${rec.surgeryName || '—'}</td></tr>
-<tr><td>Eye</td><td>${rec.eyes || '—'}</td></tr>
-<tr><td>Surgeon</td><td>${rec.surgeon || '—'}</td></tr>
-<tr><td>Theatre</td><td>${rec.theaterName || '—'}</td></tr>
-<tr><td>Surgery Date</td><td>${rec.scheduleDate ? new Date(rec.scheduleDate).toLocaleDateString('en-IN') : '—'}</td></tr>
-<tr><td>Start Time</td><td>${rec.startTime || '—'}</td></tr>
-<tr><td>Reporting Time</td><td>${rec.reportingTime || '—'}</td></tr>
-<tr><td>Anesthesia</td><td>${rec.anesthesiaType || '—'}</td></tr>
-<tr><td>Package</td><td>${rec.packageName || '—'}</td></tr>
-<tr><td>Package Amount</td><td>${rec.packageRate != null ? '₹' + Number(rec.packageRate).toLocaleString('en-IN') : '—'}</td></tr>
-<tr><td>Patient Type</td><td>${rec.patientType || '—'}</td></tr>
-<tr><td>Payment Mode</td><td>${rec.paymentMode || '—'}</td></tr>
-<tr><td>Status</td><td>${rec.status}</td></tr>
-</table>
-<p class="footer">Generated: ${new Date().toLocaleString('en-IN')}</p>
-<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
-</body></html>`);
-    w.document.close();
+    const result = openOtSlipsPrint([rec]);
+    if (!result.opened) {
+      toast.error('Unable to open print window. Allow pop-ups and try again.');
+    }
+  };
+
+  const printSelectedOtSlips = () => {
+    if (otPreparedPrintSelectedCount === 0) return;
+    const selected = selectedOtPreparedRecordsInOrder(
+      filtered,
+      otPreparedPrintSelectedIds,
+    );
+    if (selected.length === 0) {
+      toast.error('Select at least one OT Prepared surgery to print.');
+      return;
+    }
+    const result = openOtSlipsPrint(selected);
+    if (!result.opened) {
+      toast.error('Unable to open print window. Allow pop-ups and try again.');
+    }
   };
 
   const handleAction = async (action: ActionKey, rec: FinalizeSurgeryRecord) => {
@@ -696,11 +1063,19 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
       toast.error('You do not have permission to update surgery finalization.');
       return;
     }
-    const patch = (p: Partial<FinalizeSurgeryRecord>) =>
+    const patch = (p: Partial<FinalizeSurgeryRecord>) => {
       patchFinalizeRecord(debouncedFilters, rec.id, p);
+      patchFinalizeRecord({ ...OT_PREP_SURGERY_DATE_CATALOG_FILTERS }, rec.id, p);
+    };
 
     try {
       if (action === 'confirm') {
+        if (!isReportingTimeValid(rec.reportingTime)) {
+          toast.error('Reporting time is required to confirm. Open the case to set it.');
+          setSelectedId(rec.id);
+          setModalOpen(true);
+          return;
+        }
         const u = await counsellorsDeskApi.confirmOtSchedule(rec.id);
         patch({ status: u.status, version: u.version });
         toast.success(`${rec.patientName} confirmed`);
@@ -709,21 +1084,32 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
         patch({ status: u.status, version: u.version });
         toast.success(`${rec.patientName} finalised`);
       } else if (action === 'cancel') {
-        const u = await counsellorsDeskApi.cancelOtSchedule(rec.id);
-        patch({ status: u.status, version: u.version });
-        toast.success(`${rec.patientName} cancelled — counselling session re-queued`);
+        // Cancel from queue is not a primary CTA; if invoked, open detail for confirm+reason.
+        setSelectedId(rec.id);
+        setModalOpen(true);
+        toast.error('Open the case to cancel with a required reason.');
+        return;
       } else if (action === 'reopen') {
         const u = await counsellorsDeskApi.reopenOtCase(rec.id);
         patch({ status: u.status, version: u.version, isLocked: false });
-        if (otList.find((r) => r.id === rec.id)) {
-          setOtList((l) => l.filter((r) => r.id !== rec.id));
-        }
         toast.success(`${rec.patientName} reopened for editing`);
       }
     } catch (err: unknown) {
       toast.error(finalizeMutationErrorMessage(err, 'Action failed'));
     }
   };
+
+  const viewOtPrepared = useCallback(
+    (dateOverride?: string) => {
+      const day = (dateOverride ?? otPrepLastSuccess?.date ?? otPrepFilters.date ?? '').slice(0, 10);
+      setActiveWorkspace('finalization');
+      setActiveTab('OTPrepared');
+      if (isValidPrepareOtSurgeryDate(day)) {
+        setFilters((f) => ({ ...f, date: day }));
+      }
+    },
+    [otPrepLastSuccess?.date, otPrepFilters.date],
+  );
 
   const handleSubmitPrepareOtList = async (items: PrepareOtListItem[]) => {
     if (!canMutateOt) {
@@ -734,40 +1120,26 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
       toast.error('Surgery date is required to prepare OT.');
       return;
     }
+    const day = prepareDate.slice(0, 10);
     await counsellorsDeskApi.submitPrepareOtList({
-      date: prepareDate.slice(0, 10),
+      date: day,
       items,
     });
     toast.success('OT list locked and prepared');
     setPrepareModalOpen(false);
+    setPrepareInitialSequences(undefined);
+    setPrepareModalRecordsOverride(null);
+    setOtPrepLastSuccess({ date: day, count: items.length });
+    setOtPrepSelectedIds(new Set());
     invalidateFinalizeList();
   };
 
-  const handleLoadOtList = async () => {
-    setOtLoading(true);
-    try {
-      const data = await counsellorsDeskApi.getOtList(
-        otListDate || new Date().toISOString().slice(0, 10),
-      );
-      setOtList(data);
-    } catch {
-      toast.error('Failed to load OT list');
-    } finally {
-      setOtLoading(false);
-    }
-  };
-
-  const otPrepDateLabel = useMemo(() => {
-    const raw = otListDate || new Date().toISOString().slice(0, 10);
-    const d = new Date(`${raw.slice(0, 10)}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return raw;
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  }, [otListDate]);
   const openRow = (id: string) => {
     setSelectedId(id);
     setModalOpen(true);
   };
 
+  /** Finalization toolbar — date-scoped Prepare (unchanged certified path). */
   const openPrepareFlow = (dateSource: string) => {
     if (!canMutateOt) {
       toast.error('You do not have permission to prepare OT.');
@@ -778,9 +1150,121 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
       return;
     }
     const day = dateSource.slice(0, 10);
-    setActiveWorkspace('ot-preparation');
+    setPrepareModalRecordsOverride(null);
+    setPrepareInitialSequences(undefined);
     setPrepareDate(day);
     setPrepareModalOpen(true);
+  };
+
+  /** RESP2 — Prepare only selected Finalised rows (same ScheduleDate). */
+  const requestOtPrepPrepare = () => {
+    if (!canMutateOt) {
+      toast.error('You do not have permission to prepare OT.');
+      return;
+    }
+    if (otPrepSelectedCount === 0) {
+      toast.error('Select at least one Finalised surgery.');
+      return;
+    }
+    const check = resolveSinglePrepareScheduleDate(otPrepFiltered, otPrepSelectedIds);
+    if (!check.ok) {
+      if (check.reason === 'mixed') {
+        toast.error('Selected surgeries must have the same surgery date.');
+      } else if (check.reason === 'missing_date') {
+        toast.error('Selected surgeries are missing a surgery date.');
+      } else {
+        toast.error('Select at least one Finalised surgery.');
+      }
+      return;
+    }
+    setOtPrepConfirmOpen(true);
+  };
+
+  /** Package B — dedicated prepared OT list print for selected surgery date. */
+  const printOtPreparationPreparedList = async () => {
+    const day = (otPrepFilters.date ?? '').slice(0, 10);
+    if (!isValidPrepareOtSurgeryDate(day)) {
+      toast.error('Select a surgery date before printing the prepared OT list.');
+      return;
+    }
+    setOtPrepPrintBusy(true);
+    try {
+      const result = await openOtPreparationPreparedListPrint(day);
+      if (!result.opened) {
+        toast.error('Unable to open print window. Allow pop-ups and try again.');
+      }
+    } catch (err: unknown) {
+      toast.error(finalizeMutationErrorMessage(err, 'Failed to load prepared OT list for print'));
+    } finally {
+      setOtPrepPrintBusy(false);
+    }
+  };
+
+  const confirmOtPrepPrepare = async () => {
+    if (!canMutateOt) {
+      toast.error('You do not have permission to prepare OT.');
+      return;
+    }
+    const check = resolveSinglePrepareScheduleDate(otPrepFiltered, otPrepSelectedIds);
+    if (!check.ok) {
+      setOtPrepConfirmOpen(false);
+      if (check.reason === 'mixed') {
+        toast.error('Selected surgeries must have the same surgery date.');
+      }
+      return;
+    }
+    const day = check.date;
+    const ordered = selectedRecordsInWorklistOrder(otPrepFiltered, otPrepSelectedIds);
+    if (ordered.length === 0) {
+      setOtPrepConfirmOpen(false);
+      toast.error('Select at least one Finalised surgery.');
+      return;
+    }
+    const highest = highestOtPreparedSequenceForDate(catalogRecords, day);
+    const items = buildContinuedPrepareItems(ordered, highest);
+
+    setOtPrepPrepareSubmitting(true);
+    try {
+      await counsellorsDeskApi.submitPrepareOtList({ date: day, items });
+      setOtPrepConfirmOpen(false);
+      setOtPrepSelectedIds(new Set());
+      setOtPrepLastSuccess({ date: day, count: items.length });
+      toast.success(
+        `Prepared ${items.length} ${items.length === 1 ? 'surgery' : 'surgeries'} for OT`,
+      );
+      invalidateFinalizeList();
+      void catalogQuery.refetch();
+    } catch (err: unknown) {
+      const response =
+        err && typeof err === 'object' && 'response' in err
+          ? (
+              err as {
+                response?: {
+                  status?: number;
+                  data?: { message?: string; conflictingScheduleIds?: string[] };
+                };
+              }
+            ).response
+          : undefined;
+      if (response?.status === 409) {
+        setOtPrepConfirmOpen(false);
+        const seqMap = Object.fromEntries(items.map((i) => [i.scheduleId, i.sequence]));
+        setPrepareDate(day);
+        setPrepareModalRecordsOverride(ordered);
+        setPrepareInitialSequences(seqMap);
+        setPrepareModalOpen(true);
+        toast.error(response.data?.message || 'Time conflict — adjust start times to continue.');
+      } else if (response?.status === 400) {
+        toast.error(response.data?.message || 'Surgery date is required to prepare OT.');
+      } else {
+        toast.error(
+          response?.data?.message ||
+            (err instanceof Error ? err.message : 'Failed to prepare OT list'),
+        );
+      }
+    } finally {
+      setOtPrepPrepareSubmitting(false);
+    }
   };
 
   return (
@@ -796,7 +1280,9 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
         onClose={() => setModalOpen(false)}
         scheduleId={selectedId}
         onStatusChange={(updated) => {
-          patchFinalizeRecord(debouncedFilters, updated.id, mapOtRecord(updated));
+          const mapped = mapOtRecord(updated);
+          patchFinalizeRecord(debouncedFilters, updated.id, mapped);
+          patchFinalizeRecord({ ...OT_PREP_SURGERY_DATE_CATALOG_FILTERS }, updated.id, mapped);
           setModalOpen(false);
         }}
       />
@@ -804,58 +1290,106 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
         <PrepareOtListModal
           finalisedRecords={prepareModalRecords}
           prepareDate={prepareDate}
-          onClose={() => setPrepareModalOpen(false)}
+          initialSequences={prepareInitialSequences}
+          onClose={() => {
+            setPrepareModalOpen(false);
+            setPrepareInitialSequences(undefined);
+            setPrepareModalRecordsOverride(null);
+          }}
           onSubmit={handleSubmitPrepareOtList}
         />
       )}
+      {otPrepConfirmOpen && otPrepSameDateCheck.ok ? (
+        <OtPrepPrepareConfirmDialog
+          selectedCount={otPrepSelectedCount}
+          scheduleDate={otPrepSameDateCheck.date}
+          submitting={otPrepPrepareSubmitting}
+          onCancel={() => setOtPrepConfirmOpen(false)}
+          onConfirm={() => void confirmOtPrepPrepare()}
+        />
+      ) : null}
 
       <header className="flex shrink-0 flex-col justify-center px-0.5 py-0 min-[1600px]:py-0.5">
-        <h1 className="staff-page-title font-semibold tracking-tight text-counselling-foreground min-[1600px]:text-[1.375rem]">
-          Surgery Finalization
+        <h1
+          className="staff-page-title font-semibold tracking-tight text-counselling-foreground min-[1600px]:text-[1.375rem]"
+          data-testid="finalize-surgery-page-title"
+        >
+          {activeWorkspace === 'ot-preparation' ? 'OT Preparation' : 'Surgery Finalization'}
         </h1>
+        {activeWorkspace === 'ot-preparation' ? (
+          <p
+            className="mt-0.5 text-xs text-counselling-muted-foreground"
+            data-testid="finalize-ot-prep-purpose"
+          >
+            Prepare Finalised surgeries for OT.
+          </p>
+        ) : null}
       </header>
 
-      {/* ONE compact stats widget — counselling sessionStatusStrip */}
+      {/* ONE compact stats widget — Finalization KPIs OR OT-local strip */}
       <div
         className={cn(
           counsellingSessionTokens.sessionStatusStrip,
           'shrink-0',
         )}
-        data-testid="finalize-surgery-summary"
-        aria-label="Schedule summary"
+        data-testid={
+          activeWorkspace === 'ot-preparation'
+            ? 'finalize-ot-prep-summary'
+            : 'finalize-surgery-summary'
+        }
+        aria-label={
+          activeWorkspace === 'ot-preparation' ? 'OT preparation summary' : 'Schedule summary'
+        }
       >
-        <dl
-          className={cn(
-            counsellingSessionTokens.sessionStatusDetails,
-            'grid-cols-2 gap-x-2 gap-y-1 sm:grid-cols-4 min-[1600px]:gap-x-4 min-[1600px]:gap-y-2',
-          )}
-        >
-          <div className="min-w-0" data-testid="finalize-stat-scheduled">
-            <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
-              {statsBar.total}
-            </dd>
-            <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Scheduled</dt>
-          </div>
-          <div className="min-w-0" data-testid="finalize-stat-needs-attention">
-            <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
-              {statsBar.pendingActions}
-            </dd>
-            <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Needs Attention</dt>
-          </div>
-          <div className="min-w-0" data-testid="finalize-stat-surgery-done">
-            <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
-              {statsBar.surgeryDone}
-            </dd>
-            <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Surgery Done</dt>
-          </div>
-          <div className="min-w-0" data-testid="finalize-stat-avg-wait">
-            <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
-              {statsBar.avgWait}{' '}
-              <span className="text-sm font-semibold text-counselling-muted-foreground">days</span>
-            </dd>
-            <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Avg. Wait</dt>
-          </div>
-        </dl>
+        {activeWorkspace === 'ot-preparation' ? (
+          <dl
+            className={cn(
+              counsellingSessionTokens.sessionStatusDetails,
+              'grid-cols-2 gap-x-2 gap-y-1 min-[1600px]:gap-x-4 min-[1600px]:gap-y-2',
+            )}
+          >
+            <div className="min-w-0" data-testid="finalize-ot-stat-finalised">
+              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
+                {otPrepFiltered.length}
+              </dd>
+              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Finalised</dt>
+            </div>
+            <div className="min-w-0" data-testid="finalize-ot-stat-selected">
+              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
+                {otPrepSelectedCount}
+              </dd>
+              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Selected</dt>
+            </div>
+          </dl>
+        ) : (
+          <dl
+            className={cn(
+              counsellingSessionTokens.sessionStatusDetails,
+              'grid-cols-3 gap-x-2 gap-y-1 min-[1600px]:gap-x-4 min-[1600px]:gap-y-2',
+            )}
+          >
+            <div className="min-w-0" data-testid="finalize-stat-scheduled">
+              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
+                {statsBar.total}
+              </dd>
+              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Scheduled</dt>
+            </div>
+            <div className="min-w-0" data-testid="finalize-stat-needs-attention">
+              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
+                {statsBar.pendingActions}
+              </dd>
+              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>
+                {NEEDS_ATTENTION_KPI_LABEL}
+              </dt>
+            </div>
+            <div className="min-w-0" data-testid="finalize-stat-surgery-done">
+              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
+                {statsBar.surgeryDone}
+              </dd>
+              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Surgery Done</dt>
+            </div>
+          </dl>
+        )}
       </div>
 
       {/* Primary workspace — journey pill tabs (approved Finalize Surgery treatment) */}
@@ -1029,6 +1563,68 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
               </span>
             </div>
 
+            {isOtPreparedTab && !isLoading && pagedRecords.length > 0 ? (
+              <div
+                className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2"
+                data-testid="finalize-ot-prepared-print-selection-bar"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <CounsellingButton
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className={cn(denseBtn, 'h-8')}
+                    onClick={selectAllVisibleOtPreparedPrint}
+                    data-testid="finalize-ot-prepared-select-all-visible"
+                  >
+                    Select all visible
+                  </CounsellingButton>
+                  <CounsellingButton
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className={cn(denseBtn, 'h-8')}
+                    onClick={clearOtPreparedPrintSelection}
+                    disabled={otPreparedPrintSelectedCount === 0}
+                    data-testid="finalize-ot-prepared-clear-selection"
+                  >
+                    Clear selection
+                  </CounsellingButton>
+                  <span
+                    className="text-xs font-medium text-counselling-muted-foreground"
+                    data-testid="finalize-ot-prepared-selected-count"
+                  >
+                    <span className="tabular-nums text-counselling-foreground">
+                      {otPreparedPrintSelectedCount}
+                    </span>{' '}
+                    selected
+                  </span>
+                </div>
+                <CounsellingButton
+                  type="button"
+                  size="sm"
+                  className={cn(
+                    denseBtn,
+                    'h-8 bg-counselling-primary text-white hover:bg-counselling-primary/90',
+                  )}
+                  disabled={otPreparedPrintSelectedCount === 0}
+                  onClick={printSelectedOtSlips}
+                  data-testid="finalize-ot-prepared-print-slips"
+                  title="Print OT Slips for selected patients"
+                  aria-label={
+                    otPreparedPrintSelectedCount === 0
+                      ? 'Print OT Slips'
+                      : `Print OT Slips (${otPreparedPrintSelectedCount})`
+                  }
+                >
+                  <Printer className="h-3.5 w-3.5" aria-hidden />
+                  {otPreparedPrintSelectedCount === 0
+                    ? 'Print OT Slips'
+                    : `Print OT Slips (${otPreparedPrintSelectedCount})`}
+                </CounsellingButton>
+              </div>
+            ) : null}
+
             {duplicateIds.size > 0 && (
               <div className="mb-1.5 flex shrink-0 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800">
                 <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
@@ -1044,14 +1640,14 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
             {!isLoading && filtered.length > 0 ? (
               <div
                 className={cn(
-                  WORK_GRID,
+                  isOtPreparedTab ? OT_PREP_WORK_GRID : WORK_GRID,
                   'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-1 max-md:hidden min-[1600px]:py-2',
                 )}
                 aria-hidden
               >
-                {COLUMN_CUES.map((cue) => (
+                {(isOtPreparedTab ? OT_PREP_COLUMN_CUES : COLUMN_CUES).map((cue, i) => (
                   <p
-                    key={cue}
+                    key={cue || `sel-${i}`}
                     className={cn(
                       'text-[11px] font-medium tracking-wide text-counselling-muted-foreground',
                       cue === 'Action' && 'text-right',
@@ -1088,6 +1684,14 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
                       onOpen={() => openRow(rec.id)}
                       onAction={(action) => void handleAction(action, rec)}
                       onPrint={() => printOtSlip(rec)}
+                      printSelection={
+                        isOtPreparedTab
+                          ? {
+                              checked: otPreparedPrintSelectedIds.has(rec.id),
+                              onToggle: (next) => toggleOtPreparedPrintRow(rec.id, next),
+                            }
+                          : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -1123,133 +1727,242 @@ td:first-child{font-weight:600;background:#f8fafc;width:42%;}
           )}
         >
           <div
-            className="flex min-h-0 min-w-0 flex-1 flex-col px-3 py-2.5 sm:px-4 min-[1600px]:px-5 min-[1600px]:py-3"
-            data-testid="finalize-prepared-ot-list"
+            className="shrink-0 border-b border-counselling-border/50 px-2.5 py-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:py-3"
+            data-testid="finalize-ot-prep-toolbar"
           >
-            <div className="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className={counsellingSessionTokens.sessionWidgetTitle}>OT Preparation</h2>
-                <p className="mt-0.5 text-[13px] text-counselling-muted-foreground">
-                  {finalisedForDate.length > 0
-                    ? `${finalisedForDate.length} Finalised ready for preparation`
-                    : 'Load or prepare the OT list for a surgery date'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mb-3 flex shrink-0 flex-wrap items-end gap-2 border-b border-counselling-border/50 pb-3">
-              <div>
-                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-counselling-muted-foreground">
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 sm:gap-2 max-[1599px]:lg:grid-cols-[minmax(7.5rem,9rem)_minmax(6.5rem,8rem)_minmax(0,1fr)_auto] lg:grid-cols-[9.5rem_8.5rem_minmax(0,1fr)_auto] lg:items-end min-[1600px]:gap-3">
+              <div className="flex min-w-0 items-center gap-1.5 min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
+                <label className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal">
                   <Calendar className="h-3 w-3" aria-hidden />
                   Date
                 </label>
                 <CounsellingInput
                   type="date"
-                  value={otListDate}
-                  onChange={(e) => setOtListDate(e.target.value)}
-                  className="h-8 w-[9.5rem]"
-                  aria-label="Prepared OT list date"
+                  value={otPrepFilters.date}
+                  onChange={(e) => setOtPrepFilters((f) => ({ ...f, date: e.target.value }))}
+                  className="h-8"
+                  aria-label="Surgery date filter"
+                  data-testid="finalize-ot-prep-date-input"
                 />
               </div>
-              <CounsellingButton
-                type="button"
-                size="sm"
-                variant="outline"
-                className={cn(denseBtn, 'h-8')}
-                onClick={handleLoadOtList}
-                disabled={otLoading}
-                loading={otLoading}
+              <div className="flex min-w-0 items-center gap-1.5 min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
+                <label className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal">
+                  <Search className="h-3 w-3" aria-hidden />
+                  UHID
+                </label>
+                <CounsellingInput
+                  type="text"
+                  placeholder="UHID…"
+                  value={otPrepFilters.uhid}
+                  onChange={(e) => setOtPrepFilters((f) => ({ ...f, uhid: e.target.value }))}
+                  className="h-8"
+                  aria-label="UHID"
+                  data-testid="finalize-ot-prep-uhid-input"
+                />
+              </div>
+              <div className="flex min-w-0 items-center gap-1.5 sm:col-span-2 lg:col-span-1 min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
+                <label className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal">
+                  <Users className="h-3 w-3" aria-hidden />
+                  Patient Name
+                </label>
+                <CounsellingInput
+                  type="text"
+                  placeholder="Search by patient name…"
+                  value={otPrepFilters.name}
+                  onChange={(e) => setOtPrepFilters((f) => ({ ...f, name: e.target.value }))}
+                  className="h-8 min-w-0 flex-1"
+                  aria-label="Patient name"
+                  data-testid="finalize-ot-prep-name-input"
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-stretch gap-2 sm:justify-end min-[1600px]:items-end">
+                <CounsellingButton
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className={cn(denseBtn, 'h-8 w-full sm:w-auto')}
+                  disabled={
+                    otPrepPrintBusy || !isValidPrepareOtSurgeryDate(otPrepFilters.date)
+                  }
+                  onClick={() => void printOtPreparationPreparedList()}
+                  data-testid="finalize-ot-prep-print-prepared"
+                  title="Print prepared OT list for selected surgery date"
+                  aria-label="Print prepared OT list"
+                >
+                  <Printer className="h-3.5 w-3.5" aria-hidden />
+                  {otPrepPrintBusy ? 'Loading…' : 'Print'}
+                </CounsellingButton>
+                <CounsellingButton
+                  type="button"
+                  size="sm"
+                  className={cn(
+                    denseBtn,
+                    'h-8 w-full bg-counselling-primary text-white hover:bg-counselling-primary/90 sm:w-auto',
+                  )}
+                  disabled={!canPrepareOtFromSelection}
+                  onClick={requestOtPrepPrepare}
+                  data-testid="finalize-ot-prepare-selected"
+                  title={
+                    otPrepSameDateCheck.ok || otPrepSelectedCount === 0
+                      ? undefined
+                      : otPrepSameDateCheck.reason === 'mixed'
+                        ? 'Selected surgeries must have the same surgery date'
+                        : undefined
+                  }
+                >
+                  <ClipboardList className="h-3.5 w-3.5" aria-hidden />
+                  Prepare OT
+                  {otPrepSelectedCount > 0 ? (
+                    <span className="tabular-nums" data-testid="finalize-ot-prep-selected-count">
+                      ({otPrepSelectedCount})
+                    </span>
+                  ) : null}
+                </CounsellingButton>
+              </div>
+            </div>
+            {otPrepSelectedCount > 0 && !otPrepSameDateCheck.ok && otPrepSameDateCheck.reason === 'mixed' ? (
+              <p
+                className="mt-1.5 text-xs text-amber-800"
+                data-testid="finalize-ot-prep-mixed-date-hint"
+                role="status"
               >
-                <ClipboardList className="h-3.5 w-3.5" aria-hidden />
-                Load OT List
-              </CounsellingButton>
-              <CounsellingButton
-                type="button"
-                size="sm"
-                className={cn(
-                  denseBtn,
-                  'h-8 bg-counselling-primary text-white hover:bg-counselling-primary/90',
-                )}
-                disabled={!canPrepareOtFromOtWorkspace}
-                onClick={() => openPrepareFlow(otListDate)}
-              >
-                Prepare New List
-              </CounsellingButton>
-              {otList.length > 0 ? (
+                Selected surgeries must have the same surgery date.
+              </p>
+            ) : null}
+          </div>
+
+          <div
+            className="flex min-h-0 min-w-0 flex-1 flex-col px-2.5 pb-1.5 pt-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:pb-3 min-[1600px]:pt-2.5"
+            data-testid="finalize-ot-preparation-panel"
+          >
+            <div className="mb-0.5 flex shrink-0 flex-wrap items-center justify-between gap-2 min-[1600px]:mb-1.5">
+              <h2 className={counsellingSessionTokens.sessionWidgetTitle}>Finalised</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-counselling-muted-foreground">
+                  <span className="tabular-nums text-counselling-foreground">
+                    {otPrepFiltered.length}
+                  </span>{' '}
+                  records
+                  {catalogQuery.isFetching ? (
+                    <span className="ml-2 inline-flex items-center gap-1">
+                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-counselling-border border-t-counselling-primary" />
+                      Refreshing
+                    </span>
+                  ) : null}
+                </span>
+                {otPrepLastSuccess ? (
+                  <CounsellingButton
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className={cn(denseBtn, 'h-8')}
+                    onClick={() => viewOtPrepared(otPrepLastSuccess.date)}
+                    data-testid="finalize-ot-view-prepared"
+                  >
+                    View OT Prepared
+                  </CounsellingButton>
+                ) : null}
+              </div>
+            </div>
+
+            {otPrepPaged.length > 0 ? (
+              <div className="mb-1 flex shrink-0 flex-wrap items-center gap-2">
                 <CounsellingButton
                   type="button"
                   size="sm"
                   variant="outline"
                   className={cn(denseBtn, 'h-8')}
-                  onClick={() => window.print()}
+                  onClick={selectAllVisibleOtPrep}
+                  data-testid="finalize-ot-prep-select-all-visible"
                 >
-                  <Printer className="h-3.5 w-3.5" aria-hidden />
-                  Print
+                  Select all visible
                 </CounsellingButton>
-              ) : null}
-            </div>
-
-            {otList.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-counselling-border/70 px-4 py-6 text-center">
-                <p className="text-sm font-medium text-counselling-foreground">
-                  No prepared OT list for this date
-                </p>
-                <p className="mt-1 text-xs text-counselling-muted-foreground">
-                  {otPrepDateLabel} · Use Load OT List or Prepare New List
-                </p>
+                <CounsellingButton
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className={cn(denseBtn, 'h-8')}
+                  onClick={clearOtPrepSelection}
+                  disabled={otPrepSelectedCount === 0}
+                  data-testid="finalize-ot-prep-clear-selection"
+                >
+                  Clear selection
+                </CounsellingButton>
               </div>
-            ) : (
-              <div className="counselling-hidden-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-counselling-foreground">
-                    Prepared OT List
+            ) : null}
+
+            {otPrepPaged.length > 0 ? (
+              <div
+                className={cn(
+                  OT_PREP_WORK_GRID,
+                  'mb-0 shrink-0 border-b border-counselling-border/50 px-1 py-1 max-md:hidden min-[1600px]:py-2',
+                )}
+                aria-hidden
+              >
+                {OT_PREP_COLUMN_CUES.map((cue, i) => (
+                  <p
+                    key={cue || `sel-${i}`}
+                    className={cn(
+                      'text-[11px] font-medium tracking-wide text-counselling-muted-foreground',
+                      cue === 'Action' && 'text-right',
+                    )}
+                  >
+                    {cue}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]"
+              data-testid="finalize-ot-prep-table-viewport"
+            >
+              {catalogQuery.isLoading && catalogRecords.length === 0 ? (
+                <WorklistSkeleton />
+              ) : otPrepFiltered.length === 0 ? (
+                <div
+                  className="flex flex-col items-center gap-2 px-4 py-10 text-center"
+                  data-testid="finalize-ot-prep-empty"
+                >
+                  <p className="text-sm font-medium text-counselling-foreground">
+                    No Finalised surgeries
                   </p>
                   <p className="text-xs text-counselling-muted-foreground">
-                    {otPrepDateLabel} ·{' '}
-                    <span className="tabular-nums font-semibold text-counselling-foreground">
-                      {otList.length}
-                    </span>{' '}
-                    patients
+                    Try adjusting the date or search filters
                   </p>
                 </div>
-                <div className="divide-y divide-counselling-border/40">
-                  {otList.map((row, idx) => (
-                    <div
-                      key={row.id}
-                      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 py-2.5 text-[13px]"
-                    >
-                      <span className="w-6 shrink-0 font-semibold tabular-nums text-counselling-primary">
-                        {row.sequenceNo ?? idx + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold text-counselling-foreground">
-                          {row.patientName}
-                        </p>
-                        <p className="truncate text-xs text-counselling-muted-foreground">
-                          {[row.uhid, row.surgeryName, row.eyes, row.startTime, row.theaterName]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </p>
-                      </div>
-                      {canMutateOt ? (
-                        <CounsellingButton
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className={cn(
-                            denseBtn,
-                            'border-amber-300 text-amber-800 hover:bg-amber-50',
-                          )}
-                          onClick={() => void handleAction('reopen', row)}
-                        >
-                          Reopen
-                        </CounsellingButton>
-                      ) : null}
-                    </div>
+              ) : (
+                <div className="min-w-0 divide-y divide-counselling-border/40">
+                  {otPrepPaged.map((rec) => (
+                    <OtPrepWorkRow
+                      key={rec.id}
+                      rec={rec}
+                      checked={otPrepSelectedIds.has(rec.id)}
+                      onToggle={(next) => toggleOtPrepRow(rec.id, next)}
+                      onOpen={() => openRow(rec.id)}
+                    />
                   ))}
                 </div>
+              )}
+            </div>
+
+            {otPrepFiltered.length > 0 ? (
+              <div
+                data-testid="finalize-ot-prep-queue-footer"
+                className="mt-1 shrink-0 border-t border-counselling-border/50 pt-1 min-[1600px]:mt-2.5 min-[1600px]:pt-2.5"
+              >
+                <WaitingListQueuePagination
+                  page={otPrepPage}
+                  pageSize={otPrepPageSize}
+                  totalCount={otPrepFiltered.length}
+                  onPageChange={setOtPrepPage}
+                  onPageSizeChange={handleOtPrepPageSizeChange}
+                  isRefreshing={catalogQuery.isFetching && catalogRecords.length > 0}
+                  itemLabel="records"
+                  data-testid="finalize-ot-prep-pagination"
+                />
               </div>
-            )}
+            ) : null}
           </div>
         </section>
       )}

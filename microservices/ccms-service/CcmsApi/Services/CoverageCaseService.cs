@@ -35,6 +35,31 @@ public class CoverageCaseService
         _log      = log;
     }
 
+    private async Task NotifyAuthSessionAsync(CcmsCoverageCase coverageCase, string eventType)
+    {
+        if (!coverageCase.SessionId.HasValue || coverageCase.SessionId.Value == Guid.Empty)
+            return;
+
+        try
+        {
+            await _authClient.NotifyCcmsSessionAsync(
+                coverageCase.TenantId,
+                coverageCase.SessionId.Value,
+                coverageCase.Id,
+                coverageCase.CaseNumber,
+                eventType,
+                coverageCase.CurrentState);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Auth notify failed for case {CaseId} event {Event}", coverageCase.Id, eventType);
+        }
+    }
+
+    /// <summary>
+    /// Fire-and-forget for non-critical state broadcasts. Create/draft must await so Auth
+    /// bumps CounselingSession.Version before the counsellor UI continues Save Draft.
+    /// </summary>
     private void NotifyAuthSessionFireAndForget(CcmsCoverageCase coverageCase, string eventType)
     {
         if (!coverageCase.SessionId.HasValue || coverageCase.SessionId.Value == Guid.Empty)
@@ -187,7 +212,7 @@ public class CoverageCaseService
         _log.LogInformation("Coverage case {Num} created for patient {Patient}",
             caseNumber, req.PatientId);
 
-        NotifyAuthSessionFireAndForget(coverageCase, "CCMS_CASE_CREATED");
+        await NotifyAuthSessionAsync(coverageCase, "CCMS_CASE_CREATED");
         return coverageCase;
     }
 
@@ -521,7 +546,7 @@ public class CoverageCaseService
         await _db.SaveChangesAsync(ct);
         _log.LogInformation("Draft saved for coverage case {Id} by user {UserId}", id, actorUserId);
 
-        NotifyAuthSessionFireAndForget(coverageCase, "CCMS_DRAFT_SAVED");
+        await NotifyAuthSessionAsync(coverageCase, "CCMS_DRAFT_SAVED");
         return coverageCase;
     }
 
