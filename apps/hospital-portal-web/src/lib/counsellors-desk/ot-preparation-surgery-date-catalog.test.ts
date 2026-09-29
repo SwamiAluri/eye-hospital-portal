@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { FinalizeSurgeryRecord } from '@/types/counsellors-desk';
 import {
   buildSurgeryDateCatalog,
   formatSurgeryDateRelativeLabel,
+  OT_PREP_SURGERY_DATE_CATALOG_FILTERS,
   resolveOtPreparationDayPresentation,
   shouldClearPreparedOtListOnDateChange,
   summarizeOtPreparationMetrics,
@@ -253,7 +256,68 @@ describe('RESP page contract — preparation workspace, no prepared grid / horiz
     expect(src).toMatch(/type="checkbox"/);
     expect(src).toMatch(/finalize-ot-view-prepared/);
     expect(src).toMatch(/submitPrepareOtList/);
-    expect(src).toMatch(/Prepare Finalised surgeries for OT/);
+    expect(src).not.toMatch(/Prepare Finalised surgeries for OT/);
     expect(src).toMatch(/FinalizeOtModal/);
+  });
+});
+
+describe('PERF-03 Finalize OT catalog deferred load', () => {
+  const pageSrc = readFileSync(
+    resolve(__dirname, '../../app/dashboard/counsellors-desk/finalize-surgery/page.tsx'),
+    'utf8',
+  ).replace(/\r\n/g, '\n');
+  const hookSrc = readFileSync(
+    resolve(__dirname, '../../hooks/use-counsellors-desk-queries.ts'),
+    'utf8',
+  ).replace(/\r\n/g, '\n');
+
+  it('enables the existing undated catalog query only for OT Preparation', () => {
+    expect(hookSrc).toMatch(
+      /export function useFinalizeListQuery\(filters: FinalizeListFilters, enabled = true\)/,
+    );
+    expect(pageSrc).toContain('useFinalizeListQuery(debouncedFilters)');
+    expect(pageSrc).toContain(
+      'useFinalizeListQuery(\n    { ...OT_PREP_SURGERY_DATE_CATALOG_FILTERS },\n    activeWorkspace === \'ot-preparation\',\n  )',
+    );
+    expect(pageSrc).toContain(
+      "if (activeWorkspace === 'ot-preparation') {\n          void catalogQuery.refetch();",
+    );
+    expect(pageSrc).toMatch(/import \{ FinalizeOtModal \} from/);
+    expect(pageSrc).not.toMatch(/dynamic\(\(\) => import\([^)]*FinalizeOtModal/);
+  });
+
+  it('keeps the undated catalog filters and certified OT preparation rules', () => {
+    expect(OT_PREP_SURGERY_DATE_CATALOG_FILTERS).toEqual({
+      date: '',
+      uhid: '',
+      name: '',
+    });
+    expect(pageSrc).toContain('highestOtPreparedSequenceForDate');
+    expect(pageSrc).toContain('submitPrepareOtList');
+    expect(pageSrc).toContain("action === 'reopen'");
+    expect(pageSrc).toContain('counsellorsDeskApi.reopenOtCase');
+    expect(pageSrc).toContain('Selected surgeries must have the same surgery date');
+    expect(pageSrc).toContain("from '@/lib/counsellors-desk/ot-preparation-resp2'");
+    expect(pageSrc).toContain('buildContinuedPrepareItems');
+  });
+
+  it('keeps pending Finalised, catalog error, and success empty distinct', () => {
+    expect(pageSrc).toContain("finalisedSummaryPending ? '—' : otPrepFiltered.length");
+    expect(pageSrc).toContain('{otPrepSelectedCount}');
+    expect(pageSrc).toContain("isLoading ? '—' : statsBar.total");
+    expect(pageSrc).toContain("isLoading ? '—' : statsBar.pendingActions");
+    expect(pageSrc).toContain("isLoading ? '—' : statsBar.surgeryDone");
+    expect(pageSrc).toContain('data-testid="finalize-ot-prep-catalog-error"');
+    expect(pageSrc).toContain('role="alert"');
+    expect(pageSrc).toContain('void catalogQuery.refetch()');
+    expect(pageSrc).toContain('No Finalised surgeries');
+    const errorStart = pageSrc.indexOf('data-testid="finalize-ot-prep-catalog-error"');
+    const emptyStart = pageSrc.indexOf('No Finalised surgeries');
+    expect(errorStart).toBeGreaterThan(-1);
+    expect(emptyStart).toBeGreaterThan(errorStart);
+    expect(pageSrc.slice(errorStart, emptyStart)).not.toContain('No Finalised surgeries');
+    expect(pageSrc).toContain("activeWorkspace === 'ot-preparation'");
+    expect(pageSrc).toContain('<div role="status">');
+    expect(pageSrc).toContain('aria-hidden');
   });
 });

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
 
@@ -162,7 +164,7 @@ describe('SurgeryFollowupPage Phase 2F shell', () => {
     expect(html).toContain('data-testid="followup-toolbar"');
     expect(html).toContain('data-testid="followup-search"');
     expect(html).toContain('data-testid="followup-worklist"');
-    expect(html).toContain('Follow-up Center');
+    expect(html).not.toContain('Follow-up Center');
     expect(html).toContain('Ravi Kumar');
     expect(html).not.toContain('Scheduler opening soon');
     expect(html).not.toContain('Est. window');
@@ -206,6 +208,22 @@ describe('Phase 3I Slice 10 — Follow-up Center honesty', () => {
     expect(html).not.toContain('Claim');
   });
 
+  it('exposes existing column cues without changing row content or ReQueue', () => {
+    const html = renderToStaticMarkup(<SurgeryFollowupPage />);
+    expect(html).toContain('data-testid="followup-column-cues"');
+    expect(html).toContain('role="columnheader"');
+    expect(html).toContain('>Patient<');
+    expect(html).toContain('>Procedure<');
+    expect(html).toContain('>Status<');
+    expect(html).toContain('>Contact<');
+    expect(html).toContain('>Action<');
+    expect(html).toContain('Ravi Kumar');
+    expect(html).toContain('Phaco');
+    expect(html).toContain('Original Counsellor: Amelia Martinez');
+    expect(html).toContain('Re-queue to waiting list');
+    expect(html).not.toContain('My Follow-ups');
+  });
+
   it('does not add Assign / Claim / Reassign CTAs on Follow-up Center', () => {
     const html = renderToStaticMarkup(<SurgeryFollowupPage />);
     expect(html).not.toMatch(/>Assign</);
@@ -222,5 +240,16 @@ describe('Phase 3I Slice 10 — Follow-up Center honesty', () => {
     expect(html).toContain('Post-Surgery');
     expect(html).not.toContain('My Follow-ups');
     expect(html).not.toContain('Assigned to Me');
+  });
+});
+
+describe('PD-LD-06 follow-up worklist loading announcement', () => {
+  it('exposes one status announcement and keeps skeleton geometry hidden', () => {
+    const src = readFileSync(join(__dirname, 'page.tsx'), 'utf8').replace(/\r\n/g, '\n');
+    const skeleton = src.slice(src.indexOf('showSkeleton ?'), src.indexOf('followup-empty'));
+    expect(skeleton).toContain('<div role="status">');
+    expect(skeleton).toContain('>Loading<');
+    expect(skeleton).toContain('aria-hidden');
+    expect(skeleton.match(/role="status"/g)).toHaveLength(1);
   });
 });

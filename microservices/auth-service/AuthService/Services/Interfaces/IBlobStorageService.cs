@@ -53,4 +53,48 @@ public interface IBlobStorageService
     /// <param name="blobUrl">Full blob URL</param>
     /// <returns>Blob properties including size, content type, last modified</returns>
     Task<BlobProperties?> GetBlobPropertiesAsync(string blobUrl);
+
+    /// <summary>
+    /// Uploads to an exact object key. Does not rewrite the key. Fails if the blob already exists.
+    /// Container is private. Does not return a browser URL.
+    /// </summary>
+    Task UploadExactKeyAsync(
+        string containerName,
+        string objectKey,
+        Stream content,
+        string contentType,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens a private blob for an authorized backend stream. Does not mint a SAS URL.
+    /// </summary>
+    Task<ExactBlobRead?> OpenReadExactAsync(
+        string containerName,
+        string objectKey,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a private object by exact key. Does not return a browser URL.
+    /// </summary>
+    Task DeleteExactKeyAsync(
+        string containerName,
+        string objectKey,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class ExactBlobRead : IAsyncDisposable
+{
+    public required Stream Content { get; init; }
+    public required string ContentType { get; init; }
+    public long ContentLength { get; init; }
+
+    public ValueTask DisposeAsync() => Content.DisposeAsync();
+}
+
+public sealed class BlobObjectKeyConflictException : Exception
+{
+    public BlobObjectKeyConflictException()
+        : base("Object key already exists.")
+    {
+    }
 }

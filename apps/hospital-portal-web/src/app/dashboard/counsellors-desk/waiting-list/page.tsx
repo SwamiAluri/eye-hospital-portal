@@ -49,7 +49,6 @@ import {
 import {
   applyWaitingListUrlState,
   parseWaitingListUrlState,
-  resetWaitingListUrlFilters,
   type WaitingListUrlState,
   type WaitingListUrlTab,
   type WaitingListUrlType,
@@ -74,7 +73,15 @@ import {
   formatCounsellorDisplayName,
   shouldOpenProcessingAfterAssign,
 } from '@/lib/counsellors-desk/lifecycle-ownership-confirm';
-import type { WaitingListLifecycleActionKind } from '@/lib/counsellors-desk/waiting-list-lifecycle-action';
+import {
+  resolveWaitingListLifecycleAction,
+  type WaitingListLifecycleActionKind,
+} from '@/lib/counsellors-desk/waiting-list-lifecycle-action';
+import {
+  isScheduleCounsellingBlocked,
+  type ScheduleCounsellingDecision,
+  type UnifiedPatientHit,
+} from '@/lib/counsellors-desk/add-patient-to-waiting-list';
 import type { WaitingListPatient, WaitingListFilters, AddPatientFormData } from '@/types/counsellors-desk';
 import { cn } from '@/lib/utils';
 import { useHasPermission } from '@/hooks/use-permissions';
@@ -89,6 +96,11 @@ import {
 
 const AddPatientModal = dynamic(
   () => import('@/components/counsellors-desk/AddPatientModal').then(m => ({ default: m.AddPatientModal })),
+  { ssr: false },
+);
+
+const PatientFormModal = dynamic(
+  () => import('@/components/patients/PatientFormModal'),
   { ssr: false },
 );
 
@@ -143,9 +155,13 @@ function CounsellorWaitingListPageContent() {
     Array<OtReturnedProjectedRow<PatientJourneyRowDto>>
   >([]);
   const [otReturnedLoading, setOtReturnedLoading] = useState(false);
+  const [otReturnedReady, setOtReturnedReady] = useState(false);
   const [startCounsellingJourneyId, setStartCounsellingJourneyId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [scheduleSeed, setScheduleSeed] = useState<UnifiedPatientHit | null>(null);
+  const registeredPatientRef = useRef<UnifiedPatientHit | null>(null);
   /** Local draft for typing; URL `q` is SoT after debounce sync. */
   const [quickSearch, setQuickSearch] = useState(urlView.search);
   const debouncedQuickSearch = useDebouncedValue(quickSearch, 300);
@@ -244,6 +260,11 @@ function CounsellorWaitingListPageContent() {
       if (next.type !== filters.type) {
         writeUrlView({ type: next.type as WaitingListUrlType, page: 1 });
       }
+      setAppliedFilters((prev) =>
+        prev.fromDate === next.fromDate && prev.toDate === next.toDate
+          ? prev
+          : { ...prev, fromDate: next.fromDate, toDate: next.toDate },
+      );
     },
     [filters.type, writeUrlView],
   );
@@ -262,9 +283,10 @@ function CounsellorWaitingListPageContent() {
   const isLoading = waitingListQuery.isLoading && patients.length === 0;
   const isRefreshing = waitingListQuery.isFetching && patients.length > 0;
 
-  // §8 — fetch OT Returned only after branchId is available (auth hydrate race on mount).
+  // OT Returned journeys and sessions load only when that tab is selected and branchId is known.
   useEffect(() => {
     if (!branchId) return;
+    if (activeTab !== 'OtReturned') return;
 
     let cancelled = false;
 
@@ -371,7 +393,10 @@ function CounsellorWaitingListPageContent() {
         setOtReturnedRows([]);
         toast.error('Failed to load OT-returned patients');
       } finally {
-        if (!cancelled) setOtReturnedLoading(false);
+        if (!cancelled) {
+          setOtReturnedLoading(false);
+          setOtReturnedReady(true);
+        }
       }
     };
 
@@ -386,7 +411,7 @@ function CounsellorWaitingListPageContent() {
       cancelled = true;
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [branchId, patients]);
+  }, [activeTab, branchId, patients]);
 
   const refetchWaitingList = waitingListQuery.refetch;
 
@@ -477,15 +502,6 @@ function CounsellorWaitingListPageContent() {
     [branchId, router, startCounsellingJourneyId],
   );
 
-  const handleSearch = () => {
-    // Apply date / name / MRD only — type already filters immediately client-side.
-    setAppliedFilters({
-      ...filters,
-      type: 'All',
-    });
-    writeUrlView({ page: 1 });
-  };
-
   const handleReset = () => {
     const blank: WaitingListFilters = {
       fromDate: '', toDate: '', patientName: '', mrd: '', type: 'All', status: '',
@@ -493,9 +509,7 @@ function CounsellorWaitingListPageContent() {
     setFilters(blank);
     setAppliedFilters(blank);
     setQuickSearch('');
-    replaceSearchParams(
-      resetWaitingListUrlFilters(new URLSearchParams(searchParams.toString())),
-    );
+    writeUrlView({ type: 'All', owner: 'All', search: '', page: 1 });
   };
 
   const coveragePatients = useMemo(
@@ -574,6 +588,7 @@ function CounsellorWaitingListPageContent() {
       await refetchWaitingList();
       toast.success(`${added.patientName} scheduled for counselling — check Pending (${added.uhid})`);
     } catch (err) {
+      if (isScheduleCounsellingBlocked(err)) throw err;
       const message = err instanceof Error ? err.message : 'Failed to schedule counselling';
       toast.error(message);
       throw err;
@@ -739,6 +754,48 @@ function CounsellorWaitingListPageContent() {
     [canAssign, navigateToSession, resolveLifecycleOwnershipThenContinue, router],
   );
 
+  const openExistingSchedule = useCallback(
+    (decision: ScheduleCounsellingDecision) => {
+      setIsAddModalOpen(false);
+      const key = decision.uhid.trim().toLowerCase();
+      const patient = patients.find((p) => {
+        if (decision.sessionId && p.id === decision.sessionId) return true;
+        return key.length > 0 && (p.uhid ?? '').trim().toLowerCase() === key;
+      });
+      if (!patient) {
+        const queueTabs = ['Pending', 'Processed', 'Done', 'AddOnSurgery', 'RepeatCounselling'] as const;
+        const tab = (queueTabs as readonly string[]).includes(decision.status)
+          ? (decision.status as WaitingListUrlTab)
+          : 'All';
+        setQuickSearch(decision.uhid || decision.patientName);
+        writeUrlView({
+          tab,
+          search: decision.uhid || decision.patientName,
+          page: 1,
+        });
+        return;
+      }
+      if (decision.action === 're-evaluate') {
+        handleLifecycleAction(patient, 're-evaluate');
+        return;
+      }
+      if (decision.action === 'continue') {
+        handleLifecycleAction(patient, 'start-repeat');
+        return;
+      }
+      const lifecycle = resolveWaitingListLifecycleAction({
+        status: patient.status,
+        counselorId: patient.counselorId,
+        currentUserId: user?.id,
+        activeTab: 'All',
+        patientType: patient.patientType,
+        canAssign,
+      });
+      handleLifecycleAction(patient, lifecycle.kind);
+    },
+    [canAssign, handleLifecycleAction, patients, user?.id, writeUrlView],
+  );
+
   const handleDemographics = useCallback((patient: WaitingListPatient) => {
     setDemographicsPatient(patient);
   }, []);
@@ -784,14 +841,6 @@ function CounsellorWaitingListPageContent() {
     router.push(`/dashboard/counsellors-desk/${patientId}?from=waiting-list&tab=coverage&subtab=preauth`);
   }, [router]);
 
-  const hasActiveFilters = !!(
-    appliedFilters.fromDate || appliedFilters.toDate ||
-    filters.type !== 'All' ||
-    ownerFilter !== 'All' ||
-    quickSearch.trim() ||
-    activeTab !== 'All'
-  );
-
   const hasRestrictiveClientScope = !!(
     filters.type !== 'All' ||
     ownerFilter !== 'All' ||
@@ -805,8 +854,10 @@ function CounsellorWaitingListPageContent() {
 
   const isOtTab = activeTab === 'OtReturned';
   const queueCount = isOtTab ? otReturnedRows.length : filtered.length;
-  const queueLoading = isOtTab ? otReturnedLoading : isLoading;
-  const queueEmpty = isOtTab ? !otReturnedLoading && otReturnedRows.length === 0 : !isLoading && filtered.length === 0;
+  const queueLoading = isOtTab ? otReturnedLoading || !otReturnedReady : isLoading;
+  const queueEmpty = isOtTab
+    ? otReturnedReady && !otReturnedLoading && otReturnedRows.length === 0
+    : !isLoading && filtered.length === 0;
 
   // Clamp page when queue shrinks (client-side pagination only).
   useEffect(() => {
@@ -854,23 +905,16 @@ function CounsellorWaitingListPageContent() {
     <div
       className={cn(
         counsellingSessionTokens.shellPage,
-        'staff-page-fit h-full overflow-hidden gap-1 px-2.5 pb-1 pt-0.5',
-        'min-[1600px]:gap-2 min-[1600px]:px-4 min-[1600px]:pb-4 min-[1600px]:pt-2',
+        'staff-page-fit h-full overflow-hidden gap-2.5 px-2.5 pb-1 pt-0',
+        'min-[1600px]:px-4 min-[1600px]:pb-4',
       )}
     >
-      <header className="flex shrink-0 flex-col justify-center gap-0.5 px-0.5 py-0 leading-none min-[1600px]:py-0.5">
-        <h1 className="staff-page-title font-semibold tracking-tight text-counselling-foreground max-[1599px]:text-base max-[1599px]:leading-5 min-[1600px]:text-[1.375rem]">
-          Waiting List
-        </h1>
-        <p className="text-[11px] leading-4 text-counselling-muted-foreground min-[1600px]:text-xs min-[1600px]:leading-5">
-          Shared counselling queue · scan, filter, then act
-        </p>
-      </header>
-
       <WaitingListSummaryWidget
         activeTab={activeTab}
         onTabChange={setActiveTab}
         tabCounts={tabCounts}
+        countsPending={isLoading}
+        pendingCountKeys={isOtTab && !otReturnedReady ? ['OtReturned'] : undefined}
       />
 
       <WaitingListQueueWidget
@@ -888,14 +932,14 @@ function CounsellorWaitingListPageContent() {
             onQuickSearchChange={setQuickSearch}
             filters={filters}
             onFiltersChange={handleFiltersChange}
-            onApply={handleSearch}
             onReset={handleReset}
             ownerFilter={ownerFilter}
             onOwnerFilterChange={setOwnerFilter}
-            hasActiveFilters={hasActiveFilters}
-            onAddPatient={() => setIsAddModalOpen(true)}
-            appliedFromDate={appliedFilters.fromDate}
-            appliedToDate={appliedFilters.toDate}
+            onNewPatient={() => setIsRegisterOpen(true)}
+            onScheduleCounselling={() => {
+              setScheduleSeed(null);
+              setIsAddModalOpen(true);
+            }}
           />
         }
         footer={
@@ -1017,9 +1061,39 @@ function CounsellorWaitingListPageContent() {
       {isAddModalOpen && (
         <AddPatientModal
           isOpen
-          onClose={() => setIsAddModalOpen(false)}
+          initialPatient={scheduleSeed}
+          onClose={() => {
+            setIsAddModalOpen(false);
+            setScheduleSeed(null);
+          }}
           onAdd={handleAddPatient}
+          onOpenExisting={openExistingSchedule}
           branchId={branchId}
+        />
+      )}
+
+      {isRegisterOpen && (
+        <PatientFormModal
+          isOpen
+          branchId={branchId}
+          onClose={() => {
+            setIsRegisterOpen(false);
+            const saved = registeredPatientRef.current;
+            registeredPatientRef.current = null;
+            if (!saved) return;
+            setScheduleSeed(saved);
+            setIsAddModalOpen(true);
+          }}
+          onSave={(patient) => {
+            if (!patient?.id) return;
+            registeredPatientRef.current = {
+              id: patient.id,
+              firstName: patient.firstName,
+              lastName: patient.lastName,
+              mrn: patient.medicalRecordNumber || '',
+              healthId: null,
+            };
+          }}
         />
       )}
     </div>

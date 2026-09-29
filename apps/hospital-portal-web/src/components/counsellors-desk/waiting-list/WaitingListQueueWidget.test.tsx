@@ -140,6 +140,10 @@ describe('WaitingListQueueWidget — no duplicate section title', () => {
     expect(html).toContain(WAITING_LIST_WORK_GRID);
     expect(html).toContain('staff-worklist-row');
     expect(html).toContain('animate-pulse');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('>Loading<');
+    expect(html).toContain('aria-hidden="true"');
+    expect(html.match(/role="status"/g)).toHaveLength(1);
     expect(html).not.toContain('>Pending</h2>');
     expect(html).not.toContain('Procedure / Eye');
   });

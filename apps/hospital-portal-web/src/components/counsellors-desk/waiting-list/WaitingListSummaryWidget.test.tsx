@@ -131,6 +131,28 @@ describe('WaitingListSummaryWidget', () => {
     );
   });
 
+  it('shows each workload figure as its own card, label above the number', () => {
+    const tree = expandSummary(baseProps());
+    const stats = findByTestId(tree, 'waiting-list-stats');
+    const patients = findByTestId(tree, 'waiting-list-stat-patients');
+    expect(stats).toBeTruthy();
+    expect(patients).toBeTruthy();
+
+    const statsClass = String((stats!.props as { className?: string }).className ?? '');
+    const patientsClass = String((patients!.props as { className?: string }).className ?? '');
+    expect(statsClass).toContain('grid-cols-5');
+    expect(patientsClass).toContain('bg-counselling-card');
+    expect(patientsClass).toContain('border-l-counselling-primary');
+
+    const html = renderToStaticMarkup(
+      <WaitingListSummaryWidget {...baseProps()} />,
+    );
+    expect(html).toMatch(
+      /data-testid="waiting-list-stat-patients"[\s\S]*Patients[\s\S]*18/,
+    );
+    expect(html).not.toContain('vs prev');
+  });
+
   it('stats are informational (not clickable filter buttons)', () => {
     const tree = expandSummary(baseProps());
     const stats = findByTestId(tree, 'waiting-list-stats');
@@ -140,5 +162,51 @@ describe('WaitingListSummaryWidget', () => {
       if (el.type === 'button') hasButton = true;
     });
     expect(hasButton).toBe(false);
+  });
+
+  it('does not present resolved numeric zero while waiting-list counts are pending', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListSummaryWidget
+        {...baseProps({
+          countsPending: true,
+          tabCounts: {
+            All: 0,
+            Pending: 0,
+            Processed: 0,
+            Done: 0,
+            RepeatCounselling: 0,
+            OtReturned: 0,
+          },
+        })}
+      />,
+    );
+
+    expect(html).toContain('—');
+    expect(html).not.toContain('>0<');
+    expect(html).not.toContain('>18<');
+  });
+
+  it('keeps a genuine zero after a successful empty count', () => {
+    const html = renderToStaticMarkup(<WaitingListSummaryWidget {...baseProps()} />);
+
+    expect(html).toMatch(/data-testid="waiting-list-stat-pending"[\s\S]*>0</);
+    expect(html).toContain('>18<');
+    expect(html).toContain('>2<');
+  });
+
+  it('keeps a pending OT Returned count unresolved while other counts stay numeric', () => {
+    const html = renderToStaticMarkup(
+      <WaitingListSummaryWidget
+        {...baseProps({ pendingCountKeys: ['OtReturned'] })}
+      />,
+    );
+
+    expect(html).toContain('>18<');
+    const otReturnedTab = html.slice(
+      html.indexOf('data-testid="waiting-list-status-tab-OtReturned"'),
+      html.indexOf('data-testid="waiting-list-status-tab-PreAuthQueue"'),
+    );
+    expect(otReturnedTab).toContain('—');
+    expect(otReturnedTab).not.toContain('>2<');
   });
 });

@@ -98,7 +98,7 @@ namespace AuthService.Models.Counselor
         public int PatientAge { get; set; }
         public string? PatientGender { get; set; }
         public string? PatientHealthId { get; set; }
-        // Surgery options with live pricing from surgery_types table
+        // Stored recommendation rows for this session. Not the full surgery catalog.
         public List<SurgeryPricingDto> SurgeriesWithPricing { get; set; } = new();
         // Pre-op investigation orders placed by counsellor
         public List<InvestigationOrderItemDto> InvestigationOrders { get; set; } = new();

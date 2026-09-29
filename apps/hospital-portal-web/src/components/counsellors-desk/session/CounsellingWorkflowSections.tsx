@@ -396,7 +396,7 @@ export function CounsellingScheduleSection({
           </span>
         ) : null}
         <span className="text-xs text-counselling-muted-foreground">
-          {schedule.operationTheatre} · {schedule.doctor}
+          {[schedule.operationTheatre, schedule.doctor].filter(Boolean).join(' · ')}
         </span>
       </div>
       <CounsellingButton

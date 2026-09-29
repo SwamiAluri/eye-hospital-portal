@@ -51,7 +51,7 @@ describe('responsive density tokens (globals.css)', () => {
     expectToken(root, '--sidebar-section-icon-size', '20px');
     expectToken(root, '--sidebar-icon-size', '16px');
     expectToken(root, '--sidebar-item-pad-y', '10px');
-    expectToken(root, '--topnav-height', '56px');
+    expectToken(root, '--topnav-height', '48px');
     expectToken(root, '--topnav-pad-x', '20px');
     expectToken(root, '--topnav-gap', '16px');
     expectToken(root, '--topnav-icon-size', '24px');
@@ -66,7 +66,7 @@ describe('responsive density tokens (globals.css)', () => {
     expectToken(ws, '--sidebar-section-icon-size', '18px');
     expectToken(ws, '--sidebar-icon-size', '16px');
     expectToken(ws, '--sidebar-item-pad-y', '8px');
-    expectToken(ws, '--topnav-height', '48px');
+    expectToken(ws, '--topnav-height', '40px');
     expectToken(ws, '--topnav-pad-x', '16px');
     expectToken(ws, '--topnav-gap', '12px');
     expectToken(ws, '--topnav-icon-size', '20px');

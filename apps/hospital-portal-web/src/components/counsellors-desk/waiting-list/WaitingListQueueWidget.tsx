@@ -33,7 +33,9 @@ export type WaitingListQueueWidgetProps = {
 
 function WorklistSkeleton() {
   return (
-    <div className="divide-y divide-counselling-border/40" aria-hidden>
+    <div role="status">
+      <span className="sr-only">Loading</span>
+      <div className="divide-y divide-counselling-border/40" aria-hidden>
       {Array.from({ length: 7 }).map((_, i) => (
         <div
           key={i}
@@ -48,6 +50,7 @@ function WorklistSkeleton() {
           <div className="hidden h-7 w-16 justify-self-end animate-pulse rounded-md bg-counselling-muted sm:block" />
         </div>
       ))}
+      </div>
     </div>
   );
 }
@@ -99,7 +102,7 @@ export function WaitingListQueueWidget({
     >
       {toolbar ? (
         <div
-          className="shrink-0 border-b border-counselling-border/50 px-2.5 py-1 sm:px-3 min-[1600px]:px-5 min-[1600px]:py-3"
+          className="shrink-0 border-b border-counselling-border/50 px-3 py-2.5 min-[1600px]:px-5 min-[1600px]:py-3"
           data-testid="waiting-list-queue-toolbar"
         >
           {toolbar}

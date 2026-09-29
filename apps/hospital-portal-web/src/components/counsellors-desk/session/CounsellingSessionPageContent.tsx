@@ -1,13 +1,18 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CounsellorOutpatientChecklist } from '@/components/counsellors-desk/CounsellorOutpatientChecklist';
+import { SessionHistoryBody } from '@/components/counsellors-desk/SessionHistoryModal';
 import { useIpChecklistPermissions } from '@/hooks/use-ip-checklist-permissions';
 import { SessionPageHeader } from '@/components/counsellors-desk/session/SessionPageHeader';
 import { useCounsellingSession } from '@/components/counsellors-desk/session/CounsellingSessionContext';
 import { CounsellingEstimatePrintDialog } from '@/components/counsellors-desk/session/CounsellingEstimatePrintDialog';
 import {
+  CounsellingCard,
+  CounsellingCardContent,
+  CounsellingCardHeader,
+  CounsellingCardTitle,
   CounsellingSkeleton,
   CounsellingTabs,
   CounsellingTooltipProvider,
@@ -22,12 +27,27 @@ import { CoveragePreauthPanel } from '@/components/counsellors-desk/coverage/Cov
 import { CounsellingTabPanel } from '@/components/counsellors-desk/session/CounsellingTabPanel';
 import { CounsellingSessionChrome } from '@/components/counsellors-desk/session/CounsellingSessionChrome';
 import { CounsellingActionBar } from '@/components/counsellors-desk/session/CounsellingActionBar';
+import { CounsellingConversationRecorder } from '@/components/counsellors-desk/session/CounsellingConversationRecorder';
+import { CounsellingConversationsPanel } from '@/components/counsellors-desk/session/CounsellingConversationsPanel';
 import {
   clarifyPhaseAdvanceHint,
   clarifySaveDraftHint,
   clarifySaveSessionHint,
 } from '@/lib/counsellors-desk/counselling-action-hints';
 import { recommendedSurgeryName } from '@/lib/counsellors-desk/recommended-surgery-name';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
+import { recordingNavigationBlock, type ConversationRecorderPhase } from '@/lib/counsellors-desk/counselling-recording';
+import { loadCounsellingSessionHistory } from '@/lib/counsellors-desk/load-counselling-session-history';
+import { getStatusBadge } from '@/lib/counsellors-desk/session-utils';
+import { buildCounselorNameMap } from '@/lib/counsellors-desk/ownership-display-name';
+import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
+import { useCounsellorMasterOptions } from '@/hooks/use-counsellor-master-options';
+import { useCounsellingSessionSummary } from '@/hooks/use-counselling-session-summary';
+import { sessionTypeLabelForCode } from '@/lib/counsellors-desk/counsellor-master-maps';
+import { ClinicalRecommendationsContent } from '@/components/counsellors-desk/session/ClinicalRecommendationsSheet';
+import { PatientDemographicsContent } from '@/components/examination/PatientDemographicsSheet';
+import { calcPatientAge } from '@/lib/patients/patient-display-utils';
+import type { SessionAuditEntry } from '@/types/counsellors-desk';
 
 const ScheduleSurgeryModal = dynamic(
   () =>
@@ -47,6 +67,57 @@ const COUNSELLING_TAB_CLASS = 'flex min-h-0 flex-1 flex-col overflow-hidden';
 export function CounsellingSessionPageContent() {
   const ctx = useCounsellingSession();
   const { canEditCounsellorOutpatient } = useIpChecklistPermissions();
+  const { sessionTypeOptions } = useCounsellorMasterOptions();
+  const [contextualDestination, setContextualDestination] = useState<
+    'none' | 'patient-context' | 'history' | 'conversations'
+  >(() =>
+    ctx.sessionFrom === 'waiting-list' && ctx.activeMainTab === 'counselling'
+      ? 'patient-context'
+      : 'none',
+  );
+  const [historyEntries, setHistoryEntries] = useState<SessionAuditEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyCounselorNames, setHistoryCounselorNames] = useState<Record<string, string>>({});
+  const [recordingPhase, setRecordingPhase] = useState<ConversationRecorderPhase>('idle');
+  const [conversationListVersion, setConversationListVersion] = useState(0);
+  const recordingLocked = recordingNavigationBlock(recordingPhase) !== null;
+
+  useEffect(() => {
+    if (contextualDestination !== 'history' || !ctx.session) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    const session = ctx.session;
+    void (async () => {
+      try {
+        const [entries, counselors] = await Promise.all([
+          loadCounsellingSessionHistory(session.id, session.counsellorNotes),
+          counsellorsDeskApi.getCounselors(session.branchId).catch(() => []),
+        ]);
+        if (cancelled) return;
+        setHistoryEntries(entries);
+        setHistoryCounselorNames(
+          buildCounselorNameMap(counselors, {
+            counselorId: session.counselorId,
+            counselorName: session.counselorName,
+          }),
+        );
+      } catch {
+        if (cancelled) return;
+        setHistoryEntries([]);
+        setHistoryCounselorNames(
+          buildCounselorNameMap([], {
+            counselorId: session.counselorId,
+            counselorName: session.counselorName,
+          }),
+        );
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contextualDestination, ctx.session]);
 
   const doctorRecommendation = useMemo(() => {
     const surgeries = (ctx.session as { surgeries?: Array<{ name?: string; isRecommended?: boolean }> })
@@ -64,6 +135,42 @@ export function CounsellingSessionPageContent() {
     const lines = ctx.counsellingEstimate.lines;
     return lines.length > 0 ? lines : undefined;
   }, [ctx.counsellingEstimate.lines]);
+
+  const sessionFinalPayable = useMemo(() => {
+    const computedQuotePayable = ctx.counsellingEstimate.finalPayableAmount;
+    return computedQuotePayable > 0
+      ? computedQuotePayable
+      : resolveCounsellingQuoteFinalPayable({
+          liveFinalPayable: computedQuotePayable,
+          savedFinalPayable: ctx.session?.finalPayableAmount,
+          estimateLines: ctx.counsellingEstimate.lines,
+        });
+  }, [
+    ctx.counsellingEstimate.finalPayableAmount,
+    ctx.counsellingEstimate.lines,
+    ctx.session?.finalPayableAmount,
+  ]);
+
+  const showOutpatientSafety =
+    !ctx.isRepeatState && !ctx.isSurgeryDoneState && ctx.activeMainTab !== 'outpatient';
+
+  const { summary, mergedProgress } = useCounsellingSessionSummary({
+    sessionId: ctx.sessionId,
+    queueStatus: ctx.queueStatus,
+    activeMainTab: ctx.activeMainTab,
+    activePhase: ctx.activePhase,
+    phaseCompletion: ctx.phaseCompletion,
+    isRepeatState: ctx.isRepeatState,
+    isSurgeryDoneState: ctx.isSurgeryDoneState,
+    decision: ctx.decision,
+    paymentType: ctx.paymentType as string,
+    insuranceCompany: ctx.insuranceCompany,
+    finalPayableAmount: sessionFinalPayable,
+    showCoverageWorkflow: ctx.showCoverageWorkflow,
+    notRequiredPreAuth: ctx.notRequiredPreAuth,
+    coverageProgress: ctx.coverageProgress,
+    workspaceCcmsState: ctx.workspaceCcmsState ?? ctx.session?.ccmsCurrentState ?? null,
+  });
 
   if (ctx.isLoading) {
     return (
@@ -119,17 +226,22 @@ export function CounsellingSessionPageContent() {
     sessionProcedureName ??
     (sessionProcedureCode ? humanizeProcedureCode(sessionProcedureCode) : undefined);
   const sessionProcedureAmount = counsellingProcedureLine?.amount;
-  const computedQuotePayable = ctx.counsellingEstimate.finalPayableAmount;
-  const sessionFinalPayable =
-    computedQuotePayable > 0
-      ? computedQuotePayable
-      : resolveCounsellingQuoteFinalPayable({
-          liveFinalPayable: computedQuotePayable,
-          savedFinalPayable: ctx.session?.finalPayableAmount,
-          estimateLines: ctx.counsellingEstimate.lines,
-        });
   const consultingDoctor = ctx.schedule?.doctor?.trim() || undefined;
   const operativeEye = ctx.selectedEye || ctx.session?.restoredEye || undefined;
+  const doctorRecommendationSummary = doctorRecommendation
+    ? operativeEye
+      ? `${doctorRecommendation} · ${operativeEye}`
+      : doctorRecommendation
+    : null;
+  const patientDisplayAge =
+    calcPatientAge(ctx.patientDetails?.dateOfBirth) ?? ctx.session.age ?? null;
+  const sessionTypeLabel = ctx.session.sessionTypeCode
+    ? sessionTypeLabelForCode(ctx.session.sessionTypeCode, sessionTypeOptions)
+    : null;
+  const sessionStatusLabel =
+    ctx.queueStatus !== 'RepeatCounselling'
+      ? getStatusBadge(ctx.queueStatus).label
+      : 'Repeat Counselling';
   const saveSessionHint = clarifySaveSessionHint(ctx.saveDisabledReason);
   const saveDraftHint = clarifySaveDraftHint(ctx.saveDraftDisabledReason);
   const phaseAdvanceHint = clarifyPhaseAdvanceHint(ctx.phaseAdvanceError);
@@ -141,6 +253,9 @@ export function CounsellingSessionPageContent() {
   /** Waiting List owns Start Repeat / Re-evaluate — do not grey or scroll-lock completed session UX. */
   const outpatientReadOnly =
     ctx.queueStatus === 'SurgeryDone' || !canEditCounsellorOutpatient || ctx.isRepeatState;
+  const recordingVersion = typeof ctx.session?.version === 'number' ? ctx.session.version : null;
+  const canRecordConversation =
+    ctx.queueStatus === 'Processed' && ctx.isSessionOwner && recordingVersion !== null;
 
   return (
     <CounsellingTooltipProvider delayDuration={300}>
@@ -162,42 +277,72 @@ export function CounsellingSessionPageContent() {
             doctorRecommendation={doctorRecommendation}
             consultingDoctor={consultingDoctor}
             operativeEye={operativeEye}
-          />
-
-          <CounsellingSessionChrome
-            sessionId={ctx.sessionId}
-            queueStatus={ctx.queueStatus}
-            activeMainTab={ctx.activeMainTab}
-            activePhase={ctx.activePhase}
-            phaseCompletion={ctx.phaseCompletion}
-            isRepeatState={ctx.isRepeatState}
-            isSurgeryDoneState={ctx.isSurgeryDoneState}
-            decision={ctx.decision}
-            paymentType={ctx.paymentType as string}
-            insuranceCompany={ctx.insuranceCompany}
-            finalPayableAmount={sessionFinalPayable}
-            showCoverageWorkflow={ctx.showCoverageWorkflow}
-            coverageTabAvailable={ctx.coverageTabAvailable}
-            notRequiredPreAuth={ctx.notRequiredPreAuth}
-            coverageProgress={ctx.coverageProgress}
-            workspaceCcmsState={ctx.workspaceCcmsState ?? ctx.session.ccmsCurrentState}
-            canGoToPhase={ctx.canGoToPhase}
-            finishSummaryActive={ctx.finishSummaryActive}
-            navigationBlocked={false}
-            onNavigateTab={(tab) => {
-              ctx.setActiveMainTab(tab);
+            summaryChips={summary.chips}
+            summaryStatusLine={summary.statusLine}
+            showOutpatientSafety={showOutpatientSafety}
+            onCloseSession={ctx.handleClose}
+            onOpenOutpatientSafety={() => {
+              setContextualDestination('none');
+              ctx.setActiveMainTab('outpatient');
             }}
-            onNavigatePhase={(phase) => {
-              ctx.setActiveMainTab('counselling');
-              ctx.goToPhase(phase);
-            }}
-            onFinishSummaryActive={(active) => {
-              if (active) {
-                ctx.openFinishSummary();
-                return;
-              }
-              ctx.setFinishSummaryActive(false);
-            }}
+            renderWorkflow={({ openClinicalRecommendations, openSessionHistory }) => (
+              <CounsellingSessionChrome
+                queueStatus={ctx.queueStatus}
+                activeMainTab={ctx.activeMainTab}
+                activePhase={ctx.activePhase}
+                phaseCompletion={ctx.phaseCompletion}
+                isRepeatState={ctx.isRepeatState}
+                isSurgeryDoneState={ctx.isSurgeryDoneState}
+                showCoverageWorkflow={ctx.showCoverageWorkflow}
+                coverageTabAvailable={ctx.coverageTabAvailable}
+                coverageProgress={mergedProgress}
+                canGoToPhase={ctx.canGoToPhase}
+                finishSummaryActive={ctx.finishSummaryActive}
+                navigationBlocked={recordingLocked}
+                contextualDestination={contextualDestination}
+                onSelectPatientContext={() => {
+                  if (recordingLocked) return;
+                  openClinicalRecommendations();
+                }}
+                onSelectHistory={() => {
+                  if (recordingLocked) return;
+                  openSessionHistory();
+                }}
+                onSelectConversations={() => {
+                  if (recordingLocked) return;
+                  setContextualDestination('conversations');
+                }}
+                recordingAction={canRecordConversation ? (
+                  recordingVersion !== null ? (
+                    <CounsellingConversationRecorder
+                      sessionId={ctx.sessionId}
+                      expectedVersion={recordingVersion}
+                      onPhaseChange={setRecordingPhase}
+                      onSaved={() => setConversationListVersion((version) => version + 1)}
+                    />
+                  ) : null
+                ) : null}
+                onNavigateTab={(tab) => {
+                  setContextualDestination('none');
+                  ctx.setActiveMainTab(tab);
+                }}
+                onNavigatePhase={(phase) => {
+                  setContextualDestination('none');
+                  ctx.setActiveMainTab('counselling');
+                  ctx.goToPhase(phase);
+                }}
+                onFinishSummaryActive={(active) => {
+                  setContextualDestination('none');
+                  if (active) {
+                    ctx.openFinishSummary();
+                    return;
+                  }
+                  ctx.setFinishSummaryActive(false);
+                }}
+              />
+            )}
+            onOpenPatientContext={() => setContextualDestination('patient-context')}
+            onOpenHistory={() => setContextualDestination('history')}
           />
         </div>
 
@@ -206,7 +351,7 @@ export function CounsellingSessionPageContent() {
         {ctx.coverageTabMounted && (
           <div
             className={
-              ctx.activeMainTab !== 'coverage'
+              contextualDestination !== 'none' || ctx.activeMainTab !== 'coverage'
                 ? 'hidden'
                 : TAB_BODY_CLASS
             }
@@ -264,7 +409,7 @@ export function CounsellingSessionPageContent() {
 
         <div
           className={
-            ctx.activeMainTab !== 'counselling'
+            contextualDestination !== 'none' || ctx.activeMainTab !== 'counselling'
               ? 'hidden'
               : COUNSELLING_TAB_CLASS
           }
@@ -273,7 +418,7 @@ export function CounsellingSessionPageContent() {
         </div>
 
         {ctx.activeMainTab === 'outpatient' && (
-          <div className={TAB_BODY_CLASS}>
+          <div className={contextualDestination !== 'none' ? 'hidden' : TAB_BODY_CLASS}>
             <div
               className={cn(
                 'counselling-hidden-scroll',
@@ -291,6 +436,77 @@ export function CounsellingSessionPageContent() {
             </div>
           </div>
         )}
+        {contextualDestination !== 'none' ? (
+          <div
+            className={cn(
+              'counselling-hidden-scroll',
+              TAB_SCROLL_CLASS,
+              counsellingSessionTokens.shellModuleBodyPadding,
+            )}
+          >
+            {contextualDestination === 'patient-context' ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <CounsellingCard>
+                  <CounsellingCardHeader>
+                    <CounsellingCardTitle>{counsellingCopy.clinicalRecommendations}</CounsellingCardTitle>
+                  </CounsellingCardHeader>
+                  <CounsellingCardContent>
+                    <ClinicalRecommendationsContent
+                      doctorRecommendationSummary={doctorRecommendationSummary}
+                    />
+                  </CounsellingCardContent>
+                </CounsellingCard>
+                <CounsellingCard>
+                  <CounsellingCardHeader>
+                    <CounsellingCardTitle>{counsellingCopy.patientDetails}</CounsellingCardTitle>
+                  </CounsellingCardHeader>
+                  <CounsellingCardContent>
+                    {ctx.patientDetailsLoading ? (
+                      <CounsellingStatusMessage tone="loading" title="Loading patient details" />
+                    ) : ctx.patientDetails ? (
+                      <PatientDemographicsContent
+                        presentation="workspace"
+                        patient={ctx.patientDetails}
+                        age={patientDisplayAge}
+                        visitLabel={counsellingCopy.counsellingSession}
+                        displayNameFallback={ctx.session.patientName}
+                        mrnFallback={ctx.session.uhid}
+                        genderFallback={ctx.session.gender}
+                        counsellingContext={{
+                          counsellingType: sessionTypeLabel,
+                          sessionStatus: sessionStatusLabel,
+                          operativeEye,
+                          consultingDoctor,
+                        }}
+                      />
+                    ) : (
+                      <CounsellingStatusMessage tone="info" title="Patient details are not available" />
+                    )}
+                  </CounsellingCardContent>
+                </CounsellingCard>
+              </div>
+            ) : contextualDestination === 'conversations' ? (
+              <CounsellingConversationsPanel
+                sessionId={ctx.sessionId}
+                sessionLabel={sessionTypeLabel}
+                historyVersion={conversationListVersion}
+                patient={{
+                  patientName: ctx.session.patientName,
+                  mrn: ctx.session.uhid,
+                  ageLabel: patientDisplayAge,
+                  sex: ctx.session.gender,
+                  eye: operativeEye,
+                }}
+              />
+            ) : (
+              <SessionHistoryBody
+                entries={historyEntries}
+                isLoading={historyLoading}
+                counselorNameById={historyCounselorNames}
+              />
+            )}
+          </div>
+        ) : null}
         </div>
       </div>
       </CounsellingTabs>
@@ -325,6 +541,9 @@ export function CounsellingSessionPageContent() {
         finishSummaryActive={ctx.finishSummaryActive}
         navigationBlocked={false}
         sessionFrom={ctx.sessionFrom}
+        hideLeaveControl
+        revealWorkspaceOnly={contextualDestination === 'patient-context'}
+        onRevealWorkspace={() => setContextualDestination('none')}
         onPhaseBack={ctx.goToPreviousPhase}
         onCloseSession={ctx.handleClose}
         onPhaseNext={() => ctx.goNext()}

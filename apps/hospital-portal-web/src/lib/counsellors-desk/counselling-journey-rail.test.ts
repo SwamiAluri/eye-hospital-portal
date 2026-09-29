@@ -1,6 +1,12 @@
+import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
 
+import { CounsellingJourneyRail } from '@/components/counsellors-desk/session/CounsellingJourneyRail';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
+import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import {
+  JOURNEY_STAGE_ORDER,
   buildJourneyRailStages,
   getJourneyStageNavigationTarget,
   isJourneyStageCompleted,
@@ -87,6 +93,10 @@ describe('counselling-journey-rail', () => {
 
   it('exposes five primary workflow stages with Insurance and Finish labels', () => {
     const stages = buildJourneyRailStages(baseInput);
+    expect(JOURNEY_STAGE_ORDER).toEqual(['quote', 'decision', 'insurance', 'notes', 'close']);
+    expect(JOURNEY_STAGE_ORDER).not.toContain('history');
+    expect(JOURNEY_STAGE_ORDER.join(',')).not.toContain('patient-context');
+    expect(JOURNEY_STAGE_ORDER).toHaveLength(5);
     expect(stages.map((s) => s.id)).toEqual(['quote', 'decision', 'insurance', 'notes', 'close']);
     expect(stages.find((s) => s.id === 'insurance')?.label).toBe('Insurance');
     expect(stages.find((s) => s.id === 'notes')?.label).toBe('Notes');
@@ -252,5 +262,43 @@ describe('counselling-journey-rail', () => {
     });
     expect(doneStages.filter((s) => s.id !== 'close').every((s) => !s.navigable)).toBe(true);
     expect(doneStages.find((s) => s.id === 'close')?.navigable).toBe(true);
+  });
+});
+
+function openingTag(html: string, marker: string): string {
+  const at = html.indexOf(marker);
+  expect(at).toBeGreaterThan(-1);
+  return html.slice(html.lastIndexOf('<', at), html.indexOf('>', at) + 1);
+}
+
+describe('contextual destinations are not journey steps', () => {
+  function renderDestination(destination: 'patient-context' | 'history') {
+    return renderToStaticMarkup(
+      createElement(CounsellingJourneyRail, { ...baseInput, contextualDestination: destination }),
+    );
+  }
+
+  it('keeps aria-current on the certified stage when Patient Context or History is selected', () => {
+    expect(JOURNEY_STAGE_ORDER).toEqual(['quote', 'decision', 'insurance', 'notes', 'close']);
+
+    for (const destination of ['patient-context', 'history'] as const) {
+      const html = renderDestination(destination);
+      const patientTag = openingTag(html, 'aria-label="Patient Context"');
+      const historyTag = openingTag(html, `aria-label="${counsellingCopy.sessionHistoryAria}"`);
+      const quoteTag = openingTag(html, `data-testid="${counsellingTestIds.journeyStage('quote')}"`);
+
+      expect(patientTag).not.toContain('aria-current');
+      expect(historyTag).not.toContain('aria-current');
+      expect(patientTag).not.toContain('data-journey-status');
+      expect(historyTag).not.toContain('data-journey-status');
+      expect(html.match(/data-journey-status=/g)).toHaveLength(5);
+      expect(html.match(/data-testid="counselling-journey-stage-/g)).toHaveLength(5);
+      expect(quoteTag).toContain('data-journey-status="current"');
+      const quoteStart = html.indexOf(`data-testid="${counsellingTestIds.journeyStage('quote')}"`);
+      const decisionStart = html.indexOf(`data-testid="${counsellingTestIds.journeyStage('decision')}"`);
+      const quoteStage = html.slice(quoteStart, decisionStart);
+      expect(quoteStage).toContain('aria-current="step"');
+      expect(html.match(/aria-current="step"/g)).toHaveLength(1);
+    }
   });
 });

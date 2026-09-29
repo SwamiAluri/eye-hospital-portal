@@ -1,8 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { SessionPageHeader } from '@/components/counsellors-desk/session/SessionPageHeader';
-import { SessionHistoryModal } from '@/components/counsellors-desk/SessionHistoryModal';
+import { CounsellingJourneyRail } from '@/components/counsellors-desk/session/CounsellingJourneyRail';
+import {
+  SessionHistoryBody,
+  SessionHistoryModal,
+} from '@/components/counsellors-desk/SessionHistoryModal';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import type { CounsellingSession, SessionAuditEntry } from '@/types/counsellors-desk';
@@ -94,9 +100,54 @@ describe('Phase 3I Slice 5 — Session History re-wire', () => {
         patientDetails={null}
       />,
     );
-    expect(html).toContain(counsellingTestIds.btnSessionHistory);
-    expect(html).toContain(counsellingCopy.sessionHistoryAria);
-    expect(html).toContain(counsellingCopy.sessionHistory);
+    const headerHtml = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+    expect(headerHtml).not.toContain(counsellingTestIds.btnSessionHistory);
+    expect(headerHtml).not.toContain('role="dialog"');
+    expect(html).not.toContain('role="dialog"');
+    const headerSrc = readFileSync(join(__dirname, 'SessionPageHeader.tsx'), 'utf8');
+    expect(headerSrc).toContain('openSessionHistory');
+    expect(headerSrc).toContain('openClinicalRecommendations');
+    const rail = renderToStaticMarkup(
+      <CounsellingJourneyRail
+        activeMainTab="counselling"
+        activePhase="estimate"
+        phaseCompletion={{ estimate: false, decision: false, wrapup: false }}
+        showCoverageWorkflow
+        coverageProgress={{
+          uploadedDocCount: 0,
+          requiredDocCount: 3,
+          ccmsState: 'DRAFT',
+          preAuthSubmitted: false,
+        }}
+        queueStatus="Processed"
+        isRepeatState={false}
+        isSurgeryDoneState={false}
+        canGoToPhase={() => false}
+      />,
+    );
+    const historyAt = rail.indexOf(`aria-label="${counsellingCopy.sessionHistoryAria}"`);
+    expect(historyAt).toBeGreaterThan(rail.lastIndexOf('Finish'));
+    const historyTag = rail.slice(rail.lastIndexOf('<button', historyAt), rail.indexOf('>', historyAt));
+    expect(historyTag).not.toContain('aria-current');
+    const inline = renderToStaticMarkup(
+      <SessionHistoryBody
+        isLoading={false}
+        entries={[{
+          id: '1',
+          changeType: 'FieldChanged',
+          oldValue: 'A',
+          newValue: 'B',
+          reason: null,
+          changedAt: '2026-09-17T15:27:00.000Z',
+          changedBy: 'Amelia Martinez',
+        }]}
+      />,
+    );
+    expect(inline).toContain('Event');
+    expect(inline).toContain('Date');
+    expect(inline).toContain('Actor');
+    expect(inline).toContain('Change / Details');
+    expect(inline).not.toContain('role="dialog"');
   });
 
   it('Ownership established displays names, not GUIDs; Actor distinct from owner', () => {

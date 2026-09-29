@@ -1,3 +1,4 @@
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using AuthService.Services.Interfaces;
@@ -13,15 +14,18 @@ namespace AuthService.Services;
 public class BlobStorageService : IBlobStorageService
 {
     private readonly BlobServiceClient _blobServiceClient;
+    private readonly SessionAudioBlobClients _sessionAudio;
     private readonly ILogger<BlobStorageService> _logger;
     private readonly IConfiguration _configuration;
 
     public BlobStorageService(
         BlobServiceClient blobServiceClient,
         ILogger<BlobStorageService> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        SessionAudioBlobClients? sessionAudio = null)
     {
-        _blobServiceClient = blobServiceClient;
+        _sessionAudio = sessionAudio ?? new SessionAudioBlobClients(blobServiceClient, null);
+        _blobServiceClient = _sessionAudio.Development;
         _logger = logger;
         _configuration = configuration;
     }
@@ -241,4 +245,154 @@ public class BlobStorageService : IBlobStorageService
             return null;
         }
     }
+
+    public async Task UploadExactKeyAsync(
+        string containerName,
+        string objectKey,
+        Stream content,
+        string contentType,
+        CancellationToken cancellationToken = default)
+    {
+        SessionAudioObjectKey.Validate(objectKey);
+        var serviceClient = _sessionAudio.ForExact(containerName);
+        var containerClient = serviceClient.GetBlobContainerClient(containerName);
+        if (!_sessionAudio.UsesPrivateAzure(containerName))
+            await containerClient.CreateIfNotExistsAsync(PublicAccessType.None, cancellationToken: cancellationToken);
+        var blobClient = containerClient.GetBlobClient(objectKey);
+        try
+        {
+            await blobClient.UploadAsync(
+                content,
+                SessionAudioBlobUpload.CreateNoOverwriteOptions(contentType),
+                cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 409 || ex.ErrorCode == "BlobAlreadyExists")
+        {
+            _logger.LogWarning("Blob object key conflict in container {Container}", containerName);
+            throw new BlobObjectKeyConflictException();
+        }
+
+        _logger.LogInformation("Stored object in private container {Container}", containerName);
+    }
+
+    public async Task<ExactBlobRead?> OpenReadExactAsync(
+        string containerName,
+        string objectKey,
+        CancellationToken cancellationToken = default)
+    {
+        SessionAudioObjectKey.Validate(objectKey);
+        var serviceClient = _sessionAudio.ForExact(containerName);
+        var containerClient = serviceClient.GetBlobContainerClient(containerName);
+        var blobClient = containerClient.GetBlobClient(objectKey);
+        if (!await blobClient.ExistsAsync(cancellationToken))
+            return null;
+
+        var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
+        var stream = await blobClient.OpenReadAsync(cancellationToken: cancellationToken);
+        return new ExactBlobRead
+        {
+            Content = stream,
+            ContentType = string.IsNullOrWhiteSpace(properties.Value.ContentType)
+                ? "application/octet-stream"
+                : properties.Value.ContentType,
+            ContentLength = properties.Value.ContentLength,
+        };
+    }
+
+    public async Task DeleteExactKeyAsync(
+        string containerName,
+        string objectKey,
+        CancellationToken cancellationToken = default)
+    {
+        SessionAudioObjectKey.Validate(objectKey);
+        var serviceClient = _sessionAudio.ForExact(containerName);
+        var containerClient = serviceClient.GetBlobContainerClient(containerName);
+        var blobClient = containerClient.GetBlobClient(objectKey);
+        await blobClient.DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken);
+        _logger.LogInformation("Deleted object from private container {Container}", containerName);
+    }
+
+    /// <summary>
+    /// Copies one development-store object into the private Azure container. Leaves the source in place.
+    /// </summary>
+    public async Task<string> CopyDevelopmentSessionAudioToPrivateStoreAsync(
+        string objectKey,
+        CancellationToken cancellationToken = default)
+    {
+        SessionAudioObjectKey.Validate(objectKey);
+        if (_sessionAudio.PrivateAzure == null)
+            return "not-configured";
+
+        var source = _sessionAudio.Development
+            .GetBlobContainerClient(SessionAudioObjectKey.ContainerName)
+            .GetBlobClient(objectKey);
+        if (!await source.ExistsAsync(cancellationToken))
+            return "source-missing";
+
+        var destination = _sessionAudio.PrivateAzure
+            .GetBlobContainerClient(SessionAudioObjectKey.ContainerName)
+            .GetBlobClient(objectKey);
+        if (await destination.ExistsAsync(cancellationToken))
+            return "already-present";
+
+        var properties = await source.GetPropertiesAsync(cancellationToken: cancellationToken);
+        var contentType = string.IsNullOrWhiteSpace(properties.Value.ContentType)
+            ? "application/octet-stream"
+            : properties.Value.ContentType;
+        await using var stream = await source.OpenReadAsync(cancellationToken: cancellationToken);
+        try
+        {
+            await destination.UploadAsync(
+                stream,
+                SessionAudioBlobUpload.CreateNoOverwriteOptions(contentType),
+                cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 409 || ex.ErrorCode == "BlobAlreadyExists")
+        {
+            return "already-present";
+        }
+
+        return "copied";
+    }
+}
+
+public static class SessionAudioObjectKey
+{
+    public const string ContainerName = "session-audio";
+
+    public static string Build(Guid tenantId, Guid sessionId, Guid conversationId, Guid recordingId, string extension)
+    {
+        var normalized = extension.StartsWith('.') ? extension.ToLowerInvariant() : "." + extension.ToLowerInvariant();
+        var key = $"{tenantId:D}/{sessionId:D}/{conversationId:D}/{recordingId:D}{normalized}";
+        Validate(key);
+        return key;
+    }
+
+    public static void Validate(string objectKey)
+    {
+        if (string.IsNullOrWhiteSpace(objectKey)
+            || objectKey.Contains("..", StringComparison.Ordinal)
+            || objectKey.Contains('\\')
+            || objectKey.StartsWith('/')
+            || objectKey.Contains('?', StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Object key is not valid.");
+        }
+    }
+}
+
+public static class SessionAudioBlobUpload
+{
+    public static BlobUploadOptions CreateNoOverwriteOptions(string contentType) =>
+        new()
+        {
+            HttpHeaders = new BlobHttpHeaders
+            {
+                ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
+            },
+            Conditions = new BlobRequestConditions
+            {
+                IfNoneMatch = new ETag("*"),
+            },
+        };
 }

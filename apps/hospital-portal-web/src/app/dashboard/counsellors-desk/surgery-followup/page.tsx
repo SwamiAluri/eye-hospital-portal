@@ -343,6 +343,9 @@ export default function SurgeryFollowupPage() {
   );
 }
 
+const FOLLOWUP_SUMMARY_CARD_CLASS =
+  'min-w-0 rounded-lg border border-counselling-border/70 border-l-[3px] border-l-counselling-primary bg-counselling-card px-3 py-2.5 shadow-sm';
+
 function SurgeryFollowupPageContent() {
   const router = useRouter();
   const { user, selectedBranchId } = useAuthStore();
@@ -531,39 +534,28 @@ function SurgeryFollowupPageContent() {
       data-testid="followup-page"
       className={cn(
         counsellingSessionTokens.shellPage,
-        'staff-page-fit h-full overflow-hidden gap-0.5 px-2.5 pb-1 pt-0.5',
-        'min-[1600px]:gap-2.5 min-[1600px]:px-4 min-[1600px]:pb-4 min-[1600px]:pt-2.5',
+        'staff-page-fit h-full overflow-hidden gap-0.5 px-2.5 pb-1 pt-0',
+        'min-[1600px]:gap-2.5 min-[1600px]:px-4 min-[1600px]:pb-4',
       )}
     >
-      <header className="flex shrink-0 flex-col justify-center px-0.5 py-0 leading-none min-[1600px]:py-0.5">
-        <h1 className="staff-page-title font-semibold tracking-tight text-counselling-foreground max-[1599px]:text-base max-[1599px]:leading-5 min-[1600px]:text-[1.375rem]">
-          Follow-up Center
-        </h1>
-      </header>
-
       <div
         data-testid="followup-summary"
-        className={cn(counsellingSessionTokens.sessionStatusStrip, 'shrink-0')}
+        className="grid w-full min-w-0 shrink-0 grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-2"
         aria-label="Follow-up statistics"
         aria-busy={kpiLoading || undefined}
       >
-        <dl
-          className={cn(
-            counsellingSessionTokens.sessionStatusDetails,
-            'grid-cols-2 gap-x-2 gap-y-1 sm:grid-cols-4 min-[1600px]:gap-x-4',
-          )}
-        >
-          {kpiItems.map((item, idx) => (
-            <div key={`${item.label}-${idx}`} className="min-w-0" data-testid="followup-kpi">
-              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6">
-                {item.value}
-              </dd>
-              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>{item.label}</dt>
-            </div>
-          ))}
-        </dl>
+        {kpiItems.map((item, idx) => (
+          <div key={`${item.label}-${idx}`} className={FOLLOWUP_SUMMARY_CARD_CLASS} data-testid="followup-kpi">
+            <p className="truncate text-sm font-medium leading-5 text-counselling-muted-foreground">
+              {item.label}
+            </p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums leading-7 text-counselling-foreground">
+              {item.value}
+            </p>
+          </div>
+        ))}
         {statsQuery.isError && (
-          <p className="mt-1 text-[11px] text-red-800" role="status">
+          <p className="col-span-full mt-1 text-[11px] text-red-800" role="status">
             Stats unavailable
           </p>
         )}
@@ -712,13 +704,14 @@ function SurgeryFollowupPageContent() {
               FOLLOWUP_WORK_GRID,
               'shrink-0 border-b border-counselling-border/40 px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-counselling-muted-foreground',
             )}
-            aria-hidden
+            role="row"
+            data-testid="followup-column-cues"
           >
-            <span>Patient</span>
-            <span className="hidden sm:inline">Procedure</span>
-            <span className="hidden sm:inline">Status</span>
-            <span className="hidden sm:inline">Contact</span>
-            <span className="justify-self-end">Action</span>
+            <span role="columnheader">Patient</span>
+            <span role="columnheader" className="hidden sm:inline">Procedure</span>
+            <span role="columnheader" className="hidden sm:inline">Status</span>
+            <span role="columnheader" className="hidden sm:inline">Contact</span>
+            <span role="columnheader" className="justify-self-end">Action</span>
           </div>
 
           <div
@@ -726,7 +719,9 @@ function SurgeryFollowupPageContent() {
             data-testid="followup-worklist-body"
           >
             {showSkeleton ? (
-              <div className="divide-y divide-counselling-border/40" aria-hidden>
+              <div role="status">
+                <span className="sr-only">Loading</span>
+                <div className="divide-y divide-counselling-border/40" aria-hidden>
                 {Array.from({ length: 7 }).map((_, i) => (
                   <div
                     key={i}
@@ -739,6 +734,7 @@ function SurgeryFollowupPageContent() {
                     <div className="hidden h-7 w-16 justify-self-end animate-pulse rounded-md bg-counselling-muted sm:block" />
                   </div>
                 ))}
+                </div>
               </div>
             ) : currentItems.length === 0 ? (
               <div
@@ -757,7 +753,7 @@ function SurgeryFollowupPageContent() {
                   data-testid="followup-worklist-row"
                   className={cn(
                     FOLLOWUP_WORK_GRID,
-                    'staff-worklist-row border-b border-counselling-border/40 border-l-4 border-l-counselling-border px-1 hover:bg-counselling-muted/30',
+                    'staff-worklist-row border-b border-counselling-border/40 px-1 hover:bg-counselling-muted/30',
                   )}
                 >
                   <div className="min-w-0">
@@ -926,7 +922,7 @@ function SurgeryFollowupPageContent() {
                     data-testid="followup-worklist-row"
                     className={cn(
                       FOLLOWUP_WORK_GRID,
-                      'staff-worklist-row border-b border-counselling-border/40 border-l-4 border-l-counselling-border px-1 hover:bg-counselling-muted/30',
+                      'staff-worklist-row border-b border-counselling-border/40 px-1 hover:bg-counselling-muted/30',
                     )}
                   >
                     <div className="min-w-0">

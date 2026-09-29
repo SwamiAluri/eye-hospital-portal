@@ -22,21 +22,26 @@ describe('Phase 3I Slice 13 Package B — Sessions pagination contracts', () => 
     expect(sessionsPage).not.toMatch(/page:\s*1,/);
   });
 
-  it('preserves RR when changing page and resets page when toggling RR', () => {
+  it('keeps page changes on the same filters and resets page when filters are applied', () => {
     expect(sessionsPage).toContain('setSessionsPageInSearchParams');
-    expect(sessionsPage).toContain('toggleReassignmentRequiredInSearchParams');
-    expect(sessionsPage).toContain('setSessionsPageInSearchParams(toggled, 1)');
+    expect(sessionsPage).toContain('applySessionsRegisterDraft');
+    expect(sessionsPage).toContain('setSessionsPageInSearchParams(next, 1)');
+    expect(sessionsPage).not.toContain('toggleReassignmentRequiredInSearchParams');
   });
 
   it('clamps page after refresh using TotalPages and keeps Open/Back via history', () => {
     expect(sessionsPage).toContain('clampSessionsPage');
     expect(sessionsPage).toContain('totalPages');
-    expect(sessionsPage).toContain("?from=sessions");
-    expect(sessionsPage).toContain('router.back()');
+    expect(sessionsPage).toContain('buildSessionsOpenHref');
+    expect(sessionsPage).toContain('router.push(');
+    expect(sessionsPage).not.toContain('router.back()');
+    expect(sessionsPage).not.toContain('aria-label="Go back"');
   });
 
-  it('renders server TotalCount in header and quiet pagination footer (no page-size selector)', () => {
-    expect(sessionsPage).toContain('data-testid="sessions-list-count"');
+  it('keeps server TotalCount in the pagination footer and not as a content heading', () => {
+    expect(sessionsPage).not.toContain('data-testid="sessions-list-count"');
+    expect(sessionsPage).toContain('data-testid="sessions-list-pagination-summary"');
+    expect(sessionsPage).toContain('{totalCount}');
     expect(sessionsPage).toContain('data-testid="sessions-list-pagination"');
     expect(sessionsPage).toContain('data-testid="sessions-list-pagination-prev"');
     expect(sessionsPage).toContain('data-testid="sessions-list-pagination-next"');

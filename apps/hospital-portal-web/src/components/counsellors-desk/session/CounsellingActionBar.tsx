@@ -23,6 +23,11 @@ export interface CounsellingActionBarProps extends BuildSessionActionBarInput {
   phaseAdvanceTooltip?: string | null;
   /** URL `from` query — Waiting List entry shows Back instead of Close when applicable. */
   sessionFrom?: string | null;
+  /** Header owns Close. Footer keeps journey Back only. */
+  hideLeaveControl?: boolean;
+  /** Patient Context is showing. Next reveals the current step and does not advance it. */
+  revealWorkspaceOnly?: boolean;
+  onRevealWorkspace?: () => void;
   onPhaseBack?: () => void;
   onCloseSession?: () => void;
   onPhaseNext?: () => void;
@@ -72,6 +77,9 @@ export function CounsellingActionBar({
   isSaving,
   isSavingDraft,
   sessionFrom = null,
+  hideLeaveControl = false,
+  revealWorkspaceOnly = false,
+  onRevealWorkspace,
   onPhaseBack,
   onCloseSession,
   onPhaseNext,
@@ -102,9 +110,17 @@ export function CounsellingActionBar({
     if (!model.primary || primaryIsDisabled || navigationBlocked) return;
     switch (model.primary.kind) {
       case 'phase_next':
+        if (revealWorkspaceOnly) {
+          onRevealWorkspace?.();
+          break;
+        }
         onPhaseNext?.();
         break;
       case 'navigate':
+        if (revealWorkspaceOnly) {
+          onRevealWorkspace?.();
+          break;
+        }
         applySessionNavigation(
           { tab: model.primary.navigateTab, phase: model.primary.navigatePhase },
           { onNavigateTab, onNavigatePhase, onFinishSummaryActive, isBlocked: navigationBlocked },
@@ -149,7 +165,7 @@ export function CounsellingActionBar({
             {counsellingCopy.back}
           </CounsellingButton>
         ) : null}
-        {model.showClose ? (
+        {model.showClose && !hideLeaveControl ? (
           <CounsellingButton
             type="button"
             variant="ghost"
@@ -246,7 +262,10 @@ export function CounsellingActionBar({
                 counsellingSessionTokens.actionPill,
               )}
             >
-              {model.primary?.label}
+              {revealWorkspaceOnly &&
+              (model.primary?.kind === 'phase_next' || model.primary?.kind === 'navigate')
+                ? 'Next'
+                : model.primary?.label}
               {model.primary?.kind === 'phase_next' || model.primary?.kind === 'navigate' ? (
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden />
               ) : null}

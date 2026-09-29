@@ -194,6 +194,27 @@ describe('Quote workspace presentation (Wave 2F)', () => {
     expect(html).not.toContain('Select package');
   });
 
+  it('shows the procedure catalog loading state without procedure cards', () => {
+    const html = renderToStaticMarkup(
+      <QuoteProcedureCatalogGrid
+        procedureVariants={[]}
+        procedureLoading
+        procedureError={false}
+        loadProcedures={vi.fn()}
+        recommendedVariantIds={[]}
+        selectedVariantId={null}
+        selectedEye="RE"
+        isReadOnly={false}
+        isDoneState={false}
+        onPickVariant={vi.fn()}
+        onReEvaluate={vi.fn()}
+        markDirty={vi.fn()}
+      />,
+    );
+    expect(html).toContain('aria-label="Loading procedures"');
+    expect(html).not.toContain('Select procedure');
+  });
+
   it('renders inline procedure catalog grid with search', () => {
     const html = renderToStaticMarkup(
       <QuoteProcedureCatalogGrid

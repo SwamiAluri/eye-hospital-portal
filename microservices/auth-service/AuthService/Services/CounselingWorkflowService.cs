@@ -689,106 +689,9 @@ namespace AuthService.Services
                         })
                         .FirstOrDefaultAsync();
 
-                    // ── Surgery catalog ─────────────────────────────────────────────────────────
-                    // Strategy: always show the full active catalog so the counsellor can present
-                    // every pricing option. Items that the doctor explicitly recommended are
-                    // flagged IsRecommended = true and the UI pins them at the top.
-
-                    // Step 1 – collect the IDs the doctor recommended (from JSONB, keyed by surgeryTypeId+eye)
-                    var doctorRecommendedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    if (!string.IsNullOrWhiteSpace(session.RecommendedProcedures))
-                    {
-                        try
-                        {
-                            var procs = JsonSerializer.Deserialize<List<JsonElement>>(session.RecommendedProcedures);
-                            if (procs != null)
-                            {
-                                foreach (var p in procs)
-                                {
-                                    if (p.TryGetProperty("surgeryTypeId", out var tp) && tp.GetString() is { } tid && !string.IsNullOrEmpty(tid))
-                                    {
-                                        var eye = p.TryGetProperty("eye", out var ep) ? ep.GetString() ?? "" : "";
-                                        // key = "<typeId>|<eye>" so we can pin the exact eye the doctor specified
-                                        doctorRecommendedKeys.Add($"{tid}|{eye}");
-                                        // Also allow matching without eye (in case eye is blank)
-                                        doctorRecommendedKeys.Add($"{tid}|");
-                                    }
-                                }
-                            }
-                        }
-                        catch { /* malformed JSON – just treat as no recommendation */ }
-                    }
-
-                    // Step 2 – if no JSONB, try matching recommended_surgery text → get IDs
-                    if (doctorRecommendedKeys.Count == 0 && !string.IsNullOrWhiteSpace(session.RecommendedSurgery))
-                    {
-                        var textMatches = await _context.ServiceVariants
-                            .Where(v => v.IsActive
-                                      && (EF.Functions.ILike(v.VariantName, $"%{session.RecommendedSurgery}%")
-                                          || EF.Functions.ILike(v.VariantCode ?? "", $"%{session.RecommendedSurgery}%")))
-                            .Select(v => v.Id.ToString())
-                            .ToListAsync();
-
-                        var eye = session.SurgeryTentativeEye ?? "";
-                        foreach (var tid in textMatches)
-                            doctorRecommendedKeys.Add($"{tid}|{eye}");
-                    }
-
-                    // Step 3 – load ALL active surgery types for this tenant
-                    {
-                        string[] eyes = session.SurgeryTentativeEye == "BE"
-                            ? new[] { "RE", "LE" }
-                            : new[] { session.SurgeryTentativeEye ?? "RE" };
-
-                        var allTypes = await _context.ServiceVariants
-                            .Include(v => v.CatalogService)
-                                .ThenInclude(s => s.Category)
-                            .Where(v => v.IsActive
-                                     && v.CatalogService.IsActive
-                                     && v.CatalogService.Category.IsActive
-                                     && v.CatalogService.Category.Code != "DIAGNOSTICS"
-                                     && v.CatalogService.Category.Code != "INVESTIGATIONS")
-                            .OrderBy(v => v.CatalogService.Category.DisplayOrder)
-                            .ThenBy(v => v.DisplayOrder)
-                            .Select(v => new
-                            {
-                                v.Id,
-                                Name = v.VariantName,
-                                CategoryCode = v.CatalogService.Category.Code,
-                            })
-                            .ToListAsync();
-
-                        // Load global prices for all surgery types (DefaultPrice removed during normalisation)
-                        var typeIds = allTypes.Select(t => t.Id).ToList();
-                        var typePriceMap = (await _context.VariantPrices
-                            .Where(p => typeIds.Contains(p.VariantId)
-                                     && p.BranchId == null
-                                     && p.EffectiveTo == null
-                                     && p.IsActive
-                                     && p.DeletedAt == null)
-                            .ToListAsync())
-                            .GroupBy(p => p.VariantId)
-                            .ToDictionary(g => g.Key,
-                                          g => g.OrderByDescending(p => p.EffectiveFrom).First().Amount);
-
-                        foreach (var st in allTypes)
-                        {
-                            foreach (var eye in eyes)
-                            {
-                                var isRec = doctorRecommendedKeys.Contains($"{st.Id}|{eye}")
-                                         || doctorRecommendedKeys.Contains($"{st.Id}|");
-                                session.SurgeriesWithPricing.Add(new SurgeryPricingDto
-                                {
-                                    Id              = $"type-{st.Id}-{eye}",
-                                    SurgeryName     = st.Name,
-                                    SurgeryCategory = st.CategoryCode,
-                                    Eye             = eye,
-                                    Cost            = typePriceMap.GetValueOrDefault(st.Id, 0m),
-                                    IsRecommended   = isRec,
-                                });
-                            }
-                        }
-                    }
+                    // Recommendation only. The full priced catalog is loaded by the
+                    // counselling procedure picker from the service catalog, not here.
+                    ApplyStoredSurgeryRecommendation(session);
 
                     // Load existing investigation orders for this session
                     try
@@ -828,6 +731,82 @@ namespace AuthService.Services
                 _logger.LogError(ex, "Error retrieving counseling session {SessionId}", sessionId);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Session-level recommendation already stored on the row.
+        /// Does not read service variants or prices. Cost stays 0 because quote pricing
+        /// comes from the service catalog.
+        /// </summary>
+        private static void ApplyStoredSurgeryRecommendation(CounselingSessionDetailsDto session)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(session.RecommendedProcedures))
+            {
+                try
+                {
+                    var procs = JsonSerializer.Deserialize<List<JsonElement>>(session.RecommendedProcedures);
+                    if (procs != null)
+                    {
+                        foreach (var p in procs)
+                        {
+                            if (!p.TryGetProperty("surgeryTypeId", out var tp)
+                                || tp.GetString() is not { } tid
+                                || string.IsNullOrEmpty(tid))
+                            {
+                                continue;
+                            }
+
+                            var eyeRaw = p.TryGetProperty("eye", out var ep) ? ep.GetString() ?? "" : "";
+                            var name = p.TryGetProperty("surgeryName", out var np) ? np.GetString() : null;
+                            var category = p.TryGetProperty("surgeryCategory", out var cp) ? cp.GetString() : null;
+                            foreach (var eye in RecommendationEyes(eyeRaw, session.SurgeryTentativeEye))
+                            {
+                                var id = $"type-{tid}-{eye}";
+                                if (!seen.Add(id)) continue;
+                                session.SurgeriesWithPricing.Add(new SurgeryPricingDto
+                                {
+                                    Id = id,
+                                    SurgeryName = !string.IsNullOrWhiteSpace(name)
+                                        ? name!
+                                        : session.RecommendedSurgery ?? "",
+                                    SurgeryCategory = category ?? "",
+                                    Eye = eye,
+                                    Cost = 0m,
+                                    IsRecommended = true,
+                                });
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    /* malformed JSON — fall through to the text recommendation */
+                }
+            }
+
+            if (session.SurgeriesWithPricing.Count > 0 || string.IsNullOrWhiteSpace(session.RecommendedSurgery))
+                return;
+
+            foreach (var eye in RecommendationEyes(null, session.SurgeryTentativeEye))
+            {
+                session.SurgeriesWithPricing.Add(new SurgeryPricingDto
+                {
+                    Id = $"rec-{eye}",
+                    SurgeryName = session.RecommendedSurgery,
+                    Eye = eye,
+                    Cost = 0m,
+                    IsRecommended = true,
+                });
+            }
+        }
+
+        private static IEnumerable<string> RecommendationEyes(string? eye, string? tentativeEye)
+        {
+            var chosen = string.IsNullOrWhiteSpace(eye) ? tentativeEye : eye;
+            if (string.Equals(chosen, "BE", StringComparison.OrdinalIgnoreCase))
+                return new[] { "RE", "LE" };
+            return new[] { string.IsNullOrWhiteSpace(chosen) ? "RE" : chosen! };
         }
 
         public async Task<CounselingSessionDetailsDto?> GetSessionByNumberAsync(Guid tenantId, string sessionNumber)

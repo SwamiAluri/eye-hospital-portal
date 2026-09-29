@@ -1293,7 +1293,9 @@ namespace AuthService.Services
         private async Task ApplyBiometryToDetailAsync(
             OtScheduleDetailResponse resp, Guid tenantId, Guid patientId, string? eyeHint)
         {
-            var snap = await ResolveOpdSnapshotAsync(tenantId, patientId, session: null, eyeHint, preferBiometry: false);
+            // Detail diagnosis is loaded once in GetByIdAsync. This helper only fills IOL and the missing-biometry flag.
+            var snap = await ResolveOpdSnapshotAsync(
+                tenantId, patientId, session: null, eyeHint, preferBiometry: false, loadDiagnosis: false);
             if (string.IsNullOrWhiteSpace(resp.IolPower) && !string.IsNullOrWhiteSpace(snap.IolPower))
                 resp.IolPower = snap.IolPower;
             resp.BiometryMissingForEye = snap.BiometryMissing;
@@ -1304,7 +1306,8 @@ namespace AuthService.Services
             Guid patientId,
             CounselingSession? session,
             string? eyeHint,
-            bool preferBiometry)
+            bool preferBiometry,
+            bool loadDiagnosis = true)
         {
             var eyeRaw = OpdClinicalCopy.FirstNonEmpty(eyeHint, session?.SurgeryTentativeEye);
             var bioEye = OpdClinicalCopy.MapEyeToBiometry(eyeRaw);
@@ -1334,7 +1337,9 @@ namespace AuthService.Services
                 biometryIol: biometryIol,
                 preferBiometry: preferBiometry);
 
-            var diagnosis = await ResolveOpdDiagnosisAsync(tenantId, patientId, session);
+            OpdDiagnosisSnapshot? diagnosis = null;
+            if (loadDiagnosis)
+                diagnosis = await ResolveOpdDiagnosisAsync(tenantId, patientId, session);
 
             return new OpdClinicalSnapshotDto
             {
@@ -1343,8 +1348,8 @@ namespace AuthService.Services
                 IolPower = iol,
                 BiometryMissing = biometryMissing,
                 EyePhrase = OpdClinicalCopy.EyePhrase(eyeRaw),
-                Diagnosis = diagnosis.Summary,
-                DiagnosisJson = diagnosis.Json,
+                Diagnosis = diagnosis?.Summary,
+                DiagnosisJson = diagnosis?.Json,
             };
         }
 

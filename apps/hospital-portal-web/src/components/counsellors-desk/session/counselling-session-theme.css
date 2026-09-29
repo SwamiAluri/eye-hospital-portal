@@ -109,19 +109,10 @@
   scroll-margin-top: 7rem;
 }
 
-/** Hidden scrollbar chrome; wheel/trackpad scroll still works (Estimate + Insurance rails). */
-.counselling-session .counselling-estimate-scroll,
-.counselling-session .counselling-hidden-scroll {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.counselling-session .counselling-estimate-scroll::-webkit-scrollbar,
-.counselling-session .counselling-hidden-scroll::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  background: transparent;
-}
+/**
+ * Estimate / insurance rails keep their class names. Scrollbar chrome follows
+ * the counsellor hover treatment at the end of this file (transparent until hover).
+ */
 
 /**
  * Waiting List / Finalize Surgery worklist grids â real CSS (not Tailwind
@@ -422,4 +413,67 @@
     padding: 0 !important;
     gap: 0 !important;
   }
+}
+
+/*
+ * Counsellor scrollbar chrome.
+ * Global navy/ash thumbs stay in globals.css (`::-webkit-scrollbar`, `.overflow-y-auto`).
+ * These rules override them only inside `.counselling-session` and portaled
+ * `.counsellor-scrollbar` roots. Unrelated modules keep the global navy thumb.
+ *
+ * Token: --counselling-primary (same green as Counsellor buttons, e.g. Schedule counselling).
+ * Fallback repeats that token's value for portaled roots outside .counselling-session.
+ * Shape stays the existing 6px width and 3px radius. Track stays transparent.
+ * Thumb stays transparent until the scrollable region (or the thumb) is hovered.
+ * Overflow, height, and scroll behavior are unchanged.
+ */
+.counselling-session.counselling-session,
+.counselling-session.counselling-session *,
+.counsellor-scrollbar.counsellor-scrollbar,
+.counsellor-scrollbar.counsellor-scrollbar * {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.counselling-session.counselling-session:hover,
+.counselling-session.counselling-session *:hover,
+.counsellor-scrollbar.counsellor-scrollbar:hover,
+.counsellor-scrollbar.counsellor-scrollbar *:hover {
+  scrollbar-color: hsl(var(--counselling-primary, 173 58% 32%)) transparent;
+}
+
+.counselling-session.counselling-session::-webkit-scrollbar,
+.counselling-session.counselling-session *::-webkit-scrollbar,
+.counsellor-scrollbar.counsellor-scrollbar::-webkit-scrollbar,
+.counsellor-scrollbar.counsellor-scrollbar *::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+  height: 6px;
+}
+
+.counselling-session.counselling-session::-webkit-scrollbar-track,
+.counselling-session.counselling-session *::-webkit-scrollbar-track,
+.counsellor-scrollbar.counsellor-scrollbar::-webkit-scrollbar-track,
+.counsellor-scrollbar.counsellor-scrollbar *::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.counselling-session.counselling-session::-webkit-scrollbar-thumb,
+.counselling-session.counselling-session *::-webkit-scrollbar-thumb,
+.counsellor-scrollbar.counsellor-scrollbar::-webkit-scrollbar-thumb,
+.counsellor-scrollbar.counsellor-scrollbar *::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.counselling-session.counselling-session:hover::-webkit-scrollbar-thumb,
+.counselling-session.counselling-session *:hover::-webkit-scrollbar-thumb,
+.counsellor-scrollbar.counsellor-scrollbar:hover::-webkit-scrollbar-thumb,
+.counsellor-scrollbar.counsellor-scrollbar *:hover::-webkit-scrollbar-thumb,
+.counselling-session.counselling-session::-webkit-scrollbar-thumb:hover,
+.counselling-session.counselling-session *::-webkit-scrollbar-thumb:hover,
+.counsellor-scrollbar.counsellor-scrollbar::-webkit-scrollbar-thumb:hover,
+.counsellor-scrollbar.counsellor-scrollbar *::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--counselling-primary, 173 58% 32%));
 }

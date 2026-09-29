@@ -446,6 +446,89 @@ namespace AuthService.SeedData
         }
 
         /// <summary>
+        /// Counselling recording transcription uses the existing transcription.start and
+        /// transcription.view permissions. Migration 49 grants them to a role named Counselor;
+        /// live roles are also Counsellor. Idempotent. Does not grant translate or edit.
+        /// Ownership and branch checks stay in TranscriptionService.
+        /// </summary>
+        public static async Task SeedCounsellorTranscriptionPermissionsAsync(AppDbContext context)
+        {
+            var systemTenant = Guid.Parse("00000000-0000-0000-0000-000000000000");
+            var now = DateTime.UtcNow;
+            var codes = new[]
+            {
+                ("transcription.start", "Start Transcription", "create", "Start transcription for a counselling recording the counsellor may access"),
+                ("transcription.view", "View Transcripts", "read", "View transcription status and transcript text for an authorized counselling recording"),
+            };
+
+            foreach (var (code, name, action, description) in codes)
+            {
+                var exists = await context.Permissions.AnyAsync(p => p.Code == code && p.IsActive);
+                if (exists) continue;
+                await context.Permissions.AddAsync(new Permission
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = systemTenant,
+                    Code = code,
+                    Name = name,
+                    Module = "Counseling",
+                    Action = action,
+                    ResourceType = "Transcription",
+                    Scope = "branch",
+                    Description = description,
+                    IsSystemPermission = true,
+                    DepartmentSpecific = false,
+                    IsCustom = false,
+                    IsActive = true,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+            }
+
+            await context.SaveChangesAsync();
+
+            var counsellorRoleIds = await context.Roles
+                .Where(r => r.NormalizedName == "COUNSELLOR" || r.NormalizedName == "COUNSELOR")
+                .Select(r => r.Id)
+                .ToListAsync();
+            if (counsellorRoleIds.Count == 0)
+            {
+                Console.WriteLine("⚠ No Counsellor/Counselor roles — transcription.start/view links skipped");
+                return;
+            }
+
+            var permIds = await context.Permissions
+                .Where(p => (p.Code == "transcription.start" || p.Code == "transcription.view") && p.IsActive)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            var linked = 0;
+            foreach (var roleId in counsellorRoleIds)
+            {
+                foreach (var permId in permIds)
+                {
+                    var existsLink = await context.RolePermissions
+                        .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permId);
+                    if (existsLink) continue;
+                    await context.RolePermissions.AddAsync(new Models.Domain.RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = roleId,
+                        PermissionId = permId,
+                        CreatedAt = now,
+                    });
+                    linked++;
+                }
+            }
+
+            if (linked > 0)
+                await context.SaveChangesAsync();
+
+            Console.WriteLine(
+                $"✓ transcription.start/view linked ({linked} new role_permission row(s)) to {counsellorRoleIds.Count} Counsellor role(s)");
+        }
+
+        /// <summary>
         /// Phase 2Z-RBAC: seed bill.reconciliation.view and grant to CR operational roles.
         /// Does not grant Counsellor. Does not remove bill.view from any role. Idempotent.
         /// </summary>

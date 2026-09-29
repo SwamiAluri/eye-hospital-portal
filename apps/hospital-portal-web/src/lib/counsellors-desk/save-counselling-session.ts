@@ -33,6 +33,16 @@ export function isOtScheduleRequiredForSave(params: {
   );
 }
 
+/**
+ * An OT Finalize slot is only written when both theatre and start time were captured.
+ * A counselling date and doctor without those fields stays a surgery plan, not a booking.
+ */
+export function hasCompleteCounsellingOtSlot(
+  schedule: Pick<ScheduleData, 'operationTheatre' | 'surgeryStartTime'> | null | undefined,
+): boolean {
+  return Boolean(schedule?.operationTheatre?.trim() && schedule.surgeryStartTime?.trim());
+}
+
 /** User-facing message when counselling session persisted but OT schedule did not. */
 export function buildOtHandoffFailureMessage(error: unknown): string {
   const detail = getApiErrorMessage(error, '');
@@ -342,8 +352,9 @@ export async function saveCounsellingSession(params: SaveCounsellingSessionParam
     decision,
   });
 
-  // FS-01: required OT handoff must succeed before complete/success UI.
-  if (otRequired && schedule) {
+  // FS-01: a complete OT slot must succeed before complete/success UI.
+  // Date + doctor without theatre and start time is a counselling plan only.
+  if (otRequired && schedule && hasCompleteCounsellingOtSlot(schedule)) {
     try {
       const startTimeIso = schedule.surgeryStartTime
         ? `${schedule.selectedDate}T${schedule.surgeryStartTime}:00`

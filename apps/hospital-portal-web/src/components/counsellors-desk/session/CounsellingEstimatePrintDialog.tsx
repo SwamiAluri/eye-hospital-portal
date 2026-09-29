@@ -97,7 +97,7 @@ export function CounsellingEstimatePrintDialog({
     <CounsellingDialog open={open} onOpenChange={onOpenChange}>
       <CounsellingDialogContent
         className={cn(
-          'counselling-print-dialog grid max-h-[90vh] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0',
+          'counsellor-scrollbar counselling-print-dialog grid max-h-[90vh] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0',
         )}
       >
         <CounsellingDialogHeader className="counselling-print-dialog-chrome shrink-0 border-b border-counselling-border px-6 py-4">

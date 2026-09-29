@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CheckCircle2, Loader2, Search, UserPlus } from 'lucide-react';
-import dynamic from 'next/dynamic';
+import { X, CheckCircle2, Loader2, Search, AlertCircle } from 'lucide-react';
 import type { AddPatientFormData } from '@/types/counsellors-desk';
 import { useSurgeonsQuery, useServiceCatalogQuery } from '@/hooks/use-counsellors-desk-queries';
 import { SessionTypeSelect } from '@/components/counsellors-desk/SessionTypeSelect';
@@ -12,7 +11,9 @@ import { defaultSessionTypeCode } from '@/lib/counsellors-desk/counsellor-master
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import {
   displayIdentifierForWaitingList,
+  isScheduleCounsellingBlocked,
   requireSelectedMpiPatient,
+  type ScheduleCounsellingDecision,
   type UnifiedPatientHit,
 } from '@/lib/counsellors-desk/add-patient-to-waiting-list';
 import {
@@ -21,14 +22,14 @@ import {
 } from '@/lib/patients/unified-patient-search';
 import { useAuthStore } from '@/lib/auth-store';
 
-const PatientFormModal = dynamic(() => import('@/components/patients/PatientFormModal'), {
-  ssr: false,
-});
-
 interface AddPatientModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (data: AddPatientFormData) => Promise<void>;
+  /** Existing waiting-list row should be opened instead of creating another session. */
+  onOpenExisting: (decision: ScheduleCounsellingDecision) => void;
+  /** Patient just registered — already matched, with search hidden until Change. */
+  initialPatient?: UnifiedPatientHit | null;
   branchId?: string | null;
 }
 
@@ -45,6 +46,77 @@ const EMPTY_FORM: AddPatientFormData = {
   remarks: '',
   sessionTypeCode: defaultSessionTypeCode('new'),
 };
+
+function ScheduleCounsellingDecision({
+  decision,
+  primaryRef,
+  onBack,
+  onClose,
+  onOpenExisting,
+}: {
+  decision: ScheduleCounsellingDecision;
+  primaryRef: RefObject<HTMLButtonElement | null>;
+  onBack: () => void;
+  onClose: () => void;
+  onOpenExisting: () => void;
+}) {
+  return (
+    <div data-testid="schedule-counselling-decision" className="flex flex-col">
+      <div className="h-1 w-full bg-amber-500" />
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-3 right-3 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+        aria-label="Close"
+        data-testid="schedule-counselling-decision-close"
+      >
+        <X className="h-4 w-4" />
+      </button>
+      <div className="flex flex-col items-center px-6 pb-2 pt-7 text-center">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50">
+          <AlertCircle className="h-7 w-7 text-amber-500" aria-hidden />
+        </div>
+        <h2
+          id="schedule-counselling-decision-title"
+          className="mb-1.5 text-base font-bold text-gray-900"
+        >
+          {decision.title}
+        </h2>
+        <p className="text-sm leading-relaxed text-gray-500">{decision.body}</p>
+        <div className="mt-4 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-left">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-gray-900">{decision.patientName}</p>
+            {decision.uhid ? (
+              <p className="truncate text-xs text-gray-500">{decision.uhid}</p>
+            ) : null}
+          </div>
+          <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">
+            {decision.statusLabel}
+          </span>
+        </div>
+      </div>
+      <div className="flex gap-2 px-6 pb-6 pt-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200"
+          data-testid="schedule-counselling-decision-back"
+        >
+          Back
+        </button>
+        <button
+          ref={primaryRef}
+          type="button"
+          onClick={onOpenExisting}
+          className="flex-1 rounded-xl bg-amber-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+          data-testid="schedule-counselling-decision-primary"
+        >
+          {decision.primaryLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function hitToUnified(hit: UnifiedPatientSearchHit): UnifiedPatientHit {
   return {
@@ -63,7 +135,14 @@ function formatHitLabel(hit: UnifiedPatientSearchHit): string {
   return phone ? `${name} · ${id} · ${phone}` : `${name} · ${id}`;
 }
 
-export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp }: AddPatientModalProps) {
+export function AddPatientModal({
+  isOpen,
+  onClose,
+  onAdd,
+  onOpenExisting,
+  initialPatient,
+  branchId: branchIdProp,
+}: AddPatientModalProps) {
   const { user, selectedBranchId } = useAuthStore();
   const branchId = branchIdProp ?? selectedBranchId ?? user?.branchId ?? null;
   const [form, setForm] = useState<AddPatientFormData>(EMPTY_FORM);
@@ -72,10 +151,11 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
   const [hits, setHits] = useState<UnifiedPatientSearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [registerOpen, setRegisterOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [decision, setDecision] = useState<ScheduleCounsellingDecision | null>(null);
   const searchRootRef = useRef<HTMLDivElement>(null);
+  const decisionPrimaryRef = useRef<HTMLButtonElement>(null);
   const surgeonsQuery = useSurgeonsQuery(isOpen);
   const surgeons = surgeonsQuery.data ?? [];
   const loadingSurgeons = surgeonsQuery.isLoading && surgeons.length === 0;
@@ -97,31 +177,59 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
   const debouncedQuery = useDebouncedValue(searchQuery.trim(), 300);
 
   useEffect(() => {
-    if (isOpen) {
-      setForm(EMPTY_FORM);
-      setSelected(null);
-      setSearchQuery('');
-      setHits([]);
-      setSearchOpen(false);
-      setRegisterOpen(false);
-      setErrors({});
+    if (!isOpen) return;
+    setForm(EMPTY_FORM);
+    setSearchQuery('');
+    setHits([]);
+    setSearchOpen(false);
+    setErrors({});
+    setDecision(null);
+    if (initialPatient?.id) {
+      const name = `${initialPatient.firstName} ${initialPatient.lastName}`.trim();
+      setSelected(initialPatient);
+      setForm({
+        ...EMPTY_FORM,
+        patientId: initialPatient.id,
+        patientName: name,
+        uhid: displayIdentifierForWaitingList(initialPatient),
+      });
+      return;
     }
-  }, [isOpen]);
+    setSelected(null);
+  }, [isOpen, initialPatient]);
+
+  const resetScheduleForm = useCallback(() => {
+    setDecision(null);
+    setSelected(null);
+    setForm(EMPTY_FORM);
+    setSearchQuery('');
+    setHits([]);
+    setSearchOpen(false);
+    setErrors({});
+  }, []);
 
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (registerOpen) return;
-        onClose();
+      if (e.key !== 'Escape') return;
+      if (decision) {
+        e.preventDefault();
+        resetScheduleForm();
+        return;
       }
+      onClose();
     },
-    [onClose, registerOpen],
+    [decision, onClose, resetScheduleForm],
   );
 
   useEffect(() => {
     if (isOpen) document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, handleEscape]);
+
+  useEffect(() => {
+    if (!decision) return;
+    decisionPrimaryRef.current?.focus();
+  }, [decision]);
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
@@ -208,6 +316,10 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
         uhid: displayIdentifierForWaitingList(selected),
       });
       onClose();
+    } catch (err) {
+      if (isScheduleCounsellingBlocked(err)) {
+        setDecision(err.decision);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -224,21 +336,36 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-40 flex items-center justify-center p-3 min-[1600px]:p-4"
+        className="counsellor-scrollbar fixed inset-0 z-40 flex items-center justify-center p-3 min-[1600px]:p-4"
         data-testid="add-patient-modal-overlay"
         onClick={(e) => {
-          if (e.target === e.currentTarget && !registerOpen) onClose();
+          if (e.target !== e.currentTarget) return;
+          if (decision) {
+            resetScheduleForm();
+            return;
+          }
+          onClose();
         }}
       >
         <div className="absolute inset-0 bg-black/40" aria-hidden />
 
         <div
           className="relative flex max-h-[min(92dvh,calc(100dvh-1.5rem))] w-full max-w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl min-[1600px]:max-h-[min(90vh,calc(100dvh-2rem))] min-[1600px]:max-w-md"
-          role="dialog"
+          role={decision ? 'alertdialog' : 'dialog'}
           aria-modal="true"
-          aria-labelledby="add-patient-title"
+          aria-labelledby={decision ? 'schedule-counselling-decision-title' : 'add-patient-title'}
           data-testid="add-patient-modal"
         >
+          {decision ? (
+            <ScheduleCounsellingDecision
+              decision={decision}
+              primaryRef={decisionPrimaryRef}
+              onBack={resetScheduleForm}
+              onClose={onClose}
+              onOpenExisting={() => onOpenExisting(decision)}
+            />
+          ) : (
+            <>
           <div
             className="flex shrink-0 items-center justify-between px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 min-[1600px]:px-6 min-[1600px]:py-4"
             data-testid="add-patient-modal-header"
@@ -323,7 +450,7 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
                       )}
                       {!searchLoading && hits.length === 0 && (
                         <li className="px-3 py-2 text-xs text-gray-500">
-                          No patients found. Register a new patient below.
+                          No patient found. Use New patient to register them.
                         </li>
                       )}
                       {hits.map((hit) => (
@@ -339,15 +466,6 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
                       ))}
                     </ul>
                   )}
-
-                  <button
-                    type="button"
-                    onClick={() => setRegisterOpen(true)}
-                    className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:text-blue-800"
-                  >
-                    <UserPlus className="h-3.5 w-3.5" />
-                    Register new patient
-                  </button>
                 </>
               )}
 
@@ -488,34 +606,10 @@ export function AddPatientModal({ isOpen, onClose, onAdd, branchId: branchIdProp
               Schedule Counselling
             </button>
           </div>
+            </>
+          )}
         </div>
       </div>
-
-      {registerOpen && (
-        <PatientFormModal
-          isOpen={registerOpen}
-          onClose={() => setRegisterOpen(false)}
-          branchId={branchId}
-          onSave={(patient) => {
-            if (!patient.id) {
-              setErrors((er) => ({
-                ...er,
-                patient: 'Registration did not return a patient id. Try again.',
-              }));
-              return;
-            }
-            applySelectedPatient({
-              id: patient.id,
-              firstName: patient.firstName,
-              lastName: patient.lastName,
-              mrn: patient.medicalRecordNumber || '',
-              healthId: null,
-            });
-            // Close registration so Matched chip is visible on waiting-list Add Patient.
-            setRegisterOpen(false);
-          }}
-        />
-      )}
     </>,
     document.body,
   );

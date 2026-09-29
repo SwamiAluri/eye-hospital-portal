@@ -27,6 +27,8 @@ export const counsellingCopy = {
   /** Session header action — opens existing SessionHistoryModal. */
   sessionHistory: 'History',
   sessionHistoryAria: 'View session history',
+  sessionConversations: 'Conversations',
+  sessionConversationsAria: 'View counselling conversations',
   clinicalRecommendationDoctor: 'Doctor',
   clinicalRecommendationDoctorHint: 'Recommendation',
   clinicalRecommendationOptometrist: 'Optometrist',

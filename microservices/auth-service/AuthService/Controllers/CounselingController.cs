@@ -1172,7 +1172,7 @@ namespace AuthService.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error uploading audio for session {SessionId}", sessionId);
-                return StatusCode(500, new { message = "Error uploading audio", error = ex.Message });
+                return StatusCode(500, new { message = "Error uploading audio" });
             }
         }
 

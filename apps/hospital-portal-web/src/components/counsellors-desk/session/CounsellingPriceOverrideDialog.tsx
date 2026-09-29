@@ -250,7 +250,7 @@ export function CounsellingPriceOverrideDialog({
         onOpenChange(next);
       }}
     >
-      <CounsellingDialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <CounsellingDialogContent className="counsellor-scrollbar max-w-md max-h-[90vh] overflow-y-auto">
         <CounsellingDialogHeader>
           <CounsellingDialogTitle>
             {isPackage ? counsellingCopy.modifyPackagePrice : counsellingCopy.modifyProcedurePrice}

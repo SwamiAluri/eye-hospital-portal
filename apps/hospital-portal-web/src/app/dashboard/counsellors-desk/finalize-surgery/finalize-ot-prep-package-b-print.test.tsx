@@ -32,11 +32,15 @@ describe('Package B — OT Preparation print page contracts', () => {
     expect(helper).not.toMatch(/checkbox/i);
   });
 
-  it('Finalization printOtSlip remains on page (unchanged entry)', () => {
-    expect(page).toContain('const printOtSlip');
-    expect(page).toContain('Print OT Slip');
-    expect(page).toContain('onPrint={() => printOtSlip(rec)}');
+  it('row Print OT Slip is absent; bulk OT slips and Package B print remain', () => {
+    expect(page).not.toContain('const printOtSlip');
+    expect(page).not.toContain('aria-label="Print OT Slip"');
+    expect(page).not.toContain('onPrint=');
+    expect(page).not.toContain('<ChevronRight');
     expect(page).toContain('openOtSlipsPrint');
+    expect(page).toContain('Print OT Slips');
+    expect(page).toContain('finalize-ot-prep-print-prepared');
+    expect(page).toContain('openOtPreparationPreparedListPrint');
   });
 
   it('OT Prep Print does not restore prepared grid or Package A date-dashboard', () => {

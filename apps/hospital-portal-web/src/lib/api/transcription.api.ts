@@ -6,10 +6,11 @@ import { getApi } from '../api';
 // ============================================================================
 
 export interface TranscriptSegment {
-  start: number; // Start time in seconds
-  end: number; // End time in seconds
+  start?: number;
+  end?: number;
   text: string;
-  confidence?: number; // 0.0 to 1.0
+  confidence?: number;
+  speaker?: string | null;
 }
 
 export interface SessionTranscript {
@@ -87,7 +88,8 @@ export const transcriptionApi = {
     const api = getApi();
     const response = await api.post<TranscriptionJobResponse>(
       `/transcription/start/${recordingId}`,
-      request
+      request,
+      { skipForbiddenRedirect: true },
     );
     return response.data;
   },
@@ -98,7 +100,8 @@ export const transcriptionApi = {
   async getTranscriptionStatus(recordingId: string): Promise<{ recordingId: string; status: string }> {
     const api = getApi();
     const response = await api.get<{ recordingId: string; status: string }>(
-      `/transcription/status/${recordingId}`
+      `/transcription/status/${recordingId}`,
+      { skipForbiddenRedirect: true },
     );
     return response.data;
   },
@@ -109,7 +112,8 @@ export const transcriptionApi = {
   async getTranscripts(recordingId: string): Promise<SessionTranscript[]> {
     const api = getApi();
     const response = await api.get<SessionTranscript[]>(
-      `/transcription/${recordingId}/transcripts`
+      `/transcription/${recordingId}/transcripts`,
+      { skipForbiddenRedirect: true },
     );
     return response.data;
   },

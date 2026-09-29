@@ -1,9 +1,14 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/lib/auth-store';
 import { logoutEverywhere } from '@/lib/logout-everywhere';
 import { BranchSwitcher } from '@/components/patients/lookup/BranchSwitcher';
+import { useBranchContext } from '@/hooks/use-branch-context';
+import { SIDEBAR_MENU_SECTIONS } from '@/lib/navigation/sidebar-menu-sections';
+import { resolveStaffPageTitle } from '@/lib/navigation/resolve-staff-page-title';
 import { Bell, LogOut, Menu } from 'lucide-react';
 
 const LiveActivityFeed = dynamic(() => import('@/components/LiveActivityFeed'), {
@@ -24,8 +29,38 @@ interface TopNavProps {
   onMenuClick?: () => void;
 }
 
+const FINALIZE_SURGERY_PATH = '/dashboard/counsellors-desk/finalize-surgery';
+
 export default function TopNav({ onMenuClick }: TopNavProps) {
   const user = useAuthStore(s => s.user);
+  const pathname = usePathname() ?? '';
+  const { branches } = useBranchContext();
+  const routeTitle = resolveStaffPageTitle(
+    pathname,
+    SIDEBAR_MENU_SECTIONS.flatMap((section) => section.items),
+  );
+  const [finalizeWorkspaceTitle, setFinalizeWorkspaceTitle] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pathname !== FINALIZE_SURGERY_PATH) {
+      setFinalizeWorkspaceTitle(null);
+      return;
+    }
+    const onTitle = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      setFinalizeWorkspaceTitle(
+        detail === 'OT Preparation' || detail === 'Finalize Surgery' ? detail : null,
+      );
+    };
+    window.addEventListener('hp-finalize-visible-title', onTitle);
+    return () => window.removeEventListener('hp-finalize-visible-title', onTitle);
+  }, [pathname]);
+
+  const pageTitle =
+    pathname === FINALIZE_SURGERY_PATH && finalizeWorkspaceTitle
+      ? finalizeWorkspaceTitle
+      : routeTitle;
+  const showBranchSwitcher = branches.length > 1;
 
   const initials = user
     ? `${(user.firstName?.[0] ?? '').toUpperCase()}${(user.lastName?.[0] ?? '').toUpperCase()}`
@@ -36,7 +71,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
       data-testid="app-topnav"
       className="flex items-center justify-between bg-white h-[var(--topnav-height)] px-[var(--topnav-pad-x)]"
     >
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <button
           onClick={onMenuClick}
           className="lg:hidden p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
@@ -44,10 +79,18 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
         >
           <Menu size={20} />
         </button>
-        {user && <BranchSwitcher />}
+        {pageTitle ? (
+          <h1
+            data-testid="app-topnav-title"
+            className="min-w-0 truncate text-lg font-semibold leading-6 text-gray-900"
+          >
+            {pageTitle}
+          </h1>
+        ) : null}
       </div>
 
-      <div className="flex items-center gap-[var(--topnav-gap)]">
+      <div className="flex shrink-0 items-center gap-[var(--topnav-gap)]">
+        {showBranchSwitcher ? <BranchSwitcher /> : null}
         <LiveActivityFeed />
 
         {user && (

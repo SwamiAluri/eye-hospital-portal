@@ -9,6 +9,7 @@ import {
 import { toCounsellingDateOnly } from '@/lib/counsellors-desk/session-utils';
 import { normalizeOtReportingTimeToHhMm } from '@/lib/counsellors-desk/counselling-time';
 import { resolveHydratedSelectedSurgeryId } from '@/lib/counsellors-desk/resolve-hydrated-selected-surgery-id';
+import { variantIdFromSurgeryOptionId } from '@/lib/counsellors-desk/lightweight-session-surgery';
 import type { CounsellingPackageAddonsBlob } from '@/types/counselling-estimate';
 import type {
   WaitingListPatient,
@@ -182,7 +183,15 @@ export const counsellorsDeskApi = {
       // Path 1: backend already computed the full priced list
       if (Array.isArray(raw.surgeriesWithPricing) && raw.surgeriesWithPricing.length > 0) {
         surgeries = (raw.surgeriesWithPricing as Array<{ id: string; surgeryName: string; eye: string; cost: number; surgeryCategory?: string; isRecommended?: boolean }>)
-          .map((p) => ({ id: p.id, surgeryName: p.surgeryName, eye: p.eye, cost: p.cost, category: p.surgeryCategory ?? '', isRecommended: p.isRecommended ?? false }));
+          .map((p) => ({
+            id: p.id,
+            surgeryName: p.surgeryName,
+            eye: p.eye,
+            cost: p.cost,
+            category: p.surgeryCategory ?? '',
+            isRecommended: p.isRecommended ?? false,
+            variantId: variantIdFromSurgeryOptionId(p.id),
+          }));
       }
 
       // Path 2 (frontend fallback): fetch the full catalog directly when backend returned empty
@@ -849,9 +858,11 @@ export const counsellorsDeskApi = {
       requireSelectedMpiPatient,
       buildCreateCounsellingSessionPayload,
       findActiveWaitingListDuplicate,
-      waitingListDuplicateCreateMessage,
       displayIdentifierForWaitingList,
       matchPatientForAddWaitingList,
+      buildScheduleCounsellingDecision,
+      decisionFromScheduleCounsellingServerMessage,
+      ScheduleCounsellingBlockedError,
     } = await import('@/lib/counsellors-desk/add-patient-to-waiting-list');
 
     let patientId = data.patientId?.trim() ?? '';
@@ -902,7 +913,14 @@ export const counsellorsDeskApi = {
         : undefined);
 
     if (duplicate) {
-      throw new Error(waitingListDuplicateCreateMessage(duplicate));
+      throw new ScheduleCounsellingBlockedError(
+        buildScheduleCounsellingDecision({
+          patientName: duplicate.patientName,
+          status: duplicate.status,
+          uhid: duplicate.uhid || displayUhid,
+          sessionId: duplicate.id ? String(duplicate.id) : undefined,
+        }),
+      );
     }
 
     const payload = buildCreateCounsellingSessionPayload({
@@ -918,15 +936,34 @@ export const counsellorsDeskApi = {
 
     try {
       const response = await getApi().post('/Counseling/sessions', payload);
-      const result = response.data as { success?: boolean; message?: string } | undefined;
+      const result = response.data as {
+        success?: boolean;
+        message?: string;
+        sessionId?: string;
+      } | undefined;
       if (result && result.success === false) {
+        const decision = decisionFromScheduleCounsellingServerMessage(result.message ?? '', {
+          patientName: displayName,
+          uhid: displayUhid || mrnForDup,
+          sessionId: result.sessionId,
+        });
+        if (decision) throw new ScheduleCounsellingBlockedError(decision);
         throw new Error(result.message || 'Failed to create counselling session.');
       }
       return { patientName: displayName, uhid: displayUhid || mrnForDup };
     } catch (err: unknown) {
       if (err instanceof Error && !('response' in err)) throw err;
-      const axiosErr = err as { response?: { data?: { message?: string } }; message?: string };
+      const axiosErr = err as {
+        response?: { data?: { message?: string; sessionId?: string } };
+        message?: string;
+      };
       const apiMessage = axiosErr.response?.data?.message ?? axiosErr.message;
+      const decision = decisionFromScheduleCounsellingServerMessage(apiMessage ?? '', {
+        patientName: displayName,
+        uhid: displayUhid || mrnForDup,
+        sessionId: axiosErr.response?.data?.sessionId,
+      });
+      if (decision) throw new ScheduleCounsellingBlockedError(decision);
       throw new Error(apiMessage || 'Failed to add patient to waiting list.');
     }
   },

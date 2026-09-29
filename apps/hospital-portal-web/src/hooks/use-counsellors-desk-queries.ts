@@ -26,7 +26,7 @@ export function useWaitingListQuery(filters?: WaitingListFilters) {
 
 export type FinalizeListFilters = { date: string; uhid: string; name: string };
 
-export function useFinalizeListQuery(filters: FinalizeListFilters) {
+export function useFinalizeListQuery(filters: FinalizeListFilters, enabled = true) {
   return useQuery({
     queryKey: counsellorsDeskKeys.finalizeList(filters),
     queryFn: () => counsellorsDeskApi.getFinalizeList({
@@ -35,6 +35,7 @@ export function useFinalizeListQuery(filters: FinalizeListFilters) {
       name: filters.name || undefined,
     }),
     staleTime: LIST_STALE_MS,
+    enabled,
   });
 }
 

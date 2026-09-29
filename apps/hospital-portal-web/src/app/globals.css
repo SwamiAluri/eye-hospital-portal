@@ -60,7 +60,7 @@
   --sidebar-icon-size: 16px;
   --sidebar-item-pad-y: 10px;
 
-  --topnav-height: 56px;
+  --topnav-height: 48px;
   --topnav-pad-x: 20px;
   --topnav-gap: 16px;
   --topnav-icon-size: 24px;
@@ -108,7 +108,7 @@
     --sidebar-icon-size: 16px;
     --sidebar-item-pad-y: 8px;
 
-    --topnav-height: 48px;
+    --topnav-height: 40px;
     --topnav-pad-x: 16px;
     --topnav-gap: 12px;
     --topnav-icon-size: 20px;

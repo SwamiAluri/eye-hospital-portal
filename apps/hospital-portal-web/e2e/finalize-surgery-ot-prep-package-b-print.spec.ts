@@ -124,20 +124,9 @@ test.describe('Finalize Surgery OT Preparation Package B Print', () => {
     await expect(page.getByTestId('finalize-ot-prepared-grid')).toHaveCount(0);
   });
 
-  test('Finalization OT slip print control remains on Finalization rows', async ({ page }) => {
+  test('Finalization rows do not show a row-level Print OT Slip', async ({ page }) => {
     await expect(page.getByTestId('finalize-surgery-summary')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('finalize-surgery-workspace')).toBeVisible();
-
-    const printSlip = page.getByTitle('Print OT Slip').first();
-    await expect
-      .poll(async () => printSlip.count(), { timeout: 20_000 })
-      .toBeGreaterThan(0)
-      .catch(() => null);
-
-    if ((await printSlip.count()) === 0) {
-      test.skip(true, 'No Finalization rows with Print OT Slip in environment');
-      return;
-    }
-    await expect(printSlip).toBeVisible();
+    await expect(page.getByTitle('Print OT Slip', { exact: true })).toHaveCount(0);
   });
 });

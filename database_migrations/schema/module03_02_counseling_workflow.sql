@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS counseling_session_documents (
     session_id UUID NOT NULL,
     
     -- Document Details
-    document_type VARCHAR(50) CHECK (document_type IN ('ReferralLetter', 'PreviousReport', 'InsuranceCard', 'PolicyDocument', 'IDProof', 'AddressProof', 'LabReport', 'Imaging', 'Other')),
+    document_type VARCHAR(50) CHECK (document_type IN ('ReferralLetter', 'PreviousReport', 'InsuranceCard', 'PolicyDocument', 'IDProof', 'AddressProof', 'LabReport', 'Imaging', 'Other', 'AudioRecording')),
     document_name VARCHAR(200) NOT NULL,
     document_description TEXT,
     

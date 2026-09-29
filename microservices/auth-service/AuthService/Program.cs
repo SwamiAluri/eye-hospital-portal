@@ -818,13 +818,18 @@ try
     builder.Services.AddScoped<IPackageManagementService, PackageManagementService>();
     builder.Services.AddScoped<ICounsellingPackageTemplateService, CounsellingPackageTemplateService>();
     builder.Services.AddScoped<ICounselingWorkflowService, CounselingWorkflowService>();
+    builder.Services.AddScoped<ICounselingConversationService, CounselingConversationService>();
     builder.Services.AddScoped<ICounselorCommunicationService, CounselorCommunicationService>(); // Comm logs, callbacks, overdue (Phase B)
     builder.Services.AddScoped<IFollowupListService, FollowupListService>(); // Follow-up Center list/search/stats (Phase 2B)
     builder.Services.AddScoped<IFollowupBranchAccessService, FollowupBranchAccessService>(); // Phase2X PD16
     builder.Services.AddScoped<ICounselingAnalyticsService, CounselingAnalyticsService>(); // Analytics summary/trends/aging (Phase 2D)
     builder.Services.AddScoped<IDeptCoordinationService, DeptCoordinationService>(); // Dept coordination requests (Mar 16, 2026)
     builder.Services.AddScoped<IPatientTypeConfigurationsService, PatientTypeConfigurationsService>(); // Patient type configs (Mar 1, 2026)
-    builder.Services.AddScoped<ITranscriptionService, TranscriptionService>(); // Audio transcription & translation
+    builder.Services.AddScoped<ITranscriptionService, TranscriptionService>();
+    builder.Services.AddHttpClient<AuthService.Services.Transcription.AzureSpeechBatchTranscriptionProvider>();
+    builder.Services.AddScoped<AuthService.Services.Transcription.ITranscriptionProvider>(sp =>
+        sp.GetRequiredService<AuthService.Services.Transcription.AzureSpeechBatchTranscriptionProvider>());
+    builder.Services.AddHostedService<CounselingTranscriptionWorker>();
     builder.Services.AddScoped<IPatientTypeWorkflowService, PatientTypeWorkflowService>();
     builder.Services.AddScoped<IPreOpTestManagementService, PreOpTestManagementService>();
     builder.Services.AddScoped<IOTBookingSystemService, OTBookingSystemService>();
@@ -887,7 +892,12 @@ builder.Services.AddScoped<IImagingAIAnalysisService, ImagingAIAnalysisService>(
         var connectionString = builder.Configuration["AzureBlobStorage:ConnectionString"];
         return new Azure.Storage.Blobs.BlobServiceClient(connectionString);
     });
-    builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();
+    builder.Services.AddSingleton(sp => SessionAudioBlobClients.Create(
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>()));
+    builder.Services.AddScoped<BlobStorageService>();
+    builder.Services.AddScoped<IBlobStorageService>(sp => sp.GetRequiredService<BlobStorageService>());
+    builder.Services.AddHostedService<SessionAudioPrivateRehydrateService>();
     
     // Activation Audit Service (HIPAA Compliance - Track all activation steps)
     builder.Services.AddScoped<IActivationAuditService, ActivationAuditService>();
@@ -990,6 +1000,7 @@ builder.Services.AddScoped<IImagingAIAnalysisService, ImagingAIAnalysisService>(
         await AuthService.SeedData.PermissionSeeder.ApplyCounsellorLeastPrivilegeAsync(db);
         await AuthService.SeedData.PermissionSeeder.SeedCounsellorPatientWorkflowPermissionsAsync(db);
         await AuthService.SeedData.PermissionSeeder.SeedCounsellorPackageTemplateReadPermissionAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedCounsellorTranscriptionPermissionsAsync(db);
         await AuthService.SeedData.PermissionSeeder.SeedBillReconciliationViewPermissionsAsync(db);
     }
     catch (Exception ex)

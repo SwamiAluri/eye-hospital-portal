@@ -444,4 +444,62 @@ describe('Phase 3I Slice 7 — CounselingSession.Version concurrency', () => {
     expect(onConcurrencyVersionSync).toHaveBeenCalledWith(10);
     expect(params.onSuccess).not.toHaveBeenCalled();
   });
+
+  it('A1/A10 — date, doctor, OT, and start time still upsert the existing OT slot', async () => {
+    const params = buildParams();
+    await saveCounsellingSession(params);
+
+    expect(upsertOtSchedule).toHaveBeenCalledOnce();
+    expect(upsertOtSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        surgeon: 'Dr. A',
+        theaterName: 'OT-1',
+        startTime: '2026-09-20T09:00:00',
+      }),
+    );
+    const saved = saveSession.mock.calls[0]?.[1] as { surgeryTentativeDate?: string; surgeryTentativeTimeSlot?: string };
+    expect(saved.surgeryTentativeDate).toBe('2026-09-20');
+    expect(saved.surgeryTentativeTimeSlot).toBe('09:00');
+  });
+
+  it('A2/A7/A8/A9 — date and doctor without OT or start time persist counselling only', async () => {
+    const params = buildParams({
+      decision: 'Interested',
+      schedule: schedule({
+        operationTheatre: '',
+        surgeryStartTime: '',
+      }),
+    });
+
+    await saveCounsellingSession(params);
+
+    expect(upsertOtSchedule).not.toHaveBeenCalled();
+    expect(editOtScheduleSlot).not.toHaveBeenCalled();
+    const saved = saveSession.mock.calls[0]?.[1] as {
+      surgeryTentativeDate?: string;
+      surgeryTentativeTimeSlot?: string;
+      packageAddonsJson?: string;
+    };
+    expect(saved.surgeryTentativeDate).toBe('2026-09-20');
+    expect(saved.surgeryTentativeTimeSlot).toBeUndefined();
+    const blob = JSON.parse(saved.packageAddonsJson ?? '{}') as {
+      schedule?: { doctor?: string; operationTheatre?: string; surgeryStartTime?: string };
+    };
+    expect(blob.schedule?.doctor).toBe('Dr. A');
+    expect(blob.schedule?.operationTheatre).toBe('');
+    expect(blob.schedule?.surgeryStartTime).toBe('');
+    expect(params.onSuccess).toHaveBeenCalledOnce();
+  });
+
+  it('does not invent an OT slot when only one of theatre or start time is present', async () => {
+    await saveCounsellingSession(
+      buildParams({ schedule: schedule({ operationTheatre: '', surgeryStartTime: '09:00' }) }),
+    );
+    await saveCounsellingSession(
+      buildParams({ schedule: schedule({ operationTheatre: 'OT-1', surgeryStartTime: '' }) }),
+    );
+
+    expect(upsertOtSchedule).not.toHaveBeenCalled();
+    expect(editOtScheduleSlot).not.toHaveBeenCalled();
+  });
 });

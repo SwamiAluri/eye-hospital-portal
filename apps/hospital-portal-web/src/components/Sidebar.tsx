@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useHasPermission } from '@/lib/permission-cache';
 import { logoutEverywhere } from '@/lib/logout-everywhere';
-import { SIDEBAR_MENU_SECTIONS, filterSidebarSectionsByPermission } from '@/lib/navigation/sidebar-menu-sections';
+import {
+  SIDEBAR_MENU_SECTIONS,
+  filterSidebarSectionsByPermission,
+  prefetchCounsellorSidebarHref,
+} from '@/lib/navigation/sidebar-menu-sections';
 import {
   useState,
   useEffect,
@@ -277,7 +281,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                 <Link
                                   key={subItem.href}
                                   href={subItem.href}
-                                  prefetch={false}
+                                  prefetch={prefetchCounsellorSidebarHref(subItem.href)}
                                   onClick={() => setCollapsedPopover(null)}
                                   className={`
                                     flex items-center gap-3 px-6 py-2 transition-all duration-150
@@ -303,7 +307,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                         <Link
                           key={item.href}
                           href={item.href}
-                          prefetch={false}
+                          prefetch={prefetchCounsellorSidebarHref(item.href)}
                           onClick={() => setCollapsedPopover(null)}
                           className={`
                             flex items-center gap-3 px-4 py-2 transition-all duration-150
@@ -406,7 +410,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                   <Link
                                     key={subItem.href}
                                     href={subItem.href}
-                                    prefetch={false}
+                                    prefetch={prefetchCounsellorSidebarHref(subItem.href)}
                                     onClick={() => setCollapsedPopover(null)}
                                     className={`
                                       flex items-center gap-3 px-4 py-2.5 transition-all duration-150
@@ -457,7 +461,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                             <Link
                               key={subItem.href}
                               href={subItem.href}
-                              prefetch={false}
+                              prefetch={prefetchCounsellorSidebarHref(subItem.href)}
                               className={`
                                 flex items-center gap-3 pl-12 pr-4 py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150
                                 ${subActive
@@ -485,7 +489,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                       <div key={item.href} className="mx-2" title={item.label}>
                         <Link
                           href={item.href}
-                          prefetch={false}
+                          prefetch={prefetchCounsellorSidebarHref(item.href)}
                           className={`
                             flex items-center justify-center py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150
                           `}
@@ -500,7 +504,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                     <div key={item.href} className="mx-2">
                       <Link
                         href={item.href}
-                        prefetch={false}
+                        prefetch={prefetchCounsellorSidebarHref(item.href)}
                         className={`
                           flex items-center gap-3 ${baseClass} rounded-md transition-all duration-150
                           ${active ? 'border-l-2 border-primary-400' : ''}
@@ -639,7 +643,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                                   <Link
                                     key={subItem.href}
                                     href={subItem.href}
-                                    prefetch={false}
+                                    prefetch={prefetchCounsellorSidebarHref(subItem.href)}
                                     onClick={onClose}
                                     className={`flex items-center gap-3 pl-12 pr-4 py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150 ${
                                       subActive ? 'border-l-2 border-primary-400' : ''
@@ -658,7 +662,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                           <div key={item.href} className="mx-2">
                             <Link
                               href={item.href}
-                              prefetch={false}
+                              prefetch={prefetchCounsellorSidebarHref(item.href)}
                               onClick={onClose}
                               className={`flex items-center gap-3 pl-4 pr-4 py-[var(--sidebar-item-pad-y)] rounded-md transition-all duration-150 ${
                                 active ? 'border-l-2 border-primary-400' : ''

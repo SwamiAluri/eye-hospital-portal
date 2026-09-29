@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   LockKeyhole,
@@ -220,6 +220,7 @@ function SelectInput({
   required,
   error,
   readOnly,
+  loading,
 }: {
   label: string;
   value: string;
@@ -229,7 +230,17 @@ function SelectInput({
   required?: boolean;
   error?: string;
   readOnly?: boolean;
+  loading?: boolean;
 }) {
+  const slug = label.toLowerCase().replace(/\s+/g, '-');
+  if (loading) {
+    return (
+      <div data-testid={`finalize-ot-${slug}-loading`} aria-busy="true">
+        <FieldLabel required={required}>{label}</FieldLabel>
+        <p className="text-sm text-counselling-muted-foreground">Loading {label.toLowerCase()}…</p>
+      </div>
+    );
+  }
   return (
     <div>
       <FieldLabel required={required}>{label}</FieldLabel>
@@ -299,6 +310,25 @@ export interface FinalizeOtModalProps {
   onStatusChange: (updated: FinalizeSurgeryRecord) => void;
 }
 
+function formFromOtDetail(det: OtScheduleDetail): UpdateOtDetailsPayload {
+  return {
+    doctorId: det.doctorId ?? '',
+    doctorName: det.surgeon ?? '',
+    theatreId: det.theatreId ?? '',
+    theatreName: det.theaterName ?? '',
+    startTime: det.startTime ?? '',
+    endTime: det.endTime ?? '',
+    reportingTime: det.reportingTime ?? '',
+    anesthesiaType: det.anesthesiaType ?? '',
+    anesthetistName: det.anesthetistName ?? '',
+    iolPower: det.iolPower ?? '',
+    remarks: det.remarks ?? '',
+    cancelReason: det.cancelReason ?? '',
+    packageName: det.packageName ?? '',
+    packageRate: det.packageRate ?? undefined,
+  };
+}
+
 const EMPTY_FORM: UpdateOtDetailsPayload = {
   doctorId: '',
   doctorName: '',
@@ -339,7 +369,19 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
   const [selectedAnesthetistId, setSelectedAnesthetistId] = useState<string | null>(null);
   const [anesthetistsLoading, setAnesthetistsLoading] = useState(false);
   const [anesthetistsError, setAnesthetistsError] = useState<string | null>(null);
+  const [surgeonsLoading, setSurgeonsLoading] = useState(false);
+  const [surgeonsError, setSurgeonsError] = useState<string | null>(null);
+  const [theatersLoading, setTheatersLoading] = useState(false);
+  const [theatersError, setTheatersError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const detailRef = useRef<OtScheduleDetail | null>(null);
+  const surgeonsRef = useRef<{ id: string; name: string }[] | null>(null);
+  const anesthetistsRef = useRef<AnesthetistOption[] | null>(null);
+  const surgeonsSettledRef = useRef(false);
+  const anesthetistsSettledRef = useRef(false);
+  const surgeonReconciledRef = useRef(false);
+  const anesthetistReconciledRef = useRef(false);
+  const openGenRef = useRef(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
   const [scheduleDate, setScheduleDate] = useState<string>('');
@@ -365,19 +407,89 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
       )
     : false;
 
-  const loadAnesthetists = useCallback(async (): Promise<AnesthetistOption[]> => {
+  const reconcileSurgeon = useCallback(() => {
+    const det = detailRef.current;
+    if (!det || !surgeonsSettledRef.current || surgeonReconciledRef.current) return;
+    surgeonReconciledRef.current = true;
+    const surg = surgeonsRef.current ?? [];
+    if (det.doctorId) return;
+    const match = surg.find((s) => s.name === det.surgeon);
+    if (!match) return;
+    setForm((f) => (f.doctorId ? f : { ...f, doctorId: match.id, doctorName: det.surgeon || match.name }));
+  }, []);
+
+  const reconcileAnesthetist = useCallback(() => {
+    const det = detailRef.current;
+    if (!det || !anesthetistsSettledRef.current || anesthetistReconciledRef.current) return;
+    anesthetistReconciledRef.current = true;
+    const anests = anesthetistsRef.current ?? [];
+    const resolved = resolveAnesthetistUiMode(det.anesthetistName, anests);
+    setAnesthetistMode(resolved.mode);
+    setSelectedAnesthetistId(resolved.selectedId);
+    if (resolved.mode === 'list' && resolved.selectedId) {
+      const match = anests.find((a) => a.id === resolved.selectedId);
+      if (match) setForm((f) => ({ ...f, anesthetistName: match.name }));
+    }
+  }, []);
+
+  const loadAnesthetists = useCallback(async (gen: number): Promise<AnesthetistOption[]> => {
     setAnesthetistsLoading(true);
     setAnesthetistsError(null);
     try {
       const list = await counsellorsDeskApi.getAnesthetists();
+      if (openGenRef.current !== gen) return list;
+      anesthetistsRef.current = list;
+      anesthetistsSettledRef.current = true;
       setAnesthetists(list);
+      reconcileAnesthetist();
       return list;
     } catch {
+      if (openGenRef.current !== gen) return [];
+      anesthetistsRef.current = [];
+      anesthetistsSettledRef.current = true;
       setAnesthetists([]);
       setAnesthetistsError('Unable to load anaesthetists.');
+      reconcileAnesthetist();
       return [];
     } finally {
-      setAnesthetistsLoading(false);
+      if (openGenRef.current === gen) setAnesthetistsLoading(false);
+    }
+  }, [reconcileAnesthetist]);
+
+  const loadSurgeons = useCallback(async (gen: number) => {
+    setSurgeonsLoading(true);
+    setSurgeonsError(null);
+    try {
+      const list = await counsellorsDeskApi.getSurgeons();
+      if (openGenRef.current !== gen) return;
+      surgeonsRef.current = list;
+      surgeonsSettledRef.current = true;
+      setSurgeons(list);
+      reconcileSurgeon();
+    } catch {
+      if (openGenRef.current !== gen) return;
+      surgeonsRef.current = [];
+      surgeonsSettledRef.current = true;
+      setSurgeons([]);
+      setSurgeonsError('Unable to load surgeons.');
+    } finally {
+      if (openGenRef.current === gen) setSurgeonsLoading(false);
+    }
+  }, [reconcileSurgeon]);
+
+  const loadTheaters = useCallback(async (gen: number) => {
+    setTheatersLoading(true);
+    setTheatersError(null);
+    try {
+      const list = await counsellorsDeskApi.getOtTheaters();
+      if (openGenRef.current !== gen) return;
+      setTheaters(list);
+    } catch {
+      if (openGenRef.current !== gen) return;
+      setTheaters([]);
+      setTheatersError('Unable to load theatres.');
+    } finally {
+      if (openGenRef.current === gen) setTheatersLoading(false);
     }
   }, []);
 
@@ -385,56 +497,50 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
     if (!isOpen || !scheduleId) return;
 
     let cancelled = false;
+    const gen = ++openGenRef.current;
+    detailRef.current = null;
+    surgeonsRef.current = null;
+    anesthetistsRef.current = null;
+    surgeonsSettledRef.current = false;
+    anesthetistsSettledRef.current = false;
+    surgeonReconciledRef.current = false;
+    anesthetistReconciledRef.current = false;
     setIsLoading(true);
+    setSurgeonsLoading(true);
+    setTheatersLoading(true);
+    setAnesthetistsLoading(true);
     setDetail(null);
+    setForm(EMPTY_FORM);
+    setSurgeons([]);
+    setTheaters([]);
+    setAnesthetists([]);
+    setSurgeonsError(null);
+    setTheatersError(null);
+    setAnesthetistsError(null);
     setErrors({});
     setScheduleDate('');
     setAnesthetistMode('list');
     setSelectedAnesthetistId(null);
 
-    Promise.all([
-      counsellorsDeskApi.getOtScheduleDetail(scheduleId),
-      counsellorsDeskApi.getSurgeons(),
-      counsellorsDeskApi.getOtTheaters(),
-      loadAnesthetists(),
-    ])
-      .then(([det, surg, theat, anests]) => {
+    void counsellorsDeskApi.getOtScheduleDetail(scheduleId)
+      .then((det) => {
         if (cancelled) return;
+        detailRef.current = det;
         setDetail(det);
-        setSurgeons(surg);
-        setTheaters(theat);
-        const resolved = resolveAnesthetistUiMode(det.anesthetistName, anests);
-        setAnesthetistMode(resolved.mode);
-        setSelectedAnesthetistId(resolved.selectedId);
-        let anesthetistName = det.anesthetistName ?? '';
-        if (resolved.mode === 'list' && resolved.selectedId) {
-          const match = anests.find((a) => a.id === resolved.selectedId);
-          if (match) anesthetistName = match.name;
-        }
         setScheduleDate(det.scheduleDate ?? '');
-        const resolvedDoctorId = det.doctorId ?? surg.find((s: { id: string; name: string }) => s.name === det.surgeon)?.id ?? '';
-        setForm({
-          doctorId:        resolvedDoctorId,
-          doctorName:      det.surgeon     ?? '',
-          theatreId:       det.theatreId   ?? '',
-          theatreName:     det.theaterName ?? '',
-          startTime:       det.startTime   ?? '',
-          endTime:         det.endTime     ?? '',
-          reportingTime:   det.reportingTime  ?? '',
-          anesthesiaType:  det.anesthesiaType  ?? '',
-          anesthetistName,
-          iolPower:        det.iolPower    ?? '',
-          remarks:         det.remarks     ?? '',
-          cancelReason:    det.cancelReason ?? '',
-          packageName:     det.packageName ?? '',
-          packageRate:     det.packageRate ?? undefined,
-        });
+        setForm(formFromOtDetail(det));
+        reconcileSurgeon();
+        reconcileAnesthetist();
       })
       .catch(() => { if (!cancelled) toast.error('Failed to load schedule detail'); })
       .finally(() => { if (!cancelled) setIsLoading(false); });
 
+    void loadSurgeons(gen);
+    void loadTheaters(gen);
+    void loadAnesthetists(gen);
+
     return () => { cancelled = true; };
-  }, [isOpen, scheduleId, loadAnesthetists]);
+  }, [isOpen, scheduleId, loadAnesthetists, loadSurgeons, loadTheaters, reconcileAnesthetist, reconcileSurgeon]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -499,6 +605,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
 
   const handleSave = async () => {
     if (!scheduleId || isLocked || cannotFinalize) return;
+    if (!formLocked && (surgeonsLoading || theatersLoading || anesthetistsLoading)) return;
     if (!assertAnesthetistOkForSave()) return;
     setIsSaving(true);
     try {
@@ -524,6 +631,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
       let updated: FinalizeSurgeryRecord;
       switch (action) {
         case 'confirm': {
+          if (!formLocked && (surgeonsLoading || theatersLoading || anesthetistsLoading)) return;
           if (!validate()) return;
           const payload = buildSavePayload();
           await counsellorsDeskApi.updateOtDetails(scheduleId, payload);
@@ -582,6 +690,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
     || detail?.surgeryName?.toLowerCase().includes('phaco');
   const showCancelReason = shouldShowCancellationReason(status);
   const footerActions = resolveFinalizeOtModalFooterActions(status);
+  const directoryControlsPending = !formLocked && (surgeonsLoading || theatersLoading || anesthetistsLoading);
   const showSave = footerActions.includes('save') || footerActions.includes('save_will_revert');
   const saveWillRevert = footerActions.includes('save_will_revert');
   const showConfirm = footerActions.includes('confirm');
@@ -611,11 +720,12 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
               <div className="h-3 w-32 rounded bg-counselling-muted" />
             </div>
           ) : (
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1" data-testid="finalize-ot-case-context">
               <div className="flex flex-wrap items-center gap-2">
                 <h2
                   id="finalize-ot-modal-title"
                   className={cn(counsellingSessionTokens.patientName, 'truncate')}
+                  data-testid="finalize-ot-patient-name"
                 >
                   {detail?.patientName ?? '—'}
                 </h2>
@@ -718,6 +828,11 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                   )}
                   {formLocked ? (
                     <ReadonlyField label="Surgeon" value={form.doctorName || detail?.surgeon} />
+                  ) : surgeonsError ? (
+                    <div data-testid="finalize-ot-surgeon-error">
+                      <FieldLabel>Surgeon</FieldLabel>
+                      <p className="text-sm text-red-600" role="alert">{surgeonsError}</p>
+                    </div>
                   ) : (
                     <SelectInput
                       label="Surgeon"
@@ -729,10 +844,16 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                       }}
                       options={surgeons}
                       placeholder={detail?.surgeon ?? 'Select surgeon'}
+                      loading={surgeonsLoading}
                     />
                   )}
                   {formLocked ? (
                     <ReadonlyField label="Theatre" value={form.theatreName || detail?.theaterName} />
+                  ) : theatersError ? (
+                    <div data-testid="finalize-ot-theatre-error">
+                      <FieldLabel>Theatre</FieldLabel>
+                      <p className="text-sm text-red-600" role="alert">{theatersError}</p>
+                    </div>
                   ) : (
                     <SelectInput
                       label="Theatre"
@@ -744,6 +865,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                       }}
                       options={theaters}
                       placeholder={detail?.theaterName ?? 'Select theatre'}
+                      loading={theatersLoading}
                     />
                   )}
                   {formLocked
@@ -827,7 +949,7 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                         anesthetistName={form.anesthetistName ?? ''}
                         loading={anesthetistsLoading}
                         error={anesthetistsError}
-                        onRetry={() => void loadAnesthetists()}
+                        onRetry={() => void loadAnesthetists(openGenRef.current)}
                         onSelectStaff={(a) => {
                           setAnesthetistMode('list');
                           setSelectedAnesthetistId(a.id);
@@ -984,7 +1106,8 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                     saveWillRevert && 'border-amber-300 text-amber-900 hover:bg-amber-50',
                   )}
                   onClick={handleSave}
-                  disabled={isSaving || isActioning || cannotFinalize}
+                  data-testid="finalize-ot-save"
+                  disabled={isSaving || isActioning || cannotFinalize || directoryControlsPending}
                 >
                   {isSaving ? 'Saving…' : saveWillRevert ? 'Save (will revert)' : 'Save'}
                 </CounsellingButton>
@@ -995,7 +1118,8 @@ export function FinalizeOtModal({ isOpen, onClose, scheduleId, onStatusChange }:
                   size="sm"
                   className={cn(denseBtn, 'bg-counselling-primary text-white hover:bg-counselling-primary/90')}
                   onClick={() => runAction('confirm')}
-                  disabled={isSaving || isActioning || cannotFinalize}
+                  data-testid="finalize-ot-confirm"
+                  disabled={isSaving || isActioning || cannotFinalize || directoryControlsPending}
                 >
                   {isActioning ? 'Processing…' : 'Confirm'}
                 </CounsellingButton>

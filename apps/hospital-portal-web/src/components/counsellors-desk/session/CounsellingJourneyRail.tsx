@@ -1,6 +1,7 @@
 'use client';
 
 import { Check } from 'lucide-react';
+import type { ReactNode } from 'react';
 import {
   buildJourneyRailStages,
   getJourneyStageNavigationTarget,
@@ -14,6 +15,7 @@ import {
 } from '@/lib/counsellors-desk/counselling-session-navigation';
 import type { CounsellingPhase } from '@/lib/counsellors-desk/counselling-progress';
 import type { SessionMainTab } from '@/lib/counsellors-desk/session-status-summary';
+import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
 import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +24,12 @@ export interface CounsellingJourneyRailProps extends BuildJourneyRailInput {
   onNavigatePhase?: (phase: CounsellingPhase) => void;
   onFinishSummaryActive?: (active: boolean) => void;
   navigationBlocked?: boolean;
+  /** Page-local destination. Not a journey stage. */
+  contextualDestination?: 'none' | 'patient-context' | 'history' | 'conversations';
+  onSelectPatientContext?: () => void;
+  onSelectHistory?: () => void;
+  onSelectConversations?: () => void;
+  recordingAction?: ReactNode;
 }
 
 const STATUS_LABEL: Record<JourneyStageVisualStatus, string> = {
@@ -46,9 +54,19 @@ export function CounsellingJourneyRail({
   onNavigatePhase,
   onFinishSummaryActive,
   navigationBlocked = false,
+  contextualDestination = 'none',
+  onSelectPatientContext,
+  onSelectHistory,
+  onSelectConversations,
+  recordingAction,
   ...input
 }: CounsellingJourneyRailProps) {
   const stages = buildJourneyRailStages(input);
+  const contextOpen =
+    contextualDestination === 'patient-context'
+    || contextualDestination === 'history'
+    || contextualDestination === 'conversations';
+  const conversationsOpen = contextualDestination === 'conversations';
 
   const handlers: SessionNavigationHandlers = {
     onNavigateTab,
@@ -69,6 +87,22 @@ export function CounsellingJourneyRail({
       className="min-w-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] sm:overflow-visible [&::-webkit-scrollbar]:hidden"
     >
       <ol className={counsellingSessionTokens.journeyTabTrack}>
+        <li className="shrink-0 self-center">
+          <button
+            type="button"
+            onClick={onSelectPatientContext}
+            aria-label="Patient Context"
+            data-workflow-active={contextualDestination === 'patient-context' ? 'true' : 'false'}
+            className={cn(
+              counsellingSessionTokens.journeyTab,
+              contextualDestination === 'patient-context'
+                ? counsellingSessionTokens.journeyTabCurrent
+                : counsellingSessionTokens.journeyTabMuted,
+            )}
+          >
+            Patient Context
+          </button>
+        </li>
         {stages.map((stage) => {
           const isCurrent = stage.status === 'current';
           const showCheck = stage.status === 'completed';
@@ -77,15 +111,7 @@ export function CounsellingJourneyRail({
             <>
               {showCheck ? (
                 <Check className="h-3 w-3 shrink-0" strokeWidth={2.5} aria-hidden />
-              ) : (
-                <span
-                  aria-hidden
-                  className={cn(
-                    'h-1.5 w-1.5 shrink-0 rounded-full',
-                    isCurrent ? 'bg-white' : 'bg-counselling-muted-foreground/50',
-                  )}
-                />
-              )}
+              ) : null}
               <span>
                 <span className="md:hidden">{stage.shortLabel}</span>
                 <span className="hidden md:inline">{stage.label}</span>
@@ -93,21 +119,28 @@ export function CounsellingJourneyRail({
             </>
           );
 
+          const visualStatus: JourneyStageVisualStatus =
+            contextOpen && stage.status === 'current' ? 'completed' : stage.status;
+          const workflowActive = stage.status === 'current' && contextualDestination === 'none';
+          const returnToCurrent = contextOpen && stage.status === 'current';
+          const clickable = stage.navigable || returnToCurrent;
+
           return (
             <li
               key={stage.id}
               data-testid={counsellingTestIds.journeyStage(stage.id)}
               data-journey-status={stage.status}
-              data-journey-navigable={stage.navigable ? 'true' : 'false'}
+              data-journey-navigable={clickable ? 'true' : 'false'}
             >
-              {stage.navigable ? (
+              {clickable ? (
                 <button
                   type="button"
-                  onClick={() => handleStageSelect(stage.id, stage.navigable)}
+                  onClick={() => handleStageSelect(stage.id, true)}
                   aria-current={isCurrent ? 'step' : undefined}
                   aria-label={`Go to ${stage.label}`}
                   title={statusText}
-                  className={pillClass(stage.status)}
+                  data-workflow-active={workflowActive ? 'true' : 'false'}
+                  className={pillClass(visualStatus)}
                 >
                   {label}
                 </button>
@@ -116,7 +149,8 @@ export function CounsellingJourneyRail({
                   aria-current={isCurrent ? 'step' : undefined}
                   aria-label={statusText}
                   title={statusText}
-                  className={cn(pillClass(stage.status), 'cursor-default')}
+                  data-workflow-active={workflowActive ? 'true' : 'false'}
+                  className={cn(pillClass(visualStatus), 'cursor-default')}
                 >
                   {label}
                 </span>
@@ -124,6 +158,44 @@ export function CounsellingJourneyRail({
             </li>
           );
         })}
+        <li className="shrink-0 self-center">
+          <button
+            type="button"
+            onClick={onSelectHistory}
+            aria-label={counsellingCopy.sessionHistoryAria}
+            data-workflow-active={contextualDestination === 'history' ? 'true' : 'false'}
+            className={cn(
+              counsellingSessionTokens.journeyTab,
+              contextualDestination === 'history'
+                ? counsellingSessionTokens.journeyTabCurrent
+                : counsellingSessionTokens.journeyTabMuted,
+            )}
+          >
+            {counsellingCopy.sessionHistory}
+          </button>
+        </li>
+        <li className="shrink-0 self-center">
+          <button
+            type="button"
+            onClick={onSelectConversations}
+            aria-label={counsellingCopy.sessionConversationsAria}
+            data-workflow-active={conversationsOpen ? 'true' : 'false'}
+            className={cn(
+              counsellingSessionTokens.journeyTab,
+              conversationsOpen
+                ? counsellingSessionTokens.journeyTabCurrent
+                : counsellingSessionTokens.journeyTabMuted,
+            )}
+          >
+            {counsellingCopy.sessionConversations}
+          </button>
+        </li>
+        <li
+          className={cn('ml-auto shrink-0 self-center', !recordingAction && 'hidden')}
+          data-testid="counselling-session-recording-action"
+        >
+          {recordingAction}
+        </li>
       </ol>
     </nav>
   );

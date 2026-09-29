@@ -250,6 +250,31 @@ public class OtFinalizeOpdCopyTests
     }
 
     [Fact]
+    public void DetailBiometryLoad_DoesNotRepeatDiagnosisQuery()
+    {
+        var source = File.ReadAllText(FindRepoFile(
+            Path.Combine("microservices", "auth-service", "AuthService", "Services", "OtFinalizeService.cs")));
+        var start = source.IndexOf("private async Task ApplyBiometryToDetailAsync", StringComparison.Ordinal);
+        var end = source.IndexOf("private async Task<OpdClinicalSnapshotDto> ResolveOpdSnapshotAsync", StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        var method = source[start..end];
+        Assert.Contains("loadDiagnosis: false", method, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResolveOpdDiagnosisAsync", method, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoFile(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            var candidate = Path.Combine(dir.FullName, relative);
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException(relative);
+    }
+
+    [Fact]
     public async Task GetById_SetsBiometryMissingWhenNoRecordForEye()
     {
         await using var db = TestDbContextFactory.CreateInMemory();

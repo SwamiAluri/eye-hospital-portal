@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { cgx1WorklistHeaderClass } from '@/lib/counsellors-desk/sessions-list-presentation';
 import { cn } from '@/lib/utils';
 import { Clock, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
 import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
@@ -127,19 +128,19 @@ function BucketPanel({
           <table className="w-full min-w-[28rem] text-xs" aria-label={`${config.label} pending decisions`}>
             <thead>
               <tr className="bg-counselling-muted/20">
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wide text-counselling-muted-foreground">
+                <th scope="col" className={cn('px-3 py-1.5 text-left', cgx1WorklistHeaderClass)}>
                   Patient
                 </th>
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wide text-counselling-muted-foreground">
+                <th scope="col" className={cn('px-3 py-1.5 text-left', cgx1WorklistHeaderClass)}>
                   Surgery
                 </th>
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wide text-counselling-muted-foreground">
+                <th scope="col" className={cn('px-3 py-1.5 text-left', cgx1WorklistHeaderClass)}>
                   Phone
                 </th>
-                <th className="px-3 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wide text-counselling-muted-foreground">
+                <th scope="col" className={cn('px-3 py-1.5 text-right', cgx1WorklistHeaderClass)}>
                   Days
                 </th>
-                <th className="px-3 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wide text-counselling-muted-foreground">
+                <th scope="col" className={cn('px-3 py-1.5 text-right', cgx1WorklistHeaderClass)}>
                   Action
                 </th>
               </tr>

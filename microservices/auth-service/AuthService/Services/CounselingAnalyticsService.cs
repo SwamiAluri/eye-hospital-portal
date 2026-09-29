@@ -286,8 +286,6 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
 
         var pending = BuildPendingDecisionQuery(tenantId, accessibleBranchIds, counselorId, window);
 
-        var totalPending = await pending.CountAsync(ct);
-
         // PostgreSQL-safe half-open SessionDate bounds (avoid SessionDate.Date / TotalDays in SQL).
         // Calendar-day buckets relative to UTC `today` (00:00):
         // 0–3:  [today-3, today+1)
@@ -302,14 +300,24 @@ public class CounselingAnalyticsService : ICounselingAnalyticsService
         var bucket814ToExclusive = today.AddDays(-7);
         var bucket15PlusToExclusive = today.AddDays(-14);
 
-        var c03 = await pending.CountAsync(
-            s => s.SessionDate >= bucket03From && s.SessionDate < bucket03ToExclusive, ct);
-        var c47 = await pending.CountAsync(
-            s => s.SessionDate >= bucket47From && s.SessionDate < bucket47ToExclusive, ct);
-        var c814 = await pending.CountAsync(
-            s => s.SessionDate >= bucket814From && s.SessionDate < bucket814ToExclusive, ct);
-        var c15 = await pending.CountAsync(
-            s => s.SessionDate < bucket15PlusToExclusive, ct);
+        // One conditional aggregation over the same pending query. Predicates match the former five counts.
+        var bucketCounts = await pending
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                C03 = g.Count(s => s.SessionDate >= bucket03From && s.SessionDate < bucket03ToExclusive),
+                C47 = g.Count(s => s.SessionDate >= bucket47From && s.SessionDate < bucket47ToExclusive),
+                C814 = g.Count(s => s.SessionDate >= bucket814From && s.SessionDate < bucket814ToExclusive),
+                C15 = g.Count(s => s.SessionDate < bucket15PlusToExclusive),
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var totalPending = bucketCounts?.Total ?? 0;
+        var c03 = bucketCounts?.C03 ?? 0;
+        var c47 = bucketCounts?.C47 ?? 0;
+        var c814 = bucketCounts?.C814 ?? 0;
+        var c15 = bucketCounts?.C15 ?? 0;
 
         async Task<List<AnalyticsAgingSessionDto>> LoadBucketAsync(
             DateTime? fromInclusive,

@@ -230,7 +230,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | 1. From Waiting List, open owned session (no silent claim). 2. Navigate journey rail to **Quote**. 3. Observe estimate/quote workspace loads. |
 | **Expected result** | Quote stage opens; existing Counseling session APIs used; no new ownership stamp from open/navigate |
 | **Evidence required** | Tester, env, date, actual vs expected; optional screenshot of Quote stage |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. Actor counsellor4. Owned InProgress session `bb000001-…0005`. Quote stage current; estimate workspace visible. CounselorId unchanged on open. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -245,7 +245,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | 1. Open session as non-owner. 2. Attempt Quote mutation (save/edit). |
 | **Expected result** | Read-only / denied per certified owner ACL; no ownership transfer |
 | **Evidence required** | UI state + network deny if applicable |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. Other-owner session `c5d20fdf-…`. Quote loaded. Save Draft and Complete Session controls absent. CounselorId stayed the other counsellor; version unchanged. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -260,7 +260,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | 1. Open/view without completing Assign (use certified Assign dialog path). 2. Confirm `CounselorId` remains NULL until explicit Assign. |
 | **Expected result** | No silent ownership; Assign remains explicit |
 | **Evidence required** | Session ownership field / History absence of Assign |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. Unassigned session `bb000001-…0015` opened on Quote. CounselorId remained null. Assign was not used. Version unchanged. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -281,7 +281,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | 1. Advance or select **Decision** on journey rail. 2. Confirm Decision workspace loads. |
 | **Expected result** | Decision stage available; existing session Update fields used; no ownership change from navigation |
 | **Evidence required** | Tester/env/date + actual result |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. Same owned InProgress session. Decision stage became current; decision workspace visible. CounselorId unchanged. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -296,7 +296,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | Attempt Decision save/mutation as non-owner |
 | **Expected result** | Denied / read-only; no ownership transfer |
 | **Evidence required** | UI + optional network |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. Other-owner session. Decision workspace did not open. CounselorId unchanged; version unchanged. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -318,7 +318,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | 1. Select **Insurance** on journey rail / coverage tab. 2. Confirm coverage/insurance panel loads. |
 | **Expected result** | Stage loads; uses existing Counseling/coverage paths; no invented CCMS ownership |
 | **Evidence required** | Tester/env/date + actual |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. Owned Insurance InProgress session. Insurance stage current; policy step and Visit Policies visible. No coverage-load failure toast. CounselorId unchanged. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -333,7 +333,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | Attempt coverage mutation as non-owner |
 | **Expected result** | Read-only / denied; no ownership change |
 | **Evidence required** | UI/network |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. Other-owner Insurance session `bb000001-…0010`. Insurance stage stayed pending and not navigable. Coverage form and Save Draft were unavailable. CounselorId stayed the other counsellor. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -369,7 +369,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | 1. Open **Notes**. 2. Edit Counsellor Notes. 3. Save / Save Draft per existing UI. |
 | **Expected result** | Notes save via existing session Update; Version/409 preserved |
 | **Evidence required** | Actual save success |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. Notes field editable. Save Draft toast “Draft saved”. Version 5 → 6. Queue stayed InProgress. CounselorId unchanged. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -384,7 +384,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | Inspect Notes workspace for ReQueue card or `[Re-queue …]` in editable textarea |
 | **Expected result** | No ReQueue card; no raw marker text in editable notes (per ReQueue→History UX report) |
 | **Evidence required** | Screenshot or written observation |
-| **Result** | NOT RUN |
+| **Result** | PASS — 2026-09-25 12:27 local. No ReQueue card. Editable Notes did not contain a raw `[Re-queue` marker. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -405,7 +405,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | Navigate to **Finish** / activate finish summary |
 | **Expected result** | Finish summary presents; no false grey-gate that blocks certified navigation (per completed-finish UX contract intent) |
 | **Evidence required** | Observation of Finish UI |
-| **Result** | NOT RUN |
+| **Result** | BLOCKED — 2026-09-25 12:27 local. Finish stayed pending and not navigable; summary did not open. The owned seed session was not finish-eligible (UI showed 1 of 4 required). Not recorded as a defect. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -420,7 +420,7 @@ Result / Defect / Acceptance columns start as **NOT RUN** / blank / **NOT ACCEPT
 | **Test steps** | 1. Complete as owner. 2. Optionally retry with stale Version to observe 409 if safely reproducible. |
 | **Expected result** | Owner complete succeeds; non-owner complete denied; 409 on stale Version if tested |
 | **Evidence required** | Success toast/network; optional 409 evidence |
-| **Result** | NOT RUN |
+| **Result** | BLOCKED — 2026-09-25 12:27 local. Complete Session did not complete the seed session. UI showed “1 of 4 required”. Queue stayed InProgress; version stayed 6; CounselorId unchanged. Stale-version 409 was not attempted. Non-seed sessions were not completed. |
 | **Defect reference** | |
 | **Acceptance state** | NOT ACCEPTED |
 
@@ -931,18 +931,18 @@ Populate during actual UAT:
 
 | Scenario | Tester | Date | Environment | Result | Evidence | Defect | Retest | Acceptance |
 |----------|--------|------|-------------|--------|----------|--------|--------|------------|
-| W2-Q-01 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-Q-02 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-Q-03 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-D-01 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-D-02 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-I-01 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-I-02 | | | | NOT RUN | | | | NOT ACCEPTED |
+| W2-Q-01 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | Owned InProgress Quote opened; CounselorId unchanged | | | NOT ACCEPTED |
+| W2-Q-02 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | Other-owner Quote viewable; save controls absent; CounselorId unchanged | | | NOT ACCEPTED |
+| W2-Q-03 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | Unassigned open left CounselorId null; Assign not used | | | NOT ACCEPTED |
+| W2-D-01 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | Decision workspace loaded; CounselorId unchanged | | | NOT ACCEPTED |
+| W2-D-02 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | Other-owner Decision workspace did not open; CounselorId unchanged | | | NOT ACCEPTED |
+| W2-I-01 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | Insurance/policy stage loaded; CounselorId unchanged | | | NOT ACCEPTED |
+| W2-I-02 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | Other-owner Insurance not navigable; no coverage save control; CounselorId unchanged | | | NOT ACCEPTED |
 | W2-I-03 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-N-01 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-N-02 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-F-01 | | | | NOT RUN | | | | NOT ACCEPTED |
-| W2-F-02 | | | | NOT RUN | | | | NOT ACCEPTED |
+| W2-N-01 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | Notes edited; Draft saved; version 5→6; CounselorId unchanged | | | NOT ACCEPTED |
+| W2-N-02 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | PASS | No ReQueue card; no raw Re-queue marker in Notes | | | NOT ACCEPTED |
+| W2-F-01 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | BLOCKED | Finish not navigable; session not finish-eligible (1 of 4 required) | | | NOT ACCEPTED |
+| W2-F-02 | Stage 1 execution as counsellor4 | 2026-09-25 12:27 | Local portal :3000, Auth :5073 | BLOCKED | Complete did not succeed; session stayed InProgress; stale 409 not attempted | | | NOT ACCEPTED |
 | RQ-H-01 | | | | NOT RUN | | | | NOT ACCEPTED |
 | RQ-H-02 | | | | NOT RUN | | | | NOT ACCEPTED |
 | RQ-H-03 | | | | NOT RUN | | | | NOT ACCEPTED |

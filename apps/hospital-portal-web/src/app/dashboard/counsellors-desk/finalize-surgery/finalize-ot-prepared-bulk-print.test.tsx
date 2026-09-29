@@ -17,22 +17,21 @@ describe('OT Prepared — bulk OT slip printing contracts', () => {
   const slipHelper = readFileSync(OT_SLIP_HELPER, 'utf8');
   const packageB = readFileSync(PACKAGE_B_HELPER, 'utf8');
 
-  it('keeps individual row Print and uses shared OT slip helper', () => {
-    expect(page).toContain('printOtSlip');
+  it('does not render a row-level Print OT Slip or decorative chevron on any finalization grid', () => {
+    expect(page).not.toContain('printOtSlip');
+    expect(page).not.toContain('aria-label="Print OT Slip"');
+    expect(page).not.toContain('<ChevronRight');
+    expect(page).not.toContain('finalize-ot-prepared-row-print-');
     expect(page).toContain('openOtSlipsPrint');
-    expect(page).toContain("onPrint={() => printOtSlip(rec)}");
+    expect(page).toContain('resolveFinalizeQueuePrimaryAction');
+    expect(page).toContain('primary.label');
   });
 
-  it('OT Prepared row action is Reopen only — no row Print icon, no decorative chevron', () => {
-    // Row Print testid must not exist (OT Prepared uses bulk Print OT Slips only)
-    expect(page).not.toContain('finalize-ot-prepared-row-print-');
-    // Print icon + decorative chevron gated off when printSelection (OT Prepared) is active
-    expect(page).toContain('{!showPrintSelect ? (');
-    expect(page).toContain('<ChevronRight');
-    // Bulk worklist print remains
+  it('OT Prepared row action stays the certified primary (Reopen) beside bulk Print OT Slips', () => {
     expect(page).toContain('finalize-ot-prepared-print-slips');
     expect(page).toContain('Print OT Slips');
     expect(page).toContain('primary.label');
+    expect(page).toContain('onAction={(action) => void handleAction(action, rec)}');
   });
 
   it('OT Prepared tab has current-page selection + Print OT Slips (N)', () => {

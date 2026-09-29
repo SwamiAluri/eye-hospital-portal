@@ -35,6 +35,9 @@ param postgresAdminPassword string
 ])
 param appServicePlanSku string = environment == 'prod' ? 'P1v2' : 'B2'
 
+@description('Deploy the counselling Speech resource and session-audio reader role. Storage stays private. Shared key access is not added.')
+param deployCounselingSpeech bool = false
+
 var resourceNamePrefix = '${appName}-${environment}'
 var appServicePlanName = '${resourceNamePrefix}-asp'
 var webAppName = '${resourceNamePrefix}-api'
@@ -207,6 +210,28 @@ resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/container
   properties: {
     publicAccess: 'None'
   }
+}
+
+resource sessionAudioContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2022-09-01' = {
+  name: '${storageAccount.name}/default/session-audio'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+// Speech is a separate module so the storage account body is not rewritten.
+// Storage firewall rules are applied by infrastructure/scripts/setup-counselling-speech-azure.ps1.
+module counselingSpeech 'counseling-speech.bicep' = if (deployCounselingSpeech) {
+  name: 'counseling-speech'
+  params: {
+    deployCounselingSpeech: true
+    storageAccountName: storageAccount.name
+    speechLocation: location
+    speechResourceName: '${replace(resourceNamePrefix, '-', '')}speech'
+  }
+  dependsOn: [
+    sessionAudioContainer
+  ]
 }
 
 // Static Web App (Frontend)

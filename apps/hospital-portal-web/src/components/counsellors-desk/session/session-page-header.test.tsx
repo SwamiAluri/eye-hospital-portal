@@ -1,15 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Patient } from '@/lib/api/patients.api';
 import { PatientDemographicsContent, PatientDemographicsSheet } from '@/components/examination/PatientDemographicsSheet';
 import { SessionPageHeader } from '@/components/counsellors-desk/session/SessionPageHeader';
+import { CounsellingJourneyRail } from '@/components/counsellors-desk/session/CounsellingJourneyRail';
 import {
   ClinicalRecommendationsContent,
   ClinicalRecommendationsSheet,
 } from '@/components/counsellors-desk/session/ClinicalRecommendationsSheet';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
-import { counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
 import { OPTOMETRIST_RECOMMENDATION_PLACEHOLDER } from '@/lib/counsellors-desk/clinical-recommendations-placeholder';
 import type { CounsellingSession } from '@/types/counsellors-desk';
 
@@ -288,6 +291,41 @@ describe('PatientDemographicsContent', () => {
     expect(html).toContain('lucide-eye');
     expect(html).toContain('Dr. Rao');
   });
+
+  it('uses a flat workspace layout with a rectangular photo on the counselling session', () => {
+    const html = renderToStaticMarkup(
+      <PatientDemographicsContent
+        presentation="workspace"
+        patient={basePatient}
+        age={45}
+        visitLabel={counsellingCopy.counsellingSession}
+        counsellingContext={{
+          counsellingType: 'Initial Counselling',
+          sessionStatus: 'Pending',
+          operativeEye: 'RE',
+          consultingDoctor: 'Dr. Rao',
+        }}
+      />,
+    );
+    expect(html).toContain('h-56');
+    expect(html).toContain('w-48');
+    const bandEnd = html.indexOf('patient-details-lower');
+    expect(bandEnd).toBeGreaterThan(-1);
+    const band = html.slice(0, bandEnd);
+    expect(band).toContain('Identity');
+    expect(band).not.toContain('>Contact<');
+    expect(html).toContain('gap-6');
+    expect(html).toContain('rounded-lg');
+    expect(html).toContain('Identity');
+    expect(html).toContain('Contact');
+    expect(html).toContain('Visit &amp; Session');
+    expect(html).toContain('Clinical Context');
+    expect(html).toContain('45 years');
+    expect(html).toContain('Eye');
+    expect(html).not.toContain('45 yrs');
+    expect(html).not.toContain('patient-details-identity-hero');
+    expect(html).not.toContain('rounded-xl border border-border/70');
+  });
 });
 
 describe('PatientDemographicsSheet', () => {
@@ -361,11 +399,16 @@ describe('SessionPageHeader', () => {
       />,
     );
     expect(html).toContain('Meena Iyer');
-    expect(html).toContain(counsellingCopy.patientDetails);
-    expect(html).toContain(counsellingTestIds.btnPatientDetails);
-    expect(html).toContain('FRESH-009');
-    expect(html).toContain('Dr. Rao');
-    expect(html).toContain('RE');
+    expect(html).not.toContain(counsellingTestIds.btnPatientDetails);
+    expect(html).not.toContain(counsellingTestIds.btnClinicalRecommendations);
+    expect(html).not.toContain('id="counselling-patient-context"');
+    expect(html).toContain('MRN FRESH-009');
+    expect(html).toContain('Female');
+    expect(html).toContain('Eye RE');
+    expect(html).not.toContain(`>${counsellingCopy.patient}<`);
+    expect(html).not.toContain(counsellingCopy.counsellingSession);
+    expect(html).not.toContain('Dr. Rao');
+    expect(html).not.toMatch(/\d+\s+yrs/);
     expect(html).not.toContain('undefined');
   });
 
@@ -420,13 +463,14 @@ describe('SessionPageHeader', () => {
     expect(html).toContain('w-14');
     expect(html).toContain('ring-2');
     expect(html).toContain('text-[20px]');
-    expect(html).toContain('text-[12px]');
     expect(html).toContain('text-[13px]');
     expect(html).toContain('text-sm');
     expect(html).toContain('font-semibold');
-    expect(html).toContain('text-counselling-primary');
+    expect(html).toContain('text-counselling-foreground');
     expect(html).toContain('MRN FRESH-009');
     expect(html).toContain(' · ');
+    expect(html).not.toContain(`>${counsellingCopy.patient}<`);
+    expect(html).not.toMatch(/\d+\s+yrs/);
   });
 
   it('renders Clinical Recommendations and Patient Details as icon+label header buttons', () => {
@@ -440,14 +484,28 @@ describe('SessionPageHeader', () => {
       />,
     );
 
-    expect(html).toContain(`data-testid="${counsellingTestIds.btnClinicalRecommendations}"`);
-    expect(html).toContain(`data-testid="${counsellingTestIds.btnPatientDetails}"`);
-    expect(html).toContain(`aria-label="${counsellingCopy.clinicalRecommendations}"`);
-    expect(html).toContain(`aria-label="${counsellingCopy.patientDetails}"`);
-    expect(html).toContain('type="button"');
-    expect(html).toContain('lucide-stethoscope');
-    expect(html).toContain('lucide-user-round');
-    expect(html).toContain(counsellingCopy.clinicalRecommendations);
+    expect(html).not.toContain(`data-testid="${counsellingTestIds.btnClinicalRecommendations}"`);
+    expect(html).not.toContain(`data-testid="${counsellingTestIds.btnPatientDetails}"`);
+    expect(html).not.toContain('aria-controls="counselling-patient-context"');
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain('data-sheet="Sheet"');
+    const pageSrc = readFileSync(
+      join(__dirname, 'CounsellingSessionPageContent.tsx'),
+      'utf8',
+    );
+    expect(pageSrc).toContain('ClinicalRecommendationsContent');
+    expect(pageSrc).toContain('PatientDemographicsContent');
+    expect(pageSrc).toContain('CounsellingCard');
+    expect(pageSrc).toContain('sm:grid-cols-2');
+    expect(pageSrc).toContain('SessionHistoryBody');
+    expect(pageSrc).toContain('presentation="workspace"');
+    expect(pageSrc).toContain('summaryChips');
+    expect(pageSrc).not.toContain('<SessionHistoryModal');
+    const chromeSrc = readFileSync(
+      join(__dirname, 'CounsellingSessionChrome.tsx'),
+      'utf8',
+    );
+    expect(chromeSrc).not.toContain(counsellingTestIds.sessionSummaryBar);
 
     // No chevron / arrow as primary action visual.
     expect(html).not.toContain('lucide-chevron-right');
@@ -459,6 +517,40 @@ describe('SessionPageHeader', () => {
     expect(html).not.toMatch(/role="tablist"|TabsTrigger/i);
   });
 
+  it('places Decision, Payable, Payment, and Safety in the header', () => {
+    const html = renderToStaticMarkup(
+      <SessionPageHeader
+        session={baseSession}
+        queueStatus="Processed"
+        patientDetails={basePatient}
+        operativeEye="LE"
+        summaryChips={[
+          { id: 'decision', label: 'Decision', value: 'Decision pending', tone: 'warning' },
+          { id: 'payable', label: 'Payable', value: 'Not quoted yet', tone: 'neutral' },
+          { id: 'payment', label: 'Payment', value: 'Cash', tone: 'neutral' },
+        ]}
+        summaryStatusLine="Decision pending"
+        showOutpatientSafety
+        onOpenOutpatientSafety={() => undefined}
+      />,
+    );
+    const headerSrc = readFileSync(join(__dirname, 'SessionPageHeader.tsx'), 'utf8');
+    expect(headerSrc).toContain('sessionSummaryBar');
+    expect(html).toContain(`data-testid="${counsellingTestIds.sessionSummaryBar}"`);
+    expect(html).toContain(`data-testid="${counsellingTestIds.sessionSummaryChips}"`);
+    expect(html).toContain('Decision');
+    expect(html).toContain('Decision pending');
+    expect(html).toContain('Payable');
+    expect(html).toContain('Not quoted yet');
+    expect(html).toContain('Payment');
+    expect(html).toContain('Cash');
+    expect(html).toContain('Safety');
+    expect(html).toContain('Outpatient');
+    expect(html).toContain(`data-testid="${counsellingTestIds.outpatientAccess}"`);
+    expect(html).toContain('aria-label="Outpatient Safety"');
+    expect(html).not.toContain(counsellingSessionTokens.sessionStatusStrip);
+  });
+
   it('keeps Clinical Recommendations trigger when Doctor recommendation is absent', () => {
     const html = renderToStaticMarkup(
       <SessionPageHeader
@@ -467,9 +559,53 @@ describe('SessionPageHeader', () => {
         patientDetails={basePatient}
       />,
     );
-    expect(html).toContain(`data-testid="${counsellingTestIds.btnClinicalRecommendations}"`);
-    expect(html).toContain(counsellingCopy.clinicalRecommendations);
+    expect(html).not.toContain(`data-testid="${counsellingTestIds.btnClinicalRecommendations}"`);
     expect(html).not.toContain('border-l-2 border-amber-400/80 bg-amber-50/60');
+    expect(html).not.toContain('id="counselling-patient-context"');
+  });
+
+  it('places Patient Context first and History after Finish without journey-step semantics', () => {
+    const html = renderToStaticMarkup(
+      <CounsellingJourneyRail
+        activeMainTab="counselling"
+        activePhase="estimate"
+        phaseCompletion={{ estimate: false, decision: false, wrapup: false }}
+        showCoverageWorkflow
+        coverageProgress={{
+          uploadedDocCount: 0,
+          requiredDocCount: 3,
+          ccmsState: 'DRAFT',
+          preAuthSubmitted: false,
+        }}
+        queueStatus="Processed"
+        isRepeatState={false}
+        isSurgeryDoneState={false}
+        canGoToPhase={(phase) => phase === 'estimate'}
+      />,
+    );
+
+    const patientAt = html.indexOf('aria-label="Patient Context"');
+    const quoteAt = html.indexOf('Quote');
+    const finishAt = html.lastIndexOf('Finish');
+    const historyAt = html.indexOf(`aria-label="${counsellingCopy.sessionHistoryAria}"`);
+    expect(patientAt).toBeGreaterThan(-1);
+    expect(quoteAt).toBeGreaterThan(patientAt);
+    expect(finishAt).toBeGreaterThan(quoteAt);
+    expect(historyAt).toBeGreaterThan(finishAt);
+
+    for (const label of ['Quote', 'Decision', 'Insurance', 'Notes', 'Finish']) {
+      expect(html).toContain(label);
+    }
+    expect(html.match(/data-journey-status=/g)).toHaveLength(5);
+
+    const patientTag = html.slice(html.lastIndexOf('<button', patientAt), html.indexOf('>', patientAt));
+    const historyTag = html.slice(html.lastIndexOf('<button', historyAt), html.indexOf('>', historyAt));
+    expect(patientTag).not.toContain('aria-current');
+    expect(patientTag).not.toContain('data-journey-status');
+    expect(historyTag).toContain('type="button"');
+    expect(historyTag).not.toContain('aria-current');
+    expect(historyTag).not.toContain('data-journey-status');
+    expect(html).not.toContain('role="dialog"');
   });
 });
 

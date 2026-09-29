@@ -236,6 +236,7 @@ namespace AuthService.Context
         public DbSet<CounselorLabOrderItem> CounselorLabOrderItems { get; set; } // Individual lab orders from counselor
         
         // Module 3.12: Audio Transcription & Translation (Feb 24, 2026)
+        public DbSet<CounselingConversation> CounselingConversations { get; set; }
         public DbSet<SessionRecording> SessionRecordings { get; set; }
         public DbSet<SessionTranscript> SessionTranscripts { get; set; }
         public DbSet<TranscriptEdit> TranscriptEdits { get; set; }
@@ -2912,7 +2913,9 @@ namespace AuthService.Context
                 entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
                 entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
                 entity.Property(e => e.SessionId).HasColumnName("session_id").IsRequired();
+                entity.Property(e => e.ConversationId).HasColumnName("conversation_id");
                 entity.Property(e => e.DocumentId).HasColumnName("document_id");
+                entity.Property(e => e.RecordingState).HasColumnName("recording_state").HasMaxLength(30).HasDefaultValue(CounselingRecordingState.Created);
                 
                 // Recording details
                 entity.Property(e => e.RecordingType).HasColumnName("recording_type").HasMaxLength(20).HasDefaultValue("Audio");
@@ -2951,11 +2954,41 @@ namespace AuthService.Context
                 entity.HasIndex(e => e.SessionId);
                 entity.HasIndex(e => e.TranscriptionStatus);
                 entity.HasIndex(e => e.CreatedAt);
+                entity.HasIndex(e => e.ConversationId);
                 
                 // Query filter
                 entity.HasQueryFilter(e => e.DeletedAt == null);
             });
-            
+
+            builder.Entity<CounselingConversation>(entity =>
+            {
+                entity.ToTable("counseling_conversations");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.BranchId).HasColumnName("branch_id");
+                entity.Property(e => e.SessionId).HasColumnName("session_id").IsRequired();
+                entity.Property(e => e.SequenceNumber).HasColumnName("sequence_number").IsRequired();
+                entity.Property(e => e.StartedAt).HasColumnName("started_at").IsRequired();
+                entity.Property(e => e.EndedAt).HasColumnName("ended_at");
+                entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).HasDefaultValue(CounselingConversationStatus.Active);
+                entity.Property(e => e.Version).HasColumnName("version").IsConcurrencyToken().HasDefaultValue(1);
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+                entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id").IsRequired();
+                entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+                entity.HasIndex(e => new { e.SessionId, e.SequenceNumber })
+                    .IsUnique()
+                    .HasFilter("deleted_at IS NULL")
+                    .HasDatabaseName("ux_counseling_conversations_session_sequence");
+                entity.HasIndex(e => e.SessionId)
+                    .IsUnique()
+                    .HasFilter("deleted_at IS NULL AND ended_at IS NULL")
+                    .HasDatabaseName("ux_counseling_conversations_one_open");
+                entity.HasIndex(e => e.TenantId);
+                entity.HasQueryFilter(e => e.DeletedAt == null);
+            });
+
             builder.Entity<SessionTranscript>(entity =>
             {
                 entity.ToTable("session_transcripts");

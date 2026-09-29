@@ -3,6 +3,15 @@ using System.Collections.Generic;
 
 namespace AuthService.Models.Counselor
 {
+    public static class CounselingRecordingState
+    {
+        public const string Created = "Created";
+        public const string Uploaded = "Uploaded";
+        public const string Processing = "Processing";
+        public const string Completed = "Completed";
+        public const string Failed = "Failed";
+    }
+
     // =====================================================
     // SESSION RECORDING MODELS
     // =====================================================
@@ -12,7 +21,15 @@ namespace AuthService.Models.Counselor
         public Guid Id { get; set; }
         public Guid TenantId { get; set; }
         public Guid SessionId { get; set; }
+        public Guid? ConversationId { get; set; }
         public Guid? DocumentId { get; set; }
+
+        /// <summary>
+        /// Upload lifecycle for a future transcription worker.
+        /// Created, Uploaded, Processing, Completed, Failed.
+        /// TranscriptionStatus stays separate and is not set by upload.
+        /// </summary>
+        public string RecordingState { get; set; } = CounselingRecordingState.Created;
 
         // Recording Details
         public string RecordingType { get; set; } = "Audio";
@@ -136,10 +153,34 @@ namespace AuthService.Models.Counselor
 
     public class TranscriptSegment
     {
-        public double Start { get; set; } // seconds
-        public double End { get; set; } // seconds
+        public double? Start { get; set; }
+        public double? End { get; set; }
         public string Text { get; set; } = null!;
         public double? Confidence { get; set; }
+        /// <summary>Provider speaker id such as speaker_1. Never a role name.</summary>
+        public string? Speaker { get; set; }
+    }
+
+    public static class CounselingTranscriptionStatus
+    {
+        public const string NotRequested = "NotRequested";
+        public const string Pending = "Pending";
+        public const string InProgress = "InProgress";
+        public const string Completed = "Completed";
+        public const string Failed = "Failed";
+    }
+
+    public static class CounselingTranscriptionErrors
+    {
+        public const string ProviderUnavailable = "ProviderUnavailable";
+        public const string ProviderRejected = "ProviderRejected";
+        public const string StorageAccessDenied = "StorageAccessDenied";
+        public const string InvalidRecording = "InvalidRecording";
+        public const string AuthorizationFailed = "AuthorizationFailed";
+        public const string ConfigurationMissing = "ConfigurationMissing";
+        public const string ProcessingFailed = "ProcessingFailed";
+
+        public const string SafeClientMessage = "Transcription could not be completed.";
     }
 
     public class TranscriptEditDto
@@ -187,8 +228,12 @@ namespace AuthService.Models.Counselor
     {
         public Guid RecordingId { get; set; }
         public string Status { get; set; } = null!;
-        public string? JobId { get; set; }
         public string? Message { get; set; }
+        public string? ErrorCategory { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string? JobId { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public SessionOperationFailureKind? FailureKind { get; set; }
     }
 
     public class TranslationJobResponse

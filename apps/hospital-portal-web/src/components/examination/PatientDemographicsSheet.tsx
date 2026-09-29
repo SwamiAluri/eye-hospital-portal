@@ -88,6 +88,7 @@ function SectionWidget({
   children,
   emptyMessage,
   isEmpty = false,
+  flat = false,
 }: {
   title: string;
   icon: LucideIcon;
@@ -95,9 +96,16 @@ function SectionWidget({
   children?: ReactNode;
   emptyMessage?: string;
   isEmpty?: boolean;
+  flat?: boolean;
 }) {
   return (
-    <section className="rounded-xl border border-border/70 bg-card px-3 py-2.5 shadow-sm">
+    <section
+      className={
+        flat
+          ? 'border-t border-border/50 pt-2.5 first:border-t-0 first:pt-0'
+          : 'rounded-xl border border-border/70 bg-card px-3 py-2.5 shadow-sm'
+      }
+    >
       <h3 className="mb-1.5 flex items-center gap-2 text-sm font-semibold leading-5 text-foreground">
         <span
           className={cn(
@@ -135,6 +143,8 @@ export interface PatientDemographicsContentProps {
   counsellingContext?: PatientDemographicsCounsellingContext | null;
   mrnFallback?: string | null;
   genderFallback?: string | null;
+  /** Sheet keeps nested cards. Counselling session uses one outer card and flat rows. */
+  presentation?: 'sheet' | 'workspace';
 }
 
 export function PatientDemographicsContent({
@@ -145,7 +155,9 @@ export function PatientDemographicsContent({
   counsellingContext,
   mrnFallback,
   genderFallback,
+  presentation = 'sheet',
 }: PatientDemographicsContentProps) {
+  const workspace = presentation === 'workspace';
   const name = formatPatientDisplayName(patient, displayNameFallback);
   const dob = formatPatientDob(patient.dateOfBirth);
   const mrn = resolvePatientMrn(patient, mrnFallback);
@@ -198,6 +210,82 @@ export function PatientDemographicsContent({
     dob || gender || ageYearsLabel || patient.bloodGroup?.trim(),
   );
 
+  const identitySection = hasIdentitySection ? (
+    <SectionWidget title="Identity" icon={UserRound} iconTone="identity" flat={workspace}>
+      <FieldRow label="Date of Birth" value={dob} />
+      <FieldRow label="Gender" value={gender} />
+      <FieldRow label="Age" value={ageYearsLabel} />
+      <FieldRow label="Blood Group" value={patient.bloodGroup} />
+    </SectionWidget>
+  ) : null;
+
+  const lowerSections = (
+    <>
+      <SectionWidget
+        title="Contact"
+        icon={Phone}
+        iconTone="contact"
+        emptyMessage="No contact information available"
+        isEmpty={!hasContact}
+        flat={workspace}
+      >
+        {contactRows}
+      </SectionWidget>
+
+      {hasVisitContext ? (
+        <SectionWidget title="Visit & Session" icon={CalendarDays} iconTone="visit" flat={workspace}>
+          <FieldRow label="Visit" value={visitLabel} />
+          <FieldRow label="Counselling" value={counsellingContext?.counsellingType} />
+          <FieldRow
+            label="Session Status"
+            value={counsellingContext?.sessionStatus}
+            valueNode={
+              counsellingContext?.sessionStatus?.trim() ? (
+                <SessionStatusValue status={counsellingContext.sessionStatus.trim()} />
+              ) : undefined
+            }
+          />
+        </SectionWidget>
+      ) : null}
+
+      {hasClinical ? (
+        <SectionWidget title="Clinical Context" icon={Eye} iconTone="clinical" flat={workspace}>
+          <FieldRow label="Eye" value={eye} />
+          <FieldRow
+            label="Consulting Doctor"
+            value={counsellingContext?.consultingDoctor}
+          />
+        </SectionWidget>
+      ) : null}
+
+      {(patient.insuranceProvider || patient.insurancePolicyNumber) && (
+        <SectionWidget title="Insurance" icon={Shield} iconTone="insurance" flat={workspace}>
+          <FieldRow label="Provider" value={patient.insuranceProvider} />
+          <FieldRow label="Policy" value={patient.insurancePolicyNumber} />
+        </SectionWidget>
+      )}
+    </>
+  );
+
+  if (workspace) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start gap-6" data-testid="patient-details-identity-band">
+          <PatientAvatar
+            photoUrl={patient.photoUrl}
+            firstName={patient.firstName}
+            lastName={patient.lastName}
+            displayName={name}
+            size="xl"
+            className="h-56 w-48 shrink-0 rounded-lg text-3xl ring-1 ring-border/70"
+          />
+          <div className="min-w-0 flex-1">{identitySection}</div>
+        </div>
+        <div data-testid="patient-details-lower">{lowerSections}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <section
@@ -233,58 +321,8 @@ export function PatientDemographicsContent({
           </div>
         </div>
       </section>
-
-      {hasIdentitySection ? (
-        <SectionWidget title="Identity" icon={UserRound} iconTone="identity">
-          <FieldRow label="Date of Birth" value={dob} />
-          <FieldRow label="Gender" value={gender} />
-          <FieldRow label="Age" value={ageYearsLabel} />
-          <FieldRow label="Blood Group" value={patient.bloodGroup} />
-        </SectionWidget>
-      ) : null}
-
-      <SectionWidget
-        title="Contact"
-        icon={Phone}
-        iconTone="contact"
-        emptyMessage="No contact information available"
-        isEmpty={!hasContact}
-      >
-        {contactRows}
-      </SectionWidget>
-
-      {hasVisitContext ? (
-        <SectionWidget title="Visit & Session" icon={CalendarDays} iconTone="visit">
-          <FieldRow label="Visit" value={visitLabel} />
-          <FieldRow label="Counselling" value={counsellingContext?.counsellingType} />
-          <FieldRow
-            label="Session Status"
-            value={counsellingContext?.sessionStatus}
-            valueNode={
-              counsellingContext?.sessionStatus?.trim() ? (
-                <SessionStatusValue status={counsellingContext.sessionStatus.trim()} />
-              ) : undefined
-            }
-          />
-        </SectionWidget>
-      ) : null}
-
-      {hasClinical ? (
-        <SectionWidget title="Clinical Context" icon={Eye} iconTone="clinical">
-          <FieldRow label="Eye" value={eye} />
-          <FieldRow
-            label="Consulting Doctor"
-            value={counsellingContext?.consultingDoctor}
-          />
-        </SectionWidget>
-      ) : null}
-
-      {(patient.insuranceProvider || patient.insurancePolicyNumber) && (
-        <SectionWidget title="Insurance" icon={Shield} iconTone="insurance">
-          <FieldRow label="Provider" value={patient.insuranceProvider} />
-          <FieldRow label="Policy" value={patient.insurancePolicyNumber} />
-        </SectionWidget>
-      )}
+      {identitySection}
+      {lowerSections}
     </div>
   );
 }

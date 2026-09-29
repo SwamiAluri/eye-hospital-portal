@@ -337,6 +337,200 @@ function ChangeDetails({
   );
 }
 
+export interface SessionHistoryBodyProps {
+  entries: SessionAuditEntry[];
+  isLoading: boolean;
+  counselorNameById?: Record<string, string>;
+}
+
+/** Existing history loading, empty, desktop table, and stacked records. Not a dialog. */
+export function SessionHistoryBody({
+  entries,
+  isLoading,
+  counselorNameById = {},
+}: SessionHistoryBodyProps) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  function toggleExpand(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <>
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-14 text-muted-foreground">
+          <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-muted border-b-primary" />
+          <p className="text-sm">Loading history…</p>
+        </div>
+      ) : null}
+
+      {!isLoading && entries.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-14 text-muted-foreground">
+          <p className="text-sm font-medium text-foreground">No history yet</p>
+          <p className="mt-1 text-xs text-center">Changes to this session will appear here</p>
+        </div>
+      ) : null}
+
+      {!isLoading && entries.length > 0 ? (
+        <div data-testid="session-history-table">
+          <div data-testid="session-history-desktop" className="hidden md:block overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th scope="col" className="py-2 pr-3 font-medium">
+                    Event
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-medium whitespace-nowrap">
+                    Date &amp; Time
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-medium">
+                    Actor
+                  </th>
+                  <th scope="col" className="py-2 font-medium">
+                    Change / Details
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry, idx) => {
+                  const cfg = ACTION_CONFIG[entry.changeType] ?? {
+                    label: entry.changeType,
+                    tone: 'text-foreground',
+                  };
+                  const rowId = entry.id ?? String(idx);
+                  return (
+                    <tr key={rowId} className="border-b border-border/70 align-top last:border-0">
+                      <td className={cn('py-2.5 pr-3 font-semibold', cfg.tone)}>{cfg.label}</td>
+                      <td className="py-2.5 pr-3 whitespace-nowrap text-muted-foreground">
+                        {formatDate(entry.changedAt)}
+                      </td>
+                      <td className="py-2.5 pr-3 text-foreground">{entry.changedBy || '—'}</td>
+                      <td className="py-2.5">
+                        <ChangeDetails
+                          entry={entry}
+                          nameById={counselorNameById}
+                          expanded={expandedIds.has(rowId)}
+                          onToggle={() => toggleExpand(rowId)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <ul data-testid="session-history-stacked" className="md:hidden space-y-3">
+            {entries.map((entry, idx) => {
+              const cfg = ACTION_CONFIG[entry.changeType] ?? {
+                label: entry.changeType,
+                tone: 'text-foreground',
+              };
+              const rowId = entry.id ?? String(idx);
+              return (
+                <li key={rowId} className="rounded-md border border-border bg-muted/20 px-3 py-2.5">
+                  <p className={cn('text-sm font-semibold', cfg.tone)}>{cfg.label}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(entry.changedAt)}</p>
+                  <dl className="mt-2 space-y-1.5 text-xs">
+                    <div>
+                      <dt className="text-muted-foreground">
+                        {entry.changeType === 'OwnershipRequeued' ? 'Requeued by' : 'Actor'}
+                      </dt>
+                      <dd className="font-medium text-foreground">{entry.changedBy || '—'}</dd>
+                    </div>
+                    {entry.changeType === 'OwnershipRequeued' ? (
+                      <>
+                        {entry.reason ? (
+                          <div>
+                            <dt className="text-muted-foreground">Reason</dt>
+                            <dd className="font-medium text-foreground">{entry.reason}</dd>
+                          </div>
+                        ) : null}
+                        <div>
+                          <dt className="text-muted-foreground">From</dt>
+                          <dd className="font-medium text-foreground">
+                            {formatOwnershipParty(entry.oldValue, counselorNameById)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-muted-foreground">To</dt>
+                          <dd className="font-medium text-foreground">
+                            {formatOwnershipParty(entry.newValue, counselorNameById)}
+                          </dd>
+                        </div>
+                      </>
+                    ) : OWNERSHIP_CHANGE_TYPES.has(entry.changeType) ? (
+                      <>
+                        <div>
+                          <dt className="text-muted-foreground">From</dt>
+                          <dd className="font-medium text-foreground">
+                            {formatOwnershipParty(entry.oldValue, counselorNameById)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-muted-foreground">To</dt>
+                          <dd className="font-medium text-foreground">
+                            {formatOwnershipParty(entry.newValue, counselorNameById)}
+                          </dd>
+                        </div>
+                        {entry.changeType === 'OwnershipClaimed' && entry.reason ? (
+                          <div>
+                            <dt className="text-muted-foreground">Intent</dt>
+                            <dd className="font-medium text-foreground">{entry.reason}</dd>
+                          </div>
+                        ) : null}
+                        {entry.changeType === 'OwnershipReassigned' ? (
+                          <>
+                            <div>
+                              <dt className="text-muted-foreground">Intent</dt>
+                              <dd className="font-medium text-foreground">General Reassign</dd>
+                            </div>
+                            {entry.reason ? (
+                              <div>
+                                <dt className="text-muted-foreground">Reason</dt>
+                                <dd className="font-medium text-foreground">{entry.reason}</dd>
+                              </div>
+                            ) : null}
+                          </>
+                        ) : null}
+                        <div>
+                          <dt className="text-muted-foreground">Source</dt>
+                          <dd className="font-medium text-foreground">
+                            {entry.changeType === 'OwnershipClaimed'
+                              ? 'Lifecycle Claim'
+                              : entry.changeType === 'OwnershipReassigned'
+                                ? 'Reassign'
+                                : entry.reason || '—'}
+                          </dd>
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <dt className="text-muted-foreground">Change</dt>
+                        <dd>
+                          <ChangeDetails
+                            entry={entry}
+                            nameById={counselorNameById}
+                            expanded={expandedIds.has(rowId)}
+                            onToggle={() => toggleExpand(rowId)}
+                          />
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function SessionHistoryModal({
   isOpen,
   onClose,
@@ -345,7 +539,6 @@ export function SessionHistoryModal({
   anchorRef,
   counselorNameById = {},
 }: SessionHistoryModalProps) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [panelPos, setPanelPos] = useState<{ top: number; right: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -363,16 +556,8 @@ export function SessionHistoryModal({
 
   if (!isOpen) return null;
 
-  function toggleExpand(id: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
   return (
-    <div className="fixed inset-0 z-50" onClick={onClose}>
+    <div className="counsellor-scrollbar fixed inset-0 z-50" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
@@ -402,195 +587,11 @@ export function SessionHistoryModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 sm:p-4">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-14 text-muted-foreground">
-              <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-muted border-b-primary" />
-              <p className="text-sm">Loading history…</p>
-            </div>
-          ) : null}
-
-          {!isLoading && entries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 text-muted-foreground">
-              <p className="text-sm font-medium text-foreground">No history yet</p>
-              <p className="mt-1 text-xs text-center">Changes to this session will appear here</p>
-            </div>
-          ) : null}
-
-          {!isLoading && entries.length > 0 ? (
-            <div data-testid="session-history-table">
-              {/* Desktop: structured table */}
-              <div
-                data-testid="session-history-desktop"
-                className="hidden md:block overflow-x-auto"
-              >
-                <table className="w-full border-collapse text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground">
-                      <th scope="col" className="py-2 pr-3 font-medium">
-                        Event
-                      </th>
-                      <th scope="col" className="py-2 pr-3 font-medium whitespace-nowrap">
-                        Date &amp; Time
-                      </th>
-                      <th scope="col" className="py-2 pr-3 font-medium">
-                        Actor
-                      </th>
-                      <th scope="col" className="py-2 font-medium">
-                        Change / Details
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry, idx) => {
-                      const cfg = ACTION_CONFIG[entry.changeType] ?? {
-                        label: entry.changeType,
-                        tone: 'text-foreground',
-                      };
-                      const rowId = entry.id ?? String(idx);
-                      return (
-                        <tr
-                          key={rowId}
-                          className="border-b border-border/70 align-top last:border-0"
-                        >
-                          <td className={cn('py-2.5 pr-3 font-semibold', cfg.tone)}>
-                            {cfg.label}
-                          </td>
-                          <td className="py-2.5 pr-3 whitespace-nowrap text-muted-foreground">
-                            {formatDate(entry.changedAt)}
-                          </td>
-                          <td className="py-2.5 pr-3 text-foreground">
-                            {entry.changedBy || '—'}
-                          </td>
-                          <td className="py-2.5">
-                            <ChangeDetails
-                              entry={entry}
-                              nameById={counselorNameById}
-                              expanded={expandedIds.has(rowId)}
-                              onToggle={() => toggleExpand(rowId)}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Tablet/mobile: stacked records */}
-              <ul
-                data-testid="session-history-stacked"
-                className="md:hidden space-y-3"
-              >
-                {entries.map((entry, idx) => {
-                  const cfg = ACTION_CONFIG[entry.changeType] ?? {
-                    label: entry.changeType,
-                    tone: 'text-foreground',
-                  };
-                  const rowId = entry.id ?? String(idx);
-                  return (
-                    <li
-                      key={rowId}
-                      className="rounded-md border border-border bg-muted/20 px-3 py-2.5"
-                    >
-                      <p className={cn('text-sm font-semibold', cfg.tone)}>{cfg.label}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {formatDate(entry.changedAt)}
-                      </p>
-                      <dl className="mt-2 space-y-1.5 text-xs">
-                        <div>
-                          <dt className="text-muted-foreground">
-                            {entry.changeType === 'OwnershipRequeued' ? 'Requeued by' : 'Actor'}
-                          </dt>
-                          <dd className="font-medium text-foreground">
-                            {entry.changedBy || '—'}
-                          </dd>
-                        </div>
-                        {entry.changeType === 'OwnershipRequeued' ? (
-                          <>
-                            {entry.reason ? (
-                              <div>
-                                <dt className="text-muted-foreground">Reason</dt>
-                                <dd className="font-medium text-foreground">{entry.reason}</dd>
-                              </div>
-                            ) : null}
-                            <div>
-                              <dt className="text-muted-foreground">From</dt>
-                              <dd className="font-medium text-foreground">
-                                {formatOwnershipParty(entry.oldValue, counselorNameById)}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-muted-foreground">To</dt>
-                              <dd className="font-medium text-foreground">
-                                {formatOwnershipParty(entry.newValue, counselorNameById)}
-                              </dd>
-                            </div>
-                          </>
-                        ) : OWNERSHIP_CHANGE_TYPES.has(entry.changeType) ? (
-                          <>
-                            <div>
-                              <dt className="text-muted-foreground">From</dt>
-                              <dd className="font-medium text-foreground">
-                                {formatOwnershipParty(entry.oldValue, counselorNameById)}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-muted-foreground">To</dt>
-                              <dd className="font-medium text-foreground">
-                                {formatOwnershipParty(entry.newValue, counselorNameById)}
-                              </dd>
-                            </div>
-                            {entry.changeType === 'OwnershipClaimed' && entry.reason ? (
-                              <div>
-                                <dt className="text-muted-foreground">Intent</dt>
-                                <dd className="font-medium text-foreground">{entry.reason}</dd>
-                              </div>
-                            ) : null}
-                            {entry.changeType === 'OwnershipReassigned' ? (
-                              <>
-                                <div>
-                                  <dt className="text-muted-foreground">Intent</dt>
-                                  <dd className="font-medium text-foreground">General Reassign</dd>
-                                </div>
-                                {entry.reason ? (
-                                  <div>
-                                    <dt className="text-muted-foreground">Reason</dt>
-                                    <dd className="font-medium text-foreground">{entry.reason}</dd>
-                                  </div>
-                                ) : null}
-                              </>
-                            ) : null}
-                            <div>
-                              <dt className="text-muted-foreground">Source</dt>
-                              <dd className="font-medium text-foreground">
-                                {entry.changeType === 'OwnershipClaimed'
-                                  ? 'Lifecycle Claim'
-                                  : entry.changeType === 'OwnershipReassigned'
-                                    ? 'Reassign'
-                                    : entry.reason || '—'}
-                              </dd>
-                            </div>
-                          </>
-                        ) : (
-                          <div>
-                            <dt className="text-muted-foreground">Change</dt>
-                            <dd>
-                              <ChangeDetails
-                                entry={entry}
-                                nameById={counselorNameById}
-                                expanded={expandedIds.has(rowId)}
-                                onToggle={() => toggleExpand(rowId)}
-                              />
-                            </dd>
-                          </div>
-                        )}
-                      </dl>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ) : null}
+          <SessionHistoryBody
+            entries={entries}
+            isLoading={isLoading}
+            counselorNameById={counselorNameById}
+          />
         </div>
 
         <div className="flex justify-end border-t border-border px-4 py-2.5">

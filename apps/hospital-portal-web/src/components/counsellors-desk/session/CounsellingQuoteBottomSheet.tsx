@@ -60,7 +60,7 @@ export function CounsellingQuoteBottomSheet({
         <CounsellingSheetContent
           side="bottom"
           className={cn(
-            'flex max-h-[min(72vh,640px)] flex-col gap-0 overflow-hidden rounded-t-2xl border-t border-counselling-border p-0 lg:hidden',
+            'counsellor-scrollbar flex max-h-[min(72vh,640px)] flex-col gap-0 overflow-hidden rounded-t-2xl border-t border-counselling-border p-0 lg:hidden',
             '[&>button]:hidden',
           )}
           style={{

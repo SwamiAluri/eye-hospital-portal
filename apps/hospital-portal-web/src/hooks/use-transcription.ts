@@ -43,10 +43,8 @@ export function useTranscriptionStatus(
     // Poll every 10 seconds when status is InProgress
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      if (status === 'InProgress' || status === 'Running') {
-        return 10000; // 10 seconds
-      }
-      return false; // Don't refetch
+      if (status === 'Pending' || status === 'InProgress') return 10000;
+      return false;
     },
     staleTime: 5000, // 5 seconds
     ...options,

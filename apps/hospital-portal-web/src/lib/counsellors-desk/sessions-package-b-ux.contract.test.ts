@@ -8,18 +8,19 @@ const sessionsPage = readFileSync(
 );
 
 describe('Phase 3I Slice 13 Package B — Sessions UX remediation contracts', () => {
-  it('uses Counsellor shell + pill RR filter patterns (no second RR mechanism)', () => {
+  it('uses the Counsellor shell and one filter sheet for the register', () => {
     expect(sessionsPage).toContain('counsellingSessionTokens.shellPage');
     expect(sessionsPage).toContain('counsellingSessionTokens.sessionWidget');
-    expect(sessionsPage).toContain('counsellingSessionTokens.pillTab');
-    expect(sessionsPage).toContain('counsellingSessionTokens.pillTabCurrent');
-    expect(sessionsPage).toContain('aria-pressed={reassignmentRequired}');
-    expect(sessionsPage).toContain('data-testid="reassignment-required-filter"');
-    expect(sessionsPage).toContain('toggleReassignmentRequiredInSearchParams');
+    expect(sessionsPage).toContain('data-testid="sessions-filters-open"');
+    expect(sessionsPage).toContain('id="sessions-filter-rr"');
+    expect(sessionsPage).toContain('applySessionsRegisterDraft');
+    expect(sessionsPage).not.toContain('toggleReassignmentRequiredInSearchParams');
+    expect(sessionsPage).not.toContain('pillTabCurrent');
   });
 
-  it('does not duplicate RR as a filter chip when the pill already shows it', () => {
-    expect(sessionsPage).toContain('Non-RR filter chips only');
+  it('shows Reassignment Required as a removable register filter', () => {
+    expect(sessionsPage).toContain('Active register filters, including Reassignment Required.');
+    expect(sessionsPage).toContain('>Reassignment required<');
     expect(sessionsPage).not.toMatch(
       /if \(reassignmentRequired\) chips\.push\('Reassignment Required'\)/,
     );
@@ -53,14 +54,18 @@ describe('Phase 3I Slice 13 Package B — Sessions UX remediation contracts', ()
   });
 
   it('uses the approved RR empty-state copy', () => {
-    expect(sessionsPage).toContain('No sessions require reassignment');
-    expect(sessionsPage).toContain('None match the Reassignment Required filter.');
+    expect(sessionsPage).toContain('resolveSessionsEmptyCopy');
+    expect(sessionsPage).toContain('role="status"');
     expect(sessionsPage).toContain('data-testid="sessions-list-empty"');
+    expect(sessionsPage).not.toContain('None match the Reassignment Required filter.');
   });
 
-  it('does not expose ReQueue or invent Owner column / KPI strip', () => {
+  it('shows Owner and Status from the list payload and does not add a KPI strip or ReQueue', () => {
+    expect(sessionsPage).toMatch(/>\s*Owner\s*</);
+    expect(sessionsPage).toMatch(/>\s*Status\s*</);
+    expect(sessionsPage).toContain('sessionsOwnerLabel');
+    expect(sessionsPage).toContain('formatSessionListStatus');
     expect(sessionsPage).not.toMatch(/ReQueue|re-queue|requeue/i);
-    expect(sessionsPage).not.toMatch(/>Owner</);
     expect(sessionsPage).not.toMatch(/kpi|KPI/i);
   });
 });

@@ -327,6 +327,25 @@ public class CounselingAnalyticsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Aging_EmptyPopulation_AllCountsZero()
+    {
+        var emptyTenant = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var aging = await _svc.GetFollowupAgingAsync(emptyTenant, AllBranches(), null, null, 30, null, null, FixedUtc);
+        Assert.Equal("PendingDecision", aging.Population);
+        Assert.Equal(30, aging.Period);
+        Assert.Equal("period", aging.WindowMode);
+        Assert.Equal(0, aging.TotalPending);
+        Assert.Equal(0, aging.Counts.Bucket03);
+        Assert.Equal(0, aging.Counts.Bucket47);
+        Assert.Equal(0, aging.Counts.Bucket814);
+        Assert.Equal(0, aging.Counts.Bucket15Plus);
+        Assert.Empty(aging.Buckets.Bucket03);
+        Assert.Empty(aging.Buckets.Bucket47);
+        Assert.Empty(aging.Buckets.Bucket814);
+        Assert.Empty(aging.Buckets.Bucket15Plus);
+    }
+
+    [Fact]
     public async Task Aging_Buckets_ClassifyByDaysSinceSession()
     {
         var aging = await _svc.GetFollowupAgingAsync(_tenant, new[] { _branchA }, _branchA, null, 365, null, null, FixedUtc);

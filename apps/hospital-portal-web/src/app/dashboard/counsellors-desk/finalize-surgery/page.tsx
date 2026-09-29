@@ -14,7 +14,6 @@ import {
   AlertCircle,
   X,
   Printer,
-  ChevronRight,
   Calendar,
   Search,
   Users,
@@ -355,7 +354,6 @@ function FinalizeWorkRow({
   canMutateOt,
   onOpen,
   onAction,
-  onPrint,
   printSelection,
 }: {
   rec: FinalizeSurgeryRecord;
@@ -364,7 +362,6 @@ function FinalizeWorkRow({
   canMutateOt: boolean;
   onOpen: () => void;
   onAction: (action: ActionKey) => void;
-  onPrint: () => void;
   /** OT Prepared bulk print selection — current-page checkboxes only. */
   printSelection?: {
     checked: boolean;
@@ -479,19 +476,6 @@ function FinalizeWorkRow({
 
   const actionCell = (
     <div className="flex min-w-0 items-center justify-end gap-0.5" onClick={stop}>
-      {!showPrintSelect ? (
-        <CounsellingButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="!min-h-8 h-8 w-8 px-0 text-counselling-muted-foreground"
-          title="Print OT Slip"
-          aria-label="Print OT Slip"
-          onClick={onPrint}
-        >
-          <Printer className="h-3.5 w-3.5" />
-        </CounsellingButton>
-      ) : null}
       <CounsellingButton
         type="button"
         size="sm"
@@ -511,12 +495,6 @@ function FinalizeWorkRow({
       >
         {primary.label}
       </CounsellingButton>
-      {!showPrintSelect ? (
-        <ChevronRight
-          className="h-4 w-4 shrink-0 text-counselling-muted-foreground/50 transition-colors group-hover:text-counselling-muted-foreground"
-          aria-hidden
-        />
-      ) : null}
     </div>
   );
 
@@ -585,7 +563,9 @@ function FinalizeWorkRow({
 
 function WorklistSkeleton() {
   return (
-    <div className="divide-y divide-counselling-border/40" aria-hidden>
+    <div role="status">
+      <span className="sr-only">Loading</span>
+      <div className="divide-y divide-counselling-border/40" aria-hidden>
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className={cn(WORK_GRID, 'staff-worklist-row items-center px-1')}>
           <div className="h-3 max-w-[80%] animate-pulse rounded-full bg-counselling-muted" />
@@ -595,6 +575,7 @@ function WorklistSkeleton() {
           <div className="hidden h-7 w-16 justify-self-end animate-pulse rounded-md bg-counselling-muted sm:block" />
         </div>
       ))}
+      </div>
     </div>
   );
 }
@@ -785,6 +766,9 @@ export default function FinalizeSurgeryPage() {
   );
 }
 
+const SUMMARY_CARD_CLASS =
+  'min-w-0 rounded-lg border border-counselling-border/70 border-l-[3px] border-l-counselling-primary bg-counselling-card px-3 py-2.5 shadow-sm';
+
 function FinalizeSurgeryPageContent() {
   const { invalidateFinalizeList, patchFinalizeRecord } = useInvalidateCounsellorsDesk();
   const canMutateOt = useHasPermission(FINALIZE_OT_MUTATE_PERMISSION);
@@ -797,9 +781,19 @@ function FinalizeSurgeryPageContent() {
   const isLoading = finalizeQuery.isLoading && records.length === 0;
   const isRefreshing = finalizeQuery.isFetching && records.length > 0;
 
-  // PD-OTPREP-01/02: existing GET ot-schedule with date omitted — full ScheduleDate universe for catalog.
-  const catalogQuery = useFinalizeListQuery({ ...OT_PREP_SURGERY_DATE_CATALOG_FILTERS });
+  /** UI workspace only — not a backend status. */
+  const [activeWorkspace, setActiveWorkspace] = useState<'finalization' | 'ot-preparation'>(
+    'finalization',
+  );
+
+  // Existing undated OT catalog. Requested only while OT Preparation is active.
+  const catalogQuery = useFinalizeListQuery(
+    { ...OT_PREP_SURGERY_DATE_CATALOG_FILTERS },
+    activeWorkspace === 'ot-preparation',
+  );
   const catalogRecords = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
+  const finalisedSummaryPending =
+    catalogRecords.length === 0 && (catalogQuery.isLoading || catalogQuery.isError);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -834,10 +828,13 @@ function FinalizeSurgeryPageContent() {
     count: number;
   } | null>(null);
 
-  /** UI workspace only — not a backend status. */
-  const [activeWorkspace, setActiveWorkspace] = useState<'finalization' | 'ot-preparation'>(
-    'finalization',
-  );
+  useEffect(() => {
+    const title = activeWorkspace === 'ot-preparation' ? 'OT Preparation' : 'Finalize Surgery';
+    window.dispatchEvent(new CustomEvent('hp-finalize-visible-title', { detail: title }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('hp-finalize-visible-title', { detail: '' }));
+    };
+  }, [activeWorkspace]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<WaitingListPageSize>(WAITING_LIST_DEFAULT_PAGE_SIZE);
   /** Finalization OT Prepared — bulk OT slip print selection (current page only). */
@@ -862,12 +859,14 @@ function FinalizeSurgeryPageContent() {
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         void finalizeQuery.refetch();
-        void catalogQuery.refetch();
+        if (activeWorkspace === 'ot-preparation') {
+          void catalogQuery.refetch();
+        }
       }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [finalizeQuery, catalogQuery]);
+  }, [finalizeQuery, catalogQuery, activeWorkspace]);
 
   const filtered = useMemo(() => {
     if (activeTab === 'All') return records;
@@ -1034,13 +1033,6 @@ function FinalizeSurgeryPageContent() {
     });
     return result;
   }, [records]);
-
-  const printOtSlip = (rec: FinalizeSurgeryRecord) => {
-    const result = openOtSlipsPrint([rec]);
-    if (!result.opened) {
-      toast.error('Unable to open print window. Allow pop-ups and try again.');
-    }
-  };
 
   const printSelectedOtSlips = () => {
     if (otPreparedPrintSelectedCount === 0) return;
@@ -1271,8 +1263,8 @@ function FinalizeSurgeryPageContent() {
     <div
       className={cn(
         counsellingSessionTokens.shellPage,
-        'staff-page-fit overflow-hidden gap-0.5 px-2.5 pb-1 pt-0.5 h-full',
-        'min-[1600px]:gap-2.5 min-[1600px]:px-4 min-[1600px]:pb-4 min-[1600px]:pt-2.5',
+        'staff-page-fit overflow-hidden gap-0.5 px-2.5 pb-1 pt-0 h-full',
+        'min-[1600px]:gap-2.5 min-[1600px]:px-4 min-[1600px]:pb-4',
       )}
     >
       <FinalizeOtModal
@@ -1309,28 +1301,10 @@ function FinalizeSurgeryPageContent() {
         />
       ) : null}
 
-      <header className="flex shrink-0 flex-col justify-center px-0.5 py-0 min-[1600px]:py-0.5">
-        <h1
-          className="staff-page-title font-semibold tracking-tight text-counselling-foreground min-[1600px]:text-[1.375rem]"
-          data-testid="finalize-surgery-page-title"
-        >
-          {activeWorkspace === 'ot-preparation' ? 'OT Preparation' : 'Surgery Finalization'}
-        </h1>
-        {activeWorkspace === 'ot-preparation' ? (
-          <p
-            className="mt-0.5 text-xs text-counselling-muted-foreground"
-            data-testid="finalize-ot-prep-purpose"
-          >
-            Prepare Finalised surgeries for OT.
-          </p>
-        ) : null}
-      </header>
-
-      {/* ONE compact stats widget — Finalization KPIs OR OT-local strip */}
       <div
         className={cn(
-          counsellingSessionTokens.sessionStatusStrip,
-          'shrink-0',
+          'grid w-full min-w-0 shrink-0 gap-2',
+          activeWorkspace === 'ot-preparation' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3',
         )}
         data-testid={
           activeWorkspace === 'ot-preparation'
@@ -1342,53 +1316,51 @@ function FinalizeSurgeryPageContent() {
         }
       >
         {activeWorkspace === 'ot-preparation' ? (
-          <dl
-            className={cn(
-              counsellingSessionTokens.sessionStatusDetails,
-              'grid-cols-2 gap-x-2 gap-y-1 min-[1600px]:gap-x-4 min-[1600px]:gap-y-2',
-            )}
-          >
-            <div className="min-w-0" data-testid="finalize-ot-stat-finalised">
-              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
-                {otPrepFiltered.length}
-              </dd>
-              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Finalised</dt>
+          <>
+            <div className={SUMMARY_CARD_CLASS} data-testid="finalize-ot-stat-finalised">
+              <p className="truncate text-sm font-medium leading-5 text-counselling-muted-foreground">
+                Finalised
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums leading-7 text-counselling-foreground">
+                {finalisedSummaryPending ? '—' : otPrepFiltered.length}
+              </p>
             </div>
-            <div className="min-w-0" data-testid="finalize-ot-stat-selected">
-              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
+            <div className={SUMMARY_CARD_CLASS} data-testid="finalize-ot-stat-selected">
+              <p className="truncate text-sm font-medium leading-5 text-counselling-muted-foreground">
+                Selected
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums leading-7 text-counselling-foreground">
                 {otPrepSelectedCount}
-              </dd>
-              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Selected</dt>
+              </p>
             </div>
-          </dl>
+          </>
         ) : (
-          <dl
-            className={cn(
-              counsellingSessionTokens.sessionStatusDetails,
-              'grid-cols-3 gap-x-2 gap-y-1 min-[1600px]:gap-x-4 min-[1600px]:gap-y-2',
-            )}
-          >
-            <div className="min-w-0" data-testid="finalize-stat-scheduled">
-              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
-                {statsBar.total}
-              </dd>
-              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Scheduled</dt>
+          <>
+            <div className={SUMMARY_CARD_CLASS} data-testid="finalize-stat-scheduled">
+              <p className="truncate text-sm font-medium leading-5 text-counselling-muted-foreground">
+                Scheduled
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums leading-7 text-counselling-foreground">
+                {isLoading ? '—' : statsBar.total}
+              </p>
             </div>
-            <div className="min-w-0" data-testid="finalize-stat-needs-attention">
-              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
-                {statsBar.pendingActions}
-              </dd>
-              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>
+            <div className={SUMMARY_CARD_CLASS} data-testid="finalize-stat-needs-attention">
+              <p className="truncate text-sm font-medium leading-5 text-counselling-muted-foreground">
                 {NEEDS_ATTENTION_KPI_LABEL}
-              </dt>
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums leading-7 text-counselling-foreground">
+                {isLoading ? '—' : statsBar.pendingActions}
+              </p>
             </div>
-            <div className="min-w-0" data-testid="finalize-stat-surgery-done">
-              <dd className="text-base font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-lg min-[1600px]:leading-6 sm:min-[1600px]:text-xl">
-                {statsBar.surgeryDone}
-              </dd>
-              <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Surgery Done</dt>
+            <div className={SUMMARY_CARD_CLASS} data-testid="finalize-stat-surgery-done">
+              <p className="truncate text-sm font-medium leading-5 text-counselling-muted-foreground">
+                Surgery Done
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums leading-7 text-counselling-foreground">
+                {isLoading ? '—' : statsBar.surgeryDone}
+              </p>
             </div>
-          </dl>
+          </>
         )}
       </div>
 
@@ -1683,7 +1655,6 @@ function FinalizeSurgeryPageContent() {
                       canMutateOt={canMutateOt}
                       onOpen={() => openRow(rec.id)}
                       onAction={(action) => void handleAction(action, rec)}
-                      onPrint={() => printOtSlip(rec)}
                       printSelection={
                         isOtPreparedTab
                           ? {
@@ -1919,6 +1890,25 @@ function FinalizeSurgeryPageContent() {
             >
               {catalogQuery.isLoading && catalogRecords.length === 0 ? (
                 <WorklistSkeleton />
+              ) : catalogQuery.isError && catalogRecords.length === 0 ? (
+                <div
+                  role="alert"
+                  className="flex flex-col items-center gap-2 px-4 py-10 text-center"
+                  data-testid="finalize-ot-prep-catalog-error"
+                >
+                  <p className="text-sm font-medium text-red-800">Failed to load OT preparation</p>
+                  <p className="max-w-sm text-xs text-counselling-muted-foreground">
+                    The surgery catalog did not load. Retry to request it again.
+                  </p>
+                  <CounsellingButton
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void catalogQuery.refetch()}
+                  >
+                    Retry
+                  </CounsellingButton>
+                </div>
               ) : otPrepFiltered.length === 0 ? (
                 <div
                   className="flex flex-col items-center gap-2 px-4 py-10 text-center"

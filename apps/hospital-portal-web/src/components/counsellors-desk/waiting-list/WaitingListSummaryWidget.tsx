@@ -8,6 +8,10 @@ export type WaitingListSummaryWidgetProps = {
   activeTab: string;
   onTabChange: (key: string) => void;
   tabCounts: Record<string, number>;
+  /** Primary waiting-list request has no resolved counts yet. */
+  countsPending?: boolean;
+  /** Keys whose count is still pending (for example OT Returned after that tab is opened). */
+  pendingCountKeys?: readonly string[];
   statusTabs?: ReadonlyArray<{ key: string; label: string }>;
   className?: string;
   'data-testid'?: string;
@@ -27,46 +31,46 @@ const WORKLOAD_STATS = [
 ] as const;
 
 /**
- * Compact workload strip (subordinate) + status pill tabs (primary queue nav).
+ * Five separate statistic cards (label above the number) + status pill tabs.
  * Values come from existing tabCounts — no new KPI calculations.
  */
 export function WaitingListSummaryWidget({
   activeTab,
   onTabChange,
   tabCounts,
+  countsPending = false,
+  pendingCountKeys,
   statusTabs = WAITING_LIST_STATUS_TABS,
   className,
   'data-testid': testId = 'waiting-list-summary',
 }: WaitingListSummaryWidgetProps) {
+  const countText = (key: string) =>
+    countsPending || pendingCountKeys?.includes(key) ? '—' : String(tabCounts[key] ?? 0);
+
   return (
     <div
       data-testid={testId}
-      className={cn('flex w-full min-w-0 shrink-0 flex-col gap-1 min-[1600px]:gap-1.5', className)}
+      className={cn('flex w-full min-w-0 shrink-0 flex-col gap-2.5', className)}
     >
       <div
-        className={cn(
-          'shrink-0 rounded-md border border-counselling-border/40 bg-counselling-card/60 px-2.5 py-1.5',
-          'min-[1600px]:px-3 min-[1600px]:py-2',
-        )}
+        className="grid w-full min-w-0 shrink-0 grid-cols-5 gap-2"
         data-testid="waiting-list-stats"
         aria-label="Queue statistics"
       >
-        <dl
-          className={cn(
-            'grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3 lg:grid-cols-5',
-          )}
-        >
-          {WORKLOAD_STATS.map(({ key, label, testId: statTestId }) => (
-            <div key={key} className="min-w-0" data-testid={statTestId}>
-              <dd className="text-sm font-semibold leading-5 tabular-nums text-counselling-foreground min-[1600px]:text-base">
-                {tabCounts[key] ?? 0}
-              </dd>
-              <dt className="text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:text-[11px]">
-                {label}
-              </dt>
-            </div>
-          ))}
-        </dl>
+        {WORKLOAD_STATS.map(({ key, label, testId: statTestId }) => (
+          <div
+            key={key}
+            className="min-w-0 rounded-lg border border-counselling-border/70 border-l-[3px] border-l-counselling-primary bg-counselling-card px-3 py-2.5 shadow-sm"
+            data-testid={statTestId}
+          >
+            <p className="truncate text-sm font-medium leading-5 text-counselling-muted-foreground">
+              {label}
+            </p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums leading-7 text-counselling-foreground">
+              {countText(key)}
+            </p>
+          </div>
+        ))}
       </div>
 
       <div
@@ -79,11 +83,11 @@ export function WaitingListSummaryWidget({
         <div
           className={cn(
             counsellingSessionTokens.pillTabTrack,
-            'flex-nowrap gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin] min-[1600px]:gap-1.5',
+            'flex-nowrap gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:thin]',
           )}
         >
           {statusTabs.map(({ key, label }) => {
-            const count = tabCounts[key] ?? 0;
+            const count = countText(key);
             const isActive = activeTab === key;
             return (
               <button
@@ -94,7 +98,7 @@ export function WaitingListSummaryWidget({
                 onClick={() => onTabChange(key)}
                 className={cn(
                   counsellingSessionTokens.pillTab,
-                  'shrink-0 whitespace-nowrap',
+                  'shrink-0 whitespace-nowrap px-4',
                   isActive && counsellingSessionTokens.pillTabCurrent,
                 )}
                 data-testid={`waiting-list-status-tab-${key}`}

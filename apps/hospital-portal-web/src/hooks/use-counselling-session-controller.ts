@@ -30,6 +30,8 @@ import {
   findCounsellorVariant,
 } from '@/lib/master-data/clinical-catalog-master';
 import { resolveStaleIolSelection } from '@/lib/counsellors-desk/stale-iol-selection';
+import { matchRecommendedProcedureVariant } from '@/lib/counsellors-desk/lightweight-session-surgery';
+import { recommendedSurgeryName } from '@/lib/counsellors-desk/recommended-surgery-name';
 import {
   useCounsellorsMasterCatalogQuery,
   useStaffDirectoryQuery,
@@ -153,7 +155,11 @@ export function useCounsellingSessionController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionFrom = searchParams.get('from');
-  const sessionCloseHref = resolveCounsellingSessionCloseHref(sessionFrom);
+  const sessionReturnQuery = searchParams.get('returnQuery');
+  const sessionCloseHref = resolveCounsellingSessionCloseHref(
+    sessionFrom,
+    sessionReturnQuery,
+  );
   const { showConfirmation, ConfirmationComponent } = useConfirmation();
   const { invalidateWaitingList, invalidateSession } = useInvalidateCounsellorsDesk();
   const { options: insuranceProviderOptions } = useMasterValues('insurance.provider');
@@ -302,6 +308,8 @@ export function useCounsellingSessionController({
   const [visitedPhases, setVisitedPhases] = useState<CounsellingPhase[]>(['estimate']);
   const [finishSummaryActive, setFinishSummaryActive] = useState(false);
   const phasesInitializedRef = useRef(false);
+  /** Text recommendation is matched to the catalog once per session, after the catalog arrives. */
+  const recommendedCatalogMatchRef = useRef<string | null>(null);
 
   const overrides = useCounsellingOverrides({ sessionId, setSavedOverrides });
 
@@ -313,7 +321,9 @@ export function useCounsellingSessionController({
     void masterCatalogQuery.refetch();
   }, [masterCatalogQuery]);
 
-  const procedureQuery = useCounsellorProcedureVariants(!!session);
+  // Catalog is independent of the session payload. The quote grid stays in its
+  // own loading state; the session shell does not wait for it.
+  const procedureQuery = useCounsellorProcedureVariants(true);
   const procedureVariants = procedureQuery.variants;
   const procedureLoading = procedureQuery.loading;
   const procedureError = procedureQuery.error;
@@ -863,6 +873,7 @@ export function useCounsellingSessionController({
     investigationsHydratedRef.current = null;
     packageRestoredRef.current = null;
     phasesInitializedRef.current = false;
+    recommendedCatalogMatchRef.current = null;
     setActivePhase('estimate');
     setVisitedPhases(['estimate']);
     setWorkspaceCcmsCaseNumber(undefined);
@@ -1109,6 +1120,40 @@ export function useCounsellingSessionController({
       cancelled = true;
     };
   }, [sessionId, sessionQuery.data, sessionQuery.isError]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (recommendedCatalogMatchRef.current === session.id) return;
+    if (selectedVariantId || selectedSurgeryId?.startsWith('type-')) {
+      recommendedCatalogMatchRef.current = session.id;
+      return;
+    }
+    if (procedureLoading || procedureVariants.length === 0) return;
+    const variantId = matchRecommendedProcedureVariant(
+      procedureVariants,
+      recommendedSurgeryName(session.surgeries),
+    );
+    recommendedCatalogMatchRef.current = session.id;
+    if (!variantId) return;
+    setSelectedVariantId(variantId);
+    setSelectedSurgeryId(`type-${variantId}-${selectedEye}`);
+    setSession((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        surgeries: prev.surgeries.map((surgery) =>
+          surgery.isRecommended && !surgery.variantId ? { ...surgery, variantId } : surgery,
+        ),
+      };
+    });
+  }, [
+    session,
+    selectedVariantId,
+    selectedSurgeryId,
+    procedureLoading,
+    procedureVariants,
+    selectedEye,
+  ]);
 
   useEffect(() => {
     if (applyingPackageRef.current) {

@@ -84,11 +84,31 @@ function mapCounselorOptions(raw: unknown[]): CounselorOption[] {
     .filter((u) => u.id);
 }
 
-function Bar({ pct }: { pct: number }) {
+const ANALYTICS_CATEGORY_COLORS = [
+  'bg-counselling-primary/90',
+  'bg-counselling-primary/70',
+  'bg-counselling-primary/50',
+  'bg-counselling-primary/40',
+] as const;
+
+/** Stable by trimmed category key. Series order does not change the color. */
+export function analyticsCategoryColorClass(categoryKey: string): string {
+  let hash = 0;
+  const key = categoryKey.trim();
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (Math.imul(hash, 31) + key.charCodeAt(i)) >>> 0;
+  }
+  return ANALYTICS_CATEGORY_COLORS[hash % ANALYTICS_CATEGORY_COLORS.length];
+}
+
+function Bar({ pct, categoryKey }: { pct: number; categoryKey: string }) {
   return (
     <div className="h-2 flex-1 overflow-hidden rounded-full bg-counselling-muted">
       <div
-        className="h-full rounded-full bg-counselling-primary/70 transition-all duration-500"
+        className={cn(
+          'h-full rounded-full transition-all duration-500',
+          analyticsCategoryColorClass(categoryKey),
+        )}
         style={{ width: `${Math.min(100, pct)}%` }}
       />
     </div>
@@ -119,7 +139,7 @@ function SurgeryTypeRow({
       >
         {item.surgeryType}
       </p>
-      <Bar pct={barPct} />
+      <Bar pct={barPct} categoryKey={item.surgeryType} />
       <span className="w-8 flex-shrink-0 text-right text-xs font-semibold tabular-nums text-counselling-foreground">
         {item.count}
       </span>
@@ -167,7 +187,7 @@ function TrendsStrip({
             title={`${t.date}: ${t.count} sessions, ${t.agreedCount} agreed`}
           >
             <div
-              className="w-full max-w-[10px] rounded-t-sm bg-counselling-primary/60"
+              className="w-full max-w-[10px] rounded-t-sm bg-counselling-primary/70"
               style={{ height: h }}
             />
           </div>
@@ -663,6 +683,7 @@ export function CounselorAnalyticsTab() {
                         pct={
                           data.totalSessions > 0 ? (st.count / data.totalSessions) * 100 : 0
                         }
+                        categoryKey={st.sessionType}
                       />
                       <span className="w-8 flex-shrink-0 text-right text-xs font-semibold tabular-nums text-counselling-foreground">
                         {st.count}

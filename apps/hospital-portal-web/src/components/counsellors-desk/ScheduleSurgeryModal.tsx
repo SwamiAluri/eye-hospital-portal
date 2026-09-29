@@ -11,6 +11,7 @@ import {
   classifyScheduleLookupError,
   type ScheduleLookupOption,
 } from '@/lib/counsellors-desk/schedule-surgery-lookups';
+import { validateScheduleSurgerySubmission } from '@/lib/counsellors-desk/schedule-surgery-validation';
 import {
   formatCounsellingDateDisplay,
   formatCounsellingDateLabel,
@@ -195,13 +196,14 @@ export function ScheduleSurgeryModal({
   }, [isOpen, existingSchedule]);
 
   const validate = () => {
-    const next: Record<string, string> = {};
-    if (!toCounsellingDateOnly(selectedDate)) next.date = 'Please select a date';
-    if (!form.operationTheatre) next.operationTheatre = 'Operation Theatre is required';
-    if (!form.doctor) next.doctor = 'Doctor is required';
-    if (!form.surgeryStartTime) next.surgeryStartTime = 'Start time is required';
-    setErrors(next);
-    return Object.keys(next).length === 0;
+    const result = validateScheduleSurgerySubmission({
+      selectedDate: toCounsellingDateOnly(selectedDate),
+      operationTheatre: form.operationTheatre,
+      doctor: form.doctor,
+      surgeryStartTime: form.surgeryStartTime,
+    });
+    setErrors(result.errors);
+    return result.ok;
   };
 
   const handleSubmit = () => {
@@ -289,7 +291,7 @@ export function ScheduleSurgeryModal({
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <CounsellingLabel className="text-xs font-medium">
-                  {counsellingCopy.operationTheatre} <span className="text-red-500">*</span>
+                  {counsellingCopy.operationTheatre}
                 </CounsellingLabel>
                 <CounsellingSelect
                   value={form.operationTheatre || undefined}
@@ -371,7 +373,7 @@ export function ScheduleSurgeryModal({
 
               <div className="space-y-1.5">
                 <CounsellingLabel className="text-xs font-medium">
-                  {counsellingCopy.surgeryStartTime} <span className="text-red-500">*</span>
+                  {counsellingCopy.surgeryStartTime}
                 </CounsellingLabel>
                 <CounsellingInput
                   type="time"

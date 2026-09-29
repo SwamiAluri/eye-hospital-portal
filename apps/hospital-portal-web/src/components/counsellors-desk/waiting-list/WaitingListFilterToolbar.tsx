@@ -1,10 +1,9 @@
 'use client';
 
-import { Calendar, Plus, RotateCcw } from 'lucide-react';
+import { Plus, RotateCcw, UserPlus } from 'lucide-react';
 import { CounsellingButton } from '@/components/counsellors-desk/session/primitives/CounsellingButton';
 import { CounsellingInput } from '@/components/counsellors-desk/session/primitives/CounsellingInput';
 import { CounsellingSearchInput } from '@/components/counsellors-desk/session/primitives/CounsellingSearchInput';
-import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import type { WaitingListOwnerFilter } from '@/lib/counsellors-desk/waiting-list-client-filters';
 import type { WaitingListFilters } from '@/types/counsellors-desk';
 import { cn } from '@/lib/utils';
@@ -39,40 +38,31 @@ export type WaitingListFilterToolbarProps = {
   onQuickSearchChange: (value: string) => void;
   filters: WaitingListFilters;
   onFiltersChange: (next: WaitingListFilters) => void;
-  onApply: () => void;
   onReset: () => void;
   typeOptions?: ReadonlyArray<WaitingListTypeOption>;
   /** Client-only Owner convenience filter — never sent to waiting-list API. */
   ownerFilter?: WaitingListOwnerFilter;
   onOwnerFilterChange?: (value: WaitingListOwnerFilter) => void;
-  hasActiveFilters: boolean;
-  onAddPatient: () => void;
-  /** Applied date range (after Apply) — for active-filter chips only. */
-  appliedFromDate?: string;
-  appliedToDate?: string;
+  onNewPatient: () => void;
+  onScheduleCounselling: () => void;
   className?: string;
   'data-testid'?: string;
 };
 
 /**
- * Search / type / date / Add Patient — same toolbar IA at every viewport.
- * Workstation: CSS grid with capped search + compact inline date row.
- * Desktop ≥1600: frozen spacious composition.
+ * One-row waiting-list filters: search, dates, type, owner, clear, and entry actions.
  */
 export function WaitingListFilterToolbar({
   quickSearch,
   onQuickSearchChange,
   filters,
   onFiltersChange,
-  onApply,
   onReset,
   typeOptions = WAITING_LIST_TYPE_OPTIONS,
   ownerFilter = 'All',
   onOwnerFilterChange,
-  hasActiveFilters,
-  onAddPatient,
-  appliedFromDate = '',
-  appliedToDate = '',
+  onNewPatient,
+  onScheduleCounselling,
   className,
   'data-testid': testId = 'waiting-list-filter-toolbar',
 }: WaitingListFilterToolbarProps) {
@@ -82,37 +72,30 @@ export function WaitingListFilterToolbar({
 
   /** Beat CounsellingButton touchTarget (min-h-11) for dense worklist chrome. */
   const denseBtn = 'min-h-8 !min-h-8';
+  const fieldClass = cn(
+    'h-8 rounded-md border border-counselling-border bg-counselling-background',
+    'px-2 text-xs font-medium text-counselling-foreground',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
+  );
 
-  const ownerLabel =
-    WAITING_LIST_OWNER_FILTER_OPTIONS.find((o) => o.value === ownerFilter)?.label ??
-    ownerFilter;
-
-  const activeChips: string[] = [];
-  if (filters.type !== 'All') activeChips.push(`Type: ${filters.type}`);
-  if (ownerFilter !== 'All') activeChips.push(`Owner: ${ownerLabel}`);
-  if (appliedFromDate || appliedToDate) {
-    activeChips.push(
-      `Dates: ${appliedFromDate || '…'} → ${appliedToDate || '…'}`,
-    );
-  }
-  if (quickSearch.trim()) activeChips.push('Search active');
+  const canClear = Boolean(
+    quickSearch.trim() ||
+      filters.fromDate ||
+      filters.toDate ||
+      filters.type !== 'All' ||
+      ownerFilter !== 'All',
+  );
 
   return (
     <div
       data-testid={testId}
-      className={cn(
-        'waiting-list-filter-toolbar flex shrink-0 flex-col gap-1.5 bg-transparent',
-        'min-[1600px]:gap-2',
-        className,
-      )}
+      className={cn('waiting-list-filter-toolbar w-full shrink-0 overflow-x-auto bg-transparent', className)}
       aria-label="Search and filters"
     >
       <div
         className={cn(
-          'waiting-list-filter-toolbar__primary grid min-w-0 items-center gap-x-2 gap-y-1',
-          /* Search takes remaining width; type + owner + Add Patient stay auto */
-          'grid-cols-[minmax(12rem,1fr)_auto_auto_auto]',
-          'min-[1600px]:flex min-[1600px]:flex-nowrap min-[1600px]:gap-3',
+          'waiting-list-filter-toolbar__primary grid w-full min-w-0 items-center gap-x-3 gap-y-2',
+          'grid-cols-[minmax(16rem,1fr)_auto_auto_auto_auto]',
         )}
       >
         <CounsellingSearchInput
@@ -120,45 +103,68 @@ export function WaitingListFilterToolbar({
           onChange={onQuickSearchChange}
           placeholder="Search patient, MRN, doctor, procedure, counsellor..."
           density="catalog"
-          className={cn(
-            'waiting-list-filter-toolbar__search min-w-0 w-full',
-            'min-[1600px]:max-w-none min-[1600px]:flex-1',
-          )}
+          className="waiting-list-filter-toolbar__search min-w-0 w-full"
           data-testid="waiting-list-quick-search"
         />
 
         <div
-          className={cn(
-            counsellingSessionTokens.pillTabTrack,
-            'waiting-list-filter-toolbar__types shrink-0',
-          )}
-          role="group"
-          aria-label="Filter by type"
+          className="waiting-list-filter-toolbar__dates flex items-center gap-3"
+          data-testid="waiting-list-date-filters"
         >
-          {typeOptions.map((type) => {
-            const selected = filters.type === type;
-            return (
-              <button
-                key={type}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => patchFilters({ type })}
-                className={cn(
-                  counsellingSessionTokens.pillTab,
-                  selected
-                    ? counsellingSessionTokens.pillTabCurrent
-                    : counsellingSessionTokens.pillTabMuted,
-                )}
-              >
-                {type}
-              </button>
-            );
-          })}
+          <label htmlFor="waiting-list-from-date" className="flex items-center gap-1.5">
+            <span className="whitespace-nowrap text-xs font-semibold text-counselling-foreground">
+              From
+            </span>
+            <CounsellingInput
+              id="waiting-list-from-date"
+              type="date"
+              value={filters.fromDate}
+              onChange={(e) => patchFilters({ fromDate: e.target.value })}
+              aria-label="From date"
+              className="h-8 w-[9.75rem]"
+              data-testid="waiting-list-from-date"
+            />
+          </label>
+          <label htmlFor="waiting-list-to-date" className="flex items-center gap-1.5">
+            <span className="whitespace-nowrap text-xs font-semibold text-counselling-foreground">
+              To
+            </span>
+            <CounsellingInput
+              id="waiting-list-to-date"
+              type="date"
+              value={filters.toDate}
+              onChange={(e) => patchFilters({ toDate: e.target.value })}
+              aria-label="To date"
+              className="h-8 w-[9.75rem]"
+              data-testid="waiting-list-to-date"
+            />
+          </label>
         </div>
 
+        <label className="flex items-center gap-1.5">
+          <span className="whitespace-nowrap text-xs font-semibold text-counselling-foreground">
+            Type:
+          </span>
+          <select
+            value={filters.type}
+            onChange={(e) =>
+              patchFilters({ type: e.target.value as WaitingListFilters['type'] })
+            }
+            className={cn(fieldClass, 'w-[7.5rem]')}
+            aria-label="Filter by type"
+            data-testid="waiting-list-type-filter"
+          >
+            {typeOptions.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+
         {onOwnerFilterChange ? (
-          <label className="waiting-list-filter-toolbar__owner flex shrink-0 items-center gap-1.5">
-            <span className="text-xs font-semibold text-counselling-foreground whitespace-nowrap">
+          <label className="waiting-list-filter-toolbar__owner flex items-center gap-1.5">
+            <span className="whitespace-nowrap text-xs font-semibold text-counselling-foreground">
               Owner:
             </span>
             <select
@@ -166,11 +172,7 @@ export function WaitingListFilterToolbar({
               onChange={(e) =>
                 onOwnerFilterChange(e.target.value as WaitingListOwnerFilter)
               }
-              className={cn(
-                'h-8 max-w-[11rem] rounded-md border border-counselling-border bg-counselling-background',
-                'px-2 text-xs font-medium text-counselling-foreground',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
-              )}
+              className={cn(fieldClass, 'w-[10.5rem]')}
               aria-label="Filter by owner"
               data-testid="waiting-list-owner-filter"
             >
@@ -181,23 +183,34 @@ export function WaitingListFilterToolbar({
               ))}
             </select>
           </label>
-        ) : null}
+        ) : (
+          <span />
+        )}
 
-        <div className="waiting-list-filter-toolbar__actions flex shrink-0 items-center justify-end gap-1.5">
-          {(hasActiveFilters || quickSearch) && (
-            <CounsellingButton
-              type="button"
-              size="sm"
-              variant="outline"
-              className={denseBtn}
-              onClick={onReset}
-              data-testid="waiting-list-filters-reset"
-            >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-              Reset
-            </CounsellingButton>
-          )}
-
+        <div className="waiting-list-filter-toolbar__actions flex items-center justify-end gap-2">
+          <CounsellingButton
+            type="button"
+            size="sm"
+            variant="outline"
+            className={denseBtn}
+            onClick={onReset}
+            disabled={!canClear}
+            data-testid="waiting-list-filters-reset"
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+            Clear
+          </CounsellingButton>
+          <CounsellingButton
+            type="button"
+            size="sm"
+            variant="outline"
+            className={denseBtn}
+            onClick={onNewPatient}
+            data-testid="waiting-list-new-patient"
+          >
+            <UserPlus className="h-3.5 w-3.5" aria-hidden />
+            New patient
+          </CounsellingButton>
           <CounsellingButton
             type="button"
             size="sm"
@@ -205,87 +218,14 @@ export function WaitingListFilterToolbar({
               denseBtn,
               'bg-counselling-primary text-white hover:bg-counselling-primary/90',
             )}
-            onClick={onAddPatient}
+            onClick={onScheduleCounselling}
             data-testid="waiting-list-add-patient"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
-            Add Patient
+            Schedule counselling
           </CounsellingButton>
         </div>
       </div>
-
-      <div
-        className={cn(
-          'waiting-list-filter-toolbar__dates flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1',
-          'min-[1600px]:items-end min-[1600px]:gap-3',
-        )}
-        data-testid="waiting-list-date-filters"
-      >
-        <div className="flex min-w-0 items-center gap-1.5 min-[1600px]:w-[9.5rem] min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
-          <label
-            htmlFor="waiting-list-from-date"
-            className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal"
-          >
-            <Calendar className="h-3 w-3" aria-hidden />
-            <span className="min-[1600px]:hidden">From</span>
-            <span className="hidden min-[1600px]:inline">From Date</span>
-          </label>
-          <CounsellingInput
-            id="waiting-list-from-date"
-            type="date"
-            value={filters.fromDate}
-            onChange={(e) => patchFilters({ fromDate: e.target.value })}
-            className="h-8 w-[8.75rem] min-[1600px]:w-full"
-            data-testid="waiting-list-from-date"
-          />
-        </div>
-        <div className="flex min-w-0 items-center gap-1.5 min-[1600px]:w-[9.5rem] min-[1600px]:flex-col min-[1600px]:items-stretch min-[1600px]:gap-0">
-          <label
-            htmlFor="waiting-list-to-date"
-            className="mb-0 flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-counselling-muted-foreground min-[1600px]:mb-1 min-[1600px]:text-xs min-[1600px]:normal-case min-[1600px]:tracking-normal"
-          >
-            <Calendar className="h-3 w-3" aria-hidden />
-            <span className="min-[1600px]:hidden">To</span>
-            <span className="hidden min-[1600px]:inline">To Date</span>
-          </label>
-          <CounsellingInput
-            id="waiting-list-to-date"
-            type="date"
-            value={filters.toDate}
-            onChange={(e) => patchFilters({ toDate: e.target.value })}
-            className="h-8 w-[8.75rem] min-[1600px]:w-full"
-            data-testid="waiting-list-to-date"
-          />
-        </div>
-        <CounsellingButton
-          type="button"
-          size="sm"
-          variant="outline"
-          className={denseBtn}
-          onClick={onApply}
-          data-testid="waiting-list-filters-apply"
-          aria-label="Apply date filters"
-        >
-          Apply dates
-        </CounsellingButton>
-      </div>
-
-      {activeChips.length > 0 ? (
-        <div
-          className="flex min-w-0 flex-wrap items-center gap-1.5"
-          data-testid="waiting-list-active-filters"
-          aria-label="Active filters"
-        >
-          {activeChips.map((chip) => (
-            <span
-              key={chip}
-              className="inline-flex max-w-full truncate rounded-md border border-counselling-border/60 bg-counselling-muted/40 px-2 py-0.5 text-[11px] font-medium text-counselling-foreground"
-            >
-              {chip}
-            </span>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

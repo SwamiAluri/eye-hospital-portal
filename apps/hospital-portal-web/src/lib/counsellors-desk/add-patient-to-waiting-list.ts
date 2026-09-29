@@ -109,8 +109,8 @@ export function matchPatientForAddWaitingList(
 export function findActiveWaitingListDuplicate(args: {
   uhid: string;
   patientDisplayName: string;
-  rows: Array<{ uhid: string; patientName: string; status: string }>;
-}): { uhid: string; patientName: string; status: string } | undefined {
+  rows: Array<{ id?: string; uhid: string; patientName: string; status: string }>;
+}): { id?: string; uhid: string; patientName: string; status: string } | undefined {
   const key = args.uhid.trim().toLowerCase();
   const nameKey = args.patientDisplayName.trim().toLowerCase();
   return args.rows.find((r) => {
@@ -122,19 +122,133 @@ export function findActiveWaitingListDuplicate(args: {
   });
 }
 
-/** Concise Add Patient block copy (PD-C). */
+/** Concise Add Patient block copy (PD-C). Kept for callers that still surface a sentence. */
 export function waitingListDuplicateCreateMessage(dup: {
   patientName: string;
   status: string;
 }): string {
-  const name = dup.patientName?.trim() || 'Patient';
-  if (dup.status === 'Done') {
-    return `${name}: existing counselling is completed but surgery is not done. ReEvaluate the existing counselling session instead of creating another.`;
+  return buildScheduleCounsellingDecision(dup).body;
+}
+
+export type ScheduleCounsellingDecisionAction = 're-evaluate' | 'continue' | 'open';
+
+export interface ScheduleCounsellingDecision {
+  action: ScheduleCounsellingDecisionAction;
+  title: string;
+  body: string;
+  primaryLabel: string;
+  patientName: string;
+  uhid: string;
+  /** Raw waiting-list status used to find the existing row. */
+  status: string;
+  statusLabel: string;
+  sessionId?: string;
+}
+
+const SCHEDULE_COUNSELLING_BLOCKED = 'ScheduleCounsellingBlocked';
+
+export class ScheduleCounsellingBlockedError extends Error {
+  readonly code = SCHEDULE_COUNSELLING_BLOCKED;
+  readonly decision: ScheduleCounsellingDecision;
+
+  constructor(decision: ScheduleCounsellingDecision) {
+    super(decision.title);
+    this.name = 'ScheduleCounsellingBlockedError';
+    this.decision = decision;
   }
-  if (dup.status === 'RepeatCounselling') {
-    return `${name} already has an open counselling episode. Continue the existing session instead of creating another.`;
+}
+
+export function isScheduleCounsellingBlocked(
+  err: unknown,
+): err is ScheduleCounsellingBlockedError {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    (err as { code?: string }).code === SCHEDULE_COUNSELLING_BLOCKED &&
+    'decision' in err
+  );
+}
+
+function plainStatusLabel(status: string): string {
+  switch (status) {
+    case 'RepeatCounselling':
+      return 'Repeat counselling';
+    case 'Processed':
+      return 'Processing';
+    case 'AddOnSurgery':
+      return 'Add-on surgery';
+    default:
+      return status || 'On the waiting list';
   }
-  return `${name} is already on the waiting list (${dup.status}). Open their existing row instead of adding again.`;
+}
+
+/** In-dialog decision for a waiting-list row that already owns this patient. */
+export function buildScheduleCounsellingDecision(dup: {
+  patientName: string;
+  status: string;
+  uhid?: string;
+  sessionId?: string;
+}): ScheduleCounsellingDecision {
+  const patientName = dup.patientName?.trim() || 'This patient';
+  const uhid = dup.uhid?.trim() ?? '';
+  const status = dup.status;
+  const shared = {
+    patientName,
+    uhid,
+    status,
+    statusLabel: plainStatusLabel(status),
+    sessionId: dup.sessionId,
+  };
+
+  if (status === 'Done') {
+    return {
+      ...shared,
+      action: 're-evaluate',
+      title: 'Counselling already completed',
+      primaryLabel: 'Re-evaluate session',
+      body: `${patientName}'s counselling is finished, and surgery is not marked done. Re-evaluate that session.`,
+    };
+  }
+
+  if (status === 'RepeatCounselling') {
+    return {
+      ...shared,
+      action: 'continue',
+      title: 'Session already open',
+      primaryLabel: 'Continue session',
+      body: `${patientName} already has an open counselling session. Continue that session.`,
+    };
+  }
+
+  return {
+    ...shared,
+    action: 'open',
+    title: 'Already on the waiting list',
+    primaryLabel: 'Open existing row',
+    body: `${patientName} is already on the waiting list. Open that row instead of scheduling a new session.`,
+  };
+}
+
+/**
+ * Map the create-session reuse sentences onto the same dialog decisions.
+ * Unknown messages stay null so callers can keep their existing error toast.
+ */
+export function decisionFromScheduleCounsellingServerMessage(
+  message: string,
+  ctx: { patientName: string; uhid?: string; sessionId?: string },
+): ScheduleCounsellingDecision | null {
+  const text = message.trim();
+  if (!text) return null;
+  if (/existing counselling is completed but surgery is not done/i.test(text)) {
+    return buildScheduleCounsellingDecision({ ...ctx, status: 'Done' });
+  }
+  if (/already has an open counselling episode/i.test(text)) {
+    return buildScheduleCounsellingDecision({ ...ctx, status: 'RepeatCounselling' });
+  }
+  if (/already has an active counselling session/i.test(text)) {
+    return buildScheduleCounsellingDecision({ ...ctx, status: 'Processed' });
+  }
+  return null;
 }
 
 export interface CreateCounsellingSessionFromWaitingListInput {

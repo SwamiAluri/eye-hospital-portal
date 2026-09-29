@@ -93,6 +93,19 @@ interface MenuSection {
   items: MenuItem[];
 }
 
+/** First visit to these Counsellor destinations is prefetched from the sidebar. */
+export const COUNSELLOR_SIDEBAR_PREFETCH_HREFS = new Set<string>([
+  '/dashboard/counsellors-desk/waiting-list',
+  '/dashboard/counsellors-desk/sessions',
+  '/dashboard/counsellors-desk/finalize-surgery',
+  '/dashboard/counsellors-desk/surgery-followup',
+  '/dashboard/counselor/analytics',
+]);
+
+export function prefetchCounsellorSidebarHref(href: string): boolean {
+  return COUNSELLOR_SIDEBAR_PREFETCH_HREFS.has(href);
+}
+
 /**
  * Filters sidebar sections by permission (PD-NAV-01).
  * - Admin wildcard `*`: preserves prior behavior (null = visible).

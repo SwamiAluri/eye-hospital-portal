@@ -1,38 +1,30 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
-import { History, Loader2, Stethoscope, UserRound } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
 import type { Patient } from '@/lib/api/patients.api';
-import type { CounsellingSession, SessionAuditEntry, WaitingListStatus } from '@/types/counsellors-desk';
+import type { CounsellingSession, WaitingListStatus } from '@/types/counsellors-desk';
 import { getStatusBadge } from '@/lib/counsellors-desk/session-utils';
 import { useCounsellorMasterOptions } from '@/hooks/use-counsellor-master-options';
 import { sessionTypeLabelForCode } from '@/lib/counsellors-desk/counsellor-master-maps';
 import { counsellingCopy } from '@/lib/counsellors-desk/counselling-copy';
-import {
-  counsellingSessionTokens,
-  counsellingTestIds,
-} from '@/lib/counsellors-desk/counselling-session-tokens';
-import { PatientDemographicsSheet } from '@/components/examination/PatientDemographicsSheet';
-import { ClinicalRecommendationsSheet } from '@/components/counsellors-desk/session/ClinicalRecommendationsSheet';
-import { SessionHistoryModal } from '@/components/counsellors-desk/SessionHistoryModal';
-import { loadCounsellingSessionHistory } from '@/lib/counsellors-desk/load-counselling-session-history';
-import { counsellorsDeskApi } from '@/lib/api/counsellors-desk.api';
-import { buildCounselorNameMap } from '@/lib/counsellors-desk/ownership-display-name';
+import { counsellingSessionTokens, counsellingTestIds } from '@/lib/counsellors-desk/counselling-session-tokens';
+import type { SessionSummaryChip } from '@/lib/counsellors-desk/session-status-summary';
 import { PatientAvatar } from '@/components/patients/PatientAvatar';
 import {
-  calcPatientAge,
   formatPatientDisplayName,
   formatPatientSex,
   resolvePatientMrn,
 } from '@/lib/patients/patient-display-utils';
-import { CounsellingButton } from '@/components/counsellors-desk/session/primitives';
 import { cn } from '@/lib/utils';
 
-function resolveDisplayAge(patient: Patient | null, sessionAge: number): number | null {
-  const fromDob = calcPatientAge(patient?.dateOfBirth);
-  if (fromDob != null) return fromDob;
-  return sessionAge ?? null;
-}
+const CHIP_VALUE_CLASS: Record<string, string> = {
+  neutral: counsellingSessionTokens.sessionStatusDetailValue,
+  success: counsellingSessionTokens.sessionStatusDetailValueSuccess,
+  warning: counsellingSessionTokens.sessionStatusDetailValueWarning,
+  danger: counsellingSessionTokens.sessionStatusDetailValueDanger,
+  info: counsellingSessionTokens.sessionStatusDetailValue,
+};
 
 interface SessionPageHeaderProps {
   session: CounsellingSession;
@@ -42,6 +34,22 @@ interface SessionPageHeaderProps {
   doctorRecommendation?: string | null;
   consultingDoctor?: string | null;
   operativeEye?: string | null;
+  /** Existing session summary chips. Rendered in the header, not under the journey rail. */
+  summaryChips?: SessionSummaryChip[];
+  summaryStatusLine?: string;
+  /** Opens the outpatient checklist. Same gate as the previous strip action. */
+  showOutpatientSafety?: boolean;
+  onOpenOutpatientSafety?: () => void;
+  /** Leaves the session. Same navigation as the former footer Close. */
+  onCloseSession?: () => void;
+  /** Page-local Patient Context destination. Not a sheet or popover. */
+  onOpenPatientContext?: () => void;
+  /** Page-local History destination. Not a modal. */
+  onOpenHistory?: () => void;
+  renderWorkflow?: (actions: {
+    openClinicalRecommendations: () => void;
+    openSessionHistory: () => void;
+  }) => ReactNode;
 }
 
 export function SessionPageHeader({
@@ -49,30 +57,22 @@ export function SessionPageHeader({
   queueStatus,
   patientDetails,
   patientDetailsLoading = false,
-  doctorRecommendation,
-  consultingDoctor,
   operativeEye,
+  summaryChips,
+  summaryStatusLine,
+  showOutpatientSafety = false,
+  onOpenOutpatientSafety,
+  onCloseSession,
+  onOpenPatientContext,
+  onOpenHistory,
+  renderWorkflow,
 }: SessionPageHeaderProps) {
   const { sessionTypeOptions } = useCounsellorMasterOptions();
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [clinicalRecsOpen, setClinicalRecsOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyEntries, setHistoryEntries] = useState<SessionAuditEntry[]>([]);
-  const [historyCounselorNames, setHistoryCounselorNames] = useState<
-    Record<string, string>
-  >({});
-  const historyBtnRef = useRef<HTMLButtonElement>(null);
 
   const statusBadge = getStatusBadge(queueStatus);
   const sessionTypeLabel = session.sessionTypeCode
     ? sessionTypeLabelForCode(session.sessionTypeCode, sessionTypeOptions)
     : null;
-
-  const displayAge = useMemo(
-    () => resolveDisplayAge(patientDetails, session.age),
-    [patientDetails, session.age],
-  );
 
   const patientName = formatPatientDisplayName(patientDetails, session.patientName);
   const mrn = resolvePatientMrn(patientDetails, session.uhid) ?? session.uhid;
@@ -80,69 +80,20 @@ export function SessionPageHeader({
 
   const identityMeta = [
     mrn ? `MRN ${mrn}` : null,
-    displayAge != null ? `${displayAge} yrs` : null,
     gender,
     operativeEye?.trim() ? `${counsellingCopy.operativeEye} ${operativeEye}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
-  const clinicalMeta = [
-    consultingDoctor?.trim()
-      ? `${counsellingCopy.consultingDoctor}: ${consultingDoctor}`
-      : null,
-    counsellingCopy.counsellingSession,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const showSummary = summaryChips != null;
 
-  const canOpenDetails = Boolean(patientDetails);
-  const openDetails = () => {
-    if (canOpenDetails) setDetailsOpen(true);
+  const openClinicalRecommendations = () => {
+    onOpenPatientContext?.();
   };
 
-  const doctorRecommendationSummary = useMemo(() => {
-    const recommendation = doctorRecommendation?.trim();
-    if (!recommendation) return null;
-    const eye = operativeEye?.trim();
-    return eye ? `${recommendation} · ${eye}` : recommendation;
-  }, [doctorRecommendation, operativeEye]);
-
-  const headerActionClass = cn(
-    'h-auto min-h-9 justify-start gap-1.5 rounded-md px-2 py-1.5 hover:bg-counselling-muted/60 hover:text-counselling-primary focus-visible:ring-2 focus-visible:ring-counselling-primary/40 sm:justify-end',
-    counsellingSessionTokens.patientDetailsAction,
-  );
-
-  const openClinicalRecommendations = () => setClinicalRecsOpen(true);
-
-  const openSessionHistory = async () => {
-    setHistoryOpen(true);
-    setHistoryLoading(true);
-    try {
-      const [entries, counselors] = await Promise.all([
-        loadCounsellingSessionHistory(session.id, session.counsellorNotes),
-        counsellorsDeskApi
-          .getCounselors(session.branchId)
-          .catch(() => [] as Awaited<ReturnType<typeof counsellorsDeskApi.getCounselors>>),
-      ]);
-      setHistoryEntries(entries);
-      setHistoryCounselorNames(
-        buildCounselorNameMap(counselors, {
-          counselorId: session.counselorId,
-          counselorName: session.counselorName,
-        }),
-      );
-    } catch {
-      setHistoryEntries([]);
-      setHistoryCounselorNames(
-        buildCounselorNameMap([], {
-          counselorId: session.counselorId,
-          counselorName: session.counselorName,
-        }),
-      );
-    } finally {
-      setHistoryLoading(false);
-    }
+  const openSessionHistory = () => {
+    onOpenHistory?.();
   };
 
   return (
@@ -154,57 +105,100 @@ export function SessionPageHeader({
           counsellingSessionTokens.patientHeaderPad,
         )}
       >
-        <div className={cn('flex items-center', counsellingSessionTokens.patientHeaderGap)}>
-          <CounsellingButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={!canOpenDetails && !patientDetailsLoading}
-            onClick={openDetails}
-            className="h-auto shrink-0 rounded-full p-0 hover:bg-transparent"
-            aria-label="View patient details"
-          >
-            {patientDetailsLoading ? (
-              <div
-                className={cn(
-                  'flex items-center justify-center rounded-full bg-counselling-muted',
-                  counsellingSessionTokens.patientHeaderPhoto,
-                )}
-              >
-                <Loader2 className="h-5 w-5 animate-spin text-counselling-muted-foreground" />
-              </div>
-            ) : (
-              <PatientAvatar
-                photoUrl={patientDetails?.photoUrl}
-                firstName={patientDetails?.firstName}
-                lastName={patientDetails?.lastName}
-                displayName={patientName}
-                size="lg"
-                className={counsellingSessionTokens.patientHeaderPhoto}
-              />
-            )}
-          </CounsellingButton>
-
-          <div
-            className={cn(
-              'flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:justify-between',
-              counsellingSessionTokens.patientHeaderZones,
-            )}
-          >
-            <div className={cn('min-w-0 flex-1', counsellingSessionTokens.patientHeaderStack)}>
-              <p className={counsellingSessionTokens.patientLabel}>{counsellingCopy.patient}</p>
+        <div
+          className={cn(
+            'flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center',
+            counsellingSessionTokens.patientHeaderGap,
+          )}
+        >
+          <div className={cn('flex min-w-0 shrink-0 items-center xl:max-w-[16rem]', counsellingSessionTokens.patientHeaderGap)}>
+            <div className="shrink-0" aria-hidden={patientDetailsLoading ? undefined : true}>
+              {patientDetailsLoading ? (
+                <div
+                  className={cn(
+                    'flex items-center justify-center rounded-full bg-counselling-muted',
+                    counsellingSessionTokens.patientHeaderPhoto,
+                  )}
+                >
+                  <Loader2 className="h-5 w-5 animate-spin text-counselling-muted-foreground" />
+                </div>
+              ) : (
+                <PatientAvatar
+                  photoUrl={patientDetails?.photoUrl}
+                  firstName={patientDetails?.firstName}
+                  lastName={patientDetails?.lastName}
+                  displayName={patientName}
+                  size="lg"
+                  className={counsellingSessionTokens.patientHeaderPhoto}
+                />
+              )}
+            </div>
+            <div className={cn('min-w-0', counsellingSessionTokens.patientHeaderStack)}>
               <h1 className={counsellingSessionTokens.patientName}>{patientName}</h1>
               {identityMeta ? (
                 <p className={cn(counsellingSessionTokens.shellMeta, 'mt-1')}>{identityMeta}</p>
               ) : null}
-              {clinicalMeta ? (
-                <p className={cn(counsellingSessionTokens.shellSecondaryMeta, 'mt-0.5')}>
-                  {clinicalMeta}
-                </p>
-              ) : null}
             </div>
+          </div>
 
-            <div className="flex shrink-0 flex-col items-stretch gap-1.5 sm:items-end">
+          {showSummary ? (
+            <div className="hidden h-9 w-px shrink-0 bg-counselling-border xl:block" aria-hidden />
+          ) : null}
+
+          {showSummary ? (
+            <div
+              className="min-w-0 flex-1"
+              data-testid={counsellingTestIds.sessionSummaryBar}
+              aria-label={summaryStatusLine}
+            >
+              <dl
+                className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 xl:grid-cols-5"
+                data-testid={counsellingTestIds.sessionSummaryChips}
+              >
+                {summaryChips.map((chip) => (
+                  <div
+                    key={chip.id}
+                    data-testid={counsellingTestIds.sessionSummaryChip(chip.id)}
+                    className="min-w-0"
+                  >
+                    <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>{chip.label}</dt>
+                    <dd
+                      className={cn(
+                        'whitespace-normal leading-snug',
+                        CHIP_VALUE_CLASS[chip.tone] ?? CHIP_VALUE_CLASS.neutral,
+                      )}
+                    >
+                      {chip.value}
+                    </dd>
+                  </div>
+                ))}
+                <div className="min-w-0" data-testid={counsellingTestIds.sessionSummaryChip('safety')}>
+                  <dt className={counsellingSessionTokens.sessionStatusDetailLabel}>Safety</dt>
+                  <dd className={cn('whitespace-normal leading-snug', counsellingSessionTokens.sessionStatusDetailValue)}>
+                    {showOutpatientSafety ? (
+                      <button
+                        type="button"
+                        data-testid={counsellingTestIds.outpatientAccess}
+                        aria-label="Outpatient Safety"
+                        onClick={onOpenOutpatientSafety}
+                        className="text-left underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40"
+                      >
+                        Outpatient
+                      </button>
+                    ) : (
+                      'Outpatient'
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+
+          {showSummary ? (
+            <div className="hidden h-9 w-px shrink-0 bg-counselling-border xl:block" aria-hidden />
+          ) : null}
+
+          <div className="flex shrink-0 flex-col items-stretch gap-1.5 xl:items-end">
               <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
                 {queueStatus !== 'RepeatCounselling' ? (
                   <span
@@ -228,83 +222,24 @@ export function SessionPageHeader({
                     {sessionTypeLabel}
                   </span>
                 ) : null}
+                {onCloseSession ? (
+                  <button
+                    type="button"
+                    onClick={onCloseSession}
+                    data-testid={counsellingTestIds.btnCloseSession}
+                    className={cn(
+                      'rounded-md px-2.5 py-0.5 text-counselling-muted-foreground hover:bg-counselling-muted/50 hover:text-counselling-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
+                      counsellingSessionTokens.patientStatusPill,
+                    )}
+                  >
+                    Close
+                  </button>
+                ) : null}
               </div>
-              <CounsellingButton
-                type="button"
-                variant="ghost"
-                size="sm"
-                ref={historyBtnRef}
-                data-testid={counsellingTestIds.btnSessionHistory}
-                aria-label={counsellingCopy.sessionHistoryAria}
-                onClick={openSessionHistory}
-                className={headerActionClass}
-              >
-                <History className="h-4 w-4 shrink-0" aria-hidden />
-                {counsellingCopy.sessionHistory}
-              </CounsellingButton>
-              <CounsellingButton
-                type="button"
-                variant="ghost"
-                size="sm"
-                data-testid={counsellingTestIds.btnClinicalRecommendations}
-                aria-label={counsellingCopy.clinicalRecommendations}
-                onClick={openClinicalRecommendations}
-                className={headerActionClass}
-              >
-                <Stethoscope className="h-4 w-4 shrink-0" aria-hidden />
-                {counsellingCopy.clinicalRecommendations}
-              </CounsellingButton>
-              {canOpenDetails ? (
-                <CounsellingButton
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  data-testid={counsellingTestIds.btnPatientDetails}
-                  aria-label={counsellingCopy.patientDetails}
-                  onClick={openDetails}
-                  className={headerActionClass}
-                >
-                  <UserRound className="h-4 w-4 shrink-0" aria-hidden />
-                  {counsellingCopy.patientDetails}
-                </CounsellingButton>
-              ) : null}
             </div>
           </div>
-        </div>
       </header>
-
-      <SessionHistoryModal
-        isOpen={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        entries={historyEntries}
-        isLoading={historyLoading}
-        anchorRef={historyBtnRef}
-        counselorNameById={historyCounselorNames}
-      />
-
-      <ClinicalRecommendationsSheet
-        open={clinicalRecsOpen}
-        onClose={() => setClinicalRecsOpen(false)}
-        doctorRecommendationSummary={doctorRecommendationSummary}
-      />
-
-      <PatientDemographicsSheet
-        open={detailsOpen}
-        onClose={() => setDetailsOpen(false)}
-        patient={patientDetails}
-        age={displayAge}
-        visitLabel={counsellingCopy.counsellingSession}
-        displayNameFallback={session.patientName}
-        mrnFallback={session.uhid}
-        genderFallback={session.gender}
-        counsellingContext={{
-          counsellingType: sessionTypeLabel,
-          sessionStatus:
-            queueStatus !== 'RepeatCounselling' ? statusBadge.label : 'Repeat Counselling',
-          operativeEye,
-          consultingDoctor,
-        }}
-      />
+      {renderWorkflow?.({ openClinicalRecommendations, openSessionHistory })}
     </>
   );
 }
