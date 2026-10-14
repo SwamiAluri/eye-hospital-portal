@@ -255,3 +255,67 @@ export async function attachBiometryRecord(
   );
   return data;
 }
+
+/** Metadata-only Patient 360 row. No blob URL or access URL. */
+export interface CcmsDocumentPatientMetadata {
+  id: string;
+  coverageCaseId: string;
+  documentName: string;
+  documentType: string;
+  documentCategory: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  uploadedAt: string;
+  mimeType?: string | null;
+  fileSizeBytes: number;
+  canonicalDocumentId?: string | null;
+  isPointer?: boolean;
+}
+
+export interface EnsureCcmsCanonicalResponse {
+  ccmsDocumentId: string;
+  canonicalDocumentId: string | null;
+  registered: boolean;
+}
+
+export interface DocumentsByPatientResponse {
+  documents: CcmsDocumentPatientMetadata[];
+  totalCount: number;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+/** GET /ccms/documents/by-patient/{patientId} — one request, metadata only. */
+export async function getDocumentsByPatient(
+  patientId: string,
+  pageNumber = 1,
+  pageSize = 20,
+  options?: { insuranceOnly?: boolean },
+): Promise<DocumentsByPatientResponse> {
+  const { data } = await getCcmsApi().get<DocumentsByPatientResponse>(
+    `/ccms/documents/by-patient/${patientId}`,
+    {
+      params: {
+        pageNumber,
+        pageSize,
+        ...(options?.insuranceOnly ? { insuranceOnly: true } : {}),
+      },
+    },
+  );
+  return data;
+}
+
+/** POST /ccms/documents/{docId}/ensure-canonical — lazy/idempotent historical registration. */
+export async function ensureCcmsDocumentCanonical(
+  documentId: string,
+): Promise<EnsureCcmsCanonicalResponse> {
+  const { data } = await getCcmsApi().post<EnsureCcmsCanonicalResponse>(
+    `/ccms/documents/${documentId}/ensure-canonical`,
+  );
+  return {
+    ccmsDocumentId: data.ccmsDocumentId,
+    canonicalDocumentId: data.canonicalDocumentId ?? null,
+    registered: Boolean(data.registered),
+  };
+}

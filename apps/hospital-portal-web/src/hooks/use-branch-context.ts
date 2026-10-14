@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/lib/auth-store';
-import { getApi } from '@/lib/api';
 import { userBranchesApi } from '@/lib/api/user-branches.api';
 import type { UserBranchAssignment } from '@/types/patient-lookup';
 
@@ -50,21 +49,12 @@ export function useBranchContext() {
     user?.branchId ??
     null;
 
-  const branchDetailsQuery = useQuery({
-    queryKey: ['branch-details', effectiveBranchId],
-    queryFn: async () => {
-      const { data } = await getApi().get(`/branches/${effectiveBranchId}`);
-      return data as { branchName?: string; name?: string; branchCode?: string; code?: string };
-    },
-    staleTime: 5 * 60_000,
-    enabled: !!effectiveBranchId && branches.length === 0 && !branchesQuery.isLoading,
-  });
-
+  // Never call GET /branches/{id} here. It requires branch.view; roles without it
+  // receive 403 and the auth interceptor hard-redirects to /dashboard/unauthorized
+  // (Lab Technician login refresh loop). Names come from /user-branches/me only.
   const resolvedBranchName =
     branches.find((b) => b.branchId === effectiveBranchId)?.branchName ??
     branches[0]?.branchName ??
-    branchDetailsQuery.data?.branchName ??
-    branchDetailsQuery.data?.name ??
     null;
 
   useEffect(() => {

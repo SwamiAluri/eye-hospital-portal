@@ -836,6 +836,18 @@ namespace AuthService.Services
                 Make("lab_diagnostics","lab.ep_type","VEP","Visual Evoked Potential (VEP)",2),
                 Make("lab_diagnostics","lab.ep_type","EOG","Electro-oculography (EOG)",3),
 
+                // L-COL-01D — LMS specimen rejection reasons (operational, not diagnoses)
+                Make("lab_diagnostics","lms.specimen_rejection_reason","PATIENT_IDENTITY_MISMATCH","Patient identity mismatch",1),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","SPECIMEN_MISMATCH","Specimen does not match order",2),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","SPECIMEN_QUALITY_UNACCEPTABLE","Specimen quality unacceptable",3),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","INSUFFICIENT_SPECIMEN","Insufficient specimen",4),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","WRONG_CONTAINER","Incorrect specimen container",5),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","DAMAGED_CONTAINER","Container damaged or compromised",6),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","LABELING_ERROR","Specimen labeling error",7),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","TRANSPORT_CONDITION_FAILURE","Transport condition failure",8),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","SPECIMEN_CONTAMINATION_SUSPECTED","Specimen contamination suspected",9),
+                Make("lab_diagnostics","lms.specimen_rejection_reason","OTHER_GOVERNED_REASON","Other governed rejection reason",10),
+
                 // ── Ward & IP ─────────────────────────────────────────────────────
                 Make("ward_ip","ward.ward_type","GENERAL","General Ward",1),
                 Make("ward_ip","ward.ward_type","SEMI_PRIVATE","Semi-Private",2),

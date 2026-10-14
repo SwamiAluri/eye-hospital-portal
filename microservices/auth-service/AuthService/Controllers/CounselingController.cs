@@ -35,6 +35,7 @@ namespace AuthService.Controllers
         private readonly IHubContext<QueueHub> _queueHub;
         private readonly AppDbContext _context;
         private readonly IOtFinalizeService _otFinalizeService;
+        private readonly ICounselingSessionDocumentCanonicalService _sessionDocumentCanonical;
 
         public CounselingController(
             ICounselingWorkflowService counselingService,
@@ -47,7 +48,8 @@ namespace AuthService.Controllers
             ISmsService smsService,
             IHubContext<QueueHub> queueHub,
             AppDbContext context,
-            IOtFinalizeService otFinalizeService)
+            IOtFinalizeService otFinalizeService,
+            ICounselingSessionDocumentCanonicalService sessionDocumentCanonical)
         {
             _counselingService = counselingService;
             _communicationService = communicationService;
@@ -60,6 +62,7 @@ namespace AuthService.Controllers
             _queueHub = queueHub;
             _context = context;
             _otFinalizeService = otFinalizeService;
+            _sessionDocumentCanonical = sessionDocumentCanonical;
         }
 
         private Guid GetTenantId()
@@ -238,6 +241,35 @@ namespace AuthService.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving sessions for patient {PatientId}", patientId);
+                return StatusCode(500, new { message = "Error retrieving patient sessions", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Patient 360 session context. Distinct from the operational patient session list.
+        /// </summary>
+        [HttpGet("patients/{patientId:guid}/patient-360/sessions")]
+        [RequirePermission("counseling_sessions.read")]
+        public async Task<IActionResult> GetPatient360SessionContext(Guid patientId)
+        {
+            try
+            {
+                var tenantId = GetTenantId();
+                var branches = await ResolveFollowupBranchesAsync(null);
+                var sessions = await _counselingService.ListPatient360SessionContextAsync(tenantId, patientId, branches);
+                return Ok(new
+                {
+                    sessions,
+                    totalCount = sessions.Count,
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving Patient 360 counselling session context");
                 return StatusCode(500, new { message = "Error retrieving patient sessions", error = ex.Message });
             }
         }
@@ -1057,12 +1089,13 @@ namespace AuthService.Controllers
 
         [HttpPost("documents/upload")]
         [RequirePermission("session_documents.create")]
-        [RequestSizeLimit(104857600)] // 100MB max
+        [RequestSizeLimit(CanonicalDocumentFileRules.MaxBytes)]
         public async Task<IActionResult> UploadSessionDocument(
             [FromForm] string sessionId,
             [FromForm] IFormFile file,
             [FromForm] string? documentType = null,
             [FromForm] string? documentName = null,
+            [FromForm] Guid? patientId = null,
             [FromForm] bool isVerified = false,
             [FromForm] string? verificationMethod = null)
         {
@@ -1073,12 +1106,6 @@ namespace AuthService.Controllers
 
                 if (file == null || file.Length == 0)
                     return BadRequest(new { message = "No file provided" });
-
-                // Validate file type (images, PDFs, docs)
-                var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".pdf", ".doc", ".docx" };
-                var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-                if (!allowedExtensions.Contains(extension))
-                    return BadRequest(new { message = $"File type {extension} not allowed. Allowed: {string.Join(", ", allowedExtensions)}" });
 
                 // Handle mock/temp session IDs — return success without DB write
                 var isValidGuid = Guid.TryParse(sessionId, out var sessionGuid);
@@ -1100,25 +1127,19 @@ namespace AuthService.Controllers
                     });
                 }
 
-                // Real session — create document record
-                // TODO: Add actual file storage (Azure Blob, AWS S3, etc.)
-                var documentRequest = new CreateSessionDocumentRequest
-                {
-                    TenantId = tenantId,
-                    SessionId = sessionGuid,
-                    DocumentType = documentType ?? "General Document",
-                    DocumentName = documentName ?? file.FileName,
-                    FilePath = $"/documents/{sessionGuid}/{Guid.NewGuid()}{extension}", // Placeholder path
-                    FileType = extension.TrimStart('.'),
-                    FileSizeBytes = file.Length
-                };
-
-                var document = await _counselingService.CreateSessionDocumentAsync(documentRequest, currentUserId);
+                var document = await _sessionDocumentCanonical.UploadAsync(
+                    tenantId,
+                    sessionGuid,
+                    file,
+                    documentType,
+                    documentName,
+                    currentUserId,
+                    patientId);
 
                 _logger.LogInformation(
                     "Document uploaded: {FileName} (Type: {DocumentType}, Size: {FileSize} bytes) for session {SessionId}",
                     file.FileName,
-                    documentType,
+                    document.DocumentType,
                     file.Length,
                     sessionGuid);
 
@@ -1133,6 +1154,18 @@ namespace AuthService.Controllers
                         type = file.ContentType
                     }
                 });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -1206,6 +1239,10 @@ namespace AuthService.Controllers
                 
                 var success = await _counselingService.DeleteSessionDocumentAsync(tenantId, id, currentUserId);
                 return success ? Ok(new { message = "Document deleted successfully" }) : NotFound(new { message = "Document not found" });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
             catch (Exception ex)
             {

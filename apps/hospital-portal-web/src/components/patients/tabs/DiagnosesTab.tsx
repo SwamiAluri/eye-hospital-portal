@@ -68,7 +68,7 @@ export function DiagnosesTab({ patientId }: { patientId: string }) {
     (async () => {
       setLoading(true);
       try {
-        const response = await examinationApi.getByPatientId(patientId);
+        const response = await examinationApi.getByPatient(patientId);
         const diagnoses = buildDiagnosesFromExams(response.data || []);
         if (!cancelled) setRows(diagnoses);
       } catch {

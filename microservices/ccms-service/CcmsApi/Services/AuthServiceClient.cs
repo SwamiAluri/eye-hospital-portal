@@ -313,5 +313,164 @@ public class AuthServiceClient
             _log.LogWarning(ex, "claim-status-changed notify failed for case {CaseId}", coverageCaseId);
         }
     }
+
+    /// <summary>
+    /// Slice 3B: register CCMS file-backed document into Auth canonical identity (no blob copy).
+    /// Best-effort — CCMS remains authoritative if Auth is unavailable.
+    /// </summary>
+    public virtual async Task<Guid?> RegisterCcmsDocumentCanonicalAsync(
+        Guid tenantId,
+        Guid patientId,
+        Guid userId,
+        Guid ccmsDocumentId,
+        string contentHash,
+        long sizeBytes,
+        string fileName,
+        string mimeType,
+        string classification,
+        string storageContainer,
+        string storageObjectKey,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var payload = new
+            {
+                tenantId,
+                patientId,
+                userId,
+                ccmsDocumentId,
+                contentHash,
+                sizeBytes,
+                fileName,
+                mimeType,
+                classification,
+                storageContainer,
+                storageObjectKey,
+                storageBackend = CcmsCanonicalDocumentRules.StorageBackend,
+            };
+            var resp = await _http.PostAsync(
+                "/api/internal/canonical-documents/register-external",
+                JsonContent.Create(payload),
+                ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _log.LogWarning(
+                    "canonical register-external returned {Status} for ccmsDocumentId={DocumentId}",
+                    resp.StatusCode,
+                    ccmsDocumentId);
+                return null;
+            }
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (doc.RootElement.TryGetProperty("canonicalDocumentId", out var idEl)
+                && Guid.TryParse(idEl.GetString(), out var canonicalId))
+            {
+                return canonicalId;
+            }
+
+            _log.LogWarning(
+                "canonical register-external response missing canonicalDocumentId for ccmsDocumentId={DocumentId}",
+                ccmsDocumentId);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(
+                ex,
+                "canonical register-external failed for ccmsDocumentId={DocumentId}",
+                ccmsDocumentId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Slice 3B: remove CCMS association only (association-aware; does not force-delete shared canonical).
+    /// Best-effort.
+    /// </summary>
+    public virtual async Task RemoveCcmsDocumentAssociationAsync(
+        Guid tenantId,
+        Guid ccmsDocumentId,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var payload = new { tenantId, ccmsDocumentId };
+            var resp = await _http.PostAsync(
+                "/api/internal/canonical-documents/remove-association",
+                JsonContent.Create(payload),
+                ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _log.LogWarning(
+                    "canonical remove-association returned {Status} for ccmsDocumentId={DocumentId}",
+                    resp.StatusCode,
+                    ccmsDocumentId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(
+                ex,
+                "canonical remove-association failed for ccmsDocumentId={DocumentId}",
+                ccmsDocumentId);
+        }
+    }
+
+    /// <summary>
+    /// Slice 3B: batch lookup of existing canonical associations (no hashing).
+    /// </summary>
+    public virtual async Task<IReadOnlyDictionary<Guid, Guid>> LookupCcmsCanonicalIdsAsync(
+        IEnumerable<Guid> ccmsDocumentIds,
+        CancellationToken ct = default)
+    {
+        var ids = ccmsDocumentIds.Where(id => id != Guid.Empty).Distinct().Take(200).ToArray();
+        if (ids.Length == 0)
+            return new Dictionary<Guid, Guid>();
+
+        try
+        {
+            var payload = new
+            {
+                domain = "ccms",
+                entityType = "CcmsDocument",
+                entityIds = ids,
+            };
+            var resp = await _http.PostAsync(
+                "/api/internal/canonical-documents/lookup-by-entities",
+                JsonContent.Create(payload),
+                ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _log.LogWarning("canonical lookup-by-entities returned {Status}", resp.StatusCode);
+                return new Dictionary<Guid, Guid>();
+            }
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            var map = new Dictionary<Guid, Guid>();
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                return map;
+
+            foreach (var item in items.EnumerateArray())
+            {
+                if (item.TryGetProperty("entityId", out var entityEl)
+                    && item.TryGetProperty("canonicalDocumentId", out var canonEl)
+                    && Guid.TryParse(entityEl.GetString(), out var entityId)
+                    && Guid.TryParse(canonEl.GetString(), out var canonicalId))
+                {
+                    map[entityId] = canonicalId;
+                }
+            }
+
+            return map;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "canonical lookup-by-entities failed");
+            return new Dictionary<Guid, Guid>();
+        }
+    }
 }
 

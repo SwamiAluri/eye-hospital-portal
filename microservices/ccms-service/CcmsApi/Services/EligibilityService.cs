@@ -32,6 +32,37 @@ public class EligibilityService
             .OrderByDescending(e => e.CheckedAt)
             .ToListAsync(ct);
 
+    /// <summary>
+    /// Patient-id eligibility collection. Tenant and soft-delete follow the coverage-case
+    /// patient read: JWT tenant on both the case and the check. No branch predicate.
+    /// Order matches <see cref="GetByCaseAsync"/>: <c>CheckedAt</c> descending.
+    /// </summary>
+    public async Task<PagedResult<CcmsEligibilityCheck>> ListByPatientIdAsync(
+        Guid tenantId, Guid patientId, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    {
+        var (pageNumber, size) = CcmsPatientListPaging.Normalize(page, pageSize);
+        var filtered =
+            from check in _db.EligibilityChecks.AsNoTracking()
+            join coverageCase in _db.CoverageCases.AsNoTracking()
+                on check.CoverageCase_Id equals coverageCase.Id
+            where check.TenantId == tenantId
+               && coverageCase.TenantId == tenantId
+               && coverageCase.PatientId == patientId
+               && check.DeletedAt == null
+               && coverageCase.DeletedAt == null
+            select check;
+
+        var total = await filtered.CountAsync(ct);
+        var rows = await filtered
+            .OrderByDescending(check => check.CheckedAt)
+            .ThenByDescending(check => check.Id)
+            .Skip((pageNumber - 1) * size)
+            .Take(size)
+            .ToListAsync(ct);
+
+        return new PagedResult<CcmsEligibilityCheck>(rows, total, pageNumber, size);
+    }
+
     // ── Create / perform a check ─────────────────────────────────────────────
 
     public async Task<CcmsEligibilityCheck> PerformCheckAsync(

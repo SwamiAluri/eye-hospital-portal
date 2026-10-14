@@ -1,5 +1,5 @@
 ---
-description: Testing and visual validation — Vitest, Playwright e2e/, browser checks, Figma mapping, and no false “done”.
+description: Proportional testing and visual validation — strong evidence without unnecessary full-suite cost.
 globs:
   - apps/hospital-portal-web/src/**
   - apps/hospital-portal-web/e2e/**
@@ -13,36 +13,28 @@ alwaysApply: false
 
 # Testing and validation
 
-Do not claim completion because the app compiles. `ignoreBuildErrors` / `ignoreDuringBuilds` in Next config do not waive validation.
+Evidence before completion claims. Choose the **smallest verification that proves the changed behavior**, then expand when risk requires it.
 
-## What to run (as applicable)
+## FAST
 
-- TypeScript and ESLint on files you touched (do not “fix the world”)
-- Vitest: `apps/hospital-portal-web/src/**/*.test.ts(x)` — colocate new unit tests with the lib/component
-- Existing integration tests / backend tests when APIs or schema are in scope (schema/API changes themselves need explicit approval)
-- Playwright: **active suite is `apps/hospital-portal-web/e2e/`** (`playwright.config.ts` `testDir: ./e2e`)
-- Do **not** treat `apps/hospital-portal-web/tests/e2e/` or repo-root `tests/` as the live suite (legacy paths)
-- Accessibility checks (keyboard, focus, dialogs, labels)
-- Browser verification of the real workflow, not a single screenshot
+For localized UI/styling/copy changes: type/lint or targeted test as applicable; browser-check the affected workflow when behavior/layout matters. Do not run the entire Playwright or repository suite for a one-file cosmetic change unless required by the project or failure evidence.
 
-Keep `ip-overlays-consolidated.test.ts` green for IP overlays.
+## CONTROLLED
 
-## Playwright / browser
+Run affected unit/integration tests plus the affected browser workflow where practical. Verify permissions, loading/empty/error states, and downstream behavior relevant to the change.
 
-For UI changes verify: route load, authz, patient/encounter context, primary workflow, keyboard, dialogs/drawers, forms, validation, errors, loading, responsive, a11y.
+## HEAVY
 
-Use safe UAT/seed data. Do not perform destructive production actions. Preserve existing ward-journey / census / CCMS / counselling / patient-hub projects and storageState setup.
+Run the full relevant test/build/Playwright scope, cross-module checks, and explicit regression validation. Use the existing Superpowers verification/review skills when invoked by the task router.
 
-## Figma / visual
+## UI verification
 
-When a Figma URL exists, follow `.cursor/rules/figma-mcp.mdc`: remote MCP only; `figma-design-to-code` then `get_design_context`; map to existing portal components/tokens; **do not** paste generated Tailwind as a new design system; **do not** recreate mockup HTML as production.
+For UI changes verify the real route/workflow, not only a screenshot. Check keyboard/focus, dialogs/drawers, loading, empty, errors, validation, responsive behavior, and permission visibility as applicable. Use safe UAT/seed data. Never expose PHI/PII.
 
-Then: inspect existing screen → implement with canonical components → run the app → Playwright/browser → compare → fix → check responsive states. Mockups under `apps/hospital-portal-web/docs/mockups/` are reference, not a second app.
+## Figma
 
-## Reports and analytics
-
-Reporting UIs must not mutate transactional data. Tests should not require writing production bills/claims to “see a chart.”
+When a Figma URL exists, use `.cursor/rules/figma-mcp.mdc`, map designs to existing portal components/tokens, run the affected app workflow, and compare visually. Do not create a second design system.
 
 ## Cross-module
 
-If you change shared `ui/*`, patient context, billing payment, or SignalR helpers, search consumers and re-validate affected modules (queue, ward, OT, cashier, CCMS, exam, portal as relevant).
+If shared UI, patient context, billing/payment, or SignalR helpers change, search consumers and expand validation to affected modules. Keep `ip-overlays-consolidated.test.ts` green for IP overlay work.

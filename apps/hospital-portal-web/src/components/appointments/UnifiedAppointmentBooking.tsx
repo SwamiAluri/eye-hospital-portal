@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, X, Upload, Camera, Send, UserPlus, CheckCircle, CreditCard } from 'lucide-react';
+import { Calendar, Clock, User, Phone, X, Send, UserPlus, CheckCircle, CreditCard } from 'lucide-react';
 import { getApi } from '@/lib/api';
 import { useBranchContext } from '@/hooks/use-branch-context';
 import {
@@ -10,9 +10,11 @@ import {
 } from '@/lib/patients/unified-patient-search';
 import { useMasterValues } from '@/hooks/use-master-values';
 import { defaultMasterCode } from '@/lib/master-data/appointment-master';
-import { useRouter } from 'next/navigation';
-import PhoneInput from 'react-phone-input-2';
-import 'react-phone-input-2/lib/style.css';
+import { useRouter, usePathname } from 'next/navigation';
+import {
+  bookingAddPatientReturnPath,
+  buildCanonicalAddPatientHref,
+} from '@/lib/patients/canonical-add-patient';
 
 interface Patient {
   id: string;
@@ -24,9 +26,6 @@ interface Patient {
   mobileNumber: string;
   email?: string;
   photoUrl?: string;
-  guardianName?: string;
-  guardianMobile?: string;
-  guardianRelationship?: string;
 }
 
 interface Department {
@@ -50,26 +49,18 @@ interface TimeSlot {
   available: boolean;
 }
 
-interface QuickRegistrationForm {
-  firstName: string;
-  lastName: string;
-  mobileNumber: string;
-  dateOfBirth: string;
-  age: string;
-  gender: string;
-  guardianName: string;
-  guardianMobile: string;
-  guardianRelationship: string;
-  photoUrl?: string;
-}
-
 interface UnifiedAppointmentBookingProps {
   onClose: () => void;
   onSuccess?: () => void;
+  /** Existing patient.id returned from the canonical Add Patient wizard. */
+  resumePatientId?: string | null;
+  /** Render the booking panel without the built-in overlay so a Dialog can host it. */
+  embedded?: boolean;
 }
 
-export default function UnifiedAppointmentBooking({ onClose, onSuccess }: UnifiedAppointmentBookingProps) {
+export default function UnifiedAppointmentBooking({ onClose, onSuccess, resumePatientId, embedded = false }: UnifiedAppointmentBookingProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const api = getApi();
   const { branchId } = useBranchContext();
 
@@ -78,23 +69,6 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
   const [searchResults, setSearchResults] = useState<Patient[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-
-  // Quick registration state
-  const [showQuickReg, setShowQuickReg] = useState(false);
-  const [quickRegForm, setQuickRegForm] = useState<QuickRegistrationForm>({
-    firstName: '',
-    lastName: '',
-    mobileNumber: '',
-    dateOfBirth: '',
-    age: '',
-    gender: '',
-    guardianName: '',
-    guardianMobile: '',
-    guardianRelationship: '',
-  });
-  const [photoPreview, setPhotoPreview] = useState<string>('');
-  const [showPhotoOptions, setShowPhotoOptions] = useState(false);
-  const [savingPatient, setSavingPatient] = useState(false);
 
   // Booking state
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -129,13 +103,34 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
     }
   }, [appointmentType, appointmentTypeOptions, consultationType, consultationTypeOptions]);
 
-  // Auto-calculate age from DOB
   useEffect(() => {
-    if (quickRegForm.dateOfBirth.length === 10) {
-      const age = calculateAge(quickRegForm.dateOfBirth);
-      setQuickRegForm(prev => ({ ...prev, age: age.toString() }));
-    }
-  }, [quickRegForm.dateOfBirth]);
+    const id = resumePatientId?.trim();
+    if (!id) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await getApi().get(`/patients/${id}`);
+        const row = response.data;
+        if (cancelled || !row?.id) return;
+        setSelectedPatient({
+          id: row.id,
+          medicalRecordNumber: row.medicalRecordNumber ?? '',
+          firstName: row.firstName ?? '',
+          lastName: row.lastName ?? '',
+          dateOfBirth: row.dateOfBirth ?? '',
+          gender: row.gender ?? '',
+          mobileNumber: row.contactNumber ?? '',
+          email: row.email,
+          photoUrl: row.photoUrl,
+        });
+      } catch {
+        // Leave patient search empty. Do not create a patient from booking.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resumePatientId]);
 
   // Auto-search after 2 characters
   useEffect(() => {
@@ -187,7 +182,6 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
 
     setSearching(true);
     setSearchResults([]);
-    setShowQuickReg(false);
 
     try {
       const hits = await searchPatientsUnified(branchId, term, 20);
@@ -207,23 +201,8 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
       });
 
       setSearchResults(allPatients);
-
-      if (allPatients.length === 0) {
-        // Pre-fill first name if search term looks like a name (alphabetic)
-        if (/^[a-zA-Z]+$/.test(term)) {
-          setQuickRegForm(prev => ({ 
-            ...prev, 
-            firstName: term.charAt(0).toUpperCase() + term.slice(1).toLowerCase() 
-          }));
-        }
-        // Pre-fill mobile if search term looks like phone number
-        else if (/^\d{10}$/.test(term)) {
-          setQuickRegForm(prev => ({ ...prev, mobileNumber: term }));
-        }
-      }
     } catch (error) {
       console.error('Search failed:', error);
-      setShowQuickReg(true);
     } finally {
       setSearching(false);
     }
@@ -232,158 +211,6 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
   const handleSelectPatient = (patient: Patient) => {
     setSelectedPatient(patient);
     setSearchResults([]);
-    setShowQuickReg(false);
-  };
-
-  const formatDOB = (value: string) => {
-    // Remove all non-digits
-    const digits = value.replace(/\D/g, '');
-    
-    // Format as DD/MM/YYYY
-    let formatted = digits;
-    if (digits.length >= 2) {
-      formatted = digits.slice(0, 2) + '/' + digits.slice(2);
-    }
-    if (digits.length >= 4) {
-      formatted = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4, 8);
-    }
-    
-    return formatted;
-  };
-
-  const handleDOBChange = (value: string) => {
-    const formatted = formatDOB(value);
-    setQuickRegForm(prev => ({ ...prev, dateOfBirth: formatted }));
-  };
-
-  const calculateAge = (dob: string): number => {
-    const [day, month, year] = dob.split('/').map(Number);
-    if (!day || !month || !year || year < 1900 || year > new Date().getFullYear()) return 0;
-    
-    const birthDate = new Date(year, month - 1, day);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    
-    return age;
-  };
-
-  const needsGuardian = (): boolean => {
-    const age = parseInt(quickRegForm.age);
-    return age < 18 || age > 60;
-  };
-
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
-        setQuickRegForm(prev => ({ ...prev, photoUrl: reader.result as string }));
-        setShowPhotoOptions(false);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleWebcamCapture = () => {
-    // TODO: Implement webcam capture modal
-    alert('Webcam capture will be implemented');
-    setShowPhotoOptions(false);
-  };
-
-  const handleSendToPatient = () => {
-    // Phase 1: Manual process
-    alert('Photo link sent to patient mobile number. Patient can upload photo which will appear here after refresh.');
-    setShowPhotoOptions(false);
-  };
-
-  const handleSaveQuickRegistration = async () => {
-    // Validation
-    if (!quickRegForm.firstName.trim() || !quickRegForm.lastName.trim()) {
-      alert('Please enter patient name');
-      return;
-    }
-    if (!quickRegForm.mobileNumber.trim() || quickRegForm.mobileNumber.length < 10) {
-      alert('Please enter valid mobile number');
-      return;
-    }
-    if (quickRegForm.dateOfBirth.length !== 10) {
-      alert('Please enter valid date of birth (DD/MM/YYYY)');
-      return;
-    }
-    if (!quickRegForm.gender) {
-      alert('Please select gender');
-      return;
-    }
-    if (needsGuardian()) {
-      if (!quickRegForm.guardianName.trim() || !quickRegForm.guardianMobile.trim() || !quickRegForm.guardianRelationship.trim()) {
-        alert('Guardian details are mandatory for minors and senior citizens');
-        return;
-      }
-    }
-
-    setSavingPatient(true);
-
-    try {
-      // Convert DOB to YYYY-MM-DD format
-      const [day, month, year] = quickRegForm.dateOfBirth.split('/');
-      const dobISO = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-
-      const patientData = {
-        firstName: quickRegForm.firstName,
-        lastName: quickRegForm.lastName,
-        mobileNumber: quickRegForm.mobileNumber,
-        dateOfBirth: dobISO,
-        gender: quickRegForm.gender,
-        guardianName: needsGuardian() ? quickRegForm.guardianName : undefined,
-        guardianMobile: needsGuardian() ? quickRegForm.guardianMobile : undefined,
-        guardianRelationship: needsGuardian() ? quickRegForm.guardianRelationship : undefined,
-        photoUrl: quickRegForm.photoUrl,
-      };
-
-      const response = await api.post('/patients', patientData);
-      
-      const newPatient: Patient = {
-        id: response.data.id,
-        medicalRecordNumber: response.data.medicalRecordNumber,
-        firstName: quickRegForm.firstName,
-        lastName: quickRegForm.lastName,
-        dateOfBirth: dobISO,
-        gender: quickRegForm.gender,
-        mobileNumber: quickRegForm.mobileNumber,
-        photoUrl: quickRegForm.photoUrl,
-        guardianName: quickRegForm.guardianName,
-        guardianMobile: quickRegForm.guardianMobile,
-        guardianRelationship: quickRegForm.guardianRelationship,
-      };
-
-      setSelectedPatient(newPatient);
-      setShowQuickReg(false);
-      
-      // Reset form
-      setQuickRegForm({
-        firstName: '',
-        lastName: '',
-        mobileNumber: '',
-        dateOfBirth: '',
-        age: '',
-        gender: '',
-        guardianName: '',
-        guardianMobile: '',
-        guardianRelationship: '',
-      });
-      setPhotoPreview('');
-    } catch (error: any) {
-      console.error('Failed to save patient:', error);
-      alert(error.response?.data?.message || 'Failed to save patient. Please try again.');
-    } finally {
-      setSavingPatient(false);
-    }
   };
 
   const handleDoctorChange = (doctorId: string) => {
@@ -476,6 +303,7 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
         durationMinutes,
         consultationFee: doctor?.consultationFee || 500, // Default if not set
       });
+      onSuccess?.();
       setShowSuccessModal(true);
     } catch (error: any) {
       console.error('Failed to book appointment:', error);
@@ -509,8 +337,8 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+    <div className={embedded ? 'flex max-h-[min(80vh,40rem)] flex-col' : 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4'}>
+      <div className={embedded ? 'flex min-h-0 flex-1 flex-col overflow-y-auto' : 'max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white shadow-2xl'}>
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-900">Book Appointment</h2>
@@ -524,7 +352,7 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
 
         <div className="p-6 space-y-6">
           {/* Patient Search Section */}
-          {!selectedPatient && !showQuickReg && (
+          {!selectedPatient && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search Patient
@@ -570,25 +398,14 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
               )}
 
               {/* No Results Found */}
-              {searchTerm.trim().length >= 3 && searchResults.length === 0 && !searching && !showQuickReg && (
+              {searchTerm.trim().length >= 3 && searchResults.length === 0 && !searching && (
                 <div className="mt-4 p-6 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
                   <div className="text-yellow-800 font-medium mb-4">
                     No patients found for "{searchTerm}"
                   </div>
                   <button
-                    onClick={() => {
-                      // Pre-fill first name from search term
-                      const term = searchTerm.trim();
-                      if (/^[a-zA-Z]+$/.test(term)) {
-                        setQuickRegForm(prev => ({ 
-                          ...prev, 
-                          firstName: term.charAt(0).toUpperCase() + term.slice(1).toLowerCase() 
-                        }));
-                      } else if (/^\d{10}$/.test(term)) {
-                        setQuickRegForm(prev => ({ ...prev, mobileNumber: term }));
-                      }
-                      setShowQuickReg(true);
-                    }}
+                    type="button"
+                    onClick={() => router.push(buildCanonicalAddPatientHref(bookingAddPatientReturnPath(pathname)))}
                     className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 mx-auto"
                   >
                     <UserPlus className="w-5 h-5" />
@@ -596,208 +413,6 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
                   </button>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Quick Registration Form */}
-          {showQuickReg && !selectedPatient && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 space-y-4">
-              <div className="flex items-center gap-2 text-blue-900 font-semibold">
-                <UserPlus className="w-5 h-5" />
-                Quick Patient Registration
-              </div>
-
-              {/* Photo Section */}
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  {photoPreview ? (
-                    <img src={photoPreview} alt="Patient" className="w-24 h-24 rounded-lg object-cover border-2 border-gray-300" />
-                  ) : (
-                    <div className="w-24 h-24 rounded-lg bg-gray-200 flex items-center justify-center">
-                      <User className="w-12 h-12 text-gray-400" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer flex items-center gap-2">
-                    <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-                    <Upload className="w-4 h-4" />
-                    Upload Photo
-                  </label>
-                  <button onClick={handleWebcamCapture} className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-                    <Camera className="w-4 h-4" />
-                    Capture Photo
-                  </button>
-                  <button onClick={handleSendToPatient} className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-                    <Send className="w-4 h-4" />
-                    Request Photo
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
-                  <input
-                    type="text"
-                    value={quickRegForm.firstName}
-                    onChange={(e) => setQuickRegForm({ ...quickRegForm, firstName: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
-                  <input
-                    type="text"
-                    value={quickRegForm.lastName}
-                    onChange={(e) => setQuickRegForm({ ...quickRegForm, lastName: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number *</label>
-                  <PhoneInput
-                    country={'in'}
-                    value={quickRegForm.mobileNumber}
-                    onChange={(phone) => setQuickRegForm({ ...quickRegForm, mobileNumber: phone })}
-                    containerClass="w-full"
-                    inputClass="w-full"
-                    buttonClass="border-gray-300"
-                    inputStyle={{
-                      width: '100%',
-                      height: '42px',
-                      fontSize: '14px',
-                      paddingLeft: '48px',
-                      borderRadius: '0.5rem',
-                      border: '1px solid #d1d5db',
-                    }}
-                    buttonStyle={{
-                      borderRadius: '0.5rem 0 0 0.5rem',
-                      border: '1px solid #d1d5db',
-                      backgroundColor: '#f9fafb',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
-                  <select
-                    value={quickRegForm.gender}
-                    onChange={(e) => setQuickRegForm({ ...quickRegForm, gender: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value=""></option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth *</label>
-                  <input
-                    type="text"
-                    placeholder="DD/MM/YYYY"
-                    value={quickRegForm.dateOfBirth}
-                    onChange={(e) => handleDOBChange(e.target.value)}
-                    maxLength={10}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
-                  <input
-                    type="text"
-                    value={quickRegForm.age}
-                    readOnly
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                  />
-                </div>
-              </div>
-
-              {/* Guardian Details (show if age < 18 or > 60) */}
-              {needsGuardian() && (
-                <div className="border-t border-blue-300 pt-4 space-y-4">
-                  <div className="text-sm font-medium text-blue-900">Guardian Details (Required)</div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Name *</label>
-                      <input
-                        type="text"
-                        value={quickRegForm.guardianName}
-                        onChange={(e) => setQuickRegForm({ ...quickRegForm, guardianName: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Mobile *</label>
-                      <PhoneInput
-                        country={'in'}
-                        value={quickRegForm.guardianMobile}
-                        onChange={(phone) => setQuickRegForm({ ...quickRegForm, guardianMobile: phone })}
-                        containerClass="w-full"
-                        inputClass="w-full"
-                        buttonClass="border-gray-300"
-                        inputStyle={{
-                          width: '100%',
-                          height: '42px',
-                          fontSize: '14px',
-                          paddingLeft: '48px',
-                          borderRadius: '0.5rem',
-                          border: '1px solid #d1d5db',
-                        }}
-                        buttonStyle={{
-                          borderRadius: '0.5rem 0 0 0.5rem',
-                          border: '1px solid #d1d5db',
-                          backgroundColor: '#f9fafb',
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Relationship *</label>
-                    <input
-                      type="text"
-                      value={quickRegForm.guardianRelationship}
-                      onChange={(e) => setQuickRegForm({ ...quickRegForm, guardianRelationship: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setShowQuickReg(false);
-                    setQuickRegForm({
-                      firstName: '',
-                      lastName: '',
-                      mobileNumber: '',
-                      dateOfBirth: '',
-                      age: '',
-                      gender: '',
-                      guardianName: '',
-                      guardianMobile: '',
-                      guardianRelationship: '',
-                    });
-                  }}
-                  className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveQuickRegistration}
-                  disabled={savingPatient}
-                  className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium"
-                >
-                  {savingPatient ? 'Saving Patient...' : 'Save & Continue to Booking'}
-                </button>
-              </div>
             </div>
           )}
 
@@ -842,7 +457,7 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
                       <option key={doctor.id} value={doctor.id}>
                         Dr. {doctor.firstName} {doctor.lastName}
                         {doctor.specialization && ` (${doctor.specialization})`}
-                        {doctor.consultationFee && ` - ₹${doctor.consultationFee}`}
+                        {doctor.consultationFee && ` - â‚¹${doctor.consultationFee}`}
                       </option>
                     ))}
                   </select>
@@ -975,7 +590,7 @@ export default function UnifiedAppointmentBooking({ onClose, onSuccess }: Unifie
                 </div>
                 <div className="flex justify-between border-t border-gray-200 pt-2 mt-2">
                   <span className="text-sm font-semibold text-gray-900">Consultation Fee:</span>
-                  <span className="text-lg font-bold text-blue-600">₹{bookedAppointment.consultationFee}</span>
+                  <span className="text-lg font-bold text-blue-600">â‚¹{bookedAppointment.consultationFee}</span>
                 </div>
               </div>
               <div className="mt-6 flex gap-3">

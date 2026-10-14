@@ -133,7 +133,16 @@ export default function LoginPage() {
       } else if (apiErr.message) {
         errorMessage += apiErr.message;
       }
-      if (errorMessage.includes('An error occurred during login') && !errorMessage.includes('user')) {
+      // Only suggest Create Admin User for connectivity/empty-DB failures — not for Invalid credentials.
+      const lower = errorMessage.toLowerCase();
+      if (
+        lower.includes('an error occurred during login') &&
+        !lower.includes('invalid credentials') &&
+        !lower.includes('user') &&
+        !lower.includes('activation') &&
+        !lower.includes('locked') &&
+        !lower.includes('inactive')
+      ) {
         errorMessage += ' (Database may be empty. Try "Create Admin User" below in dev mode.)';
       }
       setError(errorMessage);
@@ -388,7 +397,7 @@ export default function LoginPage() {
           <AuthDevPanel
             onCreateAdmin={handleCreateAdmin}
             isLoading={isLoading}
-            demoCredentials={`admin@test.com · Admin123! · ${selectedTenant?.name ?? 'India Eye Hospital Network'}`}
+            demoCredentials={`admin@test.com · Admin123! · Lab UAT labtech1@hospital.com / labmgr1@hospital.com use the SAME password (not the word "Password") · ${selectedTenant?.name ?? 'India Eye Hospital Network'}`}
           />
         )}
       </div>

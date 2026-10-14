@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import PhotoCapture from '@/components/shared/PhotoCapture';
 import { Activity as Upload, X, FileText, Activity as Camera, CheckCircle, AlertCircle, Activity as ImageIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { getApi } from '@/lib/api';
+import { COUNSELLING_GENERIC_DOCUMENT_TYPES } from '@/lib/api/counseling-sessions.api';
 
 interface UploadedDocumentResult {
   name: string;
@@ -27,11 +28,15 @@ interface UploadedDocument {
   file: File;
   preview?: string;
   status: 'pending' | 'uploading' | 'success' | 'error';
+  documentType: string;
 }
 
+const DEFAULT_TYPE = COUNSELLING_GENERIC_DOCUMENT_TYPES[0].id;
+const MAX_BYTES = 20 * 1024 * 1024;
+
 /**
- * CustomDocumentModal - Simple custom modal without Radix UI
- * Bypasses Dialog infinite loop issues
+ * CustomDocumentModal - Counselling session document upload (optional payment-flow step).
+ * Uses certified counselling document types and persists via /counseling/documents/upload.
  */
 export function CustomDocumentModal({
   sessionId,
@@ -40,71 +45,74 @@ export function CustomDocumentModal({
   onClose,
   onComplete,
 }: CustomDocumentModalProps) {
-  console.log('📄 CustomDocumentModal render, isOpen:', isOpen);
-  
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
   const [uploading, setUploading] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
-  const [currentDocumentType, setCurrentDocumentType] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<string>(DEFAULT_TYPE);
   const [mounted, setMounted] = useState(false);
 
-  // Ensure we're on client side
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Cleanup when modal closes — don't revoke blob URLs for successfully uploaded docs
-  // (parent widget needs them for preview)
   useEffect(() => {
     if (!isOpen) {
-      uploadedDocuments.forEach(doc => {
+      uploadedDocuments.forEach((doc) => {
         if (doc.preview && doc.preview.startsWith('blob:') && doc.status !== 'success') {
           URL.revokeObjectURL(doc.preview);
         }
       });
       setUploadedDocuments([]);
       setShowCamera(false);
-      setCurrentDocumentType(null);
+      setSelectedType(DEFAULT_TYPE);
     }
   }, [isOpen]);
 
-  // Handle file selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    
     if (files.length === 0) return;
 
-    const validFiles = files.filter(file => {
-      const isValid = 
-        file.type.startsWith('image/') || 
+    if (!COUNSELLING_GENERIC_DOCUMENT_TYPES.some((t) => t.id === selectedType)) {
+      toast.error('Select a certified Counselling document type');
+      return;
+    }
+
+    const validFiles = files.filter((file) => {
+      const isValid =
         file.type === 'application/pdf' ||
-        file.type.includes('word');
-      
+        file.type === 'image/jpeg' ||
+        file.type === 'image/png' ||
+        file.type === 'image/jpg';
+
       if (!isValid) {
-        toast.error(`${file.name}: Invalid file type`);
-      }
-      
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error(`${file.name}: File too large (max 10MB)`);
+        toast.error(`${file.name}: Only PDF, JPEG, and PNG are allowed`);
         return false;
       }
-      
-      return isValid;
+
+      if (file.size > MAX_BYTES) {
+        toast.error(`${file.name}: File too large (max 20MB)`);
+        return false;
+      }
+
+      return true;
     });
 
-    const newDocuments: UploadedDocument[] = validFiles.map(file => ({
+    const newDocuments: UploadedDocument[] = validFiles.map((file) => ({
       name: file.name,
       file,
       preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
       status: 'pending',
+      documentType: selectedType,
     }));
 
-    setUploadedDocuments(prev => [...prev, ...newDocuments]);
+    setUploadedDocuments((prev) => [...prev, ...newDocuments]);
   };
 
-  // Handle camera capture
   const handleCameraCapture = () => {
-    setCurrentDocumentType('Camera Capture');
+    if (!COUNSELLING_GENERIC_DOCUMENT_TYPES.some((t) => t.id === selectedType)) {
+      toast.error('Select a certified Counselling document type');
+      return;
+    }
     setShowCamera(true);
   };
 
@@ -114,17 +122,16 @@ export function CustomDocumentModal({
       file,
       preview,
       status: 'pending',
+      documentType: selectedType,
     };
 
-    setUploadedDocuments(prev => [...prev, newDocument]);
+    setUploadedDocuments((prev) => [...prev, newDocument]);
     setShowCamera(false);
-    setCurrentDocumentType(null);
     toast.success('Photo captured successfully');
   };
 
-  // Remove document
   const handleRemoveDocument = (index: number) => {
-    setUploadedDocuments(prev => {
+    setUploadedDocuments((prev) => {
       const doc = prev[index];
       if (doc.preview && doc.preview.startsWith('blob:')) {
         URL.revokeObjectURL(doc.preview);
@@ -133,14 +140,28 @@ export function CustomDocumentModal({
     });
   };
 
-  // Upload all documents
+  const handleDocumentTypeChange = (index: number, documentType: string) => {
+    setUploadedDocuments((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], documentType };
+      return updated;
+    });
+  };
+
   const handleUploadAll = async () => {
     if (uploadedDocuments.length === 0) {
       toast.error('No documents to upload');
       return;
     }
 
-    console.log('📤 Starting upload for', uploadedDocuments.length, 'documents');
+    const missingType = uploadedDocuments.some(
+      (doc) => !COUNSELLING_GENERIC_DOCUMENT_TYPES.some((t) => t.id === doc.documentType),
+    );
+    if (missingType) {
+      toast.error('Each file needs a certified Counselling document type');
+      return;
+    }
+
     setUploading(true);
 
     try {
@@ -149,14 +170,17 @@ export function CustomDocumentModal({
       const successfulDocs: Array<{ name: string; size: number; type: string; previewUrl?: string }> = [];
 
       const uploadPromises = uploadedDocuments.map(async (doc, index) => {
-        // Skip already successful uploads
         if (doc.status === 'success') {
-          console.log('⏭️ Skipping already uploaded:', doc.name);
-          successfulDocs.push({ name: doc.file.name, size: doc.file.size, type: doc.file.type, previewUrl: doc.preview });
+          successfulDocs.push({
+            name: doc.file.name,
+            size: doc.file.size,
+            type: doc.file.type,
+            previewUrl: doc.preview,
+          });
           return;
         }
 
-        setUploadedDocuments(prev => {
+        setUploadedDocuments((prev) => {
           const updated = [...prev];
           updated[index] = { ...updated[index], status: 'uploading' };
           return updated;
@@ -167,45 +191,38 @@ export function CustomDocumentModal({
           const formData = new FormData();
           formData.append('file', doc.file);
           formData.append('sessionId', sessionId);
-          formData.append('documentType', doc.name);
+          formData.append('documentType', doc.documentType);
           formData.append('documentName', doc.file.name);
-          formData.append('isVerified', 'true');
-          formData.append('verificationMethod', 'auto');
 
-          console.log('📤 Attempting upload:', doc.name, 'Size:', doc.file.size, 'bytes');
+          await api.post('/counseling/documents/upload', formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          });
 
-          const response = await api.post('/counseling/documents/upload', formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data',
-              },
-            });
-
-            console.log('✅ Upload success:', doc.name, response.data);
-
-            setUploadedDocuments(prev => {
-              const updated = [...prev];
-              updated[index] = { ...updated[index], status: 'success' };
-              return updated;
-            });
-            successfulDocs.push({ name: doc.file.name, size: doc.file.size, type: doc.file.type, previewUrl: doc.preview });
-            successCount++;
-        } catch (error: any) {
-          console.warn('⚠️ Upload API unavailable for', doc.name, '— staged locally:', error.message);
-          // Mark as locally staged success so the user flow is not blocked.
-          // The backend endpoint may not be active yet; documents are held in widget state.
-          setUploadedDocuments(prev => {
+          setUploadedDocuments((prev) => {
             const updated = [...prev];
             updated[index] = { ...updated[index], status: 'success' };
             return updated;
           });
-          successfulDocs.push({ name: doc.file.name, size: doc.file.size, type: doc.file.type, previewUrl: doc.preview });
+          successfulDocs.push({
+            name: doc.file.name,
+            size: doc.file.size,
+            type: doc.file.type,
+            previewUrl: doc.preview,
+          });
           successCount++;
+        } catch {
+          setUploadedDocuments((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], status: 'error' };
+            return updated;
+          });
+          errorCount++;
         }
       });
 
       await Promise.all(uploadPromises);
-      
-      console.log('📊 Upload complete. Success:', successCount, 'Errors:', errorCount);
 
       if (errorCount === 0) {
         toast.success(`${successCount} document(s) uploaded successfully`, {
@@ -217,28 +234,24 @@ export function CustomDocumentModal({
           onComplete?.(successfulDocs);
         }, 1500);
       } else if (successCount > 0) {
-        toast.warning(`${successCount} uploaded, ${errorCount} failed`, {
-          description: 'Check console for details',
-        });
+        toast.warning(`${successCount} uploaded, ${errorCount} failed`);
       } else {
         toast.error('All uploads failed', {
           description: 'Please check your connection and try again',
         });
       }
-    } catch (error: any) {
-      console.error('❌ Upload batch error:', error);
+    } catch (error: unknown) {
       toast.error('Upload failed', {
-        description: error.message || 'Please try again',
+        description: error instanceof Error ? error.message : 'Please try again',
       });
     } finally {
       setUploading(false);
     }
   };
 
-  // Skip and close
   const handleSkip = () => {
     if (uploadedDocuments.length > 0) {
-      const hasUnsaved = uploadedDocuments.some(doc => doc.status === 'pending');
+      const hasUnsaved = uploadedDocuments.some((doc) => doc.status === 'pending');
       if (hasUnsaved) {
         toast.info('Documents not uploaded will be lost');
       }
@@ -251,15 +264,9 @@ export function CustomDocumentModal({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (createPortal as any)(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      
-      {/* Modal Content */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col m-4">
-        {/* Header */}
         <div className="border-b p-6">
           <div className="flex items-start justify-between">
             <div>
@@ -272,19 +279,14 @@ export function CustomDocumentModal({
                 )}
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors" type="button">
               <X className="h-5 w-5" />
             </button>
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
-            {/* Required Documents List */}
             {requiredDocuments.length > 0 && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-blue-900 mb-2">Required Documents:</h4>
@@ -299,22 +301,42 @@ export function CustomDocumentModal({
               </div>
             )}
 
-            {/* Camera Capture View */}
+            <div className="space-y-2">
+              <label htmlFor="counselling-document-type" className="text-sm font-medium text-gray-700">
+                Document type
+              </label>
+              <select
+                id="counselling-document-type"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                data-testid="counselling-document-type"
+              >
+                {COUNSELLING_GENERIC_DOCUMENT_TYPES.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {showCamera ? (
               <div className="space-y-4">
                 <PhotoCapture
+                  autoStart
+                  label="Document photo"
+                  optional={false}
                   onPhotoCapture={handlePhotoCapture}
                   onCancel={() => {
                     setShowCamera(false);
-                    setCurrentDocumentType(null);
                   }}
                 />
               </div>
             ) : (
               <>
-                {/* Upload Options */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <button
+                    type="button"
                     onClick={handleCameraCapture}
                     className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-cyan-500 hover:bg-cyan-50 transition-colors"
                   >
@@ -328,47 +350,71 @@ export function CustomDocumentModal({
                     <input
                       type="file"
                       multiple
-                      accept="image/*,application/pdf,.doc,.docx"
+                      accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf"
                       onChange={handleFileSelect}
                       className="hidden"
                     />
                   </label>
                 </div>
 
-                {/* Uploaded Documents List */}
                 {uploadedDocuments.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-gray-700">Uploaded Documents ({uploadedDocuments.length})</h4>
-                    <div className="space-y-2">
-                      {uploadedDocuments.map((doc, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50"
-                        >
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-semibold text-gray-900">Selected files</h4>
+                    {uploadedDocuments.map((doc, index) => (
+                      <div
+                        key={`${doc.name}-${index}`}
+                        className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 sm:flex-row sm:items-center"
+                      >
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
                           {doc.preview ? (
-                            <img src={doc.preview} alt={doc.name} className="h-12 w-12 object-cover rounded" />
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={doc.preview} alt="" className="h-10 w-10 rounded object-cover" />
                           ) : (
-                            <FileText className="h-12 w-12 text-gray-400" />
+                            <ImageIcon className="h-8 w-8 text-gray-400" />
                           )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{doc.name}</p>
-                            <p className="text-xs text-gray-500">{(doc.file.size / 1024).toFixed(0)} KB</p>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-gray-900">{doc.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {doc.status === 'success' ? (
+                                <span className="inline-flex items-center gap-1 text-emerald-600">
+                                  <CheckCircle className="h-3 w-3" /> Uploaded
+                                </span>
+                              ) : doc.status === 'error' ? (
+                                <span className="inline-flex items-center gap-1 text-red-600">
+                                  <AlertCircle className="h-3 w-3" /> Failed
+                                </span>
+                              ) : doc.status === 'uploading' ? (
+                                'Uploading…'
+                              ) : (
+                                'Pending'
+                              )}
+                            </p>
                           </div>
-                          {doc.status === 'uploading' && (
-                            <div className="text-blue-500">
-                              <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
-                            </div>
-                          )}
-                          {doc.status === 'success' && <CheckCircle className="h-5 w-5 text-green-500" />}
-                          {doc.status === 'error' && <AlertCircle className="h-5 w-5 text-red-500" />}
-                          {doc.status === 'pending' && (
-                            <button onClick={() => handleRemoveDocument(index)} className="text-red-500 hover:text-red-700">
-                              <X className="h-5 w-5" />
-                            </button>
-                          )}
                         </div>
-                      ))}
-                    </div>
+                        <select
+                          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          value={doc.documentType}
+                          disabled={doc.status === 'success' || doc.status === 'uploading'}
+                          onChange={(e) => handleDocumentTypeChange(index, e.target.value)}
+                          aria-label={`Document type for ${doc.name}`}
+                        >
+                          {COUNSELLING_GENERIC_DOCUMENT_TYPES.map((type) => (
+                            <option key={type.id} value={type.id}>
+                              {type.label}
+                            </option>
+                          ))}
+                        </select>
+                        {doc.status !== 'success' && doc.status !== 'uploading' ? (
+                          <button
+                            type="button"
+                            className="text-sm text-red-600 hover:underline"
+                            onClick={() => handleRemoveDocument(index)}
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
                 )}
               </>
@@ -376,27 +422,27 @@ export function CustomDocumentModal({
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="border-t p-4 flex items-center justify-end gap-3 bg-gray-50">
+        <div className="border-t p-4 flex justify-between gap-3">
           <button
+            type="button"
             onClick={handleSkip}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
             disabled={uploading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
-            Skip for Now
+            Skip
           </button>
-          {uploadedDocuments.length > 0 && (
-            <button
-              onClick={handleUploadAll}
-              disabled={uploading || uploadedDocuments.every(d => d.status === 'success')}
-              className="px-4 py-2 text-sm font-medium text-white bg-cyan-600 rounded-lg hover:bg-cyan-700 disabled:opacity-50 transition-colors"
-            >
-              {uploading ? 'Uploading...' : 'Upload All'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => void handleUploadAll()}
+            disabled={uploading || uploadedDocuments.length === 0}
+            className="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            data-testid="counselling-document-upload-submit"
+          >
+            {uploading ? 'Uploading…' : 'Upload'}
+          </button>
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

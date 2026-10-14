@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { buildCanonicalAddPatientHref } from '@/lib/patients/canonical-add-patient';
 
 // ============================================================================
 // Types
@@ -153,8 +155,8 @@ function SeverityBadge({ severity }: { severity: string }) {
 // ============================================================================
 
 export default function PatientsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'list' | 'demographics'>('list');
-  const [showNewPatientModal, setShowNewPatientModal] = useState(false);
   const [showPatientDetailModal, setShowPatientDetailModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -292,7 +294,7 @@ export default function PatientsPage() {
             Import
           </button>
           <button
-            onClick={() => setShowNewPatientModal(true)}
+            onClick={() => router.push(buildCanonicalAddPatientHref('/admin/patients'))}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <span>➕</span>
@@ -592,156 +594,6 @@ export default function PatientsPage() {
         </div>
       )}
 
-      {/* New Patient Modal */}
-      {showNewPatientModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-gray-900">Register New Patient</h2>
-                <button
-                  onClick={() => setShowNewPatientModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <form className="space-y-6">
-                {/* Personal Information */}
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">Personal Information</h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">First Name *</label>
-                      <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Middle Name</label>
-                      <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Last Name *</label>
-                      <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Date of Birth *</label>
-                      <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Gender *</label>
-                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                        <option value="">Select...</option>
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">SSN</label>
-                      <input type="text" placeholder="XXX-XX-XXXX" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Contact Information */}
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">Contact Information</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Phone *</label>
-                      <input type="tel" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Email</label>
-                      <input type="email" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm text-gray-600 mb-1">Address</label>
-                      <input type="text" placeholder="Street Address" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">City</label>
-                      <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">State</label>
-                        <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">ZIP</label>
-                        <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Emergency Contact */}
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">Emergency Contact</h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Name *</label>
-                      <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Relationship</label>
-                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                        <option value="spouse">Spouse</option>
-                        <option value="parent">Parent</option>
-                        <option value="child">Child</option>
-                        <option value="sibling">Sibling</option>
-                        <option value="friend">Friend</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Phone *</label>
-                      <input type="tel" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Insurance */}
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">Insurance Information (Optional)</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Insurance Provider</label>
-                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                        <option value="">Select or Self-Pay...</option>
-                        <option value="bcbs">Blue Cross Blue Shield</option>
-                        <option value="aetna">Aetna</option>
-                        <option value="united">United Healthcare</option>
-                        <option value="cigna">Cigna</option>
-                        <option value="medicare">Medicare</option>
-                        <option value="medicaid">Medicaid</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Policy Number</label>
-                      <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                  </div>
-                </div>
-              </form>
-
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  onClick={() => setShowNewPatientModal(false)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                  Register Patient
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Patient Detail Modal */}
       {showPatientDetailModal && selectedPatient && (

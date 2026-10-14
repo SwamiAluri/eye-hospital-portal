@@ -48,4 +48,44 @@ public static class BillingMutationAuth
 
         throw new UnauthorizedAccessException($"Missing permission: {string.Join(" or ", codes)}");
     }
+
+    /// <summary>
+    /// Requires every named permission. Unlike <see cref="RequireAsync"/>, a missing
+    /// authenticated principal is rejected. Wildcard <c>permission=*</c> satisfies each code.
+    /// </summary>
+    public static async Task RequireAllAsync(
+        ClaimsPrincipal? user,
+        AppDbContext? db,
+        params string[] codes)
+    {
+        if (!ShouldEnforce(user))
+            throw new UnauthorizedAccessException("Authentication required.");
+
+        var userIdClaim = user!.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? user.FindFirst("sub")?.Value;
+        var tenantIdClaim = user.FindFirst("tenant_id")?.Value;
+        Guid userId = Guid.Empty;
+        Guid tenantId = Guid.Empty;
+        var canCheckDatabase = db != null
+            && Guid.TryParse(userIdClaim, out userId)
+            && Guid.TryParse(tenantIdClaim, out tenantId)
+            && userId != Guid.Empty
+            && tenantId != Guid.Empty;
+
+        foreach (var code in codes)
+        {
+            if (HasJwtPermission(user, code))
+                continue;
+
+            var granted = false;
+            if (canCheckDatabase)
+            {
+                var permissionService = new PermissionService(db!);
+                granted = await permissionService.HasPermissionAsync(userId, code, tenantId);
+            }
+
+            if (!granted)
+                throw new UnauthorizedAccessException($"Missing permission: {code}");
+        }
+    }
 }

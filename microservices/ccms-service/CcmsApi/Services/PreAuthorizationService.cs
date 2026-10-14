@@ -387,6 +387,37 @@ public class PreAuthorizationService
             .Select(ToDto)
             .ToList();
 
+    /// <summary>
+    /// Patient-id authorization collection. Tenant and soft-delete follow the coverage-case
+    /// patient read: JWT tenant on both the case and the authorization. No branch predicate.
+    /// </summary>
+    public async Task<PagedResult<AuthorizationSummaryDto>> ListByPatientIdAsync(
+        Guid tenantId, Guid patientId, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    {
+        var (pageNumber, size) = CcmsPatientListPaging.Normalize(page, pageSize);
+        var filtered =
+            from authorization in _db.CoverageAuthorizations.AsNoTracking()
+            join coverageCase in _db.CoverageCases.AsNoTracking()
+                on authorization.CoverageCase_Id equals coverageCase.Id
+            where authorization.TenantId == tenantId
+               && coverageCase.TenantId == tenantId
+               && coverageCase.PatientId == patientId
+               && authorization.DeletedAt == null
+               && coverageCase.DeletedAt == null
+            select authorization;
+
+        var total = await filtered.CountAsync(ct);
+        var rows = await filtered
+            .OrderByDescending(authorization => authorization.CreatedAt)
+            .ThenByDescending(authorization => authorization.Id)
+            .Skip((pageNumber - 1) * size)
+            .Take(size)
+            .ToListAsync(ct);
+
+        return new PagedResult<AuthorizationSummaryDto>(
+            rows.Select(ToDto).ToList(), total, pageNumber, size);
+    }
+
     // ── Update process_status ────────────────────────────────────────────────
 
     public async Task<AuthorizationSummaryDto> UpdateProcessStatusAsync(

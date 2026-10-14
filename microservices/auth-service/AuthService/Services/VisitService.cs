@@ -67,12 +67,12 @@ public class VisitService : IVisitService
         return visit == null ? null : MapToDto(visit);
     }
 
-    public async Task<List<VisitListDto>> GetByPatientIdAsync(Guid patientId, int page = 1, int pageSize = 20)
+    public async Task<List<VisitListDto>> GetByPatientIdAsync(Guid tenantId, Guid patientId, int page = 1, int pageSize = 20)
     {
         var visits = await _context.Visits
             .Include(v => v.Patient)
             .Include(v => v.Consultant)
-            .Where(v => v.PatientId == patientId && v.DeletedAt == null)
+            .Where(v => v.PatientId == patientId && v.TenantId == tenantId && v.DeletedAt == null)
             .OrderByDescending(v => v.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)

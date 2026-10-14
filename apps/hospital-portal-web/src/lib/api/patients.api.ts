@@ -150,6 +150,41 @@ export const patientApi = {
   },
 
   /**
+   * DUP-C.2 / DUP-C.3 — Create-scoped duplicate pre-check (patient.create).
+   * Minimized response; does not authorize creation.
+   */
+  async checkDuplicatesForRegistration(data: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth?: string | null;
+    contactNumber?: string | null;
+    email?: string | null;
+  }) {
+    const api = getApi();
+    return api.post<{
+      isDuplicate: boolean;
+      message?: string;
+      matches: Array<{
+        id: string;
+        medicalRecordNumber?: string;
+        firstName?: string;
+        lastName?: string;
+        dateOfBirth?: string;
+        gender?: string | null;
+        matchType?: string;
+        matchedAttributes?: string[];
+        differentAttributes?: string[];
+      }>;
+    }>('/patients/registration/check-duplicates', {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      dateOfBirth: data.dateOfBirth || null,
+      contactNumber: data.contactNumber || null,
+      email: data.email || null,
+    });
+  },
+
+  /**
    * Create a new patient
    */
   async create(data: PatientFormData) {

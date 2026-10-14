@@ -1312,6 +1312,20 @@ namespace AuthService.Services
                     };
                 }
 
+                // A null session branch is not an authorized branch. Do not pass null into
+                // FollowupBranchAccessService — a null request means "return all accessible branches".
+                // Reuse the existing Assign forbidden contract (403). Do not invent or copy a branch.
+                if (!sessionMeta.BranchId.HasValue)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Forbidden,
+                        Message = "Not authorized to assign this session.",
+                        SessionId = sessionId,
+                    };
+                }
+
                 // Actor must be authorized for the session's branch (server-derived; ignore client branch).
                 // Counsellor and Admin/System Administrator actors are both allowed when they have
                 // counseling_sessions.update + branch access; owner is always the validated target.
@@ -1779,6 +1793,20 @@ namespace AuthService.Services
                     };
                 }
 
+                // A null session branch is not an authorized branch. Do not pass null into
+                // FollowupBranchAccessService — a null request means "return all accessible branches".
+                // Same fail-closed contract as Assign.
+                if (!sessionMeta.BranchId.HasValue)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Forbidden,
+                        Message = "Not authorized to assign this session.",
+                        SessionId = sessionId,
+                    };
+                }
+
                 try
                 {
                     await _followupBranchAccess.ResolveAccessibleBranchesAsync(
@@ -2160,6 +2188,21 @@ namespace AuthService.Services
                     };
                 }
 
+                // A null session branch is not an authorized branch. Do not pass null into
+                // FollowupBranchAccessService — a null request means "return all accessible branches".
+                // Reject before target availability can treat a missing branch as authorized.
+                // Same fail-closed contract as Assign.
+                if (!sessionMeta.BranchId.HasValue)
+                {
+                    return new AssignSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Forbidden,
+                        Message = "Not authorized to assign this session.",
+                        SessionId = sessionId,
+                    };
+                }
+
                 try
                 {
                     await _followupBranchAccess.ResolveAccessibleBranchesAsync(
@@ -2493,6 +2536,20 @@ namespace AuthService.Services
                         Success = false,
                         FailureKind = AssignSessionFailureKind.BadRequest,
                         Message = "SurgeryDone sessions cannot be requeued.",
+                        SessionId = sessionId,
+                    };
+                }
+
+                // A null session branch is not an authorized branch. Do not pass null into
+                // FollowupBranchAccessService, and do not reach BranchId ?? Guid.Empty queue creation.
+                // Same fail-closed contract as Assign.
+                if (!sessionMeta.BranchId.HasValue)
+                {
+                    return new ReQueueSessionResult
+                    {
+                        Success = false,
+                        FailureKind = AssignSessionFailureKind.Forbidden,
+                        Message = "Not authorized to assign this session.",
                         SessionId = sessionId,
                     };
                 }
@@ -2969,22 +3026,30 @@ namespace AuthService.Services
                 };
             }
 
-            if (sessionBranchId.HasValue)
+            // A null session branch is not target authorization. Do not skip the check.
+            if (!sessionBranchId.HasValue)
             {
-                try
+                return new OwnershipTargetAvailability
                 {
-                    await _followupBranchAccess.ResolveAccessibleBranchesAsync(
-                        tenantId, targetCounselorId, sessionBranchId);
-                }
-                catch (UnauthorizedAccessException)
+                    IsAvailable = false,
+                    FailureKind = AssignSessionFailureKind.Forbidden,
+                    Message = "Not authorized to assign this session.",
+                };
+            }
+
+            try
+            {
+                await _followupBranchAccess.ResolveAccessibleBranchesAsync(
+                    tenantId, targetCounselorId, sessionBranchId);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return new OwnershipTargetAvailability
                 {
-                    return new OwnershipTargetAvailability
-                    {
-                        IsAvailable = false,
-                        FailureKind = AssignSessionFailureKind.Forbidden,
-                        Message = "Target counsellor is not authorized for this session branch.",
-                    };
-                }
+                    IsAvailable = false,
+                    FailureKind = AssignSessionFailureKind.Forbidden,
+                    Message = "Target counsellor is not authorized for this session branch.",
+                };
             }
 
             return new OwnershipTargetAvailability { IsAvailable = true };
@@ -4052,6 +4117,205 @@ namespace AuthService.Services
         // SESSION DOCUMENTS
         // ============================================================================
 
+        /// <summary>
+        /// Patient 360 session context. Same follow-up branch allow-list as GetPatientSessions.
+        /// Null branch stays excluded. Does not page. Does not select the operational session DTO.
+        /// </summary>
+        public async Task<List<Patient360CounsellingSessionMetadataDto>> ListPatient360SessionContextAsync(
+            Guid tenantId,
+            Guid patientId,
+            IReadOnlyList<Guid> accessibleBranchIds)
+        {
+            if (accessibleBranchIds == null || accessibleBranchIds.Count == 0)
+                return new List<Patient360CounsellingSessionMetadataDto>();
+
+            var branchIds = accessibleBranchIds as Guid[] ?? accessibleBranchIds.ToArray();
+            var rows = await (
+                from session in _context.CounselingSession.AsNoTracking()
+                join counselor in _context.Users.AsNoTracking()
+                    on session.CounselorId equals counselor.Id into counselorJoin
+                from counselor in counselorJoin.DefaultIfEmpty()
+                where session.TenantId == tenantId
+                   && session.PatientId == patientId
+                   && session.DeletedAt == null
+                   && session.BranchId != null
+                   && branchIds.Contains(session.BranchId.Value)
+                orderby session.SessionDate descending, session.CreatedAt descending
+                select new
+                {
+                    session.Id,
+                    session.SessionNumber,
+                    session.SessionType,
+                    session.SessionDate,
+                    session.SessionStartTime,
+                    session.SessionEndTime,
+                    session.Status,
+                    FirstName = counselor != null ? counselor.FirstName : null,
+                    LastName = counselor != null ? counselor.LastName : null,
+                }
+            ).ToListAsync();
+
+            return rows.Select(row => new Patient360CounsellingSessionMetadataDto
+            {
+                Id = row.Id,
+                SessionNumber = row.SessionNumber,
+                SessionType = row.SessionType,
+                SessionDate = row.SessionDate,
+                SessionStartTime = row.SessionStartTime,
+                SessionEndTime = row.SessionEndTime,
+                Status = row.Status,
+                CounsellorName = string.Join(
+                    " ",
+                    new[] { row.FirstName, row.LastName }.Where(part => !string.IsNullOrWhiteSpace(part))).Trim(),
+            }).ToList();
+        }
+
+        /// <summary>
+        /// Patient 360 metadata. JWT tenant on the session and the document.
+        /// Excludes soft-deleted documents, soft-deleted sessions, and AudioRecording.
+        /// Includes patient-level Counselling canonical documents (no session).
+        /// Does not filter branch. Does not read file paths or blobs.
+        /// </summary>
+        public async Task<CounselingDocumentPatientMetadataPage> ListMetadataByPatientIdAsync(
+            Guid tenantId, Guid patientId, int page = 1, int pageSize = 20)
+        {
+            var (pageNumber, size) = FollowupQueryContracts.NormalizePagination(page, pageSize);
+
+            var sessionRows = await (
+                from document in _context.CounselingSessionDocuments.AsNoTracking()
+                join session in _context.CounselingSession.AsNoTracking()
+                    on document.SessionId equals session.Id
+                where document.TenantId == tenantId
+                   && session.TenantId == tenantId
+                   && session.PatientId == patientId
+                   && document.DeletedAt == null
+                   && session.DeletedAt == null
+                   && document.DocumentType != CounselingSessionDocumentTypes.AudioRecording
+                select new
+                {
+                    document.Id,
+                    SessionId = (Guid?)document.SessionId,
+                    document.DocumentName,
+                    document.DocumentType,
+                    document.Status,
+                    document.CreatedAt,
+                    document.UpdatedAt,
+                    document.FileType,
+                    document.FileSizeBytes,
+                    document.CreatedByUserId,
+                    IsPatientLevel = false,
+                }).ToListAsync();
+
+            var patientLevelRows = await (
+                from document in _context.CanonicalDocuments.AsNoTracking()
+                join association in _context.CanonicalDocumentAssociations.AsNoTracking()
+                    on document.Id equals association.DocumentId
+                where document.TenantId == tenantId
+                   && document.PatientId == patientId
+                   && document.DeletedAt == null
+                   && association.Domain == CanonicalDocumentAssociations.CounsellingDomain
+                   && association.EntityType == CanonicalDocumentAssociations.CounsellingPatientEntityType
+                   && association.EntityId == patientId
+                select new
+                {
+                    document.Id,
+                    SessionId = (Guid?)null,
+                    DocumentName = document.FileName,
+                    DocumentType = document.Classification,
+                    document.Status,
+                    document.CreatedAt,
+                    UpdatedAt = (DateTime?)null,
+                    FileType = (string?)null,
+                    FileSizeBytes = (long?)document.SizeBytes,
+                    CreatedByUserId = document.CreatedByUserId,
+                    IsPatientLevel = true,
+                }).ToListAsync();
+
+            // Derive file type for patient-level from mime when possible after materialization.
+            var merged = sessionRows
+                .Concat(patientLevelRows)
+                .OrderByDescending(r => r.CreatedAt)
+                .ThenByDescending(r => r.Id)
+                .ToList();
+
+            var total = merged.Count;
+            var pageSlice = merged
+                .Skip((pageNumber - 1) * size)
+                .Take(size)
+                .ToList();
+
+            var sessionSourceIds = pageSlice.Where(r => !r.IsPatientLevel).Select(r => r.Id).ToList();
+            var canonicalBySource = await _context.CanonicalDocumentAssociations.AsNoTracking()
+                .Where(a =>
+                    a.Domain == CanonicalDocumentAssociations.CounsellingDomain
+                    && a.EntityType == CanonicalDocumentAssociations.CounselingSessionDocumentEntityType
+                    && sessionSourceIds.Contains(a.EntityId))
+                .Select(a => new { a.EntityId, a.DocumentId })
+                .ToListAsync();
+            var canonicalMap = canonicalBySource
+                .GroupBy(a => a.EntityId)
+                .ToDictionary(g => g.Key, g => (Guid?)g.First().DocumentId);
+
+            var rows = pageSlice.Select(document =>
+            {
+                string? fileType = document.FileType;
+                if (document.IsPatientLevel && string.IsNullOrEmpty(fileType))
+                {
+                    // FileType filled below from canonical mime via a second lookup if needed —
+                    // classification rows use SizeBytes; mime lives on CanonicalDocuments.
+                    fileType = null;
+                }
+
+                return new CounselingDocumentPatientMetadataDto
+                {
+                    Id = document.Id,
+                    SessionId = document.SessionId,
+                    DocumentName = document.DocumentName,
+                    DocumentType = document.DocumentType,
+                    Status = document.Status,
+                    CreatedAt = document.CreatedAt,
+                    UpdatedAt = document.UpdatedAt,
+                    FileType = fileType,
+                    FileSizeBytes = document.FileSizeBytes,
+                    CanonicalDocumentId = document.IsPatientLevel
+                        ? document.Id
+                        : (canonicalMap.TryGetValue(document.Id, out var canonicalId) ? canonicalId : null),
+                    CreatedByUserId = document.CreatedByUserId,
+                };
+            }).ToList();
+
+            // Fill mime-derived file types for patient-level rows on this page.
+            var patientLevelIds = pageSlice.Where(r => r.IsPatientLevel).Select(r => r.Id).ToList();
+            if (patientLevelIds.Count > 0)
+            {
+                var mimeById = await _context.CanonicalDocuments.AsNoTracking()
+                    .Where(d => patientLevelIds.Contains(d.Id))
+                    .Select(d => new { d.Id, d.MimeType })
+                    .ToDictionaryAsync(d => d.Id, d => d.MimeType);
+                foreach (var row in rows.Where(r => r.SessionId == null && r.CanonicalDocumentId == r.Id))
+                {
+                    if (mimeById.TryGetValue(row.Id, out var mime))
+                    {
+                        row.FileType = mime switch
+                        {
+                            "application/pdf" => "pdf",
+                            "image/jpeg" => "jpeg",
+                            "image/png" => "png",
+                            _ => row.FileType,
+                        };
+                    }
+                }
+            }
+
+            return new CounselingDocumentPatientMetadataPage
+            {
+                Documents = rows,
+                TotalCount = total,
+                PageNumber = pageNumber,
+                PageSize = size,
+            };
+        }
+
         public async Task<List<SessionDocumentDto>> GetSessionDocumentsAsync(Guid tenantId, Guid sessionId)
         {
             try
@@ -4307,17 +4571,90 @@ namespace AuthService.Services
                 var document = await _context.CounselingSessionDocuments
                     .FirstOrDefaultAsync(d => d.Id == documentId && d.TenantId == tenantId && d.DeletedAt == null);
 
-                if (document == null)
+                if (document != null)
+                {
+                    // Slice 2B — uploader-only remove (soft-delete). No invented admin override.
+                    if (document.CreatedByUserId != currentUserId)
+                        throw new UnauthorizedAccessException("Only the user who uploaded this document can remove it.");
+
+                    var now = DateTime.UtcNow;
+                    document.DeletedAt = now;
+                    document.UpdatedAt = now;
+                    document.UpdatedByUserId = currentUserId;
+
+                    var associations = await _context.CanonicalDocumentAssociations
+                        .Where(a =>
+                            a.Domain == CanonicalDocumentAssociations.CounsellingDomain
+                            && a.EntityType == CanonicalDocumentAssociations.CounselingSessionDocumentEntityType
+                            && a.EntityId == document.Id)
+                        .ToListAsync();
+                    var canonicalIds = associations.Select(a => a.DocumentId).Distinct().ToList();
+                    if (associations.Count > 0)
+                        _context.CanonicalDocumentAssociations.RemoveRange(associations);
+
+                    await _context.SaveChangesAsync();
+
+                    foreach (var canonicalId in canonicalIds)
+                    {
+                        var remainingAssociations = await _context.CanonicalDocumentAssociations
+                            .CountAsync(a => a.DocumentId == canonicalId);
+                        if (remainingAssociations == 0)
+                        {
+                            var canonical = await _context.CanonicalDocuments
+                                .FirstOrDefaultAsync(d =>
+                                    d.Id == canonicalId
+                                    && d.TenantId == tenantId
+                                    && d.DeletedAt == null);
+                            if (canonical is not null)
+                            {
+                                // Soft-delete discovery only when no other domain associations remain.
+                                canonical.DeletedAt = now;
+                            }
+                        }
+                    }
+
+                    if (canonicalIds.Count > 0)
+                        await _context.SaveChangesAsync();
+
+                    _logger.LogInformation("Deleted session document {DocumentId}", documentId);
+                    return true;
+                }
+
+                // Patient-level Counselling document (Patient 360): remove counselling association only.
+                var patientLevel = await (
+                    from row in _context.CanonicalDocuments
+                    join association in _context.CanonicalDocumentAssociations
+                        on row.Id equals association.DocumentId
+                    where row.Id == documentId
+                       && row.TenantId == tenantId
+                       && row.DeletedAt == null
+                       && association.Domain == CanonicalDocumentAssociations.CounsellingDomain
+                       && association.EntityType == CanonicalDocumentAssociations.CounsellingPatientEntityType
+                    select new { Document = row, Association = association }).FirstOrDefaultAsync();
+
+                if (patientLevel is null)
                     return false;
 
-                document.DeletedAt = DateTime.UtcNow;
-                document.UpdatedAt = DateTime.UtcNow;
-                document.UpdatedByUserId = currentUserId;
+                if (patientLevel.Document.CreatedByUserId != currentUserId)
+                    throw new UnauthorizedAccessException("Only the user who uploaded this document can remove it.");
 
+                _context.CanonicalDocumentAssociations.Remove(patientLevel.Association);
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("Deleted session document {DocumentId}", documentId);
+                var remainingCounsellingAssociations = await _context.CanonicalDocumentAssociations
+                    .CountAsync(a => a.DocumentId == documentId);
+                if (remainingCounsellingAssociations == 0)
+                {
+                    patientLevel.Document.DeletedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                }
+
+                _logger.LogInformation("Deleted patient-level counselling document {DocumentId}", documentId);
                 return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

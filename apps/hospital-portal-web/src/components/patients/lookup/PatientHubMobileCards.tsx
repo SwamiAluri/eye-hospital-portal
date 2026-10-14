@@ -1,18 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { Star } from "lucide-react";
 import { PatientAvatar } from "@/components/patients/PatientAvatar";
-import { AcuityDot } from "@/components/patients/lookup/AcuityDot";
-import { HighlightsPills } from "@/components/patients/lookup/HighlightsPills";
-import { IpAdmittedBadge } from "@/components/patients/lookup/IpAdmittedBadge";
-import { PatientHubRowActions } from "@/components/patients/lookup/PatientHubRowActions";
-import { QueueStationCell } from "@/components/patients/lookup/QueueStationCell";
-import { ReasonVisitCell } from "@/components/patients/lookup/ReasonVisitCell";
 import {
-  formatHubSchedule,
-  formatPatientHubIdentityLine,
-} from "@/lib/patients/patient-hub-row-display";
+  PatientHubLocationCell,
+  PatientHubMobileContextLine,
+  PatientHubNextAppointmentCell,
+  PatientHubPhoneCell,
+  PatientHubProviderCell,
+} from "@/components/patients/lookup/PatientHubContextCluster";
+import { PatientHubRowActions } from "@/components/patients/lookup/PatientHubRowActions";
+import { formatPatientDisplayName } from "@/lib/patients/patient-display-utils";
+import { formatPatientHubIdentityLine } from "@/lib/patients/patient-hub-row-display";
+import { shouldActivateRowPreview } from "@/lib/patients/patient-hub-row-activation";
 import { patientLookupTestIds } from "@/lib/patients/patient-lookup-test-ids";
 import { patientProfileUrl } from "@/lib/patients/patient-routes";
 import type { PatientLookupRow } from "@/types/patient-lookup";
@@ -21,23 +21,75 @@ import { cn } from "@/lib/utils";
 export interface PatientHubMobileCardsProps {
   rows: PatientLookupRow[];
   previewId: string | null;
+  isLoading: boolean;
+  isError: boolean;
+  isReady: boolean;
   onRowClick: (row: PatientLookupRow) => void;
-  onFavorite: (patientId: string) => void;
   onOpenProfile: (patientId: string) => void;
-  onPreview: (row: PatientLookupRow) => void;
+  emptyTitle?: string;
+  emptyHint?: string;
 }
 
 export function PatientHubMobileCards({
   rows,
   previewId,
+  isLoading,
+  isError,
+  isReady,
   onRowClick,
-  onFavorite,
   onOpenProfile,
-  onPreview,
+  emptyTitle = "No patients match your filters.",
+  emptyHint,
 }: PatientHubMobileCardsProps) {
+  if (isLoading) {
+    return (
+      <div
+        className="md:hidden px-4 py-12 text-center"
+        role="status"
+        data-testid={patientLookupTestIds.mobileListState}
+      >
+        <p className="inline-flex items-center gap-2 text-sm font-medium text-counselling-foreground">
+          Loading patients…
+        </p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div
+        className="md:hidden px-4 py-12 text-center"
+        role="alert"
+        data-testid={patientLookupTestIds.mobileListState}
+      >
+        <p className="text-sm font-medium text-red-800">Could not load patients</p>
+        <p className="mt-1 text-xs leading-relaxed text-counselling-muted-foreground">
+          Use Refresh to try again.
+        </p>
+      </div>
+    );
+  }
+
+  if (isReady && rows.length === 0) {
+    return (
+      <div
+        className="md:hidden px-4 py-12 text-center"
+        role="status"
+        data-testid={patientLookupTestIds.mobileListState}
+      >
+        <p className="text-sm font-medium text-counselling-foreground">{emptyTitle}</p>
+        {emptyHint && (
+          <p className="mt-1 text-xs leading-relaxed text-counselling-muted-foreground">{emptyHint}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (rows.length === 0) return null;
+
   return (
     <div
-      className="space-y-3 md:hidden"
+      className="space-y-2 p-2 md:hidden"
       role="list"
       aria-label="Patient list"
       data-testid={patientLookupTestIds.mobileCards}
@@ -49,33 +101,20 @@ export function PatientHubMobileCards({
           <article
             key={row.id}
             role="listitem"
+            tabIndex={0}
             className={cn(
-              "rounded-xl border bg-white p-4 shadow-sm transition-colors",
-              isPreview
-                ? "border-emerald-400 ring-2 ring-emerald-100"
-                : "border-gray-200",
+              "staff-worklist-row cursor-pointer rounded-xl border border-counselling-border/70 bg-counselling-card px-3 py-2 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40",
+              isPreview && "counselling-selected-row",
             )}
             data-testid={patientLookupTestIds.mobileCard(row.id)}
             onClick={() => onRowClick(row)}
+            onKeyDown={(event) => {
+              if (!shouldActivateRowPreview(event)) return;
+              event.preventDefault();
+              onRowClick(row);
+            }}
           >
             <div className="flex items-start gap-3">
-              <button
-                type="button"
-                aria-label={row.isFavorite ? "Remove favorite" : "Add favorite"}
-                className="mt-1 text-gray-400 hover:text-amber-500"
-                data-testid={patientLookupTestIds.favoriteButton(row.id)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onFavorite(row.id);
-                }}
-              >
-                <Star
-                  className={cn(
-                    "h-5 w-5",
-                    row.isFavorite && "fill-amber-400 text-amber-400",
-                  )}
-                />
-              </button>
               <PatientAvatar
                 size="sm"
                 firstName={row.firstName}
@@ -83,65 +122,34 @@ export function PatientHubMobileCards({
                 photoUrl={row.photoThumbnailUrl}
               />
               <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <Link
-                      href={patientProfileUrl(row.id)}
-                      className="font-semibold text-emerald-800 hover:underline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenProfile(row.id);
-                      }}
-                    >
-                      {row.firstName} {row.lastName}
-                    </Link>
-                    {identityLine && (
-                      <p className="mt-0.5 font-mono text-xs text-gray-600">{identityLine}</p>
-                    )}
-                    {row.phone && (
-                      <p className="mt-0.5 text-xs text-gray-500">{row.phone}</p>
-                    )}
-                    <IpAdmittedBadge admission={row.ipAdmission} className="mt-2" />
+                <Link
+                  href={patientProfileUrl(row.id)}
+                  className="text-sm font-semibold text-counselling-foreground hover:text-counselling-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenProfile(row.id);
+                  }}
+                  data-testid={patientLookupTestIds.patientNameLink(row.id)}
+                >
+                  {formatPatientDisplayName(row)}
+                </Link>
+                {identityLine && (
+                  <p className="mt-0.5 text-[13px] font-medium leading-4 text-counselling-muted-foreground tabular-nums">{identityLine}</p>
+                )}
+                <div className="mt-2 space-y-1.5">
+                  <PatientHubPhoneCell row={row} />
+                  <PatientHubMobileContextLine row={row} />
+                  <div className="space-y-0.5">
+                    <PatientHubProviderCell row={row} />
+                    <PatientHubLocationCell row={row} />
                   </div>
-                  <AcuityDot acuity={row.clinicalAcuity} />
+                  <PatientHubNextAppointmentCell row={row} />
+                </div>
+                <div className="mt-2 flex justify-end">
+                  <PatientHubRowActions row={row} />
                 </div>
               </div>
-              <PatientHubRowActions row={row} onPreview={() => onPreview(row)} />
             </div>
-
-            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-              <div className="col-span-2">
-                <dt className="mb-1 text-gray-500">Reason / visit</dt>
-                <dd>
-                  <ReasonVisitCell row={row} />
-                </dd>
-              </div>
-              <div>
-                <dt className="text-gray-500">Schedule</dt>
-                <dd className="text-gray-800">{formatHubSchedule(row.scheduledAt)}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500">Queue / station</dt>
-                <dd>
-                  <QueueStationCell row={row} />
-                </dd>
-              </div>
-              {row.assignedProviderName && (
-                <div className="col-span-2">
-                  <dt className="text-gray-500">Assigned</dt>
-                  <dd className="text-gray-800">
-                    {row.assignedProviderName}
-                    {row.assignedProviderRole ? ` · ${row.assignedProviderRole}` : ""}
-                  </dd>
-                </div>
-              )}
-              <div className="col-span-2">
-                <dt className="mb-1 text-gray-500">Highlights</dt>
-                <dd>
-                  <HighlightsPills row={row} />
-                </dd>
-              </div>
-            </dl>
           </article>
         );
       })}

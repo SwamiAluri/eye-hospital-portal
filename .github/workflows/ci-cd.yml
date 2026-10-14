@@ -112,6 +112,45 @@ jobs:
         name: frontend-package
         path: ./apps/hospital-portal-web/.next
 
+  # ── Laboratory Service (Enterprise LMS): Build & Test (L-CAT-01A) ───────────
+  laboratory-build-test:
+    name: LaboratoryApi — Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore LaboratoryApi
+      run: dotnet restore
+      working-directory: ./microservices/laboratory-service/LaboratoryApi
+
+    - name: Build LaboratoryApi
+      run: dotnet build --configuration Release --no-restore
+      working-directory: ./microservices/laboratory-service/LaboratoryApi
+
+    - name: Run LaboratoryApi.Tests
+      run: |
+        dotnet test ../LaboratoryApi.Tests/LaboratoryApi.Tests.csproj \
+          --configuration Release \
+          --verbosity normal \
+          --collect:"XPlat Code Coverage" \
+          --results-directory ./TestResults
+      working-directory: ./microservices/laboratory-service/LaboratoryApi
+
+    - name: Upload LaboratoryApi test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: laboratory-api-test-results
+        path: ./microservices/laboratory-service/LaboratoryApi/TestResults
+        if-no-files-found: ignore
+
   # ── CCMS Service: Build, Test & OpenAPI Contract Generation ─────────────────
   ccms-build-openapi:
     name: CCMS — Build, Test & Generate OpenAPI
@@ -324,7 +363,7 @@ jobs:
   # Deploy to Azure (only on main branch)
   deploy-backend:
     name: Deploy Backend to Azure
-    needs: [backend-test, ccms-build-openapi, frontend-test, database-validation]
+    needs: [backend-test, ccms-build-openapi, laboratory-build-test, frontend-test, database-validation]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
@@ -473,7 +512,7 @@ jobs:
   # Notification on Failure
   notify-failure:
     name: Notify on Failure
-    needs: [backend-test, ccms-build-openapi, frontend-test, e2e-tests, deploy-backend, deploy-frontend]
+    needs: [backend-test, ccms-build-openapi, laboratory-build-test, frontend-test, e2e-tests, deploy-backend, deploy-frontend]
     runs-on: ubuntu-latest
     if: failure()
 

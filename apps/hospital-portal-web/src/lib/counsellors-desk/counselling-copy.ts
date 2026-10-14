@@ -29,6 +29,8 @@ export const counsellingCopy = {
   sessionHistoryAria: 'View session history',
   sessionConversations: 'Conversations',
   sessionConversationsAria: 'View counselling conversations',
+  sessionDocuments: 'Session documents',
+  sessionDocumentsAria: 'View counselling session documents',
   clinicalRecommendationDoctor: 'Doctor',
   clinicalRecommendationDoctorHint: 'Recommendation',
   clinicalRecommendationOptometrist: 'Optometrist',

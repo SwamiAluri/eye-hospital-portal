@@ -26,7 +26,7 @@ export function PatientPreviewSplitPane({
 
   return (
     <aside
-      className="hidden xl:flex h-full min-h-0 w-[42%] max-w-[480px] min-w-[360px] shrink-0 flex-col border-l border-gray-200 bg-white shadow-sm"
+      className="hidden h-full min-h-0 w-1/2 min-w-[360px] shrink-0 flex-col overflow-hidden rounded-xl border border-counselling-border/70 bg-counselling-card shadow-sm xl:flex"
       data-testid={patientLookupTestIds.previewSplitPane}
       aria-label="Patient preview"
     >

@@ -75,8 +75,6 @@ export const PATIENT_TYPE_OPTIONS = [
 
 export const FILTER_SHEET_SECTIONS = [
 
-  { id: 'quick', label: 'Quick' },
-
   { id: 'identity', label: 'Identity' },
 
   { id: 'clinical', label: 'Clinical' },
@@ -269,44 +267,54 @@ export function buildLookupUrlParams(state: PatientLookupUrlState): URLSearchPar
 
 
 
+/**
+ * Visible Directory Gen-1 filter count only.
+ * Counts Gender (0|1) + DOB range as one (0|1).
+ * Does not count Search q, census tab, or legacy/hidden advanced keys.
+ */
 export function countActiveFilters(state: PatientLookupUrlState): number {
-
   let n = 0;
-
-  if (state.favoritesOnly) n++;
-
-  if (state.assignedToMe) n++;
-
-  if (state.engagementTypes?.length) n++;
-
-  if (state.programCodes?.length) n++;
-
-  if (state.patientTypes?.length) n++;
-
   if (state.gender) n++;
-
-  if (state.mrn) n++;
-
-  if (state.phone) n++;
-
-  if (state.name) n++;
-
-  if (state.diagnosis) n++;
-
-  if (state.providerId) n++;
-
-  if (state.departmentId) n++;
-
-  if (state.wardName) n++;
-
   if (state.dobFrom || state.dobTo) n++;
-
-  if (state.appointmentFrom || state.appointmentTo) n++;
-
-  if (state.admissionFrom || state.admissionTo) n++;
-
   return n;
+}
 
+/**
+ * One mapping from directory URL state to the lookup filters the API client already sends.
+ * previewPatientId stays on the URL only; it is not a lookup constraint.
+ */
+export function toPatientLookupFilters(
+  state: PatientLookupUrlState,
+  options: { branchId?: string; pageSize: number; q?: string },
+): PatientLookupFilters {
+  return {
+    branchId: options.branchId,
+    q: options.q || undefined,
+    tab: state.tab ?? 'all',
+    page: state.page ?? 1,
+    pageSize: options.pageSize,
+    sortBy: state.sortBy ?? 'name',
+    sortDir: state.sortDir ?? 'asc',
+    favoritesOnly: state.favoritesOnly,
+    assignedToMe: state.assignedToMe,
+    engagementTypes: state.engagementTypes,
+    programCodes: state.programCodes,
+    patientTypes: state.patientTypes,
+    gender: state.gender,
+    mrn: state.mrn,
+    phone: state.phone,
+    name: state.name,
+    diagnosis: state.diagnosis,
+    providerId: state.providerId,
+    departmentId: state.departmentId,
+    wardName: state.wardName,
+    dobFrom: state.dobFrom,
+    dobTo: state.dobTo,
+    appointmentFrom: state.appointmentFrom,
+    appointmentTo: state.appointmentTo,
+    admissionFrom: state.admissionFrom,
+    admissionTo: state.admissionTo,
+  };
 }
 
 

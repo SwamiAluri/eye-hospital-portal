@@ -365,11 +365,6 @@ export const counselingSessionsApi = {
     const response = await getApi().post<SessionDocument>(
       `/counseling/sessions/${sessionId}/upload-audio`,
       formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
     );
     return response.data;
   },
@@ -444,6 +439,8 @@ export interface SessionDocument {
   status: string;
   createdAt: string;
   createdByUserId: string;
+  /** Present when list/API includes uploader identity for remove UX. */
+  createdByUserName?: string;
 }
 
 // ============================================================================
@@ -479,4 +476,110 @@ export interface UpdateSessionNoteRequest {
   noteText?: string;
   isConfidential?: boolean;
   tags?: string[];
+}
+
+/** Patient 360 counselling document metadata. No file path. */
+export interface CounselingDocumentPatientMetadata {
+  id: string;
+  sessionId: string | null;
+  documentName: string;
+  documentType?: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt?: string | null;
+  fileType?: string | null;
+  fileSizeBytes?: number | null;
+  canonicalDocumentId?: string | null;
+  createdByUserId?: string | null;
+}
+
+export interface CounselingDocumentsByPatientResponse {
+  documents: CounselingDocumentPatientMetadata[];
+  totalCount: number;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+export async function getCounselingDocumentsByPatient(
+  patientId: string,
+  pageNumber = 1,
+  pageSize = 20,
+): Promise<CounselingDocumentsByPatientResponse> {
+  const { data } = await getApi().get<CounselingDocumentsByPatientResponse>(
+    `/counseling-session-documents/by-patient/${patientId}`,
+    { params: { pageNumber, pageSize } },
+  );
+  return data;
+}
+
+/** A2 — Counselling-authorized content. Requires session_documents.read. */
+export async function downloadCounselingCanonicalDocument(
+  patientId: string,
+  canonicalDocumentId: string,
+): Promise<Blob> {
+  const { data } = await getApi().get<Blob>(
+    `/counseling-session-documents/by-patient/${patientId}/canonical/${canonicalDocumentId}/content`,
+    { responseType: 'blob' },
+  );
+  return data;
+}
+
+/** Certified counselling_session_documents types for generic upload (excludes AudioRecording). */
+export const COUNSELLING_GENERIC_DOCUMENT_TYPES = [
+  { id: 'ReferralLetter', label: 'Referral Letter' },
+  { id: 'PreviousReport', label: 'Previous Report' },
+  { id: 'InsuranceCard', label: 'Insurance Card' },
+  { id: 'PolicyDocument', label: 'Policy Document' },
+  { id: 'IDProof', label: 'ID Proof' },
+  { id: 'AddressProof', label: 'Address Proof' },
+  { id: 'LabReport', label: 'Lab Report' },
+  { id: 'Imaging', label: 'Imaging' },
+  { id: 'Other', label: 'Other' },
+] as const;
+
+export async function getCounselingSessionContextByPatient(patientId: string): Promise<unknown> {
+  const { data } = await getApi().get(
+    `/counseling/patients/${patientId}/patient-360/sessions`,
+  );
+  return data;
+}
+
+export async function uploadCounselingSessionDocument(input: {
+  sessionId: string;
+  file: File;
+  documentType: string;
+  documentName?: string;
+  patientId?: string;
+}): Promise<SessionDocument> {
+  const form = new FormData();
+  form.append('file', input.file);
+  form.append('sessionId', input.sessionId);
+  form.append('documentType', input.documentType);
+  form.append('documentName', input.documentName ?? input.file.name);
+  if (input.patientId) form.append('patientId', input.patientId);
+  const { data } = await getApi().post<{ document?: SessionDocument } & SessionDocument>(
+    '/counseling/documents/upload',
+    form,
+  );
+  return (data as { document?: SessionDocument }).document ?? (data as SessionDocument);
+}
+
+/** Patient 360 Counselling upload — patient-level, no session. */
+export async function uploadCounselingPatientDocument(input: {
+  patientId: string;
+  file: File;
+  documentType: string;
+}): Promise<{ id: string; fileName: string; classification: string }> {
+  const form = new FormData();
+  form.append('file', input.file);
+  form.append('documentType', input.documentType);
+  const { data } = await getApi().post<{ id: string; fileName: string; classification: string }>(
+    `/counseling-session-documents/by-patient/${input.patientId}`,
+    form,
+  );
+  return data;
+}
+
+export async function deleteCounselingSessionDocument(documentId: string): Promise<void> {
+  await getApi().delete(`/counseling/documents/${documentId}`);
 }

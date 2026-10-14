@@ -201,6 +201,17 @@ export async function listCoverageCases(params?: {
   return data;
 }
 
+export async function getCoverageCasesByPatient(
+  patientId: string,
+  pageNumber = 1,
+  pageSize = 20,
+): Promise<CasesListResponse> {
+  const { data } = await getCcmsApi().get(`/ccms/coverage-cases/by-patient/${patientId}`, {
+    params: { pageNumber, pageSize },
+  });
+  return data;
+}
+
 export async function getCoverageCaseById(id: string): Promise<CoverageCase> {
   const { data } = await getCcmsApi().get(`/ccms/coverage-cases/${id}`);
   return data;

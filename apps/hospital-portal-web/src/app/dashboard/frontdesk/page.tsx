@@ -7,7 +7,7 @@ import { Calendar, Users, Clock, ClipboardList, UserPlus, FileText, AlertCircle,
 import CheckInModal from '../../../components/modals/CheckInModal';
 import WalkInBookingModal from '@/components/modals/WalkInBookingModal';
 import VisitorManagementModal from '@/components/modals/VisitorManagementModal';
-import NewPatientModal from '@/components/modals/NewPatientModal';
+import { buildCanonicalAddPatientHref } from '@/lib/patients/canonical-add-patient';
 import { useFrontdeskBoardQuery, useInvalidateFrontdeskBoard } from '@/hooks/use-frontdesk-board';
 import { useQueueConnection } from '@/hooks/useQueueConnection';
 import type { FrontdeskBoardRow } from '@/lib/api/frontdesk.api';
@@ -28,7 +28,6 @@ export default function FrontDeskDashboard() {
   const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [isVisitorModalOpen, setIsVisitorModalOpen] = useState(false);
-  const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [walkInPrefill, setWalkInPrefill] = useState<{ patientName?: string; phoneNumber?: string } | undefined>(undefined);
 
   const { isConnected } = useQueueConnection({
@@ -322,7 +321,7 @@ export default function FrontDeskDashboard() {
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
             <button
               type="button"
-              onClick={() => setIsNewPatientModalOpen(true)}
+              onClick={() => router.push(buildCanonicalAddPatientHref('/dashboard/frontdesk'))}
               className="p-4 border-2 border-slate-200 rounded-lg hover:border-emerald-500 hover:bg-emerald-50 transition text-left group"
             >
               <UserPlus className="h-6 w-6 text-emerald-600 mb-2 group-hover:scale-110 transition" />
@@ -489,7 +488,6 @@ export default function FrontDeskDashboard() {
         prefill={walkInPrefill}
       />
       <VisitorManagementModal isOpen={isVisitorModalOpen} onClose={() => setIsVisitorModalOpen(false)} />
-      <NewPatientModal isOpen={isNewPatientModalOpen} onClose={() => setIsNewPatientModalOpen(false)} />
     </div>
   );
 }

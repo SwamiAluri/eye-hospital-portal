@@ -17,15 +17,18 @@ public class ImagingController : ControllerBase
 {
     private readonly IImagingService _imagingService;
     private readonly IImagingExportService _exportService;
+    private readonly IPatient360ImagingFilesService _patient360Images;
     private readonly ILogger<ImagingController> _logger;
 
     public ImagingController(
         IImagingService imagingService,
         IImagingExportService exportService,
+        IPatient360ImagingFilesService patient360Images,
         ILogger<ImagingController> logger)
     {
         _imagingService = imagingService;
         _exportService = exportService;
+        _patient360Images = patient360Images;
         _logger = logger;
     }
 
@@ -93,6 +96,24 @@ public class ImagingController : ControllerBase
             _logger.LogError(ex, "Error retrieving imaging orders for patient {PatientId}", patientId);
             return StatusCode(500, new { message = "Failed to retrieve imaging orders", error = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Patient 360 imaging file metadata. Does not return storage locations or file bytes.
+    /// </summary>
+    [HttpGet("patient/{patientId:guid}/patient-360/images")]
+    [RequirePermission("examination.view")]
+    public async Task<IActionResult> GetPatient360Images(
+        Guid patientId,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var tenantRaw = User.FindFirst("TenantId")?.Value ?? User.FindFirst("tenant_id")?.Value;
+        if (!Guid.TryParse(tenantRaw, out var tenantId) || tenantId == Guid.Empty)
+            return Unauthorized(new { message = "Tenant ID not found" });
+
+        var page = await _patient360Images.ListAsync(tenantId, patientId, pageNumber, pageSize);
+        return Ok(page);
     }
 
     /// <summary>

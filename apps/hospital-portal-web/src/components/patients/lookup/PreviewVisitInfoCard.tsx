@@ -1,20 +1,39 @@
 'use client';
 
+import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import type { PatientActiveEngagement, PatientLookupRow, PatientSummary } from '@/types/patient-lookup';
+import {
+  isDirectoryVisitCheckedIn,
+  resolveDirectoryVisitCheckInState,
+} from '@/lib/patients/patient-hub-row-display';
 import { inferVisitLaterality } from '@/lib/patients/preview-visit-helpers';
 import { patientLookupTestIds } from '@/lib/patients/patient-lookup-test-ids';
 import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
 
 const VISIT_TYPE_STYLES: Record<string, string> = {
-  opd: 'bg-blue-50 text-blue-800 ring-blue-100',
-  queue: 'bg-violet-50 text-violet-800 ring-violet-100',
-  ip: 'bg-indigo-50 text-indigo-800 ring-indigo-100',
-  counselling: 'bg-emerald-50 text-emerald-800 ring-emerald-100',
-  insurance: 'bg-cyan-50 text-cyan-800 ring-cyan-100',
-  ccms: 'bg-sky-50 text-sky-900 ring-sky-100',
-  billing: 'bg-amber-50 text-amber-800 ring-amber-100',
-  camp: 'bg-teal-50 text-teal-800 ring-teal-100',
+  opd: counsellingSessionTokens.statusPillComplete,
+  queue: 'bg-counselling-muted text-counselling-foreground',
+  ip: counsellingSessionTokens.statusPillInfo,
+  counselling: counsellingSessionTokens.statusPillComplete,
+  insurance: counsellingSessionTokens.statusPillInfo,
+  ccms: counsellingSessionTokens.statusPillInfo,
+  billing: counsellingSessionTokens.statusPillRequired,
+  camp: counsellingSessionTokens.statusPillComplete,
 };
+
+const fieldLabel =
+  'text-[11px] font-medium uppercase tracking-wide text-counselling-muted-foreground';
+const fieldValue = 'mt-0.5 text-sm font-medium leading-5 text-counselling-foreground';
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className={fieldLabel}>{label}</p>
+      <div className={fieldValue}>{children}</div>
+    </div>
+  );
+}
 
 function formatSchedule(value?: string | null): string | null {
   if (!value) return null;
@@ -63,6 +82,10 @@ export function PreviewVisitInfoCard({
   const procedureName = summary?.ipAdmission?.procedureName ?? patient.ipAdmission?.procedureName;
   const showSurgeryTag = isSurgeryRelated(reason, procedureName);
   const laterality = inferVisitLaterality(reason, procedureName);
+  const checkedIn = isDirectoryVisitCheckedIn(
+    resolveDirectoryVisitCheckInState({ ...patient, summary }),
+  );
+  const scheduleText = formatSchedule(scheduledAt);
 
   const hasContent =
     scheduledAt || reason || providerName || station || visitChip || showSurgeryTag || laterality;
@@ -70,75 +93,64 @@ export function PreviewVisitInfoCard({
   if (!hasContent) return null;
 
   return (
-    <section
-      className="rounded-xl border border-gray-200 p-3 space-y-2"
-      data-testid={patientLookupTestIds.previewVisitCard}
-    >
-      <p className="text-xs font-semibold uppercase text-gray-500">Visit info</p>
-
-      {scheduledAt && (
-        <div>
-          <p className="text-[11px] text-gray-500">Scheduled / checked in</p>
-          <p className="text-sm font-medium text-gray-900">{formatSchedule(scheduledAt)}</p>
+    <div className="space-y-3" data-testid={patientLookupTestIds.previewVisitCard}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {visitChip && (
+            <span
+              className={cn(
+                counsellingSessionTokens.statusPill,
+                VISIT_TYPE_STYLES[visitChip.type.toLowerCase()] ??
+                  'bg-counselling-muted text-counselling-foreground',
+              )}
+            >
+              {visitChip.label}
+            </span>
+          )}
+          {showSurgeryTag && (
+            <span className={cn(counsellingSessionTokens.statusPill, counsellingSessionTokens.statusPillRequired)}>
+              Surgery workup
+            </span>
+          )}
+          {laterality && (
+            <span className={cn(counsellingSessionTokens.statusPill, counsellingSessionTokens.statusPillInfo)}>
+              {laterality}
+            </span>
+          )}
         </div>
-      )}
-
-      {providerName && (
-        <div>
-          <p className="text-[11px] text-gray-500">Assigned</p>
-          <p className="text-sm text-gray-900">
-            {providerName}
-            {providerRole ? (
-              <span className="text-gray-500"> · {providerRole}</span>
-            ) : null}
-          </p>
-        </div>
-      )}
-
-      {station && (
-        <div>
-          <p className="text-[11px] text-gray-500">Station / location</p>
-          <p className="text-sm text-gray-900 capitalize">{station}</p>
-        </div>
-      )}
-
-      {reason && (
-        <div>
-          <p className="text-[11px] text-gray-500">Reason</p>
-          <p className="text-sm text-gray-900">
-            {reason}
-            {laterality && (
-              <span className="ml-2 inline-flex rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-800 ring-1 ring-indigo-100">
-                {laterality}
-              </span>
-            )}
-          </p>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-1.5 pt-0.5">
-        {laterality && !reason && (
-          <span className="inline-flex rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-800 ring-1 ring-indigo-100">
-            {laterality}
-          </span>
-        )}
-        {visitChip && (
-          <span
-            className={cn(
-              'inline-flex rounded-md px-2 py-0.5 text-[11px] font-medium ring-1',
-              VISIT_TYPE_STYLES[visitChip.type.toLowerCase()] ??
-                'bg-gray-50 text-gray-700 ring-gray-100',
-            )}
-          >
-            {visitChip.label}
-          </span>
-        )}
-        {showSurgeryTag && (
-          <span className="inline-flex rounded-md bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-800 ring-1 ring-orange-100">
-            Surgery workup
+        {scheduledAt && (
+          <span className="shrink-0 text-xs font-medium text-counselling-muted-foreground">
+            {checkedIn ? 'Checked in' : 'Scheduled'}
           </span>
         )}
       </div>
-    </section>
+
+      <div className="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
+        {scheduleText && (
+          <Field label="Time">
+            <span className="font-semibold">{scheduleText}</span>
+          </Field>
+        )}
+
+        {reason && (
+          <Field label="Reason">
+            <span className="font-normal leading-5">{reason}</span>
+          </Field>
+        )}
+
+        {providerName && (
+          <Field label="Provider">
+            <span>{providerName}</span>
+            {providerRole ? (
+              <span className="mt-0.5 block text-xs font-normal text-counselling-muted-foreground">
+                {providerRole}
+              </span>
+            ) : null}
+          </Field>
+        )}
+
+        {station && <Field label="Location">{station}</Field>}
+      </div>
+    </div>
   );
 }

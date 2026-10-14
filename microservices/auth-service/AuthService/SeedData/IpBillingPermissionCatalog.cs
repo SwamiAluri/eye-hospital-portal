@@ -4,7 +4,7 @@ namespace AuthService.SeedData;
 
 /// <summary>
 /// System-tenant catalog for IP + billing permission codes from SQL 156
-/// plus A5 (<c>ip.safety_token.print</c>).
+/// plus A5 (<c>ip.safety_token.print</c>) and SQL 197 (<c>ip.vitals.read</c>).
 /// <c>ip.implant.mismatch.override</c> (A2) is already listed in the CCMS
 /// seeder block — do not add it here or a greenfield seed would insert twice
 /// before SaveChanges.
@@ -93,6 +93,10 @@ internal static class IpBillingPermissionCatalog
             // A5 / SQL 172
             Perm("ip.safety_token.print", "Print safety token", "ip_management", "update", "patient_journey", "branch",
                 "Print or reprint the inpatient wristband"),
+            Perm(IpVitalsReadPermissionCatalog.Code, IpVitalsReadPermissionCatalog.Name,
+                IpVitalsReadPermissionCatalog.Module, IpVitalsReadPermissionCatalog.Action,
+                IpVitalsReadPermissionCatalog.ResourceType, IpVitalsReadPermissionCatalog.Scope,
+                IpVitalsReadPermissionCatalog.Description),
         ];
     }
 }

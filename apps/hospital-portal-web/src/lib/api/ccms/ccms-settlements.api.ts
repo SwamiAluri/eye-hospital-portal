@@ -83,7 +83,27 @@ export async function closeCase(caseId: string): Promise<void> {
 /** @deprecated Use getSettlementsByCaseId */
 export const getSettlementByCaseId = getSettlementsByCaseId;
 
+/** GET /ccms/settlements/aging */
 export async function getAgingReport(): Promise<AgingBucket[]> {
   const { data } = await getCcmsApi().get('/ccms/settlements/aging');
   return Array.isArray(data) ? data : [];
+}
+
+export interface SettlementListResponse {
+  settlements: unknown[];
+  totalCount: number;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+/** GET /ccms/settlements/by-patient/{patientId} */
+export async function getSettlementsByPatient(
+  patientId: string,
+  pageNumber = 1,
+  pageSize = 20,
+): Promise<SettlementListResponse> {
+  const { data } = await getCcmsApi().get(`/ccms/settlements/by-patient/${patientId}`, {
+    params: { pageNumber, pageSize },
+  });
+  return data;
 }

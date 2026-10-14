@@ -45,11 +45,12 @@ export function PatientPreviewDrawer({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         side={isMobile ? "bottom" : "right"}
+        hideCloseButton
         className={cn(
           "flex flex-col p-0",
           isMobile
-            ? "h-[85vh] max-h-[85vh] w-full rounded-t-2xl"
-            : "w-full sm:max-w-[420px]",
+            ? "h-[100dvh] max-h-none w-full rounded-none"
+            : "w-full sm:w-1/2 sm:max-w-none",
         )}
         data-testid={patientLookupTestIds.previewDrawer}
       >

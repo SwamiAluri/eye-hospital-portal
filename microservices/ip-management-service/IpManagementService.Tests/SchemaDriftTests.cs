@@ -224,6 +224,38 @@ public class SchemaDriftTests
     }
 
     [Fact]
+    public void Migration197_SeedsIpVitalsReadForApprovedRolesOnly()
+    {
+        var root = SchemaDrift.FindRepoRoot();
+        var sql = File.ReadAllText(Path.Combine(root, "consolidated", "migrations", "197_ip_vitals_read.sql"));
+        Assert.Contains("ip.vitals.read", sql);
+        Assert.Contains("'ip_management'", sql);
+        Assert.Contains("'read'", sql);
+        Assert.Contains("'vital_sign'", sql);
+        Assert.Contains("'branch'", sql);
+        Assert.Contains("('NURSE',     'ip.vitals.read')", sql);
+        Assert.Contains("('OT NURSE',  'ip.vitals.read')", sql);
+        Assert.Contains("('OTNURSE',   'ip.vitals.read')", sql);
+        Assert.Contains("('ADMIN',     'ip.vitals.read')", sql);
+        Assert.Contains("WHERE NOT EXISTS", sql);
+        Assert.DoesNotContain("('CASHIER'", sql);
+        Assert.DoesNotContain("('BILLING CLERK'", sql);
+        Assert.DoesNotContain("('FINANCE'", sql);
+        Assert.DoesNotContain("('TPA EXECUTIVE'", sql);
+        Assert.DoesNotContain("('COUNSELLOR'", sql);
+        Assert.DoesNotContain("('FRONT DESK'", sql);
+        Assert.DoesNotContain("('DOCTOR'", sql);
+        Assert.DoesNotContain("('ANAESTHETIST'", sql);
+        Assert.DoesNotContain("('SURGEON'", sql);
+        Assert.DoesNotContain("('IP COORDINATOR'", sql);
+        Assert.DoesNotContain("('OT COORDINATOR'", sql);
+        Assert.DoesNotContain("('WARD CLERK'", sql);
+        Assert.DoesNotContain("ward.checklist.edit", sql);
+        Assert.DoesNotContain("ip_management.view", sql);
+        Assert.DoesNotContain("ip.view", sql);
+    }
+
+    [Fact]
     public void Migration176_SeedsClaimQueryFsm()
     {
         var root = SchemaDrift.FindRepoRoot();

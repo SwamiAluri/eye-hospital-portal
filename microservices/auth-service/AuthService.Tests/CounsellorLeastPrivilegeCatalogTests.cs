@@ -33,6 +33,12 @@ public class CounsellorLeastPrivilegeCatalogTests
         Assert.DoesNotContain("package_templates.create", baseline);
         Assert.DoesNotContain("package_templates.update", baseline);
         Assert.DoesNotContain("package_templates.delete", baseline);
+        // Counselling Session Documents + Patient 360 counselling content path
+        Assert.Contains("session_documents.read", baseline);
+        Assert.Contains("session_documents.create", baseline);
+        Assert.Contains("session_documents.verify", baseline);
+        Assert.Contains("session_documents.delete", baseline);
+        Assert.DoesNotContain("session_notes.read", baseline);
         Assert.DoesNotContain("user.view", baseline);
         Assert.DoesNotContain("ot.theaters.view", baseline);
         Assert.DoesNotContain("patient.update", baseline);
@@ -48,6 +54,23 @@ public class CounsellorLeastPrivilegeCatalogTests
         Assert.Equal(
             CounsellorLeastPrivilegeCatalog.WorkflowPatientPermissionCodes,
             new[] { "patient.view", "patient.create" });
+    }
+
+    [Fact]
+    public void Workflow_session_documents_are_explicit_and_not_stripped()
+    {
+        var remove = CounsellorLeastPrivilegeCatalog.RemovedFromCounsellorPermissionCodes;
+        Assert.Equal(
+            CounsellorLeastPrivilegeCatalog.WorkflowSessionDocumentPermissionCodes,
+            new[]
+            {
+                "session_documents.read",
+                "session_documents.create",
+                "session_documents.verify",
+                "session_documents.delete",
+            });
+        foreach (var code in CounsellorLeastPrivilegeCatalog.WorkflowSessionDocumentPermissionCodes)
+            Assert.DoesNotContain(code, remove);
     }
 
     [Fact]

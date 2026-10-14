@@ -28,13 +28,13 @@ export interface MasterEntityIntegration {
 
 export const MASTER_ENTITY_INTEGRATIONS: MasterEntityIntegration[] = [
   // ── Patient setup ──────────────────────────────────────────────────────────
-  { entityType: 'patient.title', groupKey: 'patient_setup', status: 'wired', usedBy: ['NewPatientModal', 'patients/new', 'MasterValuesSelect'] },
-  { entityType: 'patient.blood_group', groupKey: 'patient_setup', status: 'wired', usedBy: ['NewPatientModal', 'patients/new'] },
+  { entityType: 'patient.title', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new', 'MasterValuesSelect'] },
+  { entityType: 'patient.blood_group', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new'] },
   { entityType: 'patient.patient_type', groupKey: 'patient_setup', status: 'wired', usedBy: ['PaymentModeSelectionWidget', 'PatientTypeRulesPanel', 'usePaymentCoverageOptions', 'CounsellingTabPanel', 'derivePaymentType'] },
-  { entityType: 'patient.gender', groupKey: 'patient_setup', status: 'wired', usedBy: ['NewPatientModal', 'patients/new', 'MasterValuesSelect'] },
-  { entityType: 'patient.marital_status', groupKey: 'patient_setup', status: 'wired', usedBy: ['NewPatientModal', 'patients/new'] },
-  { entityType: 'patient.religion', groupKey: 'patient_setup', status: 'wired', usedBy: ['NewPatientModal', 'patients/new'] },
-  { entityType: 'patient.occupation', groupKey: 'patient_setup', status: 'wired', usedBy: ['NewPatientModal', 'patients/new'] },
+  { entityType: 'patient.gender', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new', 'MasterValuesSelect'] },
+  { entityType: 'patient.marital_status', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new'] },
+  { entityType: 'patient.religion', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new'] },
+  { entityType: 'patient.occupation', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new'] },
   { entityType: 'patient.id_proof_type', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new', 'MasterValuesSelect'] },
   { entityType: 'patient.relationship', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new', 'MasterValuesSelect', 'VisitPolicyForm'] },
   { entityType: 'patient.nationality', groupKey: 'patient_setup', status: 'wired', usedBy: ['patients/new'] },
@@ -103,7 +103,7 @@ export const MASTER_ENTITY_INTEGRATIONS: MasterEntityIntegration[] = [
     groupKey: 'insurance',
     status: 'wired',
     usedBy: [
-      'NewPatientModal',
+      'patients/new',
       'CounsellingPaymentSection',
       'CoveragePreauthPanel',
       'PolicyExtractionReview',
@@ -132,6 +132,12 @@ export const MASTER_ENTITY_INTEGRATIONS: MasterEntityIntegration[] = [
   { entityType: 'lab.specimen_type', groupKey: 'lab_diagnostics', status: 'wired', usedBy: ['LabTestIntegrationWidget', 'useSpecimenTypes'] },
   { entityType: 'lab.imaging_modality', groupKey: 'lab_diagnostics', status: 'wired', usedBy: ['ReferralOrdersTab imaging', 'useImagingModalities'] },
   { entityType: 'lab.ep_type', groupKey: 'lab_diagnostics', status: 'wired', usedBy: ['ElectrophysiologyForm', 'useEpTypes'] },
+  {
+    entityType: 'lms.specimen_rejection_reason',
+    groupKey: 'lab_diagnostics',
+    status: 'wired',
+    usedBy: ['LMS Specimen Reject (LaboratoryApi /lms/specimens/rejection-reasons)'],
+  },
   { entityType: 'ward.ward_type', groupKey: 'ward_ip', status: 'wired', usedBy: ['AdmissionPlanningWidget'] },
   { entityType: 'ward.bed_type', groupKey: 'ward_ip', status: 'wired', usedBy: ['AdmissionPlanningWidget'] },
   { entityType: 'ward.admission_type', groupKey: 'ward_ip', status: 'wired', usedBy: ['PreOpTab admit form'] },

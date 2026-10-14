@@ -11,6 +11,10 @@ Applies to every staff, patient-portal, kiosk, admin, clinical, operational, and
 
 1. Primary persona  2. Secondary persona  3. Patient context  4. Encounter context  5. Workflow state  6. Available actions  7. Required permissions  8. Preconditions  9. Validation  10. Downstream effects  11. Integration effects  12. Audit  13. Error states  14. Recovery path
 
+## Staff UI quality benchmark
+
+The existing Counsellor/Counselling UI is the reference quality bar for new and changed staff interfaces. For UI work, inspect one relevant Counsellor implementation and match its polish, hierarchy, density, interaction clarity, state handling, and accessibility while preserving the target domain’s own business rules and scoped visual system. Do not inspect the whole Counsellor module unless the task explicitly concerns it.
+
 ## Desktop-first hospital workstations
 
 Optimize for nurses, ward, doctors, optometrists, OT, billing clerks, cashiers, counsellors, reception, pharmacy, lab, inventory, admin **on desktop**. Do not force mobile-first patterns that slow high-frequency work. Responsive behavior is still required: do not merely shrink; use priority columns, horizontal scroll, drawers, and detail panels without dropping critical fields.

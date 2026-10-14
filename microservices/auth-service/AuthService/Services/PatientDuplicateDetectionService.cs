@@ -7,11 +7,14 @@ using Microsoft.Extensions.Logging;
 namespace AuthService.Services
 {
     /// <summary>
-    /// Service for detecting duplicate patients using 4-level matching algorithm
-    /// Level 1: Exact name + DOB (100% confidence)
-    /// Level 2: Phone number match (95% confidence)
-    /// Level 3: Email match (90% confidence)
-    /// Level 4: Fuzzy name + same DOB using Levenshtein distance (80-99% confidence)
+    /// Service for detecting duplicate patients using 4-level matching algorithm.
+    /// Level 1: Exact normalized name + DOB (100% — hard-block)
+    /// Level 2: Normalized phone match (90% — possible-match / soft band; not unconditional hard-block)
+    /// Level 3: Email match (90% — soft band)
+    /// Level 4: Fuzzy name + same DOB using Levenshtein distance (80-99%)
+    /// DUP-C3A.1: phone comparison uses <see cref="PatientPhoneComparisonNormalizer"/> only;
+    /// stored ContactNumber is never rewritten. Phone-only is not >= 0.95.
+    /// Exact name + DOB (+ optional same normalized phone) remains high-confidence via ExactNameDOB.
     /// </summary>
     public interface IPatientDuplicateDetectionService
     {
@@ -95,7 +98,8 @@ namespace AuthService.Services
         }
 
         /// <summary>
-        /// Level 1: Check for exact name + DOB matches
+        /// Level 1: Exact normalized first+last name + calendar DOB (hard-block 1.0).
+        /// When normalized phone also matches, still ExactNameDOB (composite high-confidence).
         /// </summary>
         private async Task CheckExactNameDOBMatches(
             DuplicateCheckRequest request,
@@ -106,18 +110,29 @@ namespace AuthService.Services
             if (!request.DateOfBirth.HasValue) return;
 
             var dob = request.DateOfBirth.Value.Date;
-            var exactMatches = await _context.Patients
+            var requestFirst = RegistrationDuplicateMatchEvidenceBuilder.NormalizePersonName(request.FirstName);
+            var requestLast = RegistrationDuplicateMatchEvidenceBuilder.NormalizePersonName(request.LastName);
+            if (requestFirst.Length == 0 || requestLast.Length == 0) return;
+
+            var sameDobPatients = await _context.Patients
                 .Where(p => p.TenantId == tenantId && p.DeletedAt == null)
                 .Where(p => p.Id != excludePatientId)
-                .Where(p => 
-                    p.FirstName.ToLower() == request.FirstName.ToLower() &&
-                    p.LastName.ToLower() == request.LastName.ToLower() &&
-                    p.DateOfBirth.Date == dob
-                )
+                .Where(p => p.DateOfBirth.Date == dob)
                 .ToListAsync();
 
-            foreach (var match in exactMatches)
+            var requestPhoneKey = PatientPhoneComparisonNormalizer.Normalize(request.ContactNumber);
+
+            foreach (var match in sameDobPatients)
             {
+                if (RegistrationDuplicateMatchEvidenceBuilder.NormalizePersonName(match.FirstName) != requestFirst
+                    || RegistrationDuplicateMatchEvidenceBuilder.NormalizePersonName(match.LastName) != requestLast)
+                {
+                    continue;
+                }
+
+                var phoneAlsoMatches = requestPhoneKey != null
+                    && requestPhoneKey == PatientPhoneComparisonNormalizer.Normalize(match.ContactNumber);
+
                 matches.Add(new PatientDuplicateMatch
                 {
                     Id = match.Id,
@@ -129,7 +144,9 @@ namespace AuthService.Services
                     Email = match.Email,
                     MatchType = "ExactNameDOB",
                     MatchConfidence = 1.0m,
-                    DifferenceReason = GetDifferences(request, match)
+                    DifferenceReason = phoneAlsoMatches
+                        ? "Exact name + DOB (+ normalized phone). " + GetDifferences(request, match)
+                        : GetDifferences(request, match)
                 });
 
                 _logger.LogWarning(
@@ -140,7 +157,8 @@ namespace AuthService.Services
         }
 
         /// <summary>
-        /// Level 2: Check for phone number matches
+        /// Level 2: Normalized phone match — possible-match band (0.90), not hard-block.
+        /// Family shared phones must not unconditionally block create.
         /// </summary>
         private async Task CheckPhoneMatches(
             DuplicateCheckRequest request,
@@ -148,16 +166,23 @@ namespace AuthService.Services
             Guid? excludePatientId,
             List<PatientDuplicateMatch> matches)
         {
+            var requestPhoneKey = PatientPhoneComparisonNormalizer.Normalize(request.ContactNumber);
+            if (requestPhoneKey == null) return;
+
             var matchedIds = matches.Select(m => m.Id).ToList();
-            var phoneMatches = await _context.Patients
+            var candidates = await _context.Patients
                 .Where(p => p.TenantId == tenantId && p.DeletedAt == null)
                 .Where(p => p.Id != excludePatientId)
-                .Where(p => p.ContactNumber == request.ContactNumber)
-                .Where(p => !matchedIds.Contains(p.Id)) // Exclude already matched
+                .Where(p => p.ContactNumber != null && p.ContactNumber != "")
+                .Where(p => !matchedIds.Contains(p.Id))
                 .ToListAsync();
 
-            foreach (var match in phoneMatches)
+            foreach (var match in candidates)
             {
+                var existingKey = PatientPhoneComparisonNormalizer.Normalize(match.ContactNumber);
+                if (existingKey == null || existingKey != requestPhoneKey)
+                    continue;
+
                 matches.Add(new PatientDuplicateMatch
                 {
                     Id = match.Id,
@@ -168,13 +193,14 @@ namespace AuthService.Services
                     ContactNumber = match.ContactNumber,
                     Email = match.Email,
                     MatchType = "PhoneMatch",
-                    MatchConfidence = 0.95m,
+                    // DUP-C3A.1: reclassified from 0.95 → 0.90 (soft band; same numeric band as EmailMatch)
+                    MatchConfidence = 0.90m,
                     DifferenceReason = GetDifferences(request, match)
                 });
 
                 _logger.LogWarning(
-                    "Phone match found: Patient {PatientId}, MRN: {MRN}, Phone: {Phone}",
-                    match.Id, match.MedicalRecordNumber, match.ContactNumber
+                    "Phone match found: Patient {PatientId}, MRN: {MRN}",
+                    match.Id, match.MedicalRecordNumber
                 );
             }
         }
@@ -327,7 +353,8 @@ namespace AuthService.Services
             if (request.DateOfBirth.HasValue && request.DateOfBirth.Value.Date != existing.DateOfBirth.Date)
                 differences.Add($"DOB: {request.DateOfBirth:yyyy-MM-dd} vs {existing.DateOfBirth:yyyy-MM-dd}");
             
-            if (request.ContactNumber != existing.ContactNumber)
+            if (PatientPhoneComparisonNormalizer.Normalize(request.ContactNumber)
+                != PatientPhoneComparisonNormalizer.Normalize(existing.ContactNumber))
                 differences.Add($"Phone: '{request.ContactNumber ?? "N/A"}' vs '{existing.ContactNumber ?? "N/A"}'");
             
             if (request.Email?.ToLower() != existing.Email?.ToLower())

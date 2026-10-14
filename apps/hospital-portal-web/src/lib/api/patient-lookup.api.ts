@@ -29,7 +29,7 @@ function toApiSortBy(sortBy?: PatientLookupSortBy): string {
   }
 }
 
-function lookupParams(filters: PatientLookupFilters) {
+export function buildPatientLookupQueryParams(filters: PatientLookupFilters) {
   const sortBy = toApiSortBy(filters.sortBy as PatientLookupSortBy | undefined);
   const branchId = filters.branchId?.trim() || undefined;
   return {
@@ -76,7 +76,7 @@ export const patientLookupApi = {
 
   lookup: async (filters: PatientLookupFilters): Promise<PatientLookupPage> => {
     const { data } = await getApi().get<PatientLookupPage>('/patients/lookup', {
-      params: lookupParams(filters),
+      params: buildPatientLookupQueryParams(filters),
     });
     return data;
   },
@@ -92,7 +92,7 @@ export const patientLookupApi = {
 
   exportCsv: async (filters: PatientLookupFilters): Promise<Blob> => {
     const response = await getApi().get('/patients/lookup/export', {
-      params: { ...lookupParams(filters), format: 'csv', pageSize: 5000 },
+      params: { ...buildPatientLookupQueryParams(filters), format: 'csv', pageSize: 5000 },
       responseType: 'blob',
     });
     return response.data;

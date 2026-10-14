@@ -76,8 +76,8 @@ export function PatientSearchAutosuggest({
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
-  const showDropdown =
-    open && debouncedQuery.trim().length >= 2 && (loading || results.length > 0);
+  const queryReady = debouncedQuery.trim().length >= 2;
+  const showDropdown = open && queryReady;
 
   const selectPatient = (patient: UnifiedPatientSearchHit) => {
     setOpen(false);
@@ -113,11 +113,12 @@ export function PatientSearchAutosuggest({
   };
 
   return (
-    <div ref={rootRef} className={cn('relative flex-1 min-w-[220px] max-w-md', className)}>
+    <div ref={rootRef} className={cn('relative min-w-0 flex-1', className)}>
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
       <input
         type="search"
         role="combobox"
+        aria-label="Search patients by name, MRN, phone, or email"
         aria-expanded={showDropdown}
         aria-controls={listId}
         aria-autocomplete="list"
@@ -129,7 +130,8 @@ export function PatientSearchAutosuggest({
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
         placeholder="Search name, MRN, phone, email…"
-        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+        title="Search name, MRN, phone, or email. Ctrl+K searches all categories."
+        className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
         data-testid={patientLookupTestIds.searchInput}
       />
 
@@ -137,14 +139,19 @@ export function PatientSearchAutosuggest({
         <ul
           id={listId}
           role="listbox"
-          className="absolute z-30 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1"
+          className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
           data-testid={patientLookupTestIds.autosuggestList}
         >
           {loading && (
             <li className="px-3 py-2 text-sm text-gray-500">Searching…</li>
           )}
           {!loading && results.length === 0 && (
-            <li className="px-3 py-2 text-sm text-gray-500">No patients found</li>
+            <li className="px-3 py-2 text-sm text-gray-600" role="status">
+              <p className="font-medium text-gray-800">No patients found</p>
+              <p className="mt-0.5 text-xs text-gray-500">
+                Try another name, MRN, phone number, or email.
+              </p>
+            </li>
           )}
           {results.map((patient, index) => (
             <li
@@ -171,10 +178,6 @@ export function PatientSearchAutosuggest({
         </ul>
       )}
 
-      <p className="mt-1.5 text-[11px] text-gray-400 hidden sm:block">
-        Patients only — search all categories with{' '}
-        <kbd className="rounded border border-gray-200 bg-gray-50 px-1 py-0.5 font-medium">Ctrl+K</kbd>
-      </p>
     </div>
   );
 }

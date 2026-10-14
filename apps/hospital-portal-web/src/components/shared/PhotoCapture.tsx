@@ -1,103 +1,138 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  PHOTO_CAPTURE_ORIENTATION,
+  drawWebcamCaptureFrame,
+} from '@/components/shared/photo-capture-orientation';
 
 interface PhotoCaptureProps {
   onPhotoCapture: (file: File, preview: string) => void;
   currentPreview?: string | null;
   optional?: boolean;
   label?: string;
+  /** When true, request camera permission and open the live preview immediately. */
+  autoStart?: boolean;
+  onCancel?: () => void;
 }
 
-export default function PhotoCapture({ 
-  onPhotoCapture, 
-  currentPreview, 
+export default function PhotoCapture({
+  onPhotoCapture,
+  currentPreview,
   optional = true,
-  label = "Patient Photo"
+  label = 'Patient Photo',
+  autoStart = false,
+  onCancel,
 }: PhotoCaptureProps) {
   const [showWebcam, setShowWebcam] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
+  const [capturedFile, setCapturedFile] = useState<File | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const startWebcam = async () => {
-    try {
-      setShowWebcam(true);
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 1280, height: 720 } 
-      });
-      setStream(mediaStream);
-      
-      // Wait for next tick to ensure video element is rendered
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-          videoRef.current.play().catch(err => {
-            console.error('Error playing video:', err);
-          });
-        }
-      }, 100);
-    } catch (error) {
-      console.error('Error accessing webcam:', error);
-      alert('Could not access webcam. Please check permissions.');
-      setShowWebcam(false);
-    }
-  };
+  const autoStartedRef = useRef(false);
 
   const stopWebcam = () => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
     setShowWebcam(false);
   };
 
+  const startWebcam = async () => {
+    try {
+      setCameraError(null);
+      setShowWebcam(true);
+      setCapturedPreview(null);
+      setCapturedFile(null);
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720 },
+      });
+      setStream(mediaStream);
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+          videoRef.current.play().catch(() => {
+            setCameraError('Could not start the camera preview.');
+          });
+        }
+      }, 100);
+    } catch {
+      setCameraError('Could not access the camera. Check browser permissions and try again.');
+      setShowWebcam(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    void startWebcam();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot autoStart
+  }, [autoStart]);
+
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [stream]);
+
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const canvas = canvasRef.current;
       const video = videoRef.current;
-      
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      
+
       const context = canvas.getContext('2d');
       if (context) {
-        // Flip the image horizontally to fix mirror effect
-        context.translate(canvas.width, 0);
-        context.scale(-1, 1);
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const file = new File([blob], `webcam-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              onPhotoCapture(file, reader.result as string);
-            };
-            reader.readAsDataURL(file);
-            stopWebcam();
-          }
-        }, 'image/jpeg', 0.9);
+        drawWebcamCaptureFrame(context, video, canvas.width, canvas.height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const file = new File([blob], `webcam-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                setCapturedFile(file);
+                setCapturedPreview(reader.result as string);
+                stopWebcam();
+              };
+              reader.readAsDataURL(file);
+            }
+          },
+          'image/jpeg',
+          0.9,
+        );
       }
+    }
+  };
+
+  const useCapturedPhoto = () => {
+    if (capturedFile && capturedPreview) {
+      onPhotoCapture(capturedFile, capturedPreview);
     }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
+        setCameraError('Please select an image file.');
         return;
       }
-      
-      // Validate file size (max 5MB)
+
       if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB');
+        setCameraError('File size must be less than 5MB.');
         return;
       }
-      
+
       const reader = new FileReader();
       reader.onloadend = () => {
         onPhotoCapture(file, reader.result as string);
@@ -113,39 +148,92 @@ export default function PhotoCapture({
     }
   };
 
+  const handleCancel = () => {
+    stopWebcam();
+    setCapturedPreview(null);
+    setCapturedFile(null);
+    setCameraError(null);
+    onCancel?.();
+  };
+
+  const preview = capturedPreview ?? currentPreview;
+  const videoClassName = PHOTO_CAPTURE_ORIENTATION.previewMirror
+    ? 'w-full max-w-md rounded-lg border-2 border-blue-500 -scale-x-100'
+    : 'w-full max-w-md rounded-lg border-2 border-blue-500';
+
   return (
-    <div className="space-y-4">
-      <label className="block text-sm font-medium text-gray-700">
-        {label} {optional && <span className="text-gray-500">(Optional)</span>}
-      </label>
+    <div className="space-y-4" data-testid="photo-capture">
+      {!autoStart ? (
+        <label className="block text-sm font-medium text-gray-700">
+          {label} {optional && <span className="text-gray-500">(Optional)</span>}
+        </label>
+      ) : null}
 
-      {/* Photo Preview */}
-      {currentPreview && (
-        <div className="relative inline-block">
-          <img 
-            src={currentPreview} 
-            alt="Preview" 
-            className="w-32 h-32 object-cover rounded-lg border-2 border-gray-300"
-          />
-          <button
-            type="button"
-            onClick={removePhoto}
-            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
-          >
-            ×
-          </button>
+      {cameraError ? (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {cameraError}
+        </p>
+      ) : null}
+
+      {preview && !showWebcam ? (
+        <div className="space-y-3">
+          <div className="relative inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={preview}
+              alt="Preview"
+              className="h-40 w-40 rounded-lg border-2 border-gray-300 object-cover"
+            />
+            {!autoStart ? (
+              <button
+                type="button"
+                onClick={removePhoto}
+                className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+          {autoStart && capturedFile ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={useCapturedPhoto}
+                className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+                data-testid="photo-capture-use"
+              >
+                Use Photo
+              </button>
+              <button
+                type="button"
+                onClick={() => void startWebcam()}
+                className="rounded-md bg-gray-500 px-4 py-2 text-white hover:bg-gray-600"
+                data-testid="photo-capture-retake"
+              >
+                Retake
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="rounded-md bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
-      {/* Webcam View */}
-      {showWebcam && (
+      {showWebcam ? (
         <div className="space-y-4">
           <div className="relative">
             <video
               ref={videoRef}
-              className="w-full max-w-md rounded-lg border-2 border-blue-500"
+              className={videoClassName}
               autoPlay
               playsInline
+              muted
+              data-testid="photo-capture-video"
             />
             <canvas ref={canvasRef} className="hidden" />
           </div>
@@ -153,33 +241,33 @@ export default function PhotoCapture({
             <button
               type="button"
               onClick={capturePhoto}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+              data-testid="photo-capture-capture"
             >
-              📸 Capture Photo
+              Capture
             </button>
             <button
               type="button"
-              onClick={stopWebcam}
-              className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+              onClick={handleCancel}
+              className="rounded-md bg-gray-500 px-4 py-2 text-white hover:bg-gray-600"
             >
               Cancel
             </button>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Upload Buttons */}
-      {!showWebcam && !currentPreview && (
+      {!autoStart && !showWebcam && !currentPreview ? (
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={startWebcam}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            onClick={() => void startWebcam()}
+            className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
           >
-            📷 Open Webcam
+            Open Webcam
           </button>
-          <label className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 cursor-pointer">
-            📁 Upload Photo
+          <label className="cursor-pointer rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-700">
+            Upload Photo
             <input
               ref={fileInputRef}
               type="file"
@@ -189,19 +277,19 @@ export default function PhotoCapture({
             />
           </label>
         </div>
-      )}
+      ) : null}
 
-      {!showWebcam && currentPreview && (
+      {!autoStart && !showWebcam && currentPreview ? (
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={startWebcam}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            onClick={() => void startWebcam()}
+            className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
           >
-            📷 Retake with Webcam
+            Retake with Webcam
           </button>
-          <label className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 cursor-pointer">
-            📁 Upload New Photo
+          <label className="cursor-pointer rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-700">
+            Upload New Photo
             <input
               ref={fileInputRef}
               type="file"
@@ -211,7 +299,26 @@ export default function PhotoCapture({
             />
           </label>
         </div>
-      )}
+      ) : null}
+
+      {autoStart && cameraError ? (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => void startWebcam()}
+            className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+          >
+            Try again
+          </button>
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="rounded-md bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

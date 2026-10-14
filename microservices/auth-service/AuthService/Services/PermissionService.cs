@@ -27,6 +27,16 @@ namespace AuthService.Services
             _context = context;
         }
 
+        /// <summary>
+        /// Administrative roles that receive unrestricted portal access via the established
+        /// wildcard permission token <c>*</c>. Matched by role NormalizedName — never by email.
+        /// </summary>
+        public static bool IsUnrestrictedAdministrativeRole(string? normalizedOrDisplayName)
+        {
+            var key = (normalizedOrDisplayName ?? string.Empty).Trim().ToUpperInvariant();
+            return key is "ADMIN" or "SUPERADMIN" or "SUPER ADMIN";
+        }
+
         public async Task<List<string>> GetUserPermissionsAsync(Guid userId, Guid tenantId)
         {
             var user = await _context.Users
@@ -38,17 +48,21 @@ namespace AuthService.Services
 
             if (user == null) return new List<string>();
 
-            // TEMPORARY: Give admin users wildcard permission
-            if (user.Email?.ToLower() == "admin@test.com")
+            var activeRoles = user.UserRoles
+                .Where(ur => ur.IsActive && ur.Role != null && ur.Role.IsActive && ur.Role.DeletedAt == null)
+                .Select(ur => ur.Role)
+                .ToList();
+
+            // Role-based unrestricted admin (JWT and DB paths both use this list).
+            if (activeRoles.Any(r => IsUnrestrictedAdministrativeRole(r.NormalizedName)
+                                     || IsUnrestrictedAdministrativeRole(r.Name)))
             {
-                Console.WriteLine($"🔑 TEMP OVERRIDE: Granting wildcard (*) permission to {user.Email}");
                 return new List<string> { "*" };
             }
 
-            var permissions = user.UserRoles
-                .Where(ur => ur.IsActive && ur.Role.IsActive)
-                .SelectMany(ur => ur.Role.RolePermissions)
-                .Where(rp => rp.Permission.IsActive)
+            var permissions = activeRoles
+                .SelectMany(r => r.RolePermissions ?? Enumerable.Empty<RolePermission>())
+                .Where(rp => rp.Permission != null && rp.Permission.IsActive)
                 .Select(rp => rp.Permission.Code)
                 .Distinct()
                 .ToList();
@@ -58,6 +72,19 @@ namespace AuthService.Services
 
         public async Task<List<string>> GetRolePermissionsAsync(Guid roleId)
         {
+            var role = await _context.Roles
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r => r.Id == roleId);
+
+            if (role != null
+                && role.IsActive
+                && role.DeletedAt == null
+                && (IsUnrestrictedAdministrativeRole(role.NormalizedName)
+                    || IsUnrestrictedAdministrativeRole(role.Name)))
+            {
+                return new List<string> { "*" };
+            }
+
             var permissions = await _context.RolePermissions
                 .Where(rp => rp.RoleId == roleId && rp.Permission.IsActive)
                 .Select(rp => rp.Permission.Code)
@@ -69,7 +96,7 @@ namespace AuthService.Services
         public async Task<bool> HasPermissionAsync(Guid userId, string permissionCode, Guid tenantId)
         {
             var permissions = await GetUserPermissionsAsync(userId, tenantId);
-            return permissions.Contains(permissionCode);
+            return permissions.Contains("*") || permissions.Contains(permissionCode);
         }
 
         public async Task<bool> CanAccessResourceAsync(Guid userId, string resourceType, Guid resourceId, string action, Guid tenantId)

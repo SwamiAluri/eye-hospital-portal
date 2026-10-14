@@ -33,6 +33,32 @@ export const PATIENT_RECORD_TABS = [
 
 export type PatientRecordTabKey = (typeof PATIENT_RECORD_TABS)[number]['key'];
 
+/**
+ * Tabs that are placeholder, workflow-owned with no record implementation,
+ * or blocked on a broken live call. They stay in the type union for existing
+ * deep-link parsing, but they are not shown as operational navigation.
+ * Do not delete the tab components; Slice 6 owns the broken examination call.
+ */
+export const HIDDEN_FROM_RECORD_SHELL = [
+  'eye_history',
+  'examinations',
+  'diagnoses',
+  'documents',
+  'admissions',
+  'counseling',
+  'surgery',
+  'preop',
+  'procedures',
+  'queue',
+  'referrals',
+  'feedback',
+  'portal_access',
+] as const satisfies readonly PatientRecordTabKey[];
+
+export function isRecordShellTab(tab: PatientRecordTabKey): boolean {
+  return !(HIDDEN_FROM_RECORD_SHELL as readonly PatientRecordTabKey[]).includes(tab);
+}
+
 export type PatientRecordTabGroupKey = 'clinical' | 'admin' | 'billing';
 
 export const PATIENT_RECORD_TAB_GROUPS: Record<
@@ -47,47 +73,26 @@ export const PATIENT_RECORD_TAB_GROUPS: Record<
   clinical: {
     label: 'Clinical',
     shortLabel: 'Clinical',
-    visible: [
-      'overview',
-      'vitals',
-      'eye_history',
-      'examinations',
-      'diagnoses',
-      'medications',
-      'lab_results',
-      'imaging',
-    ],
+    visible: ['overview', 'vitals', 'medications', 'lab_results', 'imaging'],
     overflow: [
       'medical_records',
       'allergies',
       'prescriptions',
       'optical',
-      'queue',
-      'referrals',
       'notes',
       'communications',
-      'feedback',
-      'portal_access',
     ],
   },
   admin: {
     label: 'Admin',
     shortLabel: 'Admin',
-    visible: ['documents', 'encounters', 'visits', 'scheduling', 'consents'],
+    visible: ['encounters', 'visits', 'scheduling', 'consents'],
     overflow: [],
   },
   billing: {
     label: 'Billing & pathways',
     shortLabel: 'Billing',
-    visible: [
-      'billing',
-      'insurance',
-      'admissions',
-      'counseling',
-      'surgery',
-      'preop',
-      'procedures',
-    ],
+    visible: ['billing', 'insurance'],
     overflow: [],
   },
 };

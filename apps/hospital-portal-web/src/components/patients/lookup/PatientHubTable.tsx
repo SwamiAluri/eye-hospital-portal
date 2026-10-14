@@ -1,26 +1,90 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronsUpDown, Star } from 'lucide-react';
+import { ChevronsUpDown, Loader2 } from 'lucide-react';
 import { PatientAvatar } from '@/components/patients/PatientAvatar';
-import { AcuityDot } from '@/components/patients/lookup/AcuityDot';
-import { HighlightsPills } from '@/components/patients/lookup/HighlightsPills';
-import { IpAdmittedBadge } from '@/components/patients/lookup/IpAdmittedBadge';
-import { PatientHubRowActions } from '@/components/patients/lookup/PatientHubRowActions';
-import { QueueStationCell } from '@/components/patients/lookup/QueueStationCell';
-import { ReasonVisitCell } from '@/components/patients/lookup/ReasonVisitCell';
 import {
-  formatHubSchedule,
-  formatPatientHubIdentityLine,
-} from '@/lib/patients/patient-hub-row-display';
+  PatientHubPhoneCell,
+  PatientHubProviderCell,
+} from '@/components/patients/lookup/PatientHubContextCluster';
+import { PatientHubRowActions } from '@/components/patients/lookup/PatientHubRowActions';
+import { formatPatientDisplayName } from '@/lib/patients/patient-display-utils';
+import { formatDirectorySexLabel } from '@/lib/patients/patient-hub-row-display';
+import { shouldActivateRowPreview } from '@/lib/patients/patient-hub-row-activation';
 import type { PatientLookupSortBy } from '@/lib/patients/patient-lookup-filters';
 import { patientLookupTestIds } from '@/lib/patients/patient-lookup-test-ids';
 import { patientProfileUrl } from '@/lib/patients/patient-routes';
 import type { PatientLookupRow } from '@/types/patient-lookup';
 import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
 
-export const PATIENT_HUB_TABLE_COLS = 10;
+/** Desktop / tablet: Patient | MRN | Gender | Phone | Provider | Actions */
+export const PATIENT_HUB_TABLE_COLS = 6;
+/** Compact (docked preview / < xl): same six columns, tighter track shares */
+export const PATIENT_HUB_COMPACT_TABLE_COLS = 6;
+
+/**
+ * Authoritative desktop column geometry.
+ *
+ * ONLY colgroup uses these widths. Do not re-apply independent w/min/max on
+ * th/td — that dual authority caused browser drift under table-fixed.
+ * Percentages sum to 100% so Patient cannot absorb leftover space.
+ */
+export const PATIENT_HUB_COLGROUP_DESKTOP = [
+  { key: 'patient', width: '22%' },
+  { key: 'mrn', width: '17%' },
+  { key: 'gender', width: '9%' },
+  { key: 'phone', width: '13%' },
+  { key: 'provider', width: '17%' },
+  { key: 'actions', width: '22%' },
+] as const;
+
+/** Compact (tablet / docked preview): Provider remains an independent column. */
+export const PATIENT_HUB_COLGROUP_COMPACT = [
+  { key: 'patient', width: '20%' },
+  { key: 'mrn', width: '16%' },
+  { key: 'gender', width: '9%' },
+  { key: 'phone', width: '13%' },
+  { key: 'provider', width: '18%' },
+  { key: 'actions', width: '24%' },
+] as const;
+
+/** @deprecated Use PATIENT_HUB_COLGROUP_* — kept for transitional imports/tests. */
+export const PATIENT_HUB_COLUMN_TRACK = {
+  phone: 'patient-hub-col-phone',
+  mrn: 'patient-hub-col-mrn',
+  gender: 'patient-hub-col-gender',
+  provider: 'patient-hub-col-provider',
+  actions: 'patient-hub-col-actions',
+} as const;
+
+const directoryHeaderClass =
+  'overflow-hidden px-2.5 py-1.5 text-left text-sm font-semibold leading-5 tracking-normal text-counselling-foreground sm:px-3';
+/** Cell shell: overflow clipped to the colgroup track; min-w-0 allows truncate children. */
+const directoryCellClass =
+  'min-w-0 overflow-hidden px-2.5 py-2 align-middle sm:px-3';
+const COMPACT_TABLE_MIN_WIDTH = 'min-w-[52rem]';
 const VIRTUALIZE_ROW_THRESHOLD = 40;
+
+function columnGroup(compactColumns: boolean) {
+  const cols = compactColumns ? PATIENT_HUB_COLGROUP_COMPACT : PATIENT_HUB_COLGROUP_DESKTOP;
+  return (
+    <colgroup data-testid={patientLookupTestIds.tableColgroup}>
+      {cols.map((col) => (
+        <col key={col.key} data-col={col.key} style={{ width: col.width }} />
+      ))}
+    </colgroup>
+  );
+}
+
+function columnAriaSort(
+  sortKey: PatientLookupSortBy,
+  currentSort: PatientLookupSortBy,
+  currentDir: 'asc' | 'desc',
+): 'ascending' | 'descending' | 'none' {
+  if (currentSort !== sortKey) return 'none';
+  return currentDir === 'desc' ? 'descending' : 'ascending';
+}
 
 function SortableHeader({
   label,
@@ -39,55 +103,114 @@ function SortableHeader({
   return (
     <button
       type="button"
-      onClick={() => onSort(sortKey)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSort(sortKey);
+      }}
       className={cn(
-        'inline-flex items-center gap-1 font-medium transition-colors hover:text-emerald-700',
-        active ? 'text-emerald-800' : 'text-gray-600',
+        'inline-flex max-w-full items-center gap-1 truncate font-semibold transition-colors hover:text-counselling-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
+        active ? 'text-counselling-primary' : 'text-counselling-foreground',
       )}
       data-testid={patientLookupTestIds.sortHeader(sortKey)}
     >
       {label}
       <ChevronsUpDown
-        className={cn('h-3.5 w-3.5', active && currentDir === 'desc' && 'rotate-180')}
+        className={cn('h-3.5 w-3.5 shrink-0', active && currentDir === 'desc' && 'rotate-180')}
       />
     </button>
   );
 }
 
-function SkeletonRow() {
+function WorklistMessage({
+  children,
+  role,
+  colSpan,
+}: {
+  children: ReactNode;
+  role?: 'status' | 'alert';
+  colSpan: number;
+}) {
   return (
     <tr>
-      {Array.from({ length: PATIENT_HUB_TABLE_COLS }).map((_, i) => (
-        <td key={i} className="px-3 py-3">
-          <div
-            className="h-3 animate-pulse rounded-full bg-gray-100"
-            style={{ width: `${40 + ((i * 11) % 45)}%` }}
-          />
-        </td>
-      ))}
+      <td colSpan={colSpan} className="px-4 py-12 text-center" role={role}>
+        {children}
+      </td>
     </tr>
   );
 }
 
-export interface PatientHubTableProps {
+interface HeaderProps {
+  currentSort: PatientLookupSortBy;
+  currentSortDir: 'asc' | 'desc';
+  onSort: (key: PatientLookupSortBy) => void;
+  /** Compact track shares (tablet / docked preview). Provider stays independent. */
+  compactColumns?: boolean;
+  /** @deprecated Alias of compactColumns. */
+  foldLocation?: boolean;
+}
+
+function resolveCompact(props: { compactColumns?: boolean; foldLocation?: boolean }): boolean {
+  return props.compactColumns ?? props.foldLocation ?? false;
+}
+
+export function PatientHubTableHeader({
+  currentSort,
+  currentSortDir,
+  onSort,
+  compactColumns,
+  foldLocation,
+}: HeaderProps) {
+  void resolveCompact({ compactColumns, foldLocation });
+  return (
+    <thead
+      className="sticky top-0 z-10 bg-counselling-card"
+      data-testid={patientLookupTestIds.tableHeader}
+    >
+      <tr className="border-b border-counselling-border/60">
+        <th
+          scope="col"
+          className={directoryHeaderClass}
+          data-col="patient"
+          aria-sort={columnAriaSort('name', currentSort, currentSortDir)}
+        >
+          <SortableHeader
+            label="Patient"
+            sortKey="name"
+            currentSort={currentSort}
+            currentDir={currentSortDir}
+            onSort={onSort}
+          />
+        </th>
+        <th scope="col" className={directoryHeaderClass} data-col="mrn">
+          MRN
+        </th>
+        <th scope="col" className={directoryHeaderClass} data-col="gender">
+          Gender
+        </th>
+        <th scope="col" className={directoryHeaderClass} data-col="phone">
+          Phone
+        </th>
+        <th scope="col" className={directoryHeaderClass} data-col="provider">
+          Provider
+        </th>
+        <th scope="col" className={directoryHeaderClass} data-col="actions">
+          Actions
+        </th>
+      </tr>
+    </thead>
+  );
+}
+
+export interface PatientHubTableProps extends HeaderProps {
   rows: PatientLookupRow[];
   previewId: string | null;
   isLoading: boolean;
   isError: boolean;
   isReady: boolean;
-  compact?: boolean;
-  currentSort: PatientLookupSortBy;
-  currentSortDir: 'asc' | 'desc';
-  selectedIds: Set<string>;
-  allPageSelected: boolean;
-  somePageSelected: boolean;
-  onSort: (key: PatientLookupSortBy) => void;
-  onToggleRow: (patientId: string) => void;
-  onToggleAllPage: () => void;
   onRowClick: (row: PatientLookupRow) => void;
-  onFavorite: (patientId: string) => void;
   onOpenProfile: (patientId: string) => void;
-  onPreview: (row: PatientLookupRow) => void;
+  emptyTitle?: string;
+  emptyHint?: string;
 }
 
 export function PatientHubTable({
@@ -96,250 +219,148 @@ export function PatientHubTable({
   isLoading,
   isError,
   isReady,
-  compact = false,
   currentSort,
   currentSortDir,
-  selectedIds,
-  allPageSelected,
-  somePageSelected,
   onSort,
-  onToggleRow,
-  onToggleAllPage,
+  compactColumns,
+  foldLocation,
   onRowClick,
-  onFavorite,
   onOpenProfile,
-  onPreview,
+  emptyTitle = 'No patients match your filters.',
+  emptyHint,
 }: PatientHubTableProps) {
-  const assignedColClass = cn(
-    'hidden text-left px-3 py-3 font-medium text-gray-600',
-    compact ? '2xl:table-cell' : 'xl:table-cell',
-  );
+  const compact = resolveCompact({ compactColumns, foldLocation });
+  const colSpan = compact ? PATIENT_HUB_COMPACT_TABLE_COLS : PATIENT_HUB_TABLE_COLS;
 
   return (
-    <div className="hidden overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm md:block">
-      <div className="overflow-x-auto">
-        <table
-          className="w-full table-fixed border-separate border-spacing-y-1.5 px-2 text-sm"
-          data-testid={patientLookupTestIds.table}
-          aria-label="Patients"
-        >
-          <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgb(229,231,235)]">
-            <tr className="text-left">
-              <th className="w-10 px-3 py-2">
-                <input
-                  type="checkbox"
-                  aria-label="Select all on page"
-                  className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                  checked={allPageSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = somePageSelected && !allPageSelected;
-                  }}
-                  onChange={onToggleAllPage}
-                  data-testid={patientLookupTestIds.selectAllCheckbox}
-                />
-              </th>
-              <th className="w-10 px-3 py-2 font-medium text-gray-600" aria-label="Favorite" />
-              <th className="w-[22%] min-w-[180px] px-3 py-2">
-                <SortableHeader
-                  label="Patient"
-                  sortKey="name"
-                  currentSort={currentSort}
-                  currentDir={currentSortDir}
-                  onSort={onSort}
-                />
-              </th>
-              <th className="w-[16%] min-w-[130px] px-3 py-2 font-medium text-gray-600">
-                Reason / visit
-              </th>
-              <th className="w-[12%] min-w-[100px] px-3 py-2">
-                <SortableHeader
-                  label="Schedule"
-                  sortKey="scheduledAt"
-                  currentSort={currentSort}
-                  currentDir={currentSortDir}
-                  onSort={onSort}
-                />
-              </th>
-              <th className="w-[14%] min-w-[110px] px-3 py-2">
-                <SortableHeader
-                  label="Queue / station"
-                  sortKey="waitingMinutes"
-                  currentSort={currentSort}
-                  currentDir={currentSortDir}
-                  onSort={onSort}
-                />
-              </th>
-              <th className="w-[8%] min-w-[56px] px-3 py-2">
-                <SortableHeader
-                  label="Acuity"
-                  sortKey="acuity"
-                  currentSort={currentSort}
-                  currentDir={currentSortDir}
-                  onSort={onSort}
-                />
-              </th>
-              <th className="w-[16%] min-w-[120px] px-3 py-2 font-medium text-gray-600">
-                Highlights
-              </th>
-              <th className={assignedColClass}>Assigned</th>
-              <th className="w-[120px] px-3 py-2 text-right font-medium text-gray-600">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading &&
-              Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
+    <table
+      className={cn(
+        'hidden w-full table-fixed border-collapse text-xs md:table',
+        compact && COMPACT_TABLE_MIN_WIDTH,
+      )}
+      data-testid={patientLookupTestIds.table}
+      data-compact={compact ? 'true' : 'false'}
+      aria-label="Patients"
+    >
+      {columnGroup(compact)}
+      <PatientHubTableHeader
+        currentSort={currentSort}
+        currentSortDir={currentSortDir}
+        onSort={onSort}
+        compactColumns={compact}
+      />
+      <tbody className="divide-y divide-counselling-border/40">
+        {isLoading && (
+          <WorklistMessage role="status" colSpan={colSpan}>
+            <p className="inline-flex items-center gap-2 text-sm font-medium text-counselling-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Loading patients…
+            </p>
+          </WorklistMessage>
+        )}
 
-            {!isLoading && isError && (
-              <tr>
-                <td
-                  colSpan={PATIENT_HUB_TABLE_COLS}
-                  className="px-4 py-12 text-center text-red-600"
-                >
-                  Could not load patients. Use Refresh to try again.
-                </td>
-              </tr>
+        {!isLoading && isError && (
+          <WorklistMessage role="alert" colSpan={colSpan}>
+            <p className="text-sm font-medium text-red-800">Could not load patients</p>
+            <p className="mt-1 text-xs leading-relaxed text-counselling-muted-foreground">
+              Use Refresh to try again.
+            </p>
+          </WorklistMessage>
+        )}
+
+        {isReady && !isLoading && !isError && rows.length === 0 && (
+          <WorklistMessage role="status" colSpan={colSpan}>
+            <p className="text-sm font-medium text-counselling-foreground">{emptyTitle}</p>
+            {emptyHint && (
+              <p className="mt-1 text-xs leading-relaxed text-counselling-muted-foreground">
+                {emptyHint}
+              </p>
             )}
+          </WorklistMessage>
+        )}
 
-            {isReady && !isLoading && !isError && rows.length === 0 && (
-              <tr>
-                <td
-                  colSpan={PATIENT_HUB_TABLE_COLS}
-                  className="px-4 py-12 text-center text-gray-500"
-                >
-                  No patients match your filters.
-                </td>
-              </tr>
-            )}
+        {!isLoading &&
+          rows.map((row) => {
+            const isPreview = previewId === row.id;
+            const virtualize = rows.length >= VIRTUALIZE_ROW_THRESHOLD;
+            const mrn = row.mrn?.trim() ?? '';
+            const genderLabel = formatDirectorySexLabel(row.gender);
 
-            {!isLoading &&
-              rows.map((row) => {
-                const isPreview = previewId === row.id;
-                const identityLine = formatPatientHubIdentityLine(row);
-                const virtualize = rows.length >= VIRTUALIZE_ROW_THRESHOLD;
-
-                return (
-                  <tr
-                    key={row.id}
-                    className={cn(
-                      'cursor-pointer bg-white shadow-sm ring-1 ring-gray-100 transition-colors hover:bg-emerald-50/40',
-                      isPreview &&
-                        'bg-emerald-50/70 ring-emerald-300 border-l-4 border-l-emerald-600',
-                    )}
-                    style={virtualize ? { contentVisibility: 'auto' } : undefined}
-                    data-testid={patientLookupTestIds.tableRow(row.id)}
-                    onClick={() => onRowClick(row)}
-                  >
-                    <td className="rounded-l-lg px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${row.firstName} ${row.lastName}`}
-                        className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                        checked={selectedIds.has(row.id)}
-                        onChange={() => onToggleRow(row.id)}
-                        data-testid={patientLookupTestIds.rowCheckbox(row.id)}
-                      />
-                    </td>
-                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        aria-label={row.isFavorite ? 'Remove favorite' : 'Add favorite'}
-                        className="text-gray-400 transition-colors hover:text-amber-500"
-                        data-testid={patientLookupTestIds.favoriteButton(row.id)}
-                        onClick={() => onFavorite(row.id)}
+            return (
+              <tr
+                key={row.id}
+                tabIndex={0}
+                className={cn(
+                  'staff-worklist-row cursor-pointer transition-colors hover:bg-counselling-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/40',
+                  isPreview && 'counselling-selected-row',
+                )}
+                style={virtualize ? { contentVisibility: 'auto' } : undefined}
+                data-testid={patientLookupTestIds.tableRow(row.id)}
+                onClick={() => onRowClick(row)}
+                onKeyDown={(event) => {
+                  if (!shouldActivateRowPreview(event)) return;
+                  event.preventDefault();
+                  onRowClick(row);
+                }}
+              >
+                <td className={directoryCellClass} data-col="patient">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <PatientAvatar
+                      size="sm"
+                      firstName={row.firstName}
+                      lastName={row.lastName}
+                      photoUrl={row.photoThumbnailUrl}
+                    />
+                    <div className="min-w-0 overflow-hidden">
+                      <Link
+                        href={patientProfileUrl(row.id)}
+                        className="block truncate text-sm font-semibold text-counselling-foreground hover:text-counselling-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenProfile(row.id);
+                        }}
+                        data-testid={patientLookupTestIds.patientNameLink(row.id)}
                       >
-                        <Star
-                          className={cn(
-                            'h-4 w-4',
-                            row.isFavorite && 'fill-amber-400 text-amber-400',
-                          )}
-                        />
-                      </button>
-                    </td>
+                        {formatPatientDisplayName(row)}
+                      </Link>
+                    </div>
+                  </div>
+                </td>
 
-                    <td className="px-3 py-3">
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <PatientAvatar
-                          size="sm"
-                          firstName={row.firstName}
-                          lastName={row.lastName}
-                          photoUrl={row.photoThumbnailUrl}
-                        />
-                        <div className="min-w-0">
-                          <Link
-                            href={patientProfileUrl(row.id)}
-                            className="truncate font-medium text-emerald-800 hover:underline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenProfile(row.id);
-                            }}
-                            data-testid={patientLookupTestIds.patientNameLink(row.id)}
-                          >
-                            {row.firstName} {row.lastName}
-                          </Link>
-                          {identityLine && (
-                            <p className="truncate font-mono text-[11px] text-gray-600">
-                              {identityLine}
-                            </p>
-                          )}
-                          {row.phone && (
-                            <p className="truncate text-[11px] text-gray-500">{row.phone}</p>
-                          )}
-                          <IpAdmittedBadge admission={row.ipAdmission} className="mt-1" />
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <ReasonVisitCell row={row} />
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3 text-xs text-gray-600">
-                      {formatHubSchedule(row.scheduledAt)}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <QueueStationCell row={row} />
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <AcuityDot acuity={row.clinicalAcuity} />
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <HighlightsPills row={row} />
-                    </td>
-
-                    <td
-                      className={cn(
-                        'px-3 py-3 text-xs text-gray-700',
-                        compact ? 'hidden 2xl:table-cell' : 'hidden xl:table-cell',
-                      )}
+                <td className={directoryCellClass} data-col="mrn">
+                  {mrn ? (
+                    <p
+                      className="truncate text-sm font-medium tabular-nums text-counselling-foreground"
+                      title={mrn}
                     >
-                      {row.assignedProviderName ? (
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-gray-900">
-                            {row.assignedProviderName}
-                          </p>
-                          {row.assignedProviderRole && (
-                            <p className="truncate text-gray-500">{row.assignedProviderRole}</p>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
+                      {mrn}
+                    </p>
+                  ) : (
+                    <span className="text-sm text-counselling-muted-foreground">—</span>
+                  )}
+                </td>
 
-                    <td className="rounded-r-lg px-3 py-3">
-                      <PatientHubRowActions row={row} onPreview={() => onPreview(row)} />
-                    </td>
-                  </tr>
-                );
-              })}
-          </tbody>
-        </table>
-      </div>
-    </div>
+                <td className={directoryCellClass} data-col="gender">
+                  {genderLabel ? (
+                    <p className="truncate text-sm text-counselling-foreground">{genderLabel}</p>
+                  ) : (
+                    <span className="text-sm text-counselling-muted-foreground">—</span>
+                  )}
+                </td>
+
+                <td className={directoryCellClass} data-col="phone">
+                  <PatientHubPhoneCell row={row} />
+                </td>
+                <td className={directoryCellClass} data-col="provider">
+                  <PatientHubProviderCell row={row} />
+                </td>
+                <td className={directoryCellClass} data-col="actions">
+                  <PatientHubRowActions row={row} />
+                </td>
+              </tr>
+            );
+          })}
+      </tbody>
+    </table>
   );
 }

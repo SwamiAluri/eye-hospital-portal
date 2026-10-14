@@ -18,6 +18,20 @@ export const initializeApi = () => {
   // Add request interceptor to include tenant ID and token
   attachAuthRequestInterceptor(axiosInstance);
 
+  // FormData uploads must not inherit application/json or a boundary-less
+  // multipart Content-Type — axios sets multipart + boundary automatically.
+  axiosInstance.interceptors.request.use((config) => {
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      const headers = config.headers;
+      if (headers && typeof (headers as { delete?: (k: string) => void }).delete === 'function') {
+        (headers as { delete: (k: string) => void }).delete('Content-Type');
+      } else if (headers) {
+        delete (headers as Record<string, unknown>)['Content-Type'];
+      }
+    }
+    return config;
+  });
+
   // Add response interceptor for error handling + silent token refresh
   attachAuthResponseInterceptor(axiosInstance, {
     // Auth public 401s are also skipped via shouldSkipSessionExpiredLogout.

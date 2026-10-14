@@ -1,56 +1,61 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Download,
+  Loader2,
   Plus,
   RefreshCw,
-  SlidersHorizontal,
-  Star,
-  UserCheck,
-  Users,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { counsellingSessionTokens } from "@/lib/counsellors-desk/counselling-session-tokens";
 import { toast } from "react-hot-toast";
-import PatientFormModal from "@/components/patients/PatientFormModal";
-import { PatientAdvancedFilterSheet } from "@/components/patients/lookup/PatientAdvancedFilterSheet";
+import { useQueryClient } from "@tanstack/react-query";
+import { AddPatientDialog } from "@/components/patients/AddPatientDialog";
+import { PatientRegistrationSuccessDialog } from "@/components/patients/PatientRegistrationSuccessDialog";
+import { PatientRegistrationCardSurfaceDialog } from "@/components/patients/PatientRegistrationCardSurfaceDialog";
+import type { RegistrationSuccessPatient } from "@/components/patients/PatientRegistrationSuccessDialog";
+import { regLife } from "@/lib/patients/registration-lifecycle-telemetry";
 import { PatientHubClassificationTabs } from "@/components/patients/lookup/PatientHubClassificationTabs";
 import { PatientHubPagination } from "@/components/patients/lookup/PatientHubPagination";
-import { PatientFilterChips } from "@/components/patients/lookup/PatientFilterChips";
 import { PatientHubEmptyBranch } from "@/components/patients/lookup/PatientHubEmptyBranch";
-import { PatientHubSelectionBar } from "@/components/patients/lookup/PatientHubSelectionBar";
 import { PatientHubTable } from "@/components/patients/lookup/PatientHubTable";
 import { PatientPreviewDrawer } from "@/components/patients/lookup/PatientPreviewDrawer";
 import { PatientPreviewSplitPane } from "@/components/patients/lookup/PatientPreviewSplitPane";
-import { PatientSearchAutosuggest } from "@/components/patients/lookup/PatientSearchAutosuggest";
+import { PatientDirectorySearch } from "@/components/patients/lookup/PatientDirectorySearch";
+import { PatientDirectoryToolbarFilters } from "@/components/patients/lookup/PatientDirectoryToolbarFilters";
 import { PatientHubMobileCards } from "@/components/patients/lookup/PatientHubMobileCards";
 import { useBranchContext } from "@/hooks/use-branch-context";
 import { usePatientHubPreviewMode } from "@/hooks/use-patient-hub-preview-mode";
 import { useHasPermission } from "@/hooks/use-permissions";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
+  patientLookupKeys,
   usePatientLookupQuery,
   usePatientLookupStatsQuery,
-  useTogglePatientFavoriteMutation,
 } from "@/hooks/use-patient-lookup-queries";
 import { useOptionalPatientWorkspace } from "@/components/patients/record/PatientWorkspaceProvider";
 import { usePatientHubRealtime } from "@/hooks/use-patient-hub-realtime";
 import { patientLookupApi } from "@/lib/api/patient-lookup.api";
+import { resolveCreatedPatientPreviewRow } from "@/lib/patients/created-patient-preview-handoff";
 import {
-  buildLookupUrlParams,
   countActiveFilters,
   parseLookupUrlParams,
+  toPatientLookupFilters,
   type PatientLookupSortBy,
   type PatientLookupUrlState,
 } from "@/lib/patients/patient-lookup-filters";
 import { patientLookupTestIds } from "@/lib/patients/patient-lookup-test-ids";
+import {
+  readDirectoryUrlStateFromLocation,
+  replaceDirectoryUrlState,
+  shouldHydrateSearchFromUrl,
+} from "@/lib/patients/patient-directory-url-sync";
 import { savePatientRecordNav } from "@/lib/patients/patient-record-nav";
-import { patientProfileUrl } from "@/lib/patients/patient-routes";
 import type {
   PatientLookupRow,
   PatientLookupTab,
-  PatientRecentViewEntry,
 } from "@/types/patient-lookup";
 import { cn } from "@/lib/utils";
 
@@ -58,10 +63,18 @@ const PAGE_SIZE = 25;
 
 export default function PatientHubPage() {
   const workspace = useOptionalPatientWorkspace();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { branchId, branches, isReady, isLoading: branchLoading } = useBranchContext();
   const canExport = useHasPermission("patient.export");
+  const canCreate = useHasPermission("patient.create");
+  const queryClient = useQueryClient();
+  const [addPatientOpen, setAddPatientOpen] = useState(false);
+  /** Dedicated post-create surfaces — never nested in Register New Patient. */
+  const [registrationSuccessPatient, setRegistrationSuccessPatient] =
+    useState<RegistrationSuccessPatient | null>(null);
+  const [registrationCardOpen, setRegistrationCardOpen] = useState(false);
+  /** Preview handoff runs only on Success Close (not when registration dialog ends). */
+  const createdHandoffPatientId = useRef<string | null>(null);
   usePatientHubRealtime(branchId, isReady);
   const {
     mode: previewMode,
@@ -75,28 +88,48 @@ export default function PatientHubPage() {
     parseLookupUrlParams(searchParams),
   );
   const [search, setSearch] = useState(urlState.q ?? "");
-  const [filterOpen, setFilterOpen] = useState(false);
+  const searchFocusedRef = useRef(false);
+  const searchHasQuery = search.trim().length >= 2;
   const [previewPatient, setPreviewPatient] = useState<PatientLookupRow | null>(
     null,
   );
   const [exporting, setExporting] = useState(false);
-  const [addPatientOpen, setAddPatientOpen] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const debouncedSearch = useDebouncedValue(search, 300);
+  const urlStateRef = useRef(urlState);
+  urlStateRef.current = urlState;
+  const debouncedSearchRef = useRef(debouncedSearch);
+  debouncedSearchRef.current = debouncedSearch;
 
+  /** Hydrate from Next searchParams only when search is not being typed. */
   useEffect(() => {
-    setUrlState(parseLookupUrlParams(searchParams));
-    setSearch(parseLookupUrlParams(searchParams).q ?? "");
+    const parsed = parseLookupUrlParams(searchParams);
+    setUrlState(parsed);
+    setSearch((current) =>
+      shouldHydrateSearchFromUrl({
+        searchFocused: searchFocusedRef.current,
+        localSearch: current,
+        urlQ: parsed.q,
+      })
+        ? (parsed.q ?? "")
+        : current,
+    );
   }, [searchParams]);
 
+  /** Back/forward: restore Directory URL without Next.js client navigation remounts. */
+  useEffect(() => {
+    const onPopState = () => {
+      const parsed = readDirectoryUrlStateFromLocation();
+      setUrlState(parsed);
+      setSearch(parsed.q ?? "");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   const syncUrl = (next: PatientLookupUrlState) => {
-    const params = buildLookupUrlParams({
+    replaceDirectoryUrlState({
       ...next,
-      q: debouncedSearch || next.q,
-    });
-    const qs = params.toString();
-    router.replace(qs ? `/dashboard/patients?${qs}` : "/dashboard/patients", {
-      scroll: false,
+      q: debouncedSearchRef.current || next.q,
     });
   };
 
@@ -106,29 +139,21 @@ export default function PatientHubPage() {
   };
 
   useEffect(() => {
-    if (debouncedSearch !== (urlState.q ?? "")) {
-      applyState({ ...urlState, q: debouncedSearch || undefined, page: 1 });
+    if (debouncedSearch !== (urlStateRef.current.q ?? "")) {
+      applyState({
+        ...urlStateRef.current,
+        q: debouncedSearch || undefined,
+        page: 1,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch]);
 
-  const filters = {
+  const filters = toPatientLookupFilters(urlState, {
     branchId: branchId ?? "",
-    q: debouncedSearch || undefined,
-    tab: urlState.tab ?? "all",
-    page: urlState.page ?? 1,
     pageSize: PAGE_SIZE,
-    sortBy: urlState.sortBy ?? "name",
-    sortDir: urlState.sortDir ?? "asc",
-    favoritesOnly: urlState.favoritesOnly,
-    assignedToMe: urlState.assignedToMe,
-    engagementTypes: urlState.engagementTypes,
-    programCodes: urlState.programCodes,
-    patientTypes: urlState.patientTypes,
-    gender: urlState.gender,
-    mrn: urlState.mrn,
-    phone: urlState.phone,
-  };
+    q: debouncedSearch || undefined,
+  });
 
   const currentSort: PatientLookupSortBy = urlState.sortBy ?? "name";
   const currentSortDir = urlState.sortDir ?? "asc";
@@ -141,7 +166,6 @@ export default function PatientHubPage() {
 
   const lookupQuery = usePatientLookupQuery(filters, isReady);
   const statsQuery = usePatientLookupStatsQuery(branchId, isReady);
-  const favoriteMutation = useTogglePatientFavoriteMutation(branchId);
 
   const stats = statsQuery.data;
   const tabCounts: Record<PatientLookupTab, number | undefined> = {
@@ -153,49 +177,23 @@ export default function PatientHubPage() {
   };
 
   const rows = lookupQuery.data?.items ?? [];
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const totalPages = lookupQuery.data?.totalPages ?? 1;
   const totalCount = lookupQuery.data?.totalCount ?? 0;
-  const allPageSelected =
-    rows.length > 0 && rows.every((row) => selectedIds.has(row.id));
-  const somePageSelected = rows.some((row) => selectedIds.has(row.id));
   const previewId = urlState.previewPatientId;
   const activeFilterCount = countActiveFilters(urlState);
+  const emptyTitle = searchHasQuery
+    ? "No patients found"
+    : activeFilterCount > 0
+      ? "No patients match your filters."
+      : "No patients in this census.";
+  const emptyHint = searchHasQuery
+    ? "Try another name, MRN, phone number, or email."
+    : undefined;
   const previewOpen = !!previewPatient;
   const showDockedPreview = previewOpen && isDocked && canDock;
   const showFloatingPreview = previewOpen && isFloating;
-
-  const handleToggleRow = (patientId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(patientId)) next.delete(patientId);
-      else next.add(patientId);
-      return next;
-    });
-  };
-
-  const handleToggleAllPage = () => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (allPageSelected) {
-        rows.forEach((row) => next.delete(row.id));
-      } else {
-        rows.forEach((row) => next.add(row.id));
-      }
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    setSelectedIds(new Set());
-  }, [
-    urlState.tab,
-    urlState.page,
-    debouncedSearch,
-    urlState.favoritesOnly,
-    urlState.assignedToMe,
-    urlState.engagementTypes?.join(","),
-    urlState.programCodes?.join(","),
-  ]);
 
   useEffect(() => {
     if (!previewId) {
@@ -203,7 +201,12 @@ export default function PatientHubPage() {
       return;
     }
     const row = rows.find((r) => r.id === previewId);
-    if (row) setPreviewPatient(row);
+    if (row) {
+      setPreviewPatient(row);
+      return;
+    }
+    // Keep an already-opened Preview for this id when the patient is outside
+    // the current filtered lookup page (post-registration handoff).
   }, [previewId, rows]);
 
   useEffect(() => {
@@ -238,29 +241,43 @@ export default function PatientHubPage() {
 
   const openPreview = (row: PatientLookupRow) => {
     setPreviewPatient(row);
-    applyState({ ...urlState, previewPatientId: row.id });
-  };
-
-  const openPreviewFromRecent = (entry: PatientRecentViewEntry) => {
-    setFilterOpen(false);
-    openPreview({
-      id: entry.patientId,
-      firstName: entry.firstName,
-      lastName: entry.lastName,
-      mrn: entry.mrn,
-      photoThumbnailUrl: entry.photoThumbnailUrl,
-      dateOfBirth: "",
-      gender: "",
-      isFavorite: false,
-      careProgramCodes: [],
-      clinicalAcuity: "low",
-      activeEngagements: [],
-    });
+    applyState({ ...urlStateRef.current, previewPatientId: row.id });
   };
 
   const closePreview = () => {
     setPreviewPatient(null);
-    applyState({ ...urlState, previewPatientId: null });
+    applyState({ ...urlStateRef.current, previewPatientId: null });
+  };
+
+  /**
+   * Post-registration handoff: open existing Preview for created patient.id.
+   * Preserves current search/filter URL state. Uses existing summary when the
+   * patient is outside the current filtered lookup page.
+   */
+  const openCreatedPatientPreview = async (patientId: string) => {
+    const id = patientId.trim();
+    if (!id || !branchId) return;
+
+    const currentRows = rowsRef.current;
+    const fromList = currentRows.find((row) => row.id === id);
+    if (fromList) {
+      openPreview(fromList);
+      return;
+    }
+
+    try {
+      const summary = await patientLookupApi.getSummary(id, branchId, {
+        skipPhiAudit: true,
+      });
+      const resolved = resolveCreatedPatientPreviewRow({
+        createdPatientId: id,
+        rows: currentRows,
+        summary,
+      });
+      if (resolved) openPreview(resolved);
+    } catch {
+      toast.error("Patient created. Preview could not open — search by MRN if needed.");
+    }
   };
 
   const handleRowClick = (row: PatientLookupRow) => {
@@ -289,9 +306,19 @@ export default function PatientHubPage() {
 
   if (branchLoading) {
     return (
-      <div className="p-6" data-testid={patientLookupTestIds.page}>
-        <div className="h-8 w-48 bg-gray-100 rounded-lg animate-pulse mb-6" />
-        <div className="h-64 bg-gray-50 rounded-xl animate-pulse" />
+      <div
+        className={cn(counsellingSessionTokens.shellPage, "staff-page-fit")}
+        data-testid={patientLookupTestIds.page}
+      >
+        <div
+          className="flex flex-1 flex-col items-center justify-center gap-1 px-4 py-12 text-center"
+          role="status"
+        >
+          <p className="inline-flex items-center gap-2 text-sm font-medium text-counselling-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            Loading patients…
+          </p>
+        </div>
       </div>
     );
   }
@@ -307,213 +334,173 @@ export default function PatientHubPage() {
     );
   }
 
+  /** Match Search / Gender / DOB control height; counselling outline avoids grey Button clash. */
+  const toolbarOutlineButton = cn(
+    "h-9 min-h-9 px-2.5 text-xs font-medium shadow-none",
+    "border-counselling-border bg-counselling-card text-counselling-foreground",
+    "hover:bg-counselling-muted/50 active:bg-counselling-muted/70",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-counselling-primary/30",
+  );
+
   return (
     <div
-      className="flex flex-col h-full min-h-0"
+      className={cn(
+        counsellingSessionTokens.shellPage,
+        "staff-page-fit h-full gap-2 px-2.5 pb-1 pt-0",
+        "min-[1600px]:gap-2.5 min-[1600px]:px-4 min-[1600px]:pb-4",
+      )}
       data-testid={patientLookupTestIds.page}
     >
-      <div className="sticky top-0 z-20 shrink-0 border-b border-gray-100 bg-white px-6 pt-6 pb-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-              <Users className="w-5 h-5 text-emerald-600" />
-              Patients
-            </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {lookupQuery.isFetching
-                ? "Updating…"
-                : `${totalCount.toLocaleString()} patients`}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
+      <div
+        className="flex flex-wrap items-center gap-2 px-0.5 py-0.5"
+        data-testid={patientLookupTestIds.toolbar}
+      >
+        <PatientDirectorySearch
+          value={search}
+          onChange={setSearch}
+          onFocusChange={(focused) => {
+            searchFocusedRef.current = focused;
+          }}
+        />
+        <PatientDirectoryToolbarFilters state={urlState} onApply={applyState} />
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              applyState({
+                branchId: urlState.branchId,
+                tab: urlState.tab,
+                q: urlState.q,
+                previewPatientId: urlState.previewPatientId,
+                page: 1,
+              })
+            }
+            className={toolbarOutlineButton}
+            data-testid={patientLookupTestIds.filterClear}
+            aria-label="Clear filters"
+          >
+            Clear
+          </Button>
+          {canExport && (
+            <Button
               type="button"
-              onClick={() => setAddPatientOpen(true)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-colors"
-              data-testid={patientLookupTestIds.addPatient}
-            >
-              <Plus className="w-4 h-4" />
-              Add Patient
-            </button>
-            {canExport && (
-            <button
-              type="button"
+              variant="outline"
+              size="sm"
               onClick={handleExport}
               disabled={exporting}
-              className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-emerald-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-emerald-200 transition-colors disabled:opacity-50"
+              className={toolbarOutlineButton}
               data-testid={patientLookupTestIds.exportCsv}
             >
-              <Download className="w-4 h-4" />
-              Export CSV
-            </button>
-            )}
-            <Link
-              href="/dashboard/patients/merge"
-              className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-emerald-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-emerald-200 transition-colors"
-              data-testid={patientLookupTestIds.mergeLink}
-            >
-              Merge
-            </Link>
-            <button
-              type="button"
-              onClick={() => {
-                lookupQuery.refetch();
-                statsQuery.refetch();
-              }}
-              className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-emerald-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-emerald-200 transition-colors"
-            >
-              <RefreshCw
-                className={cn(
-                  "w-4 h-4",
-                  lookupQuery.isFetching && "animate-spin",
-                )}
-              />
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <PatientSearchAutosuggest
-            branchId={branchId}
-            value={search}
-            onChange={setSearch}
-            onSelectPatient={(patient) => {
-              rememberNavForPatient(patient.id);
-              router.push(patientProfileUrl(patient.id));
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              lookupQuery.refetch();
+              statsQuery.refetch();
             }}
-          />
-
-          <button
-            type="button"
-            onClick={() => setFilterOpen(true)}
-            className={cn(
-              "inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border transition-colors",
-              activeFilterCount > 0
-                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                : "border-gray-200 text-gray-600 hover:border-gray-300",
-            )}
+            className={toolbarOutlineButton}
           >
-            <SlidersHorizontal className="w-4 h-4" />
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="bg-emerald-600 text-white text-xs rounded-full px-1.5 min-w-[1.25rem]">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              applyState({
-                ...urlState,
-                favoritesOnly: !urlState.favoritesOnly,
-                page: 1,
-              })
-            }
-            className={cn(
-              "inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border transition-colors",
-              urlState.favoritesOnly
-                ? "bg-amber-50 border-amber-200 text-amber-800"
-                : "border-gray-200 text-gray-600 hover:border-gray-300",
-            )}
-            data-testid={patientLookupTestIds.favoritesToggle}
-          >
-            <Star
-              className={cn(
-                "w-4 h-4",
-                urlState.favoritesOnly && "fill-amber-500 text-amber-500",
-              )}
+            <RefreshCw
+              className={cn("h-3.5 w-3.5", lookupQuery.isFetching && "animate-spin")}
             />
-            Favorites
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              applyState({
-                ...urlState,
-                assignedToMe: !urlState.assignedToMe,
-                page: 1,
-              })
-            }
-            className={cn(
-              "inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border transition-colors",
-              urlState.assignedToMe
-                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                : "border-gray-200 text-gray-600 hover:border-gray-300",
-            )}
-            data-testid={patientLookupTestIds.assignedToMeToggle}
-          >
-            <UserCheck className="w-4 h-4" />
-            Assigned to me
-          </button>
+            Refresh
+          </Button>
+          {lookupQuery.isFetching && (
+            <span className="text-xs text-counselling-muted-foreground" role="status">
+              Updating…
+            </span>
+          )}
         </div>
-
-        <PatientFilterChips state={urlState} onChange={applyState} />
-
-        <PatientHubClassificationTabs
-          activeTab={urlState.tab ?? "all"}
-          tabCounts={tabCounts}
-          onTabChange={(tab) => applyState({ ...urlState, tab, page: 1 })}
-        />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col xl:flex-row overflow-hidden">
-        <div
+      <div className="flex min-h-0 min-w-0 flex-1 gap-2.5 overflow-hidden">
+        <section
           className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-6 py-4",
-            showDockedPreview && "xl:overflow-hidden",
+            counsellingSessionTokens.sessionWidget,
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
           )}
+          aria-label="Patient directory worklist"
         >
-        <div className={cn("min-h-0 flex-1", showDockedPreview && "xl:overflow-auto")}>
-        <PatientHubSelectionBar
-          count={selectedIds.size}
-          onClear={() => setSelectedIds(new Set())}
-        />
-
-        {!lookupQuery.isLoading && !lookupQuery.isError && rows.length > 0 && (
-          <PatientHubMobileCards
-            rows={rows}
-            previewId={previewId}
-            onRowClick={handleRowClick}
-            onFavorite={(id) => favoriteMutation.mutate(id)}
-            onOpenProfile={rememberNavForPatient}
-            onPreview={openPreview}
-          />
-        )}
-
-        <PatientHubTable
-          rows={rows}
-          previewId={previewId}
-          isLoading={lookupQuery.isLoading}
-          isError={lookupQuery.isError}
-          isReady={isReady}
-          compact={showDockedPreview}
-          currentSort={currentSort}
-          currentSortDir={currentSortDir}
-          selectedIds={selectedIds}
-          allPageSelected={allPageSelected}
-          somePageSelected={somePageSelected}
-          onSort={handleSort}
-          onToggleRow={handleToggleRow}
-          onToggleAllPage={handleToggleAllPage}
-          onRowClick={handleRowClick}
-          onFavorite={(id) => favoriteMutation.mutate(id)}
-          onOpenProfile={rememberNavForPatient}
-          onPreview={openPreview}
-        />
-
-        <PatientHubPagination
-          currentPage={urlState.page ?? 1}
-          pageSize={PAGE_SIZE}
-          totalCount={totalCount}
-          totalPages={totalPages}
-          onPageChange={(page) => applyState({ ...urlState, page })}
-        />
-        </div>
-        </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-counselling-border/50 px-2.5 py-1.5 sm:px-3">
+            <PatientHubClassificationTabs
+              activeTab={urlState.tab ?? "all"}
+              tabCounts={tabCounts}
+              onTabChange={(tab) => applyState({ ...urlState, tab, page: 1 })}
+            />
+            {canCreate && (
+              <button
+                type="button"
+                onClick={() => {
+                  regLife("HUB_SET_ADD_PATIENT_OPEN", {
+                    next: true,
+                    source: "census-bar",
+                  });
+                  setAddPatientOpen(true);
+                }}
+                className={cn(
+                  counsellingSessionTokens.pillTab,
+                  counsellingSessionTokens.pillTabCurrent,
+                  "shrink-0 gap-1",
+                )}
+                data-testid={patientLookupTestIds.addPatient}
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden />
+                Add Patient
+              </button>
+            )}
+          </div>
+          <div
+            className="min-h-0 flex-1 overflow-auto overscroll-contain"
+            data-testid={patientLookupTestIds.worklistScroll}
+          >
+            <PatientHubMobileCards
+              rows={rows}
+              previewId={previewId}
+              isLoading={lookupQuery.isLoading}
+              isError={lookupQuery.isError}
+              isReady={isReady}
+              onRowClick={handleRowClick}
+              onOpenProfile={rememberNavForPatient}
+              emptyTitle={emptyTitle}
+              emptyHint={emptyHint}
+            />
+            <PatientHubTable
+              rows={rows}
+              previewId={previewId}
+              isLoading={lookupQuery.isLoading}
+              isError={lookupQuery.isError}
+              isReady={isReady}
+              currentSort={currentSort}
+              currentSortDir={currentSortDir}
+              onSort={handleSort}
+              compactColumns={showDockedPreview || !canDock}
+              onRowClick={handleRowClick}
+              onOpenProfile={rememberNavForPatient}
+              emptyTitle={emptyTitle}
+              emptyHint={emptyHint}
+            />
+          </div>
+          <div
+            className="shrink-0 border-t border-counselling-border/50 bg-counselling-card px-2.5 py-1.5 sm:px-3"
+            data-testid={patientLookupTestIds.worklistFooter}
+          >
+            <PatientHubPagination
+              currentPage={urlState.page ?? 1}
+              pageSize={PAGE_SIZE}
+              totalCount={totalCount}
+              totalPages={totalPages}
+              onPageChange={(page) => applyState({ ...urlState, page })}
+              className="mt-0"
+            />
+          </div>
+        </section>
 
         {showDockedPreview && (
           <PatientPreviewSplitPane
@@ -541,24 +528,75 @@ export default function PatientHubPage() {
         />
       )}
 
-      <PatientAdvancedFilterSheet
-        open={filterOpen}
-        onOpenChange={setFilterOpen}
-        state={urlState}
-        onApply={applyState}
-        onRecentPatientSelect={openPreviewFromRecent}
-      />
-
-      <PatientFormModal
-        isOpen={addPatientOpen}
-        onClose={() => setAddPatientOpen(false)}
-        onSave={() => {
-          setAddPatientOpen(false);
-          lookupQuery.refetch();
-          statsQuery.refetch();
-          toast.success("Patient registered");
+      <AddPatientDialog
+        open={addPatientOpen}
+        onOpenChange={(next) => {
+          regLife("HUB_SET_ADD_PATIENT_OPEN", {
+            next,
+            source: "dialog-onOpenChange",
+            prev: addPatientOpen,
+          });
+          setAddPatientOpen(next);
+          // Preview is owned by Success Close — do not open Preview merely because
+          // the registration dialog closed after a successful create.
+        }}
+        onCreated={() => {
+          void queryClient.invalidateQueries({ queryKey: patientLookupKeys.all });
+        }}
+        onRegistrationComplete={(patient) => {
+          createdHandoffPatientId.current = patient.id;
+          setRegistrationCardOpen(false);
+          setRegistrationSuccessPatient({
+            id: patient.id,
+            firstName: patient.firstName,
+            lastName: patient.lastName,
+            dateOfBirth: patient.dateOfBirth,
+            gender: patient.gender,
+            contactNumber: patient.contactNumber,
+            bloodGroup: patient.bloodGroup,
+            emergencyContactName: patient.emergencyContactName,
+            emergencyContactPhone: patient.emergencyContactPhone,
+            medicalRecordNumber: patient.medicalRecordNumber,
+            photoUrl: patient.photoUrl,
+            address: patient.address,
+          });
+          void queryClient.invalidateQueries({ queryKey: patientLookupKeys.all });
         }}
       />
+
+      <PatientRegistrationSuccessDialog
+        open={Boolean(registrationSuccessPatient) && !registrationCardOpen}
+        patient={registrationSuccessPatient}
+        onOpenChange={(next) => {
+          if (!next) {
+            const handoffId =
+              createdHandoffPatientId.current ?? registrationSuccessPatient?.id ?? null;
+            createdHandoffPatientId.current = null;
+            setRegistrationSuccessPatient(null);
+            setRegistrationCardOpen(false);
+            if (handoffId) void openCreatedPatientPreview(handoffId);
+          }
+        }}
+        onPrintRegistrationCard={() => setRegistrationCardOpen(true)}
+        onClose={() => {
+          const handoffId =
+            createdHandoffPatientId.current ?? registrationSuccessPatient?.id ?? null;
+          createdHandoffPatientId.current = null;
+          setRegistrationSuccessPatient(null);
+          setRegistrationCardOpen(false);
+          if (handoffId) void openCreatedPatientPreview(handoffId);
+        }}
+      />
+
+      <PatientRegistrationCardSurfaceDialog
+        open={Boolean(registrationSuccessPatient) && registrationCardOpen}
+        patient={registrationSuccessPatient}
+        onOpenChange={(next) => {
+          if (!next) setRegistrationCardOpen(false);
+        }}
+        onClose={() => setRegistrationCardOpen(false)}
+      />
+
     </div>
   );
 }

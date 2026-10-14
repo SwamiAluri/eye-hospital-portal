@@ -25,6 +25,19 @@ public static class CounsellorLeastPrivilegeCatalog
         "package_templates.read",
     };
 
+    /// <summary>
+    /// Counselling session documents workflow. Linked by seeder + migration 202.
+    /// Required for Session Documents UI, Patient 360 Counselling discovery/content,
+    /// upload, verify, and creator-owned soft-delete. Does not include session_notes.*.
+    /// </summary>
+    public static readonly string[] WorkflowSessionDocumentPermissionCodes =
+    {
+        "session_documents.read",
+        "session_documents.create",
+        "session_documents.verify",
+        "session_documents.delete",
+    };
+
     /// <summary>Permissions Counsellor must retain after least-privilege trim.</summary>
     public static readonly string[] RetainedPermissionCodes =
     {
@@ -44,6 +57,10 @@ public static class CounsellorLeastPrivilegeCatalog
         "patient.view",
         "patient.create",
         "package_templates.read",
+        "session_documents.read",
+        "session_documents.create",
+        "session_documents.verify",
+        "session_documents.delete",
     };
 
     /// <summary>

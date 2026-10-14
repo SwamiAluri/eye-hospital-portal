@@ -392,6 +392,35 @@ public class CoverageCaseService
             items.Select(ToSummaryDto).ToList(), total, page, pageSize);
     }
 
+    /// <summary>
+    /// Patient-id collection for one tenant. Same tenant and soft-delete scope as <see cref="ListAsync"/>.
+    /// Coverage-case queries do not filter <c>branch_id</c>.
+    /// </summary>
+    public async Task<PagedResult<CoverageCaseSummaryDto>> ListByPatientIdAsync(
+        Guid tenantId,
+        Guid patientId,
+        int page = 1,
+        int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var (pageNumber, size) = CcmsPatientListPaging.Normalize(page, pageSize);
+        var q = _db.CoverageCases.AsNoTracking()
+            .Where(c => c.TenantId == tenantId && c.PatientId == patientId && c.DeletedAt == null);
+
+        var total = await q.CountAsync(ct);
+        var items = await q
+            .OrderByDescending(c => c.CreatedAt)
+            .ThenByDescending(c => c.Id)
+            .Skip((pageNumber - 1) * size)
+            .Take(size)
+            .ToListAsync(ct);
+        page = pageNumber;
+        pageSize = size;
+
+        return new PagedResult<CoverageCaseSummaryDto>(
+            items.Select(ToSummaryDto).ToList(), total, page, pageSize);
+    }
+
     // ── Update state ─────────────────────────────────────────────────────────
 
     public async Task SyncStateFromWorkflowAsync(

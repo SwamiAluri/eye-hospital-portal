@@ -55,6 +55,8 @@ export default function DashboardLayout({
     pathname.startsWith('/dashboard/counselor/analytics/');
   const isNoPad =
     noPadRoutes.some((r) => pathname.startsWith(r)) || isCounsellingSessionPage;
+  /** Directory list only. Patient 360, the wizard, and merge stay on the normal page scroll. */
+  const isPatientDirectory = pathname === '/dashboard/patients';
 
   useEffect(() => {
     setIsClient(true);
@@ -134,7 +136,7 @@ export default function DashboardLayout({
             id="main-content"
             tabIndex={-1}
             className={`min-h-0 flex-1 rounded-2xl shadow-sm outline-none ${
-              isCounsellingSessionPage || isCounsellingOpsCanvas
+              isCounsellingSessionPage || isCounsellingOpsCanvas || isPatientDirectory
                 ? 'flex flex-col overflow-hidden bg-gray-100'
                 : isNoPad
                   ? 'flex flex-col overflow-hidden bg-white'
@@ -145,7 +147,13 @@ export default function DashboardLayout({
           >
             {isNoPad
               ? children
-              : (
+              : isPatientDirectory
+                ? (
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-100">
+                      {children}
+                    </div>
+                  )
+                : (
                   <div
                     className={isImmersive ? '' : 'p-[var(--page-content-pad)]'}
                   >

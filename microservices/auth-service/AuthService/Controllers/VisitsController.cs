@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using AuthService.Authorization;
 using AuthService.DTOs.Visit;
 using AuthService.Services.Interfaces;
 
@@ -29,6 +30,13 @@ public class VisitsController : ControllerBase
             ?? User.FindFirst("sub")?.Value
             ?? User.FindFirst("id")?.Value;
         return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
+    }
+
+    private bool TryGetAuthenticatedTenantId(out Guid tenantId)
+    {
+        tenantId = Guid.Empty;
+        var raw = User?.FindFirst("tenant_id")?.Value ?? User?.FindFirst("TenantId")?.Value;
+        return Guid.TryParse(raw, out tenantId) && tenantId != Guid.Empty;
     }
 
     /// <summary>
@@ -60,12 +68,17 @@ public class VisitsController : ControllerBase
     }
 
     /// <summary>
-    /// Get visits by patient ID
+    /// Get visits by patient ID. Tenant comes from the authenticated caller.
+    /// Branch is not a filter on this read.
     /// </summary>
     [HttpGet("by-patient/{patientId:guid}")]
+    [RequirePermission("patient.view")]
     public async Task<IActionResult> GetByPatientId(Guid patientId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var visits = await _visitService.GetByPatientIdAsync(patientId, page, pageSize);
+        if (!TryGetAuthenticatedTenantId(out var tenantId))
+            return Unauthorized(new { message = "Authentication required." });
+
+        var visits = await _visitService.GetByPatientIdAsync(tenantId, patientId, page, pageSize);
         return Ok(visits);
     }
 

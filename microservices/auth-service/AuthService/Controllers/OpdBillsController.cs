@@ -34,6 +34,13 @@ public class OpdBillsController : ControllerBase
         return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
     }
 
+    private bool TryGetAuthenticatedTenantId(out Guid tenantId)
+    {
+        tenantId = Guid.Empty;
+        var raw = User?.FindFirst("tenant_id")?.Value ?? User?.FindFirst("TenantId")?.Value;
+        return Guid.TryParse(raw, out tenantId) && tenantId != Guid.Empty;
+    }
+
     /// <summary>
     /// Get all OPD bills with filters
     /// </summary>
@@ -59,7 +66,10 @@ public class OpdBillsController : ControllerBase
             }
             else if (patientId.HasValue)
             {
-                var bills = await _opdBillService.GetByPatientIdAsync(patientId.Value, page, pageSize);
+                await _opdBillService.AuthorizePatientBillReadAsync();
+                if (!TryGetAuthenticatedTenantId(out var tenantId))
+                    return Unauthorized(new { message = "Authentication required." });
+                var bills = await _opdBillService.GetByPatientIdAsync(tenantId, patientId.Value, page, pageSize);
                 return Ok(new { bills = bills, total = bills.Count });
             }
             else
@@ -67,6 +77,10 @@ public class OpdBillsController : ControllerBase
                 // Return empty list if no filter provided (for security)
                 return Ok(new { bills = new List<object>(), total = 0 });
             }
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
         }
         catch (Exception ex)
         {
@@ -109,8 +123,18 @@ public class OpdBillsController : ControllerBase
     [HttpGet("by-patient/{patientId:guid}")]
     public async Task<IActionResult> GetByPatientId(Guid patientId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var bills = await _opdBillService.GetByPatientIdAsync(patientId, page, pageSize);
-        return Ok(bills);
+        try
+        {
+            await _opdBillService.AuthorizePatientBillReadAsync();
+            if (!TryGetAuthenticatedTenantId(out var tenantId))
+                return Unauthorized(new { message = "Authentication required." });
+            var bills = await _opdBillService.GetByPatientIdAsync(tenantId, patientId, page, pageSize);
+            return Ok(bills);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
     }
 
     /// <summary>
@@ -212,7 +236,10 @@ public class OpdBillsController : ControllerBase
     {
         try
         {
-            var bills = await _opdBillService.GetByPatientIdAsync(patientId, page: 1, pageSize: 1000);
+            if (!TryGetAuthenticatedTenantId(out var tenantId))
+                return Unauthorized(new { message = "Authentication required." });
+
+            var bills = await _opdBillService.GetByPatientIdAsync(tenantId, patientId, page: 1, pageSize: 1000);
             
             // Filter to unpaid/partially paid bills
             var outstandingBills = bills

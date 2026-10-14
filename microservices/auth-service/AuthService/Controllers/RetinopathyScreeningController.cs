@@ -1,3 +1,4 @@
+using AuthService.Authorization;
 using AuthService.DTOs;
 using AuthService.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -63,6 +64,28 @@ namespace AuthService.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Error retrieving retinopathy screening", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Patient 360 retinopathy screening context. Distinct from the operational patient list.
+        /// </summary>
+        [HttpGet("patients/{patientId:guid}/patient-360")]
+        [RequirePermission("CLINICAL:SCREENING:VIEW")]
+        public async Task<IActionResult> GetPatient360(Guid patientId, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
+        {
+            try
+            {
+                var tenantIdClaim = User.FindFirst("TenantId")?.Value;
+                if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out var tenantId) || tenantId == Guid.Empty)
+                    throw new UnauthorizedAccessException("Tenant ID not found in token");
+
+                var page = await _screeningService.ListPatient360Async(tenantId, patientId, pageNumber, pageSize);
+                return Ok(page);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
             }
         }
 

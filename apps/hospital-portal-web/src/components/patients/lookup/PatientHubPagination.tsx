@@ -36,36 +36,35 @@ export function PatientHubPagination({
   return (
     <div
       className={cn(
-        'mt-4 flex flex-col gap-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between',
+        'flex flex-col gap-1 text-xs text-counselling-muted-foreground sm:flex-row sm:items-center sm:justify-between',
         className,
       )}
       data-testid={patientLookupTestIds.pagination}
     >
       <p data-testid={patientLookupTestIds.paginationSummary}>
         Showing{' '}
-        <span className="font-medium text-gray-800">{start.toLocaleString()}</span>
+        <span className="font-medium tabular-nums text-counselling-foreground">{start.toLocaleString()}</span>
         {' – '}
-        <span className="font-medium text-gray-800">{end.toLocaleString()}</span>
+        <span className="font-medium tabular-nums text-counselling-foreground">{end.toLocaleString()}</span>
         {' of '}
-        <span className="font-medium text-gray-800">{totalCount.toLocaleString()}</span>
+        <span className="font-medium tabular-nums text-counselling-foreground">{totalCount.toLocaleString()}</span>
         {' patients'}
       </p>
 
       {showPageControls && (
         <nav
-          className="flex flex-wrap items-center gap-1"
+          className="flex items-center gap-0.5"
           aria-label="Patient list pagination"
         >
           <button
             type="button"
             disabled={currentPage <= 1}
             onClick={() => onPageChange(currentPage - 1)}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-counselling-muted-foreground transition-colors hover:bg-counselling-muted/50 hover:text-counselling-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40 disabled:cursor-not-allowed disabled:opacity-40"
             data-testid={patientLookupTestIds.paginationPrev}
             aria-label="Previous page"
           >
             <ChevronLeft className="h-4 w-4" />
-            Previous
           </button>
 
           <div className="flex items-center gap-1">
@@ -74,7 +73,7 @@ export function PatientHubPagination({
                 return (
                   <span
                     key={`ellipsis-${index}`}
-                    className="px-1.5 text-gray-400"
+                    className="px-1 text-counselling-muted-foreground/70"
                     aria-hidden
                   >
                     …
@@ -89,10 +88,10 @@ export function PatientHubPagination({
                   type="button"
                   onClick={() => onPageChange(page)}
                   className={cn(
-                    'min-w-9 rounded-lg px-2.5 py-1.5 text-sm font-medium tabular-nums transition-colors',
+                    'inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-xs font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40',
                     active
-                      ? 'bg-emerald-600 text-white'
-                      : 'border border-gray-200 text-gray-700 hover:border-emerald-200 hover:text-emerald-800',
+                      ? 'bg-counselling-primary text-white'
+                      : 'text-counselling-muted-foreground hover:bg-counselling-muted/50 hover:text-counselling-foreground',
                   )}
                   data-testid={patientLookupTestIds.paginationPage(page)}
                   aria-label={`Page ${page}`}
@@ -108,11 +107,10 @@ export function PatientHubPagination({
             type="button"
             disabled={currentPage >= totalPages}
             onClick={() => onPageChange(currentPage + 1)}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-counselling-muted-foreground transition-colors hover:bg-counselling-muted/50 hover:text-counselling-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-counselling-primary/40 disabled:cursor-not-allowed disabled:opacity-40"
             data-testid={patientLookupTestIds.paginationNext}
             aria-label="Next page"
           >
-            Next
             <ChevronRight className="h-4 w-4" />
           </button>
         </nav>

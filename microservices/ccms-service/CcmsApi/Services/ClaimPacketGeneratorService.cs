@@ -167,6 +167,37 @@ public class ClaimPacketGeneratorService
             .Select(ToDto)
             .ToList();
 
+    /// <summary>
+    /// Patient-id claim collection. Tenant and soft-delete follow the coverage-case
+    /// patient read: JWT tenant on both the case and the claim packet. No branch predicate.
+    /// Order matches <see cref="GetByCaseIdAsync"/>: <c>CreatedAt</c> descending.
+    /// </summary>
+    public async Task<PagedResult<ClaimPacketDto>> ListByPatientIdAsync(
+        Guid tenantId, Guid patientId, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    {
+        var (pageNumber, size) = CcmsPatientListPaging.Normalize(page, pageSize);
+        var filtered =
+            from packet in _db.ClaimPackets.AsNoTracking()
+            join coverageCase in _db.CoverageCases.AsNoTracking()
+                on packet.CoverageCase_Id equals coverageCase.Id
+            where packet.TenantId == tenantId
+               && coverageCase.TenantId == tenantId
+               && coverageCase.PatientId == patientId
+               && packet.DeletedAt == null
+               && coverageCase.DeletedAt == null
+            select packet;
+
+        var total = await filtered.CountAsync(ct);
+        var rows = await filtered
+            .OrderByDescending(packet => packet.CreatedAt)
+            .ThenByDescending(packet => packet.Id)
+            .Skip((pageNumber - 1) * size)
+            .Take(size)
+            .ToListAsync(ct);
+
+        return new PagedResult<ClaimPacketDto>(rows.Select(ToDto).ToList(), total, pageNumber, size);
+    }
+
     // ── Claims Queue (ready/pending submission) ───────────────────────────────
 
     public async Task<List<ClaimQueueItem>> GetQueueAsync(CancellationToken ct = default)

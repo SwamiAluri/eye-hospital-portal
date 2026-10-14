@@ -12,6 +12,10 @@ namespace AuthService.Services
         // ============================================================================
 
         Task<SessionListResponse> GetAllSessionsAsync(SessionFilters filters);
+        Task<List<Patient360CounsellingSessionMetadataDto>> ListPatient360SessionContextAsync(
+            Guid tenantId,
+            Guid patientId,
+            IReadOnlyList<Guid> accessibleBranchIds);
         Task<CounselingSessionDetailsDto?> GetSessionByIdAsync(Guid tenantId, Guid sessionId);
         Task<CounselingSessionDetailsDto?> GetSessionByNumberAsync(Guid tenantId, string sessionNumber);
         Task<SessionOperationResult> CreateSessionAsync(CreateCounselingSessionRequest request, Guid currentUserId);
@@ -116,6 +120,8 @@ namespace AuthService.Services
         // ============================================================================
 
         Task<List<SessionDocumentDto>> GetSessionDocumentsAsync(Guid tenantId, Guid sessionId);
+        Task<CounselingDocumentPatientMetadataPage> ListMetadataByPatientIdAsync(
+            Guid tenantId, Guid patientId, int page = 1, int pageSize = 20);
         Task<SessionDocumentDto?> GetDocumentByIdAsync(Guid tenantId, Guid documentId);
         Task<SessionDocumentDto> CreateSessionDocumentAsync(CreateSessionDocumentRequest request, Guid currentUserId);
         Task<SessionDocumentDto> UploadSessionAudioAsync(Guid tenantId, Guid sessionId, Microsoft.AspNetCore.Http.IFormFile audioFile, Guid currentUserId);

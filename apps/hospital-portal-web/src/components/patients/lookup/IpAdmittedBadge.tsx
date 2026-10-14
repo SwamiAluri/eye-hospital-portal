@@ -17,7 +17,7 @@ export function IpAdmittedBadge({
     : "IP admitted";
 
   return (
-    <span
+      <span
       className={cn(
         "inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-md",
         "bg-sky-50 text-sky-900 ring-1 ring-sky-200",

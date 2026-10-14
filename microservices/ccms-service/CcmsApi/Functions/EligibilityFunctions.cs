@@ -48,9 +48,38 @@ public class EligibilityFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.eligibility.read") is { } forbidden)
+            return forbidden;
 
         var list = await _eligSvc.GetByCaseAsync(caseId);
         return await req.OkJsonAsync(list);
+    }
+
+    // GET /api/ccms/eligibility-checks/by-patient/{patientId}
+    // Tenant-scoped eligibility checks for the patient's coverage cases. Not policy captures or the workspace.
+    [Function("GetEligibilityChecksByPatient")]
+    public async Task<HttpResponseData> ByPatient(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get",
+            Route = "ccms/eligibility-checks/by-patient/{patientId:guid}")] HttpRequestData req,
+        Guid patientId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.eligibility.read") is { } forbidden)
+            return forbidden;
+
+        int.TryParse(req.Query["pageNumber"], out var page);
+        if (page == 0) int.TryParse(req.Query["page"], out page);
+        int.TryParse(req.Query["pageSize"], out var pageSize);
+
+        var list = await _eligSvc.ListByPatientIdAsync(claims!.TenantId, patientId, page, pageSize);
+        return await req.OkJsonAsync(new
+        {
+            eligibilityChecks = list.Items,
+            totalCount        = list.Total,
+            pageNumber        = list.Page,
+            pageSize          = list.PageSize,
+        });
     }
 
     [Function("CreateEligibilityCheck")]

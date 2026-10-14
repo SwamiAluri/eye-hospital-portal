@@ -123,13 +123,16 @@ namespace AuthService.Controllers
             if (primaryBranchId.HasValue
                 && !userBranches.Any(b => b.BranchId == primaryBranchId.Value))
             {
-                var branch = await _context.Set<Branch>()
+                // Status is stored as "active" / "Active" depending on seed path — match case-insensitively.
+                var branchCandidates = await _context.Set<Branch>()
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(b =>
+                    .Where(b =>
                         b.Id == primaryBranchId.Value
                         && b.TenantId == tenantId
-                        && b.Status == "Active"
-                        && b.DeletedAt == null);
+                        && b.DeletedAt == null)
+                    .ToListAsync();
+                var branch = branchCandidates.FirstOrDefault(b =>
+                    string.Equals(b.Status, "Active", StringComparison.OrdinalIgnoreCase));
                 if (branch != null)
                 {
                     userBranches.Add(new UserBranchListItem

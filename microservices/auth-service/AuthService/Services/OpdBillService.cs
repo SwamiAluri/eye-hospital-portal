@@ -56,6 +56,13 @@ public partial class OpdBillService : IOpdBillService
     private Task RequireBillPermissionAsync(params string[] codes)
         => BillingMutationAuth.RequireAsync(_http, _context, codes);
 
+    public Task AuthorizePatientBillReadAsync()
+        => BillingMutationAuth.RequireAllAsync(
+            _http?.HttpContext?.User,
+            _context,
+            "patient.view",
+            "bill.update");
+
     /// <summary>
     /// Stages the financial audit row on the shared DbContext. Callers must invoke
     /// this <b>before</b> the SaveChangesAsync that commits the money change, so both
@@ -149,11 +156,11 @@ public partial class OpdBillService : IOpdBillService
         return bill == null ? null : MapToDto(bill);
     }
 
-    public async Task<List<OpdBillListDto>> GetByPatientIdAsync(Guid patientId, int page = 1, int pageSize = 20)
+    public async Task<List<OpdBillListDto>> GetByPatientIdAsync(Guid tenantId, Guid patientId, int page = 1, int pageSize = 20)
     {
         var bills = await _context.OpdBills
             .Include(b => b.Patient)
-            .Where(b => b.PatientId == patientId && b.DeletedAt == null)
+            .Where(b => b.PatientId == patientId && b.TenantId == tenantId && b.DeletedAt == null)
             .OrderByDescending(b => b.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)

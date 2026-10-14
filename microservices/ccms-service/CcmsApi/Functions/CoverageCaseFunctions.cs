@@ -69,6 +69,8 @@ public class CoverageCaseFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.coverage_case.read") is { } forbidden)
+            return forbidden;
 
         var item = await _svc.GetByIdAsync(id);
         if (item is null) return req.CreateResponse(HttpStatusCode.NotFound);
@@ -96,6 +98,8 @@ public class CoverageCaseFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.coverage_case.read") is { } forbidden)
+            return forbidden;
 
         var state     = req.Query["state"];
         var payerType = req.Query["payerType"];
@@ -118,6 +122,37 @@ public class CoverageCaseFunctions
         });
     }
 
+    // GET /api/ccms/coverage-cases/by-patient/{patientId}
+    // Tenant-scoped patient collection. Summary DTO only. Not the workspace aggregate.
+    [Function("GetCoverageCasesByPatient")]
+    public async Task<HttpResponseData> ByPatient(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ccms/coverage-cases/by-patient/{patientId:guid}")] HttpRequestData req,
+        Guid patientId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.coverage_case.read") is { } forbidden)
+            return forbidden;
+
+        int.TryParse(req.Query["pageNumber"], out var page);
+        if (page == 0) int.TryParse(req.Query["page"], out page);
+        int.TryParse(req.Query["pageSize"], out var pageSize);
+
+        var result = await _svc.ListByPatientIdAsync(
+            claims!.TenantId,
+            patientId,
+            page > 0 ? page : 1,
+            pageSize > 0 ? pageSize : 20);
+
+        return await req.OkJsonAsync(new
+        {
+            cases      = result.Items,
+            totalCount = result.Total,
+            pageNumber = result.Page,
+            pageSize   = result.PageSize,
+        });
+    }
+
     // GET /api/ccms/coverage-cases/by-session/{sessionId}
     // Returns the full coverage case for a given counselling session, or 204 if none exists yet.
     [Function("GetCoverageCaseBySession")]
@@ -127,6 +162,16 @@ public class CoverageCaseFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        // Counselling Save Draft always loads this case. Counsellor JWTs carry
+        // counseling_sessions.* and not the CCMS desk read code, so a 401 here
+        // aborted the whole session save. Desk list/get-by-id stays on ccms.coverage_case.read.
+        if (await CcmsAuthz.ForbidUnlessAsync(
+                req,
+                claims!,
+                "ccms.coverage_case.read",
+                "counseling_sessions.read",
+                "counseling_sessions.update") is { } forbidden)
+            return forbidden;
 
         var coverageCase = await _svc.GetBySessionIdAsync(sessionId);
         if (coverageCase is null) return req.CreateResponse(HttpStatusCode.NoContent);

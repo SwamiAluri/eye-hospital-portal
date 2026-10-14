@@ -30,6 +30,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useHasPermission } from '@/hooks/use-permissions';
+import {
+  buildCounsellorHandoffHref,
+  buildFrontDeskCheckInHref,
+} from '@/lib/patients/patient-handoff';
 import { patientLookupTestIds } from '@/lib/patients/patient-lookup-test-ids';
 import { patientPrintSummaryUrl } from '@/lib/patients/patient-routes';
 
@@ -90,7 +94,7 @@ export const QuickActionsToolbar: React.FC<QuickActionsToolbarProps> = ({
       label: 'Check-in',
       icon: LogIn,
       onClick: () =>
-        goTo(`/dashboard/frontdesk/check-in?patientId=${patientId}`, 'check-in'),
+        goTo(buildFrontDeskCheckInHref(patientId), 'check-in'),
     },
     {
       id: 'emergency-check-in',
@@ -98,7 +102,7 @@ export const QuickActionsToolbar: React.FC<QuickActionsToolbarProps> = ({
       icon: AlertTriangle,
       onClick: () =>
         goTo(
-          `/dashboard/frontdesk/check-in?patientId=${patientId}&emergency=1`,
+          `${buildFrontDeskCheckInHref(patientId)}&emergency=1`,
           'emergency-check-in',
         ),
     },
@@ -123,7 +127,7 @@ export const QuickActionsToolbar: React.FC<QuickActionsToolbarProps> = ({
         if (onOpenCounseling) {
           runAction('send-to-counselor', onOpenCounseling);
         } else {
-          goTo(`/dashboard/counsellors-desk?patientId=${patientId}`, 'send-to-counselor');
+          goTo(buildCounsellorHandoffHref(patientId), 'send-to-counselor');
         }
       },
     },

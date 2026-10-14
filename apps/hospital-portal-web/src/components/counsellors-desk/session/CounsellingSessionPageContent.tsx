@@ -29,6 +29,7 @@ import { CounsellingSessionChrome } from '@/components/counsellors-desk/session/
 import { CounsellingActionBar } from '@/components/counsellors-desk/session/CounsellingActionBar';
 import { CounsellingConversationRecorder } from '@/components/counsellors-desk/session/CounsellingConversationRecorder';
 import { CounsellingConversationsPanel } from '@/components/counsellors-desk/session/CounsellingConversationsPanel';
+import { CounsellingSessionDocumentsPanel } from '@/components/counsellors-desk/session/CounsellingSessionDocumentsPanel';
 import {
   clarifyPhaseAdvanceHint,
   clarifySaveDraftHint,
@@ -69,7 +70,7 @@ export function CounsellingSessionPageContent() {
   const { canEditCounsellorOutpatient } = useIpChecklistPermissions();
   const { sessionTypeOptions } = useCounsellorMasterOptions();
   const [contextualDestination, setContextualDestination] = useState<
-    'none' | 'patient-context' | 'history' | 'conversations'
+    'none' | 'patient-context' | 'history' | 'conversations' | 'documents'
   >(() =>
     ctx.sessionFrom === 'waiting-list' && ctx.activeMainTab === 'counselling'
       ? 'patient-context'
@@ -312,6 +313,10 @@ export function CounsellingSessionPageContent() {
                   if (recordingLocked) return;
                   setContextualDestination('conversations');
                 }}
+                onSelectDocuments={() => {
+                  if (recordingLocked) return;
+                  setContextualDestination('documents');
+                }}
                 recordingAction={canRecordConversation ? (
                   recordingVersion !== null ? (
                     <CounsellingConversationRecorder
@@ -497,6 +502,11 @@ export function CounsellingSessionPageContent() {
                   sex: ctx.session.gender,
                   eye: operativeEye,
                 }}
+              />
+            ) : contextualDestination === 'documents' ? (
+              <CounsellingSessionDocumentsPanel
+                sessionId={ctx.sessionId}
+                patientId={ctx.session.patientId}
               />
             ) : (
               <SessionHistoryBody

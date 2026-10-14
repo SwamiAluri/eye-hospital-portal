@@ -2,9 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import type { ReactElement } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, UserCheck, AlertCircle, CheckCircle2, XCircle, Shield } from 'lucide-react';
 import { getApi } from '@/lib/api';
 import { useBranchContext } from '@/hooks/use-branch-context';
+import {
+  readCheckInPatientId,
+  shouldClearCheckInSelection,
+} from '@/lib/patients/patient-handoff';
+import type { Patient as PatientRecord } from '@/lib/api/patients.api';
 import {
   searchPatientsUnified,
   unifiedHitToPatient,
@@ -39,6 +45,8 @@ interface EmergencyOverride {
 
 export default function CheckInComponent() {
   const { branchId } = useBranchContext();
+  const searchParams = useSearchParams();
+  const linkedPatientId = readCheckInPatientId(searchParams);
   const [searchTerm, setSearchTerm] = useState('');
   const [patient, setPatient] = useState<Patient | null>(null);
   const [validation, setValidation] = useState<CheckInValidation | null>(null);
@@ -59,15 +67,66 @@ export default function CheckInComponent() {
     const debounceTimer = setTimeout(() => {
       if (searchTerm.trim().length >= 2) {
         handleSearch();
-      } else if (searchTerm.trim().length === 0) {
-        // Clear results when search is cleared
+      } else if (shouldClearCheckInSelection(searchTerm, linkedPatientId)) {
+        // Clear results when search is cleared and no directory patient was handed off
         setPatient(null);
         setValidation(null);
       }
     }, 500); // 500ms debounce
 
     return () => clearTimeout(debounceTimer);
-  }, [searchTerm]);
+  }, [searchTerm, linkedPatientId]);
+
+  // Directory / billing deep link: load the patient, then run the existing eligibility check.
+  // Does not submit check-in or create a visit.
+  useEffect(() => {
+    if (!linkedPatientId) return;
+    let cancelled = false;
+
+    const loadLinkedPatient = async () => {
+      setLoading(true);
+      setPatient(null);
+      setValidation(null);
+      try {
+        const api = getApi();
+        const response = await api.get<PatientRecord>(`/patients/${linkedPatientId}`);
+        const found = response.data;
+        if (cancelled) return;
+        if (!found?.id) {
+          setPatient(null);
+          setValidation(null);
+          return;
+        }
+        setPatient({
+          id: found.id,
+          firstName: found.firstName,
+          lastName: found.lastName,
+          medicalRecordNumber: found.medicalRecordNumber,
+          contactNumber: found.contactNumber || found.phone || '',
+          dateOfBirth: found.dateOfBirth,
+          photoUrl: found.photoUrl,
+          bloodGroup: found.bloodGroup,
+        });
+        await validateCheckIn(found.id);
+      } catch (error: unknown) {
+        if (cancelled) return;
+        console.error('Failed to load check-in patient:', error);
+        const err = error as { response?: { data?: { message?: string } }; message?: string };
+        alert('Failed to load patient: ' + (err.response?.data?.message || err.message));
+        setPatient(null);
+        setValidation(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void loadLinkedPatient();
+    return () => {
+      cancelled = true;
+    };
+    // validateCheckIn is the existing eligibility path; the link identity is the only trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedPatientId]);
 
   // Search patient via unified suggest (branch-scoped)
   const handleSearch = async () => {

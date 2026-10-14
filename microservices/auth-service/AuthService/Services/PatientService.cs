@@ -119,8 +119,15 @@ public class PatientService : IPatientService
             return null;
         }
 
+        // MRN is assigned on create. Ordinary update must not replace it from the caller.
+        var persistedMrn = existingPatient.MedicalRecordNumber;
+        var persistedId = existingPatient.Id;
+        patient.MedicalRecordNumber = persistedMrn;
+        patient.Id = persistedId;
         patient.UpdatedAt = DateTime.UtcNow;
         _context.Entry(existingPatient).CurrentValues.SetValues(patient);
+        existingPatient.MedicalRecordNumber = persistedMrn;
+        existingPatient.Id = persistedId;
         await _context.SaveChangesAsync();
         
         return existingPatient;

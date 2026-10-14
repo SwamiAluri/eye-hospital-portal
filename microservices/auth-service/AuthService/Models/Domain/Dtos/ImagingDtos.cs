@@ -224,3 +224,24 @@ public class ImagingComparisonResponse
     public ImagingImageResponse? BaselineImage { get; set; }
     public ImagingImageResponse? FollowupImage { get; set; }
 }
+
+/// <summary>
+/// Patient 360 imaging file metadata. Storage locations and file bytes are not part of this contract.
+/// </summary>
+public class Patient360ImagingFileDto
+{
+    public Guid Id { get; set; }
+    public string FileName { get; set; } = null!;
+    public string Modality { get; set; } = null!;
+    public long FileSize { get; set; }
+    public string ContentType { get; set; } = null!;
+    public DateTime UploadedAt { get; set; }
+}
+
+public class Patient360ImagingFilePageDto
+{
+    public List<Patient360ImagingFileDto> Items { get; set; } = new();
+    public int TotalCount { get; set; }
+    public int PageNumber { get; set; }
+    public int PageSize { get; set; }
+}

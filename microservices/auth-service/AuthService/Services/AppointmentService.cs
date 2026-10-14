@@ -154,7 +154,7 @@ public class AppointmentService : IAppointmentService
     {
         var query = _context.Appointments
             .Include(a => a.Doctor)
-            .Where(a => a.PatientId == patientId && a.TenantId == tenantId);
+            .Where(a => a.PatientId == patientId && a.TenantId == tenantId && a.DeletedAt == null);
 
         if (fromDate.HasValue)
             query = query.Where(a => a.AppointmentDate >= fromDate.Value);

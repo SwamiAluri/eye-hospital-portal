@@ -24,7 +24,7 @@ export function MedHistoryTab({ patientId, patientData }: MedHistoryTabProps) {
     setError(null);
     try {
       const [examsRes, visitsRes] = await Promise.all([
-        examinationApi.getByPatientId(patientId).catch(() => ({ data: [] })),
+        examinationApi.getByPatient(patientId).catch(() => ({ data: [] })),
         visitsApi.getByPatient(patientId).catch(() => ({ data: [] })),
       ]);
       setExaminations(examsRes.data || []);

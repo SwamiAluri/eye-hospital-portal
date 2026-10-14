@@ -30,6 +30,11 @@ import {
 import { toOtReturnedWaitingListPatient } from '@/lib/counsellors-desk/ot-returned-work-row';
 import { getApi } from '@/lib/api';
 import { counselingSessionsApi } from '@/lib/api/counseling-sessions.api';
+import {
+  loadCounsellorHandoffHref,
+  readCounsellorHandoffPatientId,
+} from '@/lib/patients/patient-handoff';
+import { buildCanonicalAddPatientHref } from '@/lib/patients/canonical-add-patient';
 import { WaitingListPatientDetailSheet } from '@/components/counsellors-desk/waiting-list/WaitingListPatientDetailSheet';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useWaitingListQuery, useInvalidateCounsellorsDesk } from '@/hooks/use-counsellors-desk-queries';
@@ -99,11 +104,6 @@ const AddPatientModal = dynamic(
   { ssr: false },
 );
 
-const PatientFormModal = dynamic(
-  () => import('@/components/patients/PatientFormModal'),
-  { ssr: false },
-);
-
 function ccmsPropsFromBadge(badge: DeferredCcmsBadge | undefined) {
   if (badge?.status === 'ready') return { hasCcmsCase: true, ccmsState: badge.state };
   return { hasCcmsCase: false, ccmsState: undefined };
@@ -150,6 +150,24 @@ function CounsellorWaitingListPageContent() {
   const ownerFilter = urlView.owner;
   const page = urlView.page;
   const pageSize = urlView.pageSize;
+  const handoffPatientId = readCounsellorHandoffPatientId(searchParams);
+
+  useEffect(() => {
+    if (!handoffPatientId) return;
+    let cancelled = false;
+    void loadCounsellorHandoffHref(handoffPatientId, (id) =>
+      counselingSessionsApi.getPatientSessions(id),
+    )
+      .then((href) => {
+        if (!cancelled && href) router.replace(href);
+      })
+      .catch(() => {
+        // Remain on the shared waiting list. Do not create a session or assign CounselorId.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [handoffPatientId, router]);
 
   const [otReturnedRows, setOtReturnedRows] = useState<
     Array<OtReturnedProjectedRow<PatientJourneyRowDto>>
@@ -159,9 +177,7 @@ function CounsellorWaitingListPageContent() {
   const [startCounsellingJourneyId, setStartCounsellingJourneyId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [scheduleSeed, setScheduleSeed] = useState<UnifiedPatientHit | null>(null);
-  const registeredPatientRef = useRef<UnifiedPatientHit | null>(null);
   /** Local draft for typing; URL `q` is SoT after debounce sync. */
   const [quickSearch, setQuickSearch] = useState(urlView.search);
   const debouncedQuickSearch = useDebouncedValue(quickSearch, 300);
@@ -185,6 +201,38 @@ function CounsellorWaitingListPageContent() {
     },
     [pathname, router],
   );
+
+  const createdPatientId = searchParams.get('createdPatientId')?.trim() ?? '';
+  useEffect(() => {
+    if (!createdPatientId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await getApi().get(`/patients/${createdPatientId}`);
+        const row = res.data ?? {};
+        if (cancelled) return;
+        setScheduleSeed({
+          id: String(row.id ?? createdPatientId),
+          firstName: row.firstName ?? '',
+          lastName: row.lastName ?? '',
+          mrn: row.medicalRecordNumber ?? '',
+          healthId: row.healthId ?? null,
+        });
+        setIsAddModalOpen(true);
+      } catch {
+        // Remain on the waiting list. Patient creation does not open or assign a session.
+      } finally {
+        if (!cancelled) {
+          const next = new URLSearchParams(searchParams.toString());
+          next.delete('createdPatientId');
+          replaceSearchParams(next);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [createdPatientId, replaceSearchParams, searchParams]);
 
   const writeUrlView = useCallback(
     (patch: Partial<WaitingListUrlState>) => {
@@ -935,7 +983,7 @@ function CounsellorWaitingListPageContent() {
             onReset={handleReset}
             ownerFilter={ownerFilter}
             onOwnerFilterChange={setOwnerFilter}
-            onNewPatient={() => setIsRegisterOpen(true)}
+            onNewPatient={() => router.push(buildCanonicalAddPatientHref('/dashboard/counsellors-desk/waiting-list'))}
             onScheduleCounselling={() => {
               setScheduleSeed(null);
               setIsAddModalOpen(true);
@@ -1072,30 +1120,6 @@ function CounsellorWaitingListPageContent() {
         />
       )}
 
-      {isRegisterOpen && (
-        <PatientFormModal
-          isOpen
-          branchId={branchId}
-          onClose={() => {
-            setIsRegisterOpen(false);
-            const saved = registeredPatientRef.current;
-            registeredPatientRef.current = null;
-            if (!saved) return;
-            setScheduleSeed(saved);
-            setIsAddModalOpen(true);
-          }}
-          onSave={(patient) => {
-            if (!patient?.id) return;
-            registeredPatientRef.current = {
-              id: patient.id,
-              firstName: patient.firstName,
-              lastName: patient.lastName,
-              mrn: patient.medicalRecordNumber || '',
-              healthId: null,
-            };
-          }}
-        />
-      )}
     </div>
   );
 }

@@ -23,7 +23,7 @@ export function ExaminationsTab({ patientId }: { patientId: string }) {
     (async () => {
       setLoading(true);
       try {
-        const response = await examinationApi.getByPatientId(patientId);
+        const response = await examinationApi.getByPatient(patientId);
         const rows = response.data || [];
         if (!cancelled) setExaminations(rows);
       } catch {

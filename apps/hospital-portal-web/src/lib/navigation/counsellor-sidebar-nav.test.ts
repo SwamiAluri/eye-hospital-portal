@@ -57,12 +57,15 @@ describe('Counsellor sidebar navigation authorization', () => {
     expect(filtered.find(s => s.title === 'Counsellor')).toBeUndefined();
   });
 
-  it('PD-NAV-01: null permission does not expose OPD to counsellor baseline', () => {
+  it('PD-NAV-01: null permission does not expose Front Office; patient.view shows Directory', () => {
     const filtered = filterSidebarSectionsByPermission(
       SIDEBAR_MENU_SECTIONS,
       hasFrom(AMELIA_AUTH.permissionsAfterFix),
     );
-    expect(filtered.find(s => s.title === 'OPD & Registration')).toBeUndefined();
+    const opd = filtered.find(s => s.title === 'OPD & Registration');
+    expect(opd).toBeTruthy();
+    expect(opd!.items.map(i => i.href)).toEqual(['/dashboard/patients']);
+    expect(opd!.items.every(i => i.requiredPermission === 'patient.view')).toBe(true);
     expect(filtered.find(s => s.title === 'Counsellor')).toBeTruthy();
   });
 

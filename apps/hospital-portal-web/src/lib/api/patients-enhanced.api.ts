@@ -807,13 +807,7 @@ export class PatientsEnhancedApi {
     return response.data;
   }
 
-  // Create new patient
-  async createPatient(patient: Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>): Promise<Patient> {
-    const response: AxiosResponse<Patient> = await this.api.post('/patients', patient);
-    return response.data;
-  }
-
-  // Update patient
+  // Create remains on POST /api/patients through the canonical wizard. This client has no create caller.
   async updatePatient(id: string, patient: Partial<Patient>): Promise<Patient> {
     const response: AxiosResponse<Patient> = await this.api.put(`/patients/${id}`, patient);
     return response.data;
@@ -822,14 +816,6 @@ export class PatientsEnhancedApi {
   // Delete patient (soft delete)
   async deletePatient(id: string): Promise<void> {
     await this.api.delete(`/patients/${id}`);
-  }
-
-  // Merge patients
-  async mergePatients(primaryPatientId: string, duplicatePatientId: string): Promise<Patient> {
-    const response: AxiosResponse<Patient> = await this.api.post(`/patients/${primaryPatientId}/merge`, {
-      duplicatePatientId
-    });
-    return response.data;
   }
 
   // ===== MEDICAL RECORDS =====

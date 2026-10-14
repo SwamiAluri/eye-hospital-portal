@@ -45,6 +45,16 @@ describe('DashboardRouter landings (Step 4A P0)', () => {
       expect(statSync(join(srcRoot, rel)).isFile()).toBe(true);
     }
   });
+
+  it('Lab role landing page is L1 workbench (no fabricated operational laboratory data)', () => {
+    const laboratoryPage = read('app/dashboard/laboratory/page.tsx');
+    const workbench = read('components/laboratory/LaboratoryWorkbench.tsx');
+    expect(laboratoryPage).toContain('data-testid="laboratory-l1-workbench-page"');
+    expect(laboratoryPage).toContain('LaboratoryWorkbench');
+    expect(`${laboratoryPage}\n${workbench}`).not.toContain('Simulated data');
+    expect(`${laboratoryPage}\n${workbench}`).not.toContain('Visual Field Test');
+    expect(workbench).toContain('Order New Test');
+  });
 });
 
 describe('canonical notification mechanism (Step 4A P0)', () => {

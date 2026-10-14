@@ -25,10 +25,11 @@ export interface CounsellingSessionChromeProps {
   onNavigatePhase?: (phase: CounsellingPhase) => void;
   onFinishSummaryActive?: (active: boolean) => void;
   navigationBlocked?: boolean;
-  contextualDestination?: 'none' | 'patient-context' | 'history' | 'conversations';
+  contextualDestination?: 'none' | 'patient-context' | 'history' | 'conversations' | 'documents';
   onSelectPatientContext?: () => void;
   onSelectHistory?: () => void;
   onSelectConversations?: () => void;
+  onSelectDocuments?: () => void;
   recordingAction?: ReactNode;
 }
 
@@ -52,6 +53,7 @@ export function CounsellingSessionChrome({
   onSelectPatientContext,
   onSelectHistory,
   onSelectConversations,
+  onSelectDocuments,
   recordingAction,
 }: CounsellingSessionChromeProps) {
   return (
@@ -80,6 +82,7 @@ export function CounsellingSessionChrome({
         onSelectPatientContext={onSelectPatientContext}
         onSelectHistory={onSelectHistory}
         onSelectConversations={onSelectConversations}
+        onSelectDocuments={onSelectDocuments}
         recordingAction={recordingAction}
       />
     </section>

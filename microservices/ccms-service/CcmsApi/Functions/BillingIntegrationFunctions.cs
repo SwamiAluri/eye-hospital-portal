@@ -52,6 +52,8 @@ public class BillingIntegrationFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.billing.read") is { } forbidden)
+            return forbidden;
 
         var result = await _svc.GetByCaseIdAsync(id);
         if (result is null) return req.CreateResponse(HttpStatusCode.NotFound);
@@ -65,6 +67,8 @@ public class BillingIntegrationFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.billing.read") is { } forbidden)
+            return forbidden;
 
         var list = await _svc.GetAllocationsBySummaryAsync(id);
         return await req.OkJsonAsync(list);
@@ -146,6 +150,8 @@ public class BillingIntegrationFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.billing.read") is { } forbidden)
+            return forbidden;
 
         var result = await _svc.GetWithAllocationsAsync(id);
         if (result is null) return req.CreateResponse(HttpStatusCode.NoContent);

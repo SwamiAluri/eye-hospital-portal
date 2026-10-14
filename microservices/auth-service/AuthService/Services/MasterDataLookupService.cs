@@ -214,6 +214,7 @@ namespace AuthService.Services
             { "lab.specimen_type",    "lab_diagnostics" },
             { "lab.imaging_modality", "lab_diagnostics" },
             { "lab.ep_type",          "lab_diagnostics" },
+            { "lms.specimen_rejection_reason", "lab_diagnostics" },
 
             // Ward & IP
             { "ward.ward_type",      "ward_ip" },

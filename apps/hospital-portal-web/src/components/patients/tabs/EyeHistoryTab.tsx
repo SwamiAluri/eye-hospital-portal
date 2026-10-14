@@ -21,7 +21,7 @@ export function EyeHistoryTab({ patientId }: EyeHistoryTabProps) {
     setLoading(true);
     setError(null);
     try {
-      const response = await examinationApi.getByPatientId(patientId);
+      const response = await examinationApi.getByPatient(patientId);
       const exams = response.data || [];
       // Filter eye-related examinations and sort by date
       setExaminations(exams.sort((a: any, b: any) =>

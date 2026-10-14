@@ -69,7 +69,7 @@ test.describe("Patient Hub @patient-hub", () => {
     ).toBeVisible();
   });
 
-  test("autosuggest shows results and navigates to profile", async ({ page }) => {
+  test("search filters the worklist without a suggestion list", async ({ page }) => {
     await page.goto("/dashboard/patients", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId(patientLookupTestIds.page)).toBeVisible({
       timeout: 60_000,
@@ -77,19 +77,9 @@ test.describe("Patient Hub @patient-hub", () => {
 
     const search = page.getByTestId(patientLookupTestIds.searchInput);
     await search.fill("E2E");
-    await expect(
-      page.getByTestId(patientLookupTestIds.autosuggestList),
-    ).toBeVisible({ timeout: 15_000 });
-
-    const firstResult = page
-      .locator('[data-testid^="patient-hub-autosuggest-result-"]')
-      .first();
-    await expect(firstResult).toBeVisible();
-    await firstResult.click();
-
-    await expect(page.getByTestId(patientLookupTestIds.recordShell)).toBeVisible({
-      timeout: 60_000,
-    });
+    await expect(page.getByTestId(patientLookupTestIds.autosuggestList)).toHaveCount(0);
+    await expect(page).toHaveURL(/q=E2E/, { timeout: 15_000 });
+    await expect(search).toBeVisible();
   });
 
   test("filter sheet apply updates URL with gender filter", async ({ page }) => {
@@ -109,21 +99,17 @@ test.describe("Patient Hub @patient-hub", () => {
     await expect(page).toHaveURL(/gender=female/i);
   });
 
-  test("favorites toggle filters list", async ({ page }) => {
+  test("directory hides favorite, assigned, and merge chrome", async ({ page }) => {
     await page.goto("/dashboard/patients", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId(patientLookupTestIds.table)).toBeVisible({
       timeout: 60_000,
     });
-
-    const firstRow = page.locator('[data-testid^="patient-hub-row-"]').first();
-    const rowTestId = await firstRow.getAttribute("data-testid");
-    const patientId = rowTestId?.replace("patient-hub-row-", "") ?? "";
-    expect(patientId).toBeTruthy();
-
-    await page.getByTestId(patientLookupTestIds.favoriteButton(patientId)).click();
-    await page.getByTestId(patientLookupTestIds.favoritesToggle).click();
-    await expect(page).toHaveURL(/favorites=1/);
-    await expect(page.getByTestId(patientLookupTestIds.tableRow(patientId))).toBeVisible();
+    await expect(page.getByTestId(patientLookupTestIds.favoritesToggle)).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.assignedToMeToggle)).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.mergeLink)).toHaveCount(0);
+    await expect(page.locator('[data-testid^="patient-hub-favorite-"]')).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.worklistFooter)).toBeVisible();
+    await expect(page.getByTestId(patientLookupTestIds.worklistScroll)).toBeVisible();
   });
 
   test("export CSV visible for admin with patient.export", async ({ page }) => {
@@ -146,38 +132,36 @@ test.describe("Patient Hub interactions @patient-hub", () => {
     await seedBrowserAuth(page, login);
   });
 
-  test("sort by acuity updates URL", async ({ page }) => {
+  test("sort by name updates URL and acuity is not a worklist column", async ({ page }) => {
     await page.setViewportSize({ width: 1400, height: 900 });
     await gotoPatientHub(page);
     await expectHubTable(page);
 
-    await page.getByTestId(patientLookupTestIds.sortHeader("acuity")).click();
-    await expect(page).toHaveURL(/sortBy=acuity/);
-    await expect(
-      page.locator('[data-testid^="patient-hub-acuity-"]').first(),
-    ).toBeVisible();
+    await expect(page.getByTestId(patientLookupTestIds.sortHeader("acuity"))).toHaveCount(0);
+    await page.getByTestId(patientLookupTestIds.sortHeader("name")).click();
+    await expect(page).toHaveURL(/sortBy=name/);
+    await expect(page.getByRole("columnheader", { name: "Engagement" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Visit" })).toBeVisible();
+    await expect(page.locator('[data-testid^="patient-hub-acuity-"]')).toHaveCount(0);
   });
 
-  test("sort by schedule updates URL with scheduledAt", async ({ page }) => {
+  test("schedule and queue are not separate sort columns", async ({ page }) => {
     await page.setViewportSize({ width: 1400, height: 900 });
     await gotoPatientHub(page);
     await expectHubTable(page);
 
-    await page.getByTestId(patientLookupTestIds.sortHeader("scheduledAt")).click();
-    await expect(page).toHaveURL(/sortBy=scheduledAt/);
+    await expect(page.getByTestId(patientLookupTestIds.sortHeader("scheduledAt"))).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.sortHeader("waitingMinutes"))).toHaveCount(0);
   });
 
-  test("bulk select all shows selection bar", async ({ page }) => {
+  test("selection checkboxes and selection bar are absent", async ({ page }) => {
     await page.setViewportSize({ width: 1400, height: 900 });
     await gotoPatientHub(page);
     await expectHubTable(page);
 
-    await page.getByTestId(patientLookupTestIds.selectAllCheckbox).check();
-    await expect(page.getByTestId(patientLookupTestIds.selectionBar)).toBeVisible();
-    await expect(page.getByTestId(patientLookupTestIds.selectionClear)).toBeVisible();
-
-    await page.getByTestId(patientLookupTestIds.selectionClear).click();
-    await expect(page.getByTestId(patientLookupTestIds.selectionBar)).toBeHidden();
+    await expect(page.getByTestId(patientLookupTestIds.selectAllCheckbox)).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.selectionBar)).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Patients" })).toHaveCount(0);
   });
 
   test("pagination navigates to page 2 when enough patients", async ({
@@ -294,14 +278,18 @@ test.describe("Patient Record @patient-hub @patient-record", () => {
       timeout: 60_000,
     });
     await expect(
-      page.getByTestId(patientLookupTestIds.recordTab("overview")),
+      page.getByTestId(patientLookupTestIds.recordSection("overview")),
     ).toBeVisible();
     await expect(
-      page.getByTestId(patientLookupTestIds.recordTab("vitals")),
+      page.getByTestId(patientLookupTestIds.recordSection("timeline")),
     ).toBeVisible();
     await expect(
-      page.getByTestId(patientLookupTestIds.recordTabGroups),
+      page.getByTestId(patientLookupTestIds.recordSectionNav),
     ).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Clinical" })).toBeVisible();
+    await expect(page.getByText("Coming Soon")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "More" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open Counselling" })).toHaveCount(0);
     await expect(
       page.getByTestId(patientLookupTestIds.recordExportPdf),
     ).toBeVisible();
@@ -310,7 +298,7 @@ test.describe("Patient Record @patient-hub @patient-record", () => {
     ).toBeVisible();
   });
 
-  test("record tab navigation and prev/next nav", async ({ page }) => {
+  test("record section navigation without patient switching chrome", async ({ page }) => {
     await page.goto("/dashboard/patients", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId(patientLookupTestIds.table)).toBeVisible({
       timeout: 60_000,
@@ -323,43 +311,48 @@ test.describe("Patient Record @patient-hub @patient-record", () => {
       timeout: 60_000,
     });
 
-    await page.getByTestId(patientLookupTestIds.recordTab("encounters")).click();
-    await expect(page).toHaveURL(/tab=encounters/);
+    await page.getByTestId(patientLookupTestIds.recordSection("clinical")).click();
+    await expect(page).toHaveURL(/section=clinical/);
+    await expect(page.getByTestId(patientLookupTestIds.recordSectionPanel("clinical"))).toContainText(
+      "not available in Patient 360",
+    );
 
-    const nav = page.getByTestId(patientLookupTestIds.recordNav);
-    if (await nav.isVisible()) {
-      const next = page.getByTestId(patientLookupTestIds.recordNavNext);
-      if (await next.isEnabled()) {
-        await next.click();
-        await expect(page.getByTestId(patientLookupTestIds.recordShell)).toBeVisible();
-      }
-    }
+    await expect(page.getByTestId(patientLookupTestIds.recordNav)).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.switcherRail)).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.workspaceTabs)).toHaveCount(0);
   });
 
   test("record tab groups switch clinical to billing", async ({ page }) => {
     await openFirstPatientRecord(page);
 
-    await page.getByTestId(patientLookupTestIds.recordTabGroup("billing")).click();
+    await page.getByTestId(patientLookupTestIds.recordSection("coverage")).click();
     await expect(
-      page.getByTestId(patientLookupTestIds.recordTab("billing")),
-    ).toBeVisible();
-    await expect(page).toHaveURL(/tab=billing/);
+      page.getByTestId(patientLookupTestIds.recordSectionPanel("coverage")),
+    ).toContainText("not available in Patient 360");
+    await expect(page).toHaveURL(/section=coverage/);
 
-    await page.getByTestId(patientLookupTestIds.recordTabGroup("clinical")).click();
+    await page.getByTestId(patientLookupTestIds.recordSection("overview")).click();
     await expect(
-      page.getByTestId(patientLookupTestIds.recordTab("overview")),
+      page.getByTestId(patientLookupTestIds.recordSectionPanel("overview")),
     ).toBeVisible();
   });
 
-  test("clinical overflow tab opens from More menu", async ({ page }) => {
+  test("legacy insurance tab maps to coverage without record tools", async ({ page }) => {
     await openFirstPatientRecord(page);
-
-    await page.getByTestId(patientLookupTestIds.recordMoreTabs).click();
-    await page.getByTestId(patientLookupTestIds.recordTab("allergies")).click();
-    await expect(page).toHaveURL(/tab=allergies/);
+    const url = page.url();
+    const patientId = url.match(/\/dashboard\/patients\/([^/?#]+)/)?.[1];
+    expect(patientId).toBeTruthy();
+    await page.goto(`/dashboard/patients/${patientId}?tab=insurance`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId(patientLookupTestIds.recordSectionPanel("coverage"))).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page).toHaveURL(/section=coverage/);
+    await expect(page.getByRole("button", { name: "Existing record tools" })).toHaveCount(0);
   });
 
-  test("workspace tabs appear when opening second patient", async ({ page }) => {
+  test("Patient 360 stays a fixed patient without workspace switching tabs", async ({ page }) => {
     await page.goto("/dashboard/patients", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId(patientLookupTestIds.table)).toBeVisible({
       timeout: 60_000,
@@ -378,9 +371,12 @@ test.describe("Patient Record @patient-hub @patient-record", () => {
     await page.goto("/dashboard/patients", { waitUntil: "domcontentloaded" });
     await rows.nth(1).click();
     await page.getByTestId(patientLookupTestIds.previewOpenProfile).click();
-    await expect(page.getByTestId(patientLookupTestIds.workspaceTabs)).toBeVisible({
-      timeout: 30_000,
+    await expect(page.getByTestId(patientLookupTestIds.recordShell)).toBeVisible({
+      timeout: 60_000,
     });
+    await expect(page.getByTestId(patientLookupTestIds.workspaceTabs)).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.switcherRail)).toHaveCount(0);
+    await expect(page.getByTestId(patientLookupTestIds.recordNav)).toHaveCount(0);
   });
 });
 

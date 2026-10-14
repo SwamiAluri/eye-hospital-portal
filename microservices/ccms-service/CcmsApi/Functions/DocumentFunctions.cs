@@ -149,6 +149,8 @@ public class DocumentFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.document.read") is { } forbidden)
+            return forbidden;
 
         var stage = req.Query["stage"];
         var list  = await _svc.GetByCaseAsync(id, stage);
@@ -156,6 +158,35 @@ public class DocumentFunctions
         foreach (var d in list)
             dtos.Add(MapToDto(d, await _svc.TryBuildReadAccessUrlAsync(d)));
         return await req.OkJsonAsync(dtos);
+    }
+
+    // GET /api/ccms/documents/by-patient/{patientId}
+    // Metadata only. Does not build access URLs or open blobs.
+    [Function("GetCcmsDocumentsByPatient")]
+    public async Task<HttpResponseData> ByPatient(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ccms/documents/by-patient/{patientId:guid}")] HttpRequestData req,
+        Guid patientId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.document.read") is { } forbidden)
+            return forbidden;
+
+        int.TryParse(req.Query["pageNumber"], out var page);
+        if (page == 0) int.TryParse(req.Query["page"], out page);
+        int.TryParse(req.Query["pageSize"], out var pageSize);
+        var insuranceOnly = string.Equals(req.Query["insuranceOnly"], "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(req.Query["insuranceOnly"], "1", StringComparison.OrdinalIgnoreCase);
+
+        var list = await _svc.ListMetadataByPatientIdAsync(
+            claims!.TenantId, patientId, page, pageSize, insuranceOnly);
+        return await req.OkJsonAsync(new
+        {
+            documents  = list.Items,
+            totalCount = list.Total,
+            pageNumber = list.Page,
+            pageSize   = list.PageSize,
+        });
     }
 
     // GET /api/ccms/coverage-cases/{caseId}/documents/{docId}/access-url
@@ -167,6 +198,8 @@ public class DocumentFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.document.read") is { } forbidden)
+            return forbidden;
 
         try
         {
@@ -207,6 +240,8 @@ public class DocumentFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.document.read") is { } forbidden)
+            return forbidden;
 
         Guid? caseId = null;
         var caseIdRaw = req.Query["coverageCaseId"];
@@ -260,6 +295,8 @@ public class DocumentFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.document.read") is { } forbidden)
+            return forbidden;
 
         Guid? caseId = null;
         var caseIdRaw = req.Query["coverageCaseId"];
@@ -368,6 +405,41 @@ public class DocumentFunctions
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
             await bad.WriteAsJsonAsync(new { error = ex.Message });
             return bad;
+        }
+    }
+
+    // POST /api/ccms/documents/{docId}/ensure-canonical
+    // Lazy/idempotent historical registration (file-backed only). Requires document.read.
+    [Function("EnsureCcmsDocumentCanonical")]
+    public async Task<HttpResponseData> EnsureCanonical(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post",
+            Route = "ccms/documents/{docId:guid}/ensure-canonical")]
+        HttpRequestData req, Guid docId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.document.read") is { } forbidden)
+            return forbidden;
+
+        try
+        {
+            var canonicalId = await _svc.EnsureCanonicalRegistrationAsync(docId, claims!.UserId);
+            return await req.OkJsonAsync(new
+            {
+                ccmsDocumentId = docId,
+                canonicalDocumentId = canonicalId,
+                registered = canonicalId is not null,
+            });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return await req.NotFoundAsync(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            var resp = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await resp.WriteAsJsonAsync(new { error = DatabaseExceptionFormatter.ToClientMessage(ex) });
+            return resp;
         }
     }
 

@@ -1,38 +1,54 @@
 ---
-description: Superpowers methodology bootstrap — check and follow project skills before acting. Hospital platform rules still win on safety, ownership, and stack freeze.
-alwaysApply: false
+description: Routes Hospital Portal work to the lightest sufficient Superpowers workflow while preserving safety, quality, and all existing skills.
+alwaysApply: true
 ---
 
-# Superpowers
+# Hospital Portal Superpowers routing
 
-This repo uses [obra/superpowers](https://github.com/obra/superpowers) v6.3.0 as the agent development methodology. Skills live in `.cursor/skills/`.
+The repository contains the full Superpowers skill set. **Skills are capabilities, not mandatory ceremony.** Use all applicable skills when their workflow materially helps the task, but do not invoke heavyweight skills merely because they exist.
 
-Hospital platform rules (`.cursor/rules/00`–`12`, IP/Billing/Ward SoT, Figma MCP) take precedence over Superpowers when they conflict. Superpowers is process; those rules are domain, safety, and architecture.
+## First classify the task
 
-## Invoke skills before acting
+### FAST
+Use for localized existing behavior: styling, copy, one-component UI changes, small bug fixes, existing API wiring, minor accessibility fixes, or one-file changes.
 
-If there is even a small chance a skill applies, read that skill's `SKILL.md` and follow it before responding, exploring, or writing code. Announce `Using [skill] to [purpose]`.
+Workflow:
+1. Read applicable rules.
+2. Targeted search.
+3. Reuse existing patterns; compare a representative Counsellor implementation for UI work.
+4. Implement directly.
+5. Run targeted validation.
+6. Stop when acceptance criteria are met.
 
-| Request | Skill |
-|---|---|
-| New feature, screen, behavior, or "let's build X" | `brainstorming` first (hard gate: no implementation until approved) |
-| Bug / unexpected behavior | `systematic-debugging` |
-| Approved design / multi-step work | `writing-plans` then `subagent-driven-development` or `executing-plans` |
-| Implementation | `test-driven-development` using existing Vitest / Playwright `e2e/` / .NET tests (`12-testing-validation.mdc`) |
-| "Is it actually done?" | `verification-before-completion` |
-| Review / finish a branch | `requesting-code-review` / `finishing-a-development-branch` |
+Do **not** invoke brainstorming, writing-plans, subagent-driven-development, worktrees, or a mandatory red/green TDD ceremony for FAST work unless the task itself requires one.
 
-Do not skip brainstorming by calling a change "too simple." Bounded work still needs a short in-chat design and explicit yes.
+### CONTROLLED
+Use for multi-file features, meaningful component additions, API/client changes, new workflows within an existing domain, or changes needing multiple tests.
 
-## Project paths
+Use the relevant implementation skill and verification. Use brainstorming/writing-plans when design ambiguity or task complexity genuinely benefits from them. A short plan is preferred; do not create a formal spec for a bounded change unless needed.
 
-- Specs: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
-- Plans: `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
+### HEAVY
+Use for architecture, schema/API contracts, cross-domain/service changes, clinical/financial state transitions, security/authz, destructive work, major redesigns, or large implementation plans.
 
-## Hospital adaptations
+Use the full applicable Superpowers workflow: brainstorming → writing-plans → executing/subagent-driven development where appropriate → code review → verification → finishing branch. Human approval gates from the architecture rules remain authoritative.
 
-- Default to a feature branch in this worktree. Use `using-git-worktrees` only when the user asks or parallel isolated work needs it (Windows + npm/.NET restore is expensive).
-- Do not invent a second test stack, UI kit, or architecture. TDD must extend existing tests.
-- Do not put PHI, credentials, or tokens in specs, plans, commits, or logs.
-- Brainstorming visual companion telemetry: prefer `SUPERPOWERS_DISABLE_TELEMETRY=1` in this environment.
-- Subagents must still obey domain ownership and must not touch unrelated modules.
+## Skill selection
+
+Prefer **specific over broad**. Examples:
+
+- UI implementation → hospital fast UI + existing UI/design skills as needed.
+- Bug/root cause → systematic-debugging.
+- Test-heavy change → test-driven-development.
+- Planned independent tasks → subagent-driven-development.
+- Existing written plan → executing-plans.
+- Completion claim → verification-before-completion.
+- Git/worktree work → corresponding git/worktree skills.
+- Figma → figma rule + relevant design skill.
+
+Do not invoke multiple overlapping Skills that provide the same guidance. If a hospital-specific rule already supplies the constraint, do not load a generic skill solely to repeat it.
+
+## Non-negotiable safeguards
+
+Never skip architecture, privacy, authorization, clinical safety, financial integrity, or source-of-truth checks. Fast means **less ceremony and narrower context**, not less correctness.
+
+Never claim completion without fresh verification evidence.

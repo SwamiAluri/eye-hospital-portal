@@ -74,9 +74,38 @@ public class AuthorizationFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.authorization.read") is { } forbidden)
+            return forbidden;
 
         var list = await _svc.GetByCaseIdAsync(id);
         return await req.OkJsonAsync(list);
+    }
+
+    // GET /api/ccms/authorizations/by-patient/{patientId}
+    // Tenant-scoped authorizations for the patient's coverage cases. Not the workspace.
+    [Function("GetAuthorizationsByPatient")]
+    public async Task<HttpResponseData> ByPatient(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ccms/authorizations/by-patient/{patientId:guid}")] HttpRequestData req,
+        Guid patientId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.authorization.read") is { } forbidden)
+            return forbidden;
+
+        int.TryParse(req.Query["pageNumber"], out var page);
+        if (page == 0) int.TryParse(req.Query["page"], out page);
+        int.TryParse(req.Query["pageSize"], out var pageSize);
+
+        var list = await _svc.ListByPatientIdAsync(
+            claims!.TenantId, patientId, page, pageSize);
+        return await req.OkJsonAsync(new
+        {
+            authorizations = list.Items,
+            totalCount     = list.Total,
+            pageNumber     = list.Page,
+            pageSize       = list.PageSize,
+        });
     }
 
     // POST /api/ccms/authorizations/{id}/submit
@@ -153,6 +182,8 @@ public class AuthorizationFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.authorization.read") is { } forbidden)
+            return forbidden;
 
         var queue = await _svc.GetQueueAsync();
         return await req.OkJsonAsync(queue);

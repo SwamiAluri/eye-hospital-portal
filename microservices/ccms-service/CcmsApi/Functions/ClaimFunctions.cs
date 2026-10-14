@@ -50,9 +50,37 @@ public class ClaimFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.claim.read") is { } forbidden)
+            return forbidden;
 
         var list = await _svc.GetByCaseIdAsync(id);
         return await req.OkJsonAsync(list);
+    }
+
+    // GET /api/ccms/claims/by-patient/{patientId}
+    // Tenant-scoped claim packets for the patient's coverage cases. Not documents, settlement, or the workspace.
+    [Function("GetClaimsByPatient")]
+    public async Task<HttpResponseData> ByPatient(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ccms/claims/by-patient/{patientId:guid}")] HttpRequestData req,
+        Guid patientId)
+    {
+        if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
+            return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.claim.read") is { } forbidden)
+            return forbidden;
+
+        int.TryParse(req.Query["pageNumber"], out var page);
+        if (page == 0) int.TryParse(req.Query["page"], out page);
+        int.TryParse(req.Query["pageSize"], out var pageSize);
+
+        var list = await _svc.ListByPatientIdAsync(claims!.TenantId, patientId, page, pageSize);
+        return await req.OkJsonAsync(new
+        {
+            claims     = list.Items,
+            totalCount = list.Total,
+            pageNumber = list.Page,
+            pageSize   = list.PageSize,
+        });
     }
 
     // POST /api/ccms/claims/{id}/submit
@@ -119,6 +147,8 @@ public class ClaimFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.claim.read") is { } forbidden)
+            return forbidden;
 
         var queue = await _svc.GetQueueAsync();
         return await req.OkJsonAsync(queue);

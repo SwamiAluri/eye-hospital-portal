@@ -9,6 +9,7 @@ import {
   filterSidebarSectionsByPermission,
   prefetchCounsellorSidebarHref,
 } from '@/lib/navigation/sidebar-menu-sections';
+import { isSidebarNavActive } from '@/lib/navigation/is-sidebar-nav-active';
 import {
   useState,
   useEffect,
@@ -113,12 +114,8 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
     [hasPermission, menuSections],
   );
 
-  const isActive = (href: string, exact?: boolean) => {
-    if (href === '/dashboard' || exact) {
-      return pathname === href;
-    }
-    return pathname?.startsWith(href);
-  };
+  const isActive = (href: string, exact?: boolean) =>
+    isSidebarNavActive(pathname, href, exact);
 
   // Auto-open the correct section and expand submenu whenever the pathname changes.
   // This prevents the sidebar from collapsing when navigating between sub-pages.
@@ -265,7 +262,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                         );
                       }
                       
-                      const active = isActive(item.href);
+                      const active = isActive(item.href, item.exact);
                       
                       // Handle expandable items with sub-items (e.g., HR Management)
                       if (item.isExpandable && item.subItems) {
@@ -364,7 +361,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                     return null;
                   }
 
-                  const active = isActive(item.href);
+                  const active = isActive(item.href, item.exact);
                   
                   // Determine if this is a subsection item (comes after a section header)
                   const isSubsectionItem = !!lastSubsection;
@@ -621,7 +618,7 @@ function Sidebar({ isMobileOpen = false, onClose, drawerOnly = false }: SidebarP
                             </div>
                           );
                         }
-                        const active = isActive(item.href);
+                        const active = isActive(item.href, item.exact);
                         if (item.isExpandable && item.subItems) {
                           const isExpanded = expandedItems.includes(item.label);
                           return (

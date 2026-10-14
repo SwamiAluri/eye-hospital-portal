@@ -28,7 +28,7 @@ describe('Counsellor session-open authorization hardening', () => {
     expect(text).not.toMatch(/getSessionNotes|getSessionDocuments/);
   });
 
-  it('Amelia-like Counsellor set includes package_templates.read but not admin/staff extras', () => {
+  it('Amelia-like Counsellor set includes package_templates.read and session_documents.* but not admin/staff extras', () => {
     const amelia = [
       'dashboard.view',
       'patient.view',
@@ -39,17 +39,59 @@ describe('Counsellor session-open authorization hardening', () => {
       'master_data.lookup',
       'bill.view',
       'package_templates.read',
+      'session_documents.read',
+      'session_documents.create',
+      'session_documents.verify',
+      'session_documents.delete',
     ];
     expect(amelia).toContain('counseling_sessions.read');
     expect(amelia).toContain('patient.view');
     expect(amelia).toContain('master_data.lookup');
     expect(amelia).toContain('package_templates.read');
+    expect(amelia).toContain('session_documents.read');
+    expect(amelia).toContain('session_documents.create');
+    expect(amelia).toContain('session_documents.verify');
+    expect(amelia).toContain('session_documents.delete');
     expect(amelia).not.toContain('package_templates.create');
     expect(amelia).not.toContain('package_templates.update');
     expect(amelia).not.toContain('package_templates.delete');
     expect(amelia).not.toContain('user.view');
     expect(amelia).not.toContain('session_notes.read');
-    expect(amelia).not.toContain('session_documents.read');
+    expect(amelia).not.toContain('patient.patient_document.download');
+  });
+
+  it('Session Documents panel gates on session_documents.* not patient.view', async () => {
+    const text = await readFile(
+      join(
+        process.cwd(),
+        'src/components/counsellors-desk/session/CounsellingSessionDocumentsPanel.tsx',
+      ),
+      'utf8',
+    );
+    expect(text).toContain("useHasPermission('session_documents.read')");
+    expect(text).toContain("useHasPermission('session_documents.create')");
+    expect(text).toContain("useHasPermission('session_documents.delete')");
+    expect(text).toContain('Counselling documents are not available to this sign-in');
+    expect(text).toContain('doc.createdByUserId === currentUserId');
+    expect(text).not.toContain("useHasPermission('patient.view')");
+    expect(text).not.toContain("role === 'Counsellor'");
+  });
+
+  it('Patient 360 Counselling area label is Counselling without workflow-only copy', async () => {
+    const areas = await readFile(
+      join(process.cwd(), 'src/lib/patients/patient-360-document-areas.ts'),
+      'utf8',
+    );
+    const documents = await readFile(
+      join(process.cwd(), 'src/components/patients/record/Patient360Documents.tsx'),
+      'utf8',
+    );
+    expect(areas).toContain("id: 'counselling', label: 'Counselling', writable: true");
+    expect(areas).not.toContain('Available from Counselling workflow');
+    expect(documents).toContain("useHasPermission('session_documents.read')");
+    expect(documents).toContain("useHasPermission('session_documents.delete')");
+    expect(documents).toContain('downloadCounselingCanonicalDocument');
+    expect(documents).toContain('canReadCounsellingDocuments');
   });
 
   it('useCounsellingPackageTemplates requires package_templates.read before GET list', async () => {

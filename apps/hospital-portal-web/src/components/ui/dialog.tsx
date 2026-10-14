@@ -31,8 +31,10 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl' | '6xl' | 'full'
     hideCloseButton?: boolean
+    /** When true, skip the shared backdrop (e.g. keep-alive host while another modal is active). */
+    hideOverlay?: boolean
   }
->(({ className, children, size = 'md', hideCloseButton = false, ...props }, ref) => {
+>(({ className, children, size = 'md', hideCloseButton = false, hideOverlay = false, ...props }, ref) => {
   const sizeClasses = {
     sm: 'max-w-sm',
     md: 'max-w-md',
@@ -46,7 +48,7 @@ const DialogContent = React.forwardRef<
   
   return (
     <DialogPortal>
-      <DialogOverlay />
+      {!hideOverlay ? <DialogOverlay /> : null}
       <DialogPrimitive.Content
         ref={ref}
         className={cn(

@@ -85,6 +85,50 @@ namespace AuthService.Services
             return screenings;
         }
 
+        public async Task<Patient360RetinopathyPageDto> ListPatient360Async(Guid tenantId, Guid patientId, int page, int pageSize)
+        {
+            if (tenantId == Guid.Empty)
+                throw new UnauthorizedAccessException("Tenant ID not found in token");
+
+            (page, pageSize) = Patient360DiagnosticPaging.Normalize(page, pageSize);
+            var query = _context.RetinopathyScreenings.AsNoTracking()
+                .Where(r => r.TenantId == tenantId && r.PatientId == patientId && r.DeletedAt == null);
+            var total = await query.CountAsync();
+            var items = await query
+                .OrderByDescending(r => r.ScreeningDate)
+                .ThenByDescending(r => r.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(r => new Patient360RetinopathyScreeningDto
+                {
+                    Id = r.Id,
+                    ScreeningDate = r.ScreeningDate,
+                    Eye = r.Eye,
+                    Status = r.Status,
+                    Device = r.Device,
+                    DeviceModel = r.DeviceModel,
+                    DrGrade = r.DrGrade,
+                    MacularEdema = r.MacularEdema,
+                    HemorrhagesCount = r.HemorrhagesCount,
+                    MicroaneurysmsCount = r.MicroaneurysmsCount,
+                    HardExudates = r.HardExudates,
+                    SoftExudates = r.SoftExudates,
+                    Neovascularization = r.Neovascularization,
+                    VenousBeading = r.VenousBeading,
+                    Irma = r.Irma,
+                    ReferralRequired = r.ReferralRequired,
+                })
+                .ToListAsync();
+
+            return new Patient360RetinopathyPageDto
+            {
+                Items = items,
+                TotalCount = total,
+                PageNumber = page,
+                PageSize = pageSize,
+            };
+        }
+
         public async Task<RetinopathyStatisticsDto> GetStatisticsAsync(Guid? branchId)
         {
             var tenantId = GetCurrentTenantId();

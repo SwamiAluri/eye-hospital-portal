@@ -1,15 +1,19 @@
 'use client';
 
 import { patientLookupTestIds } from '@/lib/patients/patient-lookup-test-ids';
+import { counsellingSessionTokens } from '@/lib/counsellors-desk/counselling-session-tokens';
 import type { PatientLookupTab } from '@/types/patient-lookup';
 import { cn } from '@/lib/utils';
 
-const TABS: { key: PatientLookupTab; label: string }[] = [
+/**
+ * Primary census navigation (PD-DIR-UX-18–21).
+ * UI "Active" maps to the existing certified `current` predicate/URL value.
+ * New / discharged / high_priority remain parseable and counted server-side
+ * but are not primary Directory tabs.
+ */
+const PRIMARY_CENSUS_TABS: { key: PatientLookupTab; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'current', label: 'Current' },
-  { key: 'new', label: 'New' },
-  { key: 'discharged', label: 'Discharged' },
-  { key: 'high_priority', label: 'High priority' },
+  { key: 'current', label: 'Active' },
 ];
 
 export interface PatientHubClassificationTabsProps {
@@ -25,12 +29,12 @@ export function PatientHubClassificationTabs({
 }: PatientHubClassificationTabsProps) {
   return (
     <div
-      className="flex flex-wrap gap-x-1 border-b border-gray-200"
+      className={cn(counsellingSessionTokens.pillTabTrack, 'max-w-full')}
       role="tablist"
       aria-label="Patient classification"
       data-testid={patientLookupTestIds.classificationTabs}
     >
-      {TABS.map((t) => {
+      {PRIMARY_CENSUS_TABS.map((t) => {
         const count = tabCounts[t.key];
         const active = activeTab === t.key;
         return (
@@ -41,19 +45,18 @@ export function PatientHubClassificationTabs({
             aria-selected={active}
             onClick={() => onTabChange(t.key)}
             className={cn(
-              '-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-colors',
-              active
-                ? 'border-emerald-600 font-semibold text-emerald-800'
-                : 'border-transparent font-medium text-gray-600 hover:border-emerald-200 hover:text-emerald-800',
+              counsellingSessionTokens.pillTab,
+              'shrink-0 whitespace-nowrap',
+              active && counsellingSessionTokens.pillTabCurrent,
             )}
             data-testid={patientLookupTestIds.tab(t.key)}
           >
-            {t.label}
+            <span>{t.label}</span>
             {count != null && (
               <span
                 className={cn(
-                  'rounded-md px-1.5 py-0.5 text-xs tabular-nums',
-                  active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500',
+                  'tabular-nums',
+                  active ? 'text-white/90' : 'text-counselling-muted-foreground',
                 )}
               >
                 {count.toLocaleString()}

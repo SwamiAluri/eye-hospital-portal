@@ -14,17 +14,20 @@ public class DocumentEngineService
     private readonly CcmsDbContext _db;
     private readonly IConfiguration _config;
     private readonly ILogger<DocumentEngineService> _log;
+    private readonly AuthServiceClient? _auth;
 
     private const string ContainerName = "ccms-documents";
 
     public DocumentEngineService(
         CcmsDbContext db,
         IConfiguration config,
-        ILogger<DocumentEngineService> log)
+        ILogger<DocumentEngineService> log,
+        AuthServiceClient? auth = null)
     {
         _db     = db;
         _config = config;
         _log    = log;
+        _auth   = auth;
     }
 
     // ── Upload (real file → Blob Storage) ─────────────────────────────────────
@@ -49,12 +52,18 @@ public class DocumentEngineService
             .FirstOrDefaultAsync(c => c.Id == coverageCaseId && c.DeletedAt == null, ct)
             ?? throw new KeyNotFoundException($"Coverage case {coverageCaseId} not found.");
 
-        // Upload to Azure Blob Storage (Azurite locally)
+        // Buffer once: SHA-256 of actual bytes + blob upload (no Azure MD5 identity).
+        var bytes = await CcmsCanonicalDocumentRules.ReadAllBytesAsync(fileStream, ct);
+        if (bytes.Length == 0)
+            throw new InvalidOperationException("Uploaded file is empty.");
+        var contentHash = CcmsCanonicalDocumentRules.ComputeSha256Hex(bytes);
+
         string? uploadedBlobName = null;
         string blobUrl;
         try
         {
-            blobUrl = await UploadToBlobAsync(coverageCaseId, documentName, mimeType, fileStream, ct);
+            await using var uploadStream = new MemoryStream(bytes, writable: false);
+            blobUrl = await UploadToBlobAsync(coverageCaseId, documentName, mimeType, uploadStream, ct);
             uploadedBlobName = ExtractBlobName(blobUrl);
         }
         catch
@@ -63,7 +72,8 @@ public class DocumentEngineService
         }
 
         var now = DateTime.UtcNow;
-        await SoftDeletePriorDocumentsAsync(coverageCaseId, documentType, category, actorUserId, now, ct);
+        var replacedIds = await SoftDeletePriorDocumentsAsync(
+            coverageCaseId, documentType, category, actorUserId, now, ct);
         var doc = new CcmsDocument
         {
             Id               = Guid.NewGuid(),
@@ -73,7 +83,7 @@ public class DocumentEngineService
             DocumentType     = documentType,
             DocumentName     = documentName,
             BlobUrl          = blobUrl,
-            FileSizeBytes    = fileStream.CanSeek ? fileStream.Length : 0,
+            FileSizeBytes    = bytes.LongLength,
             MimeType         = mimeType,
             UploadedAt       = now,
             UploadedByUserId = actorUserId,
@@ -97,6 +107,20 @@ public class DocumentEngineService
             _log.LogError(ex, "Failed to persist document {Type} for case {CaseId}", documentType, coverageCaseId);
             throw;
         }
+
+        // Association lifecycle for replaced rows (CCMS remains SoT; no global canonical delete).
+        foreach (var priorId in replacedIds)
+            await TryRemoveCanonicalAssociationAsync(coverageCase.TenantId, priorId, ct);
+
+        await TryRegisterCanonicalAsync(
+            coverageCase.TenantId,
+            coverageCase.PatientId,
+            actorUserId,
+            doc,
+            contentHash,
+            uploadedBlobName ?? ExtractBlobName(blobUrl),
+            ct);
+
         _log.LogInformation("Document {Name} uploaded for case {CaseId}", documentName, coverageCaseId);
         return doc;
     }
@@ -115,7 +139,7 @@ public class DocumentEngineService
         var category = CcmsDocumentStages.Normalize(req.Stage);
         var documentName = CcmsDocumentFileNames.Resolve(null, req.DocumentName, req.DocumentType);
         var now = DateTime.UtcNow;
-        await SoftDeletePriorDocumentsAsync(
+        var replacedIds = await SoftDeletePriorDocumentsAsync(
             coverageCaseId, req.DocumentType, category, actorUserId, now, ct);
 
         var doc = new CcmsDocument
@@ -140,6 +164,12 @@ public class DocumentEngineService
 
         _db.Documents.Add(doc);
         await _db.SaveChangesAsync(ct);
+
+        foreach (var priorId in replacedIds)
+            await TryRemoveCanonicalAssociationAsync(coverageCase.TenantId, priorId, ct);
+
+        // JSON/metadata path has no trusted content bytes — do not fabricate a hash.
+        // Historical ensure registers when bytes can be streamed later.
         return doc;
     }
 
@@ -261,6 +291,161 @@ public class DocumentEngineService
         return await q.OrderByDescending(d => d.CreatedAt).ToListAsync(ct);
     }
 
+    /// <summary>
+    /// Patient-id document metadata. Tenant and soft-delete follow the coverage-case
+    /// patient read: JWT tenant on both the case and the document. No branch predicate.
+    /// Does not open blobs or build access URLs. Order matches <see cref="GetByCaseAsync"/>.
+    /// Optionally enriches with canonicalDocumentId via Auth association lookup (no hashing).
+    /// </summary>
+    public async Task<PagedResult<CcmsDocumentPatientMetadataDto>> ListMetadataByPatientIdAsync(
+        Guid tenantId,
+        Guid patientId,
+        int page = 1,
+        int pageSize = 20,
+        bool insuranceOnly = false,
+        CancellationToken ct = default)
+    {
+        var (pageNumber, size) = CcmsPatientListPaging.Normalize(page, pageSize);
+        var filtered =
+            from document in _db.Documents.AsNoTracking()
+            join coverageCase in _db.CoverageCases.AsNoTracking()
+                on document.CoverageCase_Id equals coverageCase.Id
+            where document.TenantId == tenantId
+               && coverageCase.TenantId == tenantId
+               && coverageCase.PatientId == patientId
+               && document.DeletedAt == null
+               && coverageCase.DeletedAt == null
+            select document;
+
+        if (insuranceOnly)
+        {
+            // File-backed insurance/intake (+ claims) types; exclude pointer document types.
+            var types = new[]
+            {
+                "id_proof", "insurance_card_front", "insurance_card_back", "policy_document",
+                "doctor_referral", "preauth_form", "previous_claims", "other_1", "other_2",
+                "authorization_letter", "discharge_summary", "investigation_reports",
+                "clinical_notes", "bills",
+            };
+            filtered = filtered.Where(d =>
+                d.Status == "active"
+                && types.Contains(d.DocumentType)
+                && d.BlobUrl != null
+                && !d.BlobUrl.StartsWith("pacs://")
+                && !d.BlobUrl.StartsWith("biometry://"));
+        }
+
+        var total = await filtered.CountAsync(ct);
+        var rows = await filtered
+            .OrderByDescending(document => document.CreatedAt)
+            .ThenByDescending(document => document.Id)
+            .Skip((pageNumber - 1) * size)
+            .Take(size)
+            .ToListAsync(ct);
+
+        IReadOnlyDictionary<Guid, Guid> canonicalMap = new Dictionary<Guid, Guid>();
+        if (_auth is not null && rows.Count > 0)
+            canonicalMap = await _auth.LookupCcmsCanonicalIdsAsync(rows.Select(r => r.Id), ct);
+
+        return new PagedResult<CcmsDocumentPatientMetadataDto>(
+            rows.Select(d =>
+            {
+                var isPointer = IsPointerUrl(d.BlobUrl ?? string.Empty)
+                                || CcmsCanonicalDocumentRules.IsPointerDocumentType(d.DocumentType);
+                canonicalMap.TryGetValue(d.Id, out var canonicalId);
+                return new CcmsDocumentPatientMetadataDto(
+                    d.Id,
+                    d.CoverageCase_Id,
+                    d.DocumentName,
+                    d.DocumentType,
+                    d.DocumentCategory,
+                    d.Status,
+                    d.CreatedAt,
+                    d.UpdatedAt,
+                    d.UploadedAt,
+                    d.MimeType,
+                    d.FileSizeBytes,
+                    canonicalId == Guid.Empty ? null : canonicalId,
+                    isPointer);
+            }).ToList(),
+            total,
+            pageNumber,
+            size);
+    }
+
+    /// <summary>
+    /// Idempotent/lazy historical ensure: stream CCMS blob bytes, SHA-256, register external + association.
+    /// Does not copy into patient-documents. Pointers and unreadable blobs are excluded (no null-hash).
+    /// </summary>
+    public async Task<Guid?> EnsureCanonicalRegistrationAsync(
+        Guid documentId,
+        Guid actorUserId,
+        CancellationToken ct = default)
+    {
+        var doc = await _db.Documents.AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == documentId && d.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Document {documentId} not found.");
+
+        if (!CcmsCanonicalDocumentRules.IsEligibleFileBackedForCanonical(doc.BlobUrl, doc.DocumentType))
+        {
+            _log.LogInformation(
+                "Skipping canonical ensure for pointer/non-file ccmsDocumentId={DocumentId}",
+                documentId);
+            return null;
+        }
+
+        if (_auth is not null)
+        {
+            var existing = await _auth.LookupCcmsCanonicalIdsAsync(new[] { documentId }, ct);
+            if (existing.TryGetValue(documentId, out var known) && known != Guid.Empty)
+                return known;
+        }
+
+        var coverageCase = await _db.CoverageCases.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == doc.CoverageCase_Id && c.DeletedAt == null, ct)
+            ?? throw new KeyNotFoundException($"Coverage case {doc.CoverageCase_Id} not found.");
+
+        byte[] bytes;
+        try
+        {
+            var content = await OpenBlobReadStreamAsync(documentId, doc.CoverageCase_Id, ct);
+            await using (content.Stream)
+            {
+                bytes = await CcmsCanonicalDocumentRules.ReadAllBytesAsync(content.Stream, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(
+                ex,
+                "Historical canonical ensure could not stream bytes for ccmsDocumentId={DocumentId}",
+                documentId);
+            return null;
+        }
+
+        if (bytes.Length == 0)
+        {
+            _log.LogWarning(
+                "Historical canonical ensure refused empty bytes for ccmsDocumentId={DocumentId}",
+                documentId);
+            return null;
+        }
+
+        var hash = CcmsCanonicalDocumentRules.ComputeSha256Hex(bytes);
+        var objectKey = ExtractBlobName(doc.BlobUrl!);
+        var registerAsUserId = actorUserId != Guid.Empty
+            ? actorUserId
+            : doc.UploadedByUserId ?? doc.CreatedByUserId ?? Guid.Empty;
+        return await TryRegisterCanonicalAsync(
+            coverageCase.TenantId,
+            coverageCase.PatientId,
+            registerAsUserId,
+            doc,
+            hash,
+            objectKey,
+            ct);
+    }
+
     // ── Delete (soft) ─────────────────────────────────────────────────────────
 
     public async Task DeleteAsync(Guid docId, Guid actorUserId, CancellationToken ct = default)
@@ -271,6 +456,7 @@ public class DocumentEngineService
         doc.UpdatedAt       = DateTime.UtcNow;
         doc.UpdatedByUserId = actorUserId;
         await _db.SaveChangesAsync(ct);
+        await TryRemoveCanonicalAssociationAsync(doc.TenantId, doc.Id, ct);
     }
 
     /// <summary>
@@ -393,7 +579,7 @@ public class DocumentEngineService
         }
     }
 
-    private async Task SoftDeletePriorDocumentsAsync(
+    private async Task<List<Guid>> SoftDeletePriorDocumentsAsync(
         Guid coverageCaseId,
         string documentType,
         string stage,
@@ -407,12 +593,61 @@ public class DocumentEngineService
                         && d.DocumentType == documentType
                         && d.DeletedAt == null)
             .ToListAsync(ct);
+        var ids = new List<Guid>(prior.Count);
         foreach (var old in prior)
         {
             old.DeletedAt       = now;
             old.UpdatedAt       = now;
             old.UpdatedByUserId = actorUserId;
+            ids.Add(old.Id);
         }
+        return ids;
+    }
+
+    private async Task<Guid?> TryRegisterCanonicalAsync(
+        Guid tenantId,
+        Guid patientId,
+        Guid userId,
+        CcmsDocument doc,
+        string contentHash,
+        string storageObjectKey,
+        CancellationToken ct)
+    {
+        if (_auth is null)
+            return null;
+        if (!CcmsCanonicalDocumentRules.IsEligibleFileBackedForCanonical(doc.BlobUrl, doc.DocumentType))
+            return null;
+        if (string.IsNullOrWhiteSpace(contentHash) || doc.FileSizeBytes <= 0)
+        {
+            _log.LogWarning(
+                "Refusing null/empty-hash canonical registration for ccmsDocumentId={DocumentId}",
+                doc.Id);
+            return null;
+        }
+
+        return await _auth.RegisterCcmsDocumentCanonicalAsync(
+            tenantId,
+            patientId,
+            userId,
+            doc.Id,
+            contentHash,
+            doc.FileSizeBytes,
+            doc.DocumentName,
+            doc.MimeType ?? "application/octet-stream",
+            doc.DocumentType,
+            CcmsCanonicalDocumentRules.StorageContainer,
+            storageObjectKey,
+            ct);
+    }
+
+    private async Task TryRemoveCanonicalAssociationAsync(
+        Guid tenantId,
+        Guid ccmsDocumentId,
+        CancellationToken ct)
+    {
+        if (_auth is null)
+            return;
+        await _auth.RemoveCcmsDocumentAssociationAsync(tenantId, ccmsDocumentId, ct);
     }
 
     // ── Private: Azure Blob Storage upload ────────────────────────────────────
@@ -555,3 +790,19 @@ public record DocumentBlobContent(
     string ContentType,
     string FileName,
     long? ContentLength);
+
+/// <summary>Patient 360 metadata. No blob URL, SAS, or storage path.</summary>
+public record CcmsDocumentPatientMetadataDto(
+    Guid Id,
+    Guid CoverageCaseId,
+    string DocumentName,
+    string DocumentType,
+    string DocumentCategory,
+    string Status,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    DateTime UploadedAt,
+    string? MimeType,
+    long FileSizeBytes,
+    Guid? CanonicalDocumentId = null,
+    bool IsPointer = false);

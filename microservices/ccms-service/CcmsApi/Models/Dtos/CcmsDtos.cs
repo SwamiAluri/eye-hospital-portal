@@ -164,6 +164,26 @@ public record SettlementDto(
     List<SettlementLineItemDto>? LineItems
 );
 
+/// <summary>
+/// Patient 360 settlement context. Stored settlement fields plus the case and claim numbers
+/// already on the coverage case and claim packet. Bank, notes, and line items stay off this DTO.
+/// </summary>
+public record Patient360SettlementDto(
+    Guid Id,
+    string SettlementNumber,
+    string SettlementType,
+    decimal SettledAmount,
+    decimal ClaimAmount,
+    string? PaymentMode,
+    string? PaymentReference,
+    DateOnly? PaymentDate,
+    DateTime? SettledAt,
+    string ReconciliationStatus,
+    DateTime CreatedAt,
+    string CaseNumber,
+    string? ClaimNumber
+);
+
 public record SettlementLineItemDto(
     Guid    Id,
     string  LineItemType,

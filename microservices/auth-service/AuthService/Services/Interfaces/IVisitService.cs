@@ -11,7 +11,7 @@ public interface IVisitService
     // Visit CRUD
     Task<VisitDto?> GetByIdAsync(Guid id);
     Task<VisitDto?> GetByAppointmentIdAsync(Guid appointmentId);
-    Task<List<VisitListDto>> GetByPatientIdAsync(Guid patientId, int page = 1, int pageSize = 20);
+    Task<List<VisitListDto>> GetByPatientIdAsync(Guid tenantId, Guid patientId, int page = 1, int pageSize = 20);
     Task<List<VisitListDto>> GetByBranchIdAsync(Guid branchId, DateTime? date = null, string? status = null, int page = 1, int pageSize = 50);
     Task<List<VisitQueueDto>> GetQueueAsync(Guid branchId, string? station = null, Guid? assignedTo = null);
     
@@ -49,7 +49,8 @@ public interface IOpdBillService
     Task<OpdBillDto?> GetByIdAsync(Guid id);
     Task<OpdBillDto?> GetByAppointmentIdAsync(Guid appointmentId);
     Task<OpdBillDto?> GetByVisitIdAsync(Guid visitId); // Day 8: Auto-billing validation
-    Task<List<OpdBillListDto>> GetByPatientIdAsync(Guid patientId, int page = 1, int pageSize = 20);
+    Task<List<OpdBillListDto>> GetByPatientIdAsync(Guid tenantId, Guid patientId, int page = 1, int pageSize = 20);
+    Task AuthorizePatientBillReadAsync();
     Task<List<OpdBillListDto>> GetByBranchIdAsync(Guid branchId, DateTime? fromDate = null, DateTime? toDate = null, string? status = null, int page = 1, int pageSize = 50);
     
     // Bill Generation

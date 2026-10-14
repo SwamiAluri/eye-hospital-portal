@@ -540,6 +540,50 @@ namespace AuthService.Models.Counselor
     // SESSION DOCUMENTS - DTOs
     // ============================================================================
 
+    /// <summary>
+    /// Patient 360 counselling session context. Approved R-C1 fields only.
+    /// </summary>
+    public class Patient360CounsellingSessionMetadataDto
+    {
+        public Guid Id { get; set; }
+        public string? SessionNumber { get; set; }
+        public string SessionType { get; set; } = null!;
+        public DateTime SessionDate { get; set; }
+        public DateTime? SessionStartTime { get; set; }
+        public DateTime? SessionEndTime { get; set; }
+        public string Status { get; set; } = null!;
+        public string CounsellorName { get; set; } = "";
+    }
+
+    /// <summary>Patient 360 metadata. No file path or storage URL.</summary>
+    public class CounselingDocumentPatientMetadataDto
+    {
+        public Guid Id { get; set; }
+        /// <summary>Session id for session-owned docs; null for patient-level Counselling docs.</summary>
+        public Guid? SessionId { get; set; }
+        public string DocumentName { get; set; } = null!;
+        public string? DocumentType { get; set; }
+        public string Status { get; set; } = null!;
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+        public string? FileType { get; set; }
+        public long? FileSizeBytes { get; set; }
+        /// <summary>Canonical document id when counselling association exists; otherwise null.</summary>
+        public Guid? CanonicalDocumentId { get; set; }
+
+        /// <summary>Uploader identity for creator-owned remove.</summary>
+        public Guid CreatedByUserId { get; set; }
+    }
+
+    /// <summary>Paged counselling document metadata. No file path.</summary>
+    public class CounselingDocumentPatientMetadataPage
+    {
+        public List<CounselingDocumentPatientMetadataDto> Documents { get; set; } = new();
+        public int TotalCount { get; set; }
+        public int PageNumber { get; set; }
+        public int PageSize { get; set; }
+    }
+
     public class SessionDocumentDto
     {
         public Guid Id { get; set; }

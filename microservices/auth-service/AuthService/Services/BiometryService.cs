@@ -85,6 +85,51 @@ namespace AuthService.Services
             return records;
         }
 
+        public async Task<Patient360BiometryPageDto> ListPatient360Async(Guid tenantId, Guid patientId, int page, int pageSize)
+        {
+            if (tenantId == Guid.Empty)
+                throw new UnauthorizedAccessException("Tenant ID not found in token");
+
+            (page, pageSize) = Patient360DiagnosticPaging.Normalize(page, pageSize);
+            var query = _context.BiometryRecords.AsNoTracking()
+                .Where(b => b.TenantId == tenantId && b.PatientId == patientId && b.DeletedAt == null);
+            var total = await query.CountAsync();
+            var items = await query
+                .OrderByDescending(b => b.ExaminationDate)
+                .ThenByDescending(b => b.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(b => new Patient360BiometryRecordDto
+                {
+                    Id = b.Id,
+                    ExaminationDate = b.ExaminationDate,
+                    Eye = b.Eye,
+                    Status = b.Status,
+                    Device = b.Device,
+                    DeviceModel = b.DeviceModel,
+                    AxialLength = b.AxialLength,
+                    K1 = b.K1,
+                    K2 = b.K2,
+                    K1Axis = b.K1Axis,
+                    Acd = b.Acd,
+                    LensThickness = b.LensThickness,
+                    WhiteToWhite = b.WhiteToWhite,
+                    Snr = b.Snr,
+                    TargetRefraction = b.TargetRefraction,
+                    CalculatedIol = b.CalculatedIol,
+                    SelectedFormula = b.SelectedFormula,
+                })
+                .ToListAsync();
+
+            return new Patient360BiometryPageDto
+            {
+                Items = items,
+                TotalCount = total,
+                PageNumber = page,
+                PageSize = pageSize,
+            };
+        }
+
         public async Task<BiometryStatisticsDto> GetStatisticsAsync(Guid? branchId)
         {
             var tenantId = GetCurrentTenantId();

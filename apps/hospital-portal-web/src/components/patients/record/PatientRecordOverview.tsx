@@ -111,7 +111,13 @@ export function PatientRecordOverview({
 
       layout.widgets
 
-        .filter((w) => w.visible !== false)
+        .filter(
+          (w) =>
+            w.visible !== false &&
+            w.id !== 'documents' &&
+            w.id !== 'ccm_goals' &&
+            w.id !== 'ccm_quality',
+        )
 
         .sort((a, b) => a.order - b.order),
 

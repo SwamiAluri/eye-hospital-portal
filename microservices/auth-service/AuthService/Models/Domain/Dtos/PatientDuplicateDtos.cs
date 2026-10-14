@@ -96,11 +96,12 @@ namespace AuthService.Models.Domain.Dtos
         public string MatchType { get; set; } = "";
         
         /// <summary>
-        /// Confidence score (0.0 - 1.0). Higher = more likely to be duplicate
-        /// ExactNameDOB: 1.0 (100%)
-        /// PhoneMatch: 0.95 (95%)
-        /// EmailMatch: 0.90 (90%)
-        /// FuzzyNameDOB: 0.80-0.99 (80-99% based on name similarity)
+        /// Confidence score (0.0 - 1.0). Higher = more likely to be duplicate.
+        /// ExactNameDOB: 1.0 (hard-block band, >= 0.95)
+        /// PhoneMatch: 0.90 (DUP-C3A.1 — normalized phone; soft band, not unconditional hard-block)
+        /// EmailMatch: 0.90 (soft band)
+        /// FuzzyNameDOB: 0.80-0.99 (similarity; hard-block only if >= 0.95)
+        /// Create hard-block remains any MatchConfidence >= 0.95 on POST /api/patients.
         /// </summary>
         public decimal MatchConfidence { get; set; }
         

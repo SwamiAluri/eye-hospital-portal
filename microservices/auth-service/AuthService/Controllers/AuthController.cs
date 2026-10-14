@@ -67,11 +67,14 @@ namespace AuthService.Controllers
                 HttpContext.Items["TenantId"] = tenantId;
 
                 // TEMPORARY: Re-enable demo mode for InMemory database
-                if (request.Email?.ToLower() == "admin@hospital.com" || request.Email?.ToLower() == "admin@test.com")
+                if (request.Email?.ToLower() == DevelopmentLoginCredentials.AdminHospitalEmail
+                    || request.Email?.ToLower() == DevelopmentLoginCredentials.AdminTestEmail)
                 {
                     _logger.LogInformation("Demo login - Email: {Email}", request.Email);
                     
-                    string expectedPassword = request.Email.ToLower() == "admin@hospital.com" ? "Admin@123456" : "Admin123!";
+                    string expectedPassword = request.Email.ToLower() == DevelopmentLoginCredentials.AdminHospitalEmail
+                        ? DevelopmentLoginCredentials.AdminHospitalPassword
+                        : DevelopmentLoginCredentials.AdminTestPassword;
                     if (string.IsNullOrEmpty(request.Password) || request.Password != expectedPassword)
                     {
                         _logger.LogWarning("Demo login failed - use {ExpectedPassword}", expectedPassword);
@@ -89,25 +92,27 @@ namespace AuthService.Controllers
                         return Unauthorized(new { success = false, message = "User not found" });
                     }
 
-                    // Create mock user for demo using ACTUAL user ID
-                    var mockUser = new AppUser
+                    // Development identity convenience only — authorization comes from real roles
+                    // via PermissionService (Admin/SuperAdmin → "*"), not from email hardcoding.
+                    var demoRoles = (await _userManager.GetRolesAsync(dbUser)).ToList();
+                    if (demoRoles.Count == 0)
                     {
-                        Id = dbUser.Id,  // Use actual user ID from database!
-                        Email = dbUser.Email,
-                        UserName = dbUser.UserName,
-                        FirstName = dbUser.FirstName ?? "Admin",
-                        LastName = dbUser.LastName ?? "User",
-                        TenantId = tenantId,
-                        MustChangePasswordOnLogin = false,
-                        UserStatus = "Active"
-                    };
+                        demoRoles = await _context.UserRoles
+                            .Where(ur => ur.UserId == dbUser.Id && ur.IsActive)
+                            .Join(_context.Roles.Where(r => r.IsActive && r.DeletedAt == null),
+                                ur => ur.RoleId,
+                                r => r.Id,
+                                (_, r) => r.Name ?? r.NormalizedName ?? string.Empty)
+                            .Where(n => n.Length > 0)
+                            .Distinct()
+                            .ToListAsync();
+                    }
 
-                    var mockRoles = new List<string> { "Admin", "SuperAdmin" };
-                    var mockPermissions = new List<string> { "*" };
+                    var demoPermissions = await _permissionService.GetUserPermissionsAsync(dbUser.Id, tenantId);
 
-                    var demoAccessToken = _jwtService.GenerateToken(mockUser, mockRoles, mockPermissions);
+                    var demoAccessToken = _jwtService.GenerateToken(dbUser, demoRoles, demoPermissions);
                     var demoRefreshToken = _jwtService.GenerateRefreshToken();
-                    await PersistRefreshTokenSessionAsync(mockUser.Id, demoRefreshToken);
+                    await PersistRefreshTokenSessionAsync(dbUser.Id, demoRefreshToken);
 
                     _logger.LogInformation("Demo login successful for {Email}", request.Email);
 
@@ -116,17 +121,17 @@ namespace AuthService.Controllers
                         success = true,
                         user = new
                         {
-                            id = mockUser.Id,
-                            email = mockUser.Email,
-                            firstName = mockUser.FirstName,
-                            lastName = mockUser.LastName,
-                            tenantId = mockUser.TenantId,
+                            id = dbUser.Id,
+                            email = dbUser.Email,
+                            firstName = dbUser.FirstName ?? "Admin",
+                            lastName = dbUser.LastName ?? "User",
+                            tenantId = dbUser.TenantId,
                             branchId = dbUser.BranchId,
                             tenantName = tenant?.Name ?? "Apollo Hospitals",
                             mustChangePassword = false
                         },
-                        roles = mockRoles,         // At root level for frontend
-                        permissions = mockPermissions,  // At root level for frontend
+                        roles = demoRoles,
+                        permissions = demoPermissions,
                         accessToken = demoAccessToken,
                         refreshToken = demoRefreshToken,
                         expiresIn = 3600
@@ -162,6 +167,9 @@ namespace AuthService.Controllers
                     if (user.AccessFailedCount >= 5) // Lock after 5 failed attempts
                     {
                         user.LockoutEnd = DateTime.UtcNow.AddMinutes(15);
+                        await _userManager.UpdateAsync(user);
+                        await LogFailedLogin(request.Email, tenantId, "Invalid password - account locked");
+                        return Unauthorized(new { message = "Account is locked after too many failed attempts. Please try again in 15 minutes, or restart AuthService in Development to reset Lab UAT lockout." });
                     }
                     await _userManager.UpdateAsync(user);
                     await LogFailedLogin(request.Email, tenantId, "Invalid password");

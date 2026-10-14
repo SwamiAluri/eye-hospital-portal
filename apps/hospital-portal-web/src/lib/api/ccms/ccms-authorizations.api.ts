@@ -192,6 +192,24 @@ export async function generatePreAuth(caseId: string, req: GeneratePreAuthReques
   return mapped;
 }
 
+export interface AuthorizationListResponse {
+  authorizations: unknown[];
+  totalCount: number;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+export async function getAuthorizationsByPatient(
+  patientId: string,
+  pageNumber = 1,
+  pageSize = 20,
+): Promise<AuthorizationListResponse> {
+  const { data } = await getCcmsApi().get(`/ccms/authorizations/by-patient/${patientId}`, {
+    params: { pageNumber, pageSize },
+  });
+  return data;
+}
+
 export async function getPreAuthByCaseId(caseId: string): Promise<PreAuthorization[]> {
   const { data } = await getCcmsApi().get(`/ccms/coverage-cases/${caseId}/authorization`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

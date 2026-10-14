@@ -227,6 +227,75 @@ public class SettlementReconciliationService
         ).ToList();
     }
 
+    /// <summary>
+    /// Patient-id settlement collection. Patient identity is the coverage case.
+    /// Tenant and soft-delete apply to both the settlement and the case.
+    /// No branch predicate. Order matches <see cref="GetByCaseIdAsync"/>: CreatedAt descending.
+    /// </summary>
+    public async Task<PagedResult<Patient360SettlementDto>> ListByPatientIdAsync(
+        Guid tenantId, Guid patientId, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    {
+        if (tenantId == Guid.Empty)
+            throw new UnauthorizedAccessException("Tenant ID not found in token");
+
+        var (pageNumber, size) = CcmsPatientListPaging.Normalize(page, pageSize);
+        var filtered =
+            from settlement in _db.Settlements.AsNoTracking()
+            join coverageCase in _db.CoverageCases.AsNoTracking()
+                on settlement.CoverageCase_Id equals coverageCase.Id
+            where settlement.TenantId == tenantId
+               && coverageCase.TenantId == tenantId
+               && coverageCase.PatientId == patientId
+               && settlement.DeletedAt == null
+               && coverageCase.DeletedAt == null
+            select new { settlement, coverageCase.CaseNumber };
+
+        var total = await filtered.CountAsync(ct);
+        var rows = await filtered
+            .OrderByDescending(row => row.settlement.CreatedAt)
+            .ThenByDescending(row => row.settlement.Id)
+            .Skip((pageNumber - 1) * size)
+            .Take(size)
+            .ToListAsync(ct);
+
+        var claimIds = rows
+            .Where(row => row.settlement.ClaimPacketId.HasValue)
+            .Select(row => row.settlement.ClaimPacketId!.Value)
+            .Distinct()
+            .ToList();
+        var claimNumbers = claimIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.ClaimPackets.AsNoTracking()
+                .Where(packet => claimIds.Contains(packet.Id)
+                    && packet.TenantId == tenantId
+                    && packet.DeletedAt == null)
+                .ToDictionaryAsync(packet => packet.Id, packet => packet.ClaimNumber, ct);
+
+        var items = rows.Select(row =>
+        {
+            string? claimNumber = null;
+            if (row.settlement.ClaimPacketId.HasValue)
+                claimNumbers.TryGetValue(row.settlement.ClaimPacketId.Value, out claimNumber);
+            var settlement = row.settlement;
+            return new Patient360SettlementDto(
+                settlement.Id,
+                settlement.SettlementNumber,
+                settlement.SettlementType,
+                settlement.SettledAmount,
+                settlement.ClaimAmount,
+                settlement.PaymentMode,
+                settlement.PaymentReference,
+                settlement.PaymentDate,
+                settlement.SettledAt,
+                settlement.ReconciliationStatus,
+                settlement.CreatedAt,
+                row.CaseNumber,
+                claimNumber);
+        }).ToList();
+
+        return new PagedResult<Patient360SettlementDto>(items, total, pageNumber, size);
+    }
+
     // ── Settlement number generation ─────────────────────────────────────────
 
     private async Task<string> GenerateSettlementNumberAsync(Guid tenantId, CancellationToken ct)

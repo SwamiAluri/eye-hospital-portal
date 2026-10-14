@@ -62,6 +62,25 @@ export interface CreatePolicyCaptureRequest {
 // Eligibility Checks
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface EligibilityCheckListResponse {
+  eligibilityChecks: unknown[];
+  totalCount: number;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+/** GET /ccms/eligibility-checks/by-patient/{patientId} */
+export async function getEligibilityChecksByPatient(
+  patientId: string,
+  pageNumber = 1,
+  pageSize = 20,
+): Promise<EligibilityCheckListResponse> {
+  const { data } = await getCcmsApi().get(`/ccms/eligibility-checks/by-patient/${patientId}`, {
+    params: { pageNumber, pageSize },
+  });
+  return data;
+}
+
 /** GET /ccms/coverage-cases/{caseId}/eligibility-checks */
 export async function getEligibilityChecks(caseId: string): Promise<EligibilityCheck[]> {
   const { data } = await getCcmsApi().get(

@@ -25,10 +25,11 @@ export interface CounsellingJourneyRailProps extends BuildJourneyRailInput {
   onFinishSummaryActive?: (active: boolean) => void;
   navigationBlocked?: boolean;
   /** Page-local destination. Not a journey stage. */
-  contextualDestination?: 'none' | 'patient-context' | 'history' | 'conversations';
+  contextualDestination?: 'none' | 'patient-context' | 'history' | 'conversations' | 'documents';
   onSelectPatientContext?: () => void;
   onSelectHistory?: () => void;
   onSelectConversations?: () => void;
+  onSelectDocuments?: () => void;
   recordingAction?: ReactNode;
 }
 
@@ -58,6 +59,7 @@ export function CounsellingJourneyRail({
   onSelectPatientContext,
   onSelectHistory,
   onSelectConversations,
+  onSelectDocuments,
   recordingAction,
   ...input
 }: CounsellingJourneyRailProps) {
@@ -65,8 +67,10 @@ export function CounsellingJourneyRail({
   const contextOpen =
     contextualDestination === 'patient-context'
     || contextualDestination === 'history'
-    || contextualDestination === 'conversations';
+    || contextualDestination === 'conversations'
+    || contextualDestination === 'documents';
   const conversationsOpen = contextualDestination === 'conversations';
+  const documentsOpen = contextualDestination === 'documents';
 
   const handlers: SessionNavigationHandlers = {
     onNavigateTab,
@@ -188,6 +192,23 @@ export function CounsellingJourneyRail({
             )}
           >
             {counsellingCopy.sessionConversations}
+          </button>
+        </li>
+        <li className="shrink-0 self-center">
+          <button
+            type="button"
+            onClick={onSelectDocuments}
+            aria-label={counsellingCopy.sessionDocumentsAria}
+            data-workflow-active={documentsOpen ? 'true' : 'false'}
+            data-testid="counselling-session-documents-nav"
+            className={cn(
+              counsellingSessionTokens.journeyTab,
+              documentsOpen
+                ? counsellingSessionTokens.journeyTabCurrent
+                : counsellingSessionTokens.journeyTabMuted,
+            )}
+          >
+            {counsellingCopy.sessionDocuments}
           </button>
         </li>
         <li

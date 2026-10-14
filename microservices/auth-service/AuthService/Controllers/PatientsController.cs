@@ -25,7 +25,6 @@ public class PatientsController : ControllerBase
     private readonly IPatientSummaryService _patientSummaryService;
     private readonly IPatientSummaryPdfService _patientSummaryPdfService;
     private readonly IAuditService _auditService;
-    private readonly IPatientMergeService _patientMergeService;
     private readonly IPatientRecentViewsService _recentViewsService;
     private readonly AppDbContext _context;
     private readonly IFollowupBranchAccessService _branchAccess;
@@ -41,7 +40,6 @@ public class PatientsController : ControllerBase
         IPatientSummaryService patientSummaryService,
         IPatientSummaryPdfService patientSummaryPdfService,
         IAuditService auditService,
-        IPatientMergeService patientMergeService,
         IPatientRecentViewsService recentViewsService,
         AppDbContext context,
         IFollowupBranchAccessService branchAccess)
@@ -56,7 +54,6 @@ public class PatientsController : ControllerBase
         _patientSummaryService = patientSummaryService;
         _patientSummaryPdfService = patientSummaryPdfService;
         _auditService = auditService;
-        _patientMergeService = patientMergeService;
         _recentViewsService = recentViewsService;
         _context = context;
         _branchAccess = branchAccess;
@@ -243,7 +240,7 @@ public class PatientsController : ControllerBase
     [HttpGet("lookup/export")]
     [RequirePermission("patient.export")]
     public async Task<IActionResult> ExportLookup(
-        [FromQuery] Guid branchId,
+        [FromQuery] Guid? branchId,
         [FromQuery] string? q = null,
         [FromQuery] string tab = "all",
         [FromQuery] string sortBy = "name",
@@ -275,13 +272,27 @@ public class PatientsController : ControllerBase
         if (!string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
             return BadRequest(new { message = "Only csv format is supported" });
 
+        Guid effectiveBranchId;
+        try
+        {
+            effectiveBranchId = await _branchAccess.ResolveEffectiveBranchAsync(tenantId, userId, branchId);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+
         var bytes = await _patientLookupService.ExportCsvAsync(BuildLookupQuery(
-            tenantId, branchId, userId, q, tab, 1, 5000, sortBy, sortDir,
+            tenantId, effectiveBranchId, userId, q, tab, 1, 5000, sortBy, sortDir,
             favoritesOnly, assignedToMe, engagementTypes, programCodes, patientTypes,
             gender, mrn, phone, dobFrom, dobTo, appointmentFrom, appointmentTo,
             name, diagnosis, providerId, departmentId, wardName, admissionFrom, admissionTo));
 
-        await _auditService.LogDataAccessAsync(userId, "PatientLookup", branchId, "EXPORT_CSV", "PHI");
+        await _auditService.LogDataAccessAsync(userId, "PatientLookup", effectiveBranchId, "EXPORT_CSV", "PHI");
 
         return File(bytes, "text/csv", $"patients-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
     }
@@ -409,41 +420,6 @@ public class PatientsController : ControllerBase
         return Ok(MapToResponse(patient));
     }
 
-    /// <summary>Merge duplicate patient records into primary (admin).</summary>
-    [HttpPost("{primaryId}/merge")]
-    [RequirePermission("patient.update")]
-    public async Task<ActionResult<PatientResponse>> MergePatients(
-        Guid primaryId,
-        [FromBody] MergePatientsRequest request)
-    {
-        if (!TryGetTenantAndUser(out var tenantId, out var userId))
-            return Unauthorized();
-
-        if (request.DuplicatePatientId == Guid.Empty)
-            return BadRequest(new { error = "duplicatePatientId is required" });
-
-        try
-        {
-            var merged = await _patientMergeService.MergePatientsAsync(
-                tenantId, primaryId, request.DuplicatePatientId, userId);
-            if (merged == null)
-                return NotFound(new { error = "One or both patients were not found" });
-
-            await _auditService.LogAsync(
-                userId,
-                "PATIENT_MERGE",
-                "Patient",
-                primaryId,
-                $"Merged duplicate {request.DuplicatePatientId} into {primaryId}");
-
-            return Ok(MapToResponse(merged));
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
     [HttpGet("{id}/summary")]
     [RequirePermission("patient.view")]
     public async Task<ActionResult<PatientSummaryDto>> GetPatientSummary(
@@ -535,6 +511,38 @@ public class PatientsController : ControllerBase
             request.ExcludePatientId);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// DUP-C.2 — Create-scoped duplicate check for registration (patient.create).
+    /// Uses the same matcher as check-duplicates / create hard-block, but returns a minimized DTO.
+    /// Does not authorize creation; POST /api/patients remains authoritative for ≥0.95 hard-block.
+    /// </summary>
+    [HttpPost("registration/check-duplicates")]
+    [RequirePermission("patient.create")]
+    public async Task<ActionResult<RegistrationDuplicateCheckResult>> CheckDuplicatesForRegistration(
+        [FromBody] DuplicateCheckRequest request)
+    {
+        if (!TryGetTenantAndUser(out var tenantId, out _))
+            return Unauthorized();
+
+        var result = await _duplicateDetectionService.CheckDuplicatesAsync(
+            request,
+            tenantId,
+            excludePatientId: null);
+
+        var matchIds = result.Matches.Select(m => m.Id).Distinct().ToList();
+        Dictionary<Guid, string?> gendersByPatientId = new();
+        if (matchIds.Count > 0)
+        {
+            gendersByPatientId = await _context.Patients
+                .AsNoTracking()
+                .Where(p => p.TenantId == tenantId && matchIds.Contains(p.Id))
+                .Select(p => new { p.Id, p.Gender })
+                .ToDictionaryAsync(p => p.Id, p => (string?)p.Gender);
+        }
+
+        return Ok(RegistrationDuplicateCheckMapper.Map(result, request, gendersByPatientId));
     }
 
     [HttpPost]
@@ -707,23 +715,20 @@ public class PatientsController : ControllerBase
             });
         }
 
-        var patient = new Patient
-        {
-            Id = request.Id,
-            TenantId = Guid.Parse(tenantId),
-            MedicalRecordNumber = GenerateMedicalRecordNumber(),
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            DateOfBirth = request.DateOfBirth,
-            Gender = request.Gender,
-            ContactNumber = request.ContactNumber,
-            Email = request.Email,
-            Address = request.Address,
-            BloodGroup = request.BloodGroup,
-            Allergies = request.Allergies
-        };
+        var existing = await _patientService.GetPatientByIdAsync(id, Guid.Parse(tenantId));
+        if (existing == null) return NotFound();
 
-        var updatedPatient = await _patientService.UpdatePatientAsync(patient);
+        existing.FirstName = request.FirstName;
+        existing.LastName = request.LastName;
+        existing.DateOfBirth = request.DateOfBirth;
+        existing.Gender = request.Gender;
+        existing.ContactNumber = request.ContactNumber;
+        existing.Email = request.Email;
+        existing.Address = request.Address;
+        existing.BloodGroup = request.BloodGroup;
+        existing.Allergies = request.Allergies;
+
+        var updatedPatient = await _patientService.UpdatePatientAsync(existing);
         if (updatedPatient == null) return NotFound();
 
         return Ok(MapToResponse(updatedPatient));

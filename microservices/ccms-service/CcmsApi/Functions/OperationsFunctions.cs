@@ -38,6 +38,8 @@ public class OperationsFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.authorization.read") is { } forbidden)
+            return forbidden;
 
         var queue = await _preAuthQueue.GetQueueAsync(claims!.TenantId);
         return await req.OkJsonAsync(queue);
@@ -51,6 +53,8 @@ public class OperationsFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.authorization.read") is { } forbidden)
+            return forbidden;
 
         var summary = await _preAuthQueue.GetSummaryAsync(claims!.TenantId);
         return await req.OkJsonAsync(summary);
@@ -65,6 +69,8 @@ public class OperationsFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.claim.read") is { } forbidden)
+            return forbidden;
 
         var tenantId = claims!.TenantId;
 
@@ -115,6 +121,8 @@ public class OperationsFunctions
     {
         if (!_jwt.ValidateAndExtract(req, out var claims, out var err))
             return await req.UnauthorizedAsync(err);
+        if (await CcmsAuthz.ForbidUnlessAsync(req, claims!, "ccms.settlement.read") is { } forbidden)
+            return forbidden;
 
         var tenantId = claims!.TenantId;
 

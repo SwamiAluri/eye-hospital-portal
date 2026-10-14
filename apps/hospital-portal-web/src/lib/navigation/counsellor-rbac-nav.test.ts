@@ -34,9 +34,8 @@ const COUNSELLOR_HREFS = [
   '/dashboard/counselor/analytics',
 ] as const;
 
-/** Modules that must stay hidden; Doctor's Desk may show Patient Directory via patient.view. */
+/** Modules that must stay hidden. Patient Directory lives under OPD & Registration. */
 const UNRELATED_SECTIONS = [
-  'OPD & Registration',
   'Ward & Inpatient',
   'Administration',
   'Reports & Analytics',
@@ -72,15 +71,16 @@ describe('PD-NAV-01 Counsellor-focused navigation', () => {
     }
   });
 
-  it('patient.view only exposes Patient Directory under Doctor\'s Desk (not clinical desk)', () => {
+  it('patient.view exposes Patient Directory only under OPD & Registration', () => {
     const filtered = filterSidebarSectionsByPermission(
       SIDEBAR_MENU_SECTIONS,
       hasFrom(COUNSELLOR_BASELINE_PERMS),
     );
-    const desk = filtered.find(s => s.title === "Doctor's Desk");
-    expect(desk).toBeTruthy();
-    expect(desk!.items.map(i => i.href)).toEqual(['/dashboard/patients']);
-    expect(desk!.items.every(i => i.requiredPermission === 'patient.view')).toBe(true);
+    const opd = filtered.find(s => s.title === 'OPD & Registration');
+    expect(opd).toBeTruthy();
+    expect(opd!.items.map(i => i.href)).toEqual(['/dashboard/patients']);
+    expect(opd!.items.every(i => i.requiredPermission === 'patient.view')).toBe(true);
+    expect(filtered.find(s => s.title === "Doctor's Desk")).toBeUndefined();
   });
 
   it('bill.view alone does not surface Charge Reconciliation after permission split', () => {

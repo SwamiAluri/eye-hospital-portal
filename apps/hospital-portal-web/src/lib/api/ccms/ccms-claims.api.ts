@@ -46,6 +46,25 @@ export async function getClaimById(id: string): Promise<ClaimPacket> {
   return data;
 }
 
+export interface ClaimListResponse {
+  claims: unknown[];
+  totalCount: number;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+/** GET /ccms/claims/by-patient/{patientId} */
+export async function getClaimsByPatient(
+  patientId: string,
+  pageNumber = 1,
+  pageSize = 20,
+): Promise<ClaimListResponse> {
+  const { data } = await getCcmsApi().get(`/ccms/claims/by-patient/${patientId}`, {
+    params: { pageNumber, pageSize },
+  });
+  return data;
+}
+
 export async function getClaimByCaseId(caseId: string): Promise<ClaimPacket[]> {
   const { data } = await getCcmsApi().get(`/ccms/coverage-cases/${caseId}/claims`);
   return Array.isArray(data) ? data : [];

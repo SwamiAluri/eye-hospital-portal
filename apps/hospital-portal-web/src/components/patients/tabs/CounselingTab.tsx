@@ -1,9 +1,11 @@
 'use client';
 
 import React from 'react';
-import { MessageCircle, Package, DollarSign } from 'lucide-react';
+import Link from 'next/link';
+import { MessageCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { buildCounsellorHandoffHref } from '@/lib/patients/patient-handoff';
 
 interface CounselingTabProps {
   patientId: string;
@@ -19,8 +21,10 @@ export const CounselingTab: React.FC<CounselingTabProps> = ({ patientId }) => {
       </p>
       <Badge variant="secondary">Coming Soon - CounselingController Integration</Badge>
       <div className="mt-6">
-        <Button variant="outline">
-          Open in Counselor Module
+        <Button variant="outline" asChild>
+          <Link href={buildCounsellorHandoffHref(patientId)}>
+            Open in Counselor Module
+          </Link>
         </Button>
       </div>
     </div>
