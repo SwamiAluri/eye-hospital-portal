@@ -62,10 +62,11 @@ public class PermissionSeederTests
             .Select(p => p.Code)
             .ToList();
 
-        Assert.Equal(24, codes.Count);
+        Assert.Equal(25, codes.Count);
         Assert.Equal(codes.Count, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.Contains("ip.ot.mark_ready", codes);
         Assert.Contains("ip.safety_token.print", codes);
+        Assert.Contains("ip.vitals.read", codes);
         Assert.DoesNotContain("ip.implant.mismatch.override", codes);
     }
 

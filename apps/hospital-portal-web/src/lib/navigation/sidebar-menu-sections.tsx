@@ -66,7 +66,10 @@ import {
   MapPin,
   Link2,
   Scale,
+  FlaskConical,
 } from 'lucide-react';
+import { LMS_NAV_ITEMS } from '@/lib/lms/lms-navigation';
+import { LMS_VIEW } from '@/lib/lms/lms-permissions';
 
 interface MenuItem {
   label: string;
@@ -128,10 +131,19 @@ export function filterSidebarSectionsByPermission(
     return item.allowAuthenticated === true;
   };
 
+  const filterItem = (item: MenuItem): MenuItem | null => {
+    if (!itemVisible(item)) return null;
+    if (!item.subItems?.length) return item;
+    const subItems = item.subItems.map(filterItem).filter((s): s is MenuItem => s != null);
+    // Keep expandable parents when any authorized child remains.
+    if (item.isExpandable && subItems.length === 0) return null;
+    return { ...item, subItems };
+  };
+
   return sections
     .map(section => ({
       ...section,
-      items: section.items.filter(itemVisible),
+      items: section.items.map(filterItem).filter((i): i is MenuItem => i != null),
     }))
     .filter(section => section.items.length > 0);
 }
@@ -163,6 +175,12 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           href: '/dashboard/frontdesk',
           icon: Contact,
           requiredPermission: null,
+        },
+        {
+          label: 'Patient Directory',
+          href: '/dashboard/patients',
+          icon: Users,
+          requiredPermission: 'patient.view',
         },
         {
           label: 'Queue Management',
@@ -202,12 +220,6 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
       title: "Doctor's Desk",
       icon: Stethoscope,
       items: [
-        {
-          label: 'Patient Directory',
-          href: '/dashboard/patients',
-          icon: Users,
-          requiredPermission: 'patient.view',
-        },
         {
           label: "Doctor's Desk",
           href: '/dashboard/doctors-desk',
@@ -432,6 +444,21 @@ export const SIDEBAR_MENU_SECTIONS: MenuSection[] = [
           requiredPermission: 'OPERATIONS:AMBULANCE:VIEW',
         },
       ],
+    },
+
+    // ── 7b. ENTERPRISE LABORATORY MANAGEMENT (LMS) — isolated from Pathology Lab ─
+    {
+      title: 'Laboratory Management',
+      icon: FlaskConical,
+      items: LMS_NAV_ITEMS.map((item) => ({
+        ...item,
+        // L0: structural gate is root lms.view (fine-grained codes deferred).
+        requiredPermission: item.requiredPermission ?? LMS_VIEW,
+        subItems: item.subItems?.map((sub) => ({
+          ...sub,
+          requiredPermission: sub.requiredPermission ?? LMS_VIEW,
+        })),
+      })),
     },
 
     // ── 8. PHARMACY ───────────────────────────────────────────────────────────

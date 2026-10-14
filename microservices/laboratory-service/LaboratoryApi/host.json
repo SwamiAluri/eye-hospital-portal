@@ -1,0 +1,30 @@
+{
+  "version": "2.0",
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "maxTelemetryItemsPerSecond": 20
+      }
+    },
+    "logLevel": {
+      "default": "Information",
+      "Function": "Information",
+      "Host.Results": "Warning"
+    }
+  },
+  "extensions": {
+    "http": {
+      "routePrefix": "api"
+    }
+  },
+  "functionTimeout": "00:10:00",
+  "cors": {
+    "allowedOrigins": [
+      "http://localhost:3000",
+      "http://localhost:5073",
+      "http://localhost:5074"
+    ],
+    "supportCredentials": false
+  }
+}

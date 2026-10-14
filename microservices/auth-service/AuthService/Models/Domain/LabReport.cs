@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -22,6 +23,14 @@ public class LabReport
     [Column("visit_id")]
     public Guid? VisitId { get; set; }
 
+    /// <summary>Authoritative clinical catalog test when ordered from L2 catalog (nullable for legacy rows).</summary>
+    [Column("test_definition_id")]
+    public Guid? TestDefinitionId { get; set; }
+
+    /// <summary>Authoritative panel when ordered as a panel (nullable).</summary>
+    [Column("panel_id")]
+    public Guid? PanelId { get; set; }
+
     [Required]
     [Column("test_name")]
     [MaxLength(300)]
@@ -34,6 +43,11 @@ public class LabReport
     [Column("test_category")]
     [MaxLength(100)]
     public string? TestCategory { get; set; } // hematology, biochemistry, microbiology, pathology, ophthalmology
+
+    /// <summary>Structured clinical indication / reason (L2). Not a substitute for Notes.</summary>
+    [Column("clinical_indication")]
+    [MaxLength(1000)]
+    public string? ClinicalIndication { get; set; }
 
     [Column("ordered_by_name")]
     [MaxLength(200)]
@@ -117,4 +131,32 @@ public class LabReport
 
     [ForeignKey("PatientId")]
     public virtual Patient? Patient { get; set; }
+
+    [ForeignKey(nameof(TestDefinitionId))]
+    public virtual LaboratoryTestDefinition? TestDefinition { get; set; }
+
+    [ForeignKey(nameof(PanelId))]
+    public virtual LaboratoryPanel? Panel { get; set; }
+
+    public virtual ICollection<LabReportItem> Items { get; set; } = new List<LabReportItem>();
+
+    /// <summary>Populated on read when an active lab canonical association exists. Not persisted.</summary>
+    [NotMapped]
+    public Guid? CanonicalDocumentId { get; set; }
+
+    /// <summary>Display name of the attached canonical report file. Not persisted.</summary>
+    [NotMapped]
+    public string? CanonicalFileName { get; set; }
+
+    /// <summary>MIME type of the attached canonical report file. Not persisted.</summary>
+    [NotMapped]
+    public string? CanonicalMimeType { get; set; }
+
+    /// <summary>Patient display name for worklist reads. Not persisted.</summary>
+    [NotMapped]
+    public string? PatientDisplayName { get; set; }
+
+    /// <summary>Patient MRN for worklist reads. Not persisted.</summary>
+    [NotMapped]
+    public string? MedicalRecordNumber { get; set; }
 }

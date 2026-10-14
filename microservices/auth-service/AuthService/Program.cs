@@ -759,13 +759,15 @@ try
     builder.Services.AddScoped<IIOLInventoryService, IOLInventoryService>();
     builder.Services.AddScoped<IRetinopathyScreeningService, RetinopathyScreeningService>();
     builder.Services.AddScoped<IOctImagingService, OctImagingService>();
+    builder.Services.AddScoped<IPatient360OctReadService, Patient360OctReadService>();
+    builder.Services.AddScoped<IPatient360MedicationReadService, Patient360MedicationReadService>();
+    builder.Services.AddScoped<IPatient360DiagnosisReadService, Patient360DiagnosisReadService>();
     builder.Services.AddScoped<IElectrophysiologyService, ElectrophysiologyService>();
     
     builder.Services.AddScoped<AppointmentService>();
     // builder.Services.AddScoped<IAppointmentService, CachedAppointmentService>(); // Disabled - interface mismatch
     builder.Services.AddScoped<IAppointmentService, AppointmentService>();
     builder.Services.AddScoped<IPatientService, PatientService>();
-    builder.Services.AddScoped<IPatientMergeService, PatientMergeService>();
     builder.Services.AddScoped<IAcuityScoringService, AcuityScoringService>();
     builder.Services.AddScoped<IPatientEngagementService, PatientEngagementService>();
     builder.Services.AddScoped<IPatientLookupService, PatientLookupService>();
@@ -813,6 +815,7 @@ try
     builder.Services.AddScoped<IChargeCatalogResolver, ChargeCatalogResolver>();
     builder.Services.AddScoped<IChargeMappingAdminService, ChargeMappingAdminService>();
     builder.Services.AddScoped<IChargeReconciliationService, ChargeReconciliationService>();
+    builder.Services.AddScoped<ILaboratoryCommercialMappingService, LaboratoryCommercialMappingService>();
     
     // Module 3: Counseling & Surgery Package Management Services (Feb 15, 2026)
     builder.Services.AddScoped<IPackageManagementService, PackageManagementService>();
@@ -822,6 +825,9 @@ try
     builder.Services.AddScoped<ICounselorCommunicationService, CounselorCommunicationService>(); // Comm logs, callbacks, overdue (Phase B)
     builder.Services.AddScoped<IFollowupListService, FollowupListService>(); // Follow-up Center list/search/stats (Phase 2B)
     builder.Services.AddScoped<IFollowupBranchAccessService, FollowupBranchAccessService>(); // Phase2X PD16
+    builder.Services.AddScoped<IPatientJourneyHistoryService, PatientJourneyHistoryService>();
+    builder.Services.AddScoped<IPatient360IpVitalsService, Patient360IpVitalsService>();
+    builder.Services.AddScoped<IPatient360ImagingFilesService, Patient360ImagingFilesService>();
     builder.Services.AddScoped<ICounselingAnalyticsService, CounselingAnalyticsService>(); // Analytics summary/trends/aging (Phase 2D)
     builder.Services.AddScoped<IDeptCoordinationService, DeptCoordinationService>(); // Dept coordination requests (Mar 16, 2026)
     builder.Services.AddScoped<IPatientTypeConfigurationsService, PatientTypeConfigurationsService>(); // Patient type configs (Mar 1, 2026)
@@ -885,6 +891,13 @@ builder.Services.AddScoped<IImagingAIAnalysisService, ImagingAIAnalysisService>(
     
     // Enhanced Audit Service (Blockchain-like Hash Chain)
     builder.Services.AddScoped<IAuditService, AuditService>();
+
+    // L-PORTAL-01 S1/S2 — Portal identity resolve + invitation lifecycle foundation
+    // (no Portal JWT; staff invite HTTP still blocked until separate endpoint authorization)
+    builder.Services.Configure<PortalInvitationOptions>(
+        builder.Configuration.GetSection(PortalInvitationOptions.SectionName));
+    builder.Services.AddScoped<IPortalPatientResolveService, PortalPatientResolveService>();
+    builder.Services.AddScoped<IPortalInvitationService, PortalInvitationService>();
     
     // Azure Blob Storage Service (Patient Photos & Documents) - Phase 7
     builder.Services.AddSingleton(x =>
@@ -897,6 +910,10 @@ builder.Services.AddScoped<IImagingAIAnalysisService, ImagingAIAnalysisService>(
         sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>()));
     builder.Services.AddScoped<BlobStorageService>();
     builder.Services.AddScoped<IBlobStorageService>(sp => sp.GetRequiredService<BlobStorageService>());
+    builder.Services.AddScoped<ICanonicalDocumentIdentityService, CanonicalDocumentIdentityService>();
+    builder.Services.AddScoped<ICanonicalDocumentService, CanonicalDocumentService>();
+    builder.Services.AddScoped<ICounselingSessionDocumentCanonicalService, CounselingSessionDocumentCanonicalService>();
+    builder.Services.AddScoped<ILabReportCanonicalDocumentService, LabReportCanonicalDocumentService>();
     builder.Services.AddHostedService<SessionAudioPrivateRehydrateService>();
     
     // Activation Audit Service (HIPAA Compliance - Track all activation steps)
@@ -999,13 +1016,66 @@ builder.Services.AddScoped<IImagingAIAnalysisService, ImagingAIAnalysisService>(
         await AuthService.SeedData.PermissionSeeder.SeedCounselingSessionReassignPermissionsAsync(db);
         await AuthService.SeedData.PermissionSeeder.ApplyCounsellorLeastPrivilegeAsync(db);
         await AuthService.SeedData.PermissionSeeder.SeedCounsellorPatientWorkflowPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedPatientCreateRoleGrantsAsync(db);
         await AuthService.SeedData.PermissionSeeder.SeedCounsellorPackageTemplateReadPermissionAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedCounsellorSessionDocumentsPermissionsAsync(db);
         await AuthService.SeedData.PermissionSeeder.SeedCounsellorTranscriptionPermissionsAsync(db);
         await AuthService.SeedData.PermissionSeeder.SeedBillReconciliationViewPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedIpVitalsReadPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedDiagnosticOctReadPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedPatient360MedicationReadPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedPatient360DiagnosisReadPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedLaboratoryL0UatPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedEnterpriseLmsL0PermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedEnterpriseLmsCataloguePermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedEnterpriseLmsOrdersPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedEnterpriseLmsCollectionPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedEnterpriseLmsSpecimenPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedEnterpriseLmsTestingPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedEnterpriseLmsReportsPermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedPortalInvitePermissionsAsync(db);
+        await AuthService.SeedData.PermissionSeeder.SeedPortalInviteRoleGrantsAsync(db);
     }
     catch (Exception ex)
     {
         Console.WriteLine($"⚠ Phase 2 CCMS / counselling permission seed skipped: {ex.Message}");
+    }
+
+    // Development/UAT: activate existing Lab Technician / Lab Manager invitation accounts.
+    try
+    {
+        using var labUatScope = app.Services.CreateScope();
+        var labDb = labUatScope.ServiceProvider.GetRequiredService<AuthService.Context.AppDbContext>();
+        var labUsers = labUatScope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+        var labConfig = labUatScope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var labEnv = labUatScope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+        await AuthService.Services.LabUatAccountBootstrap.EnsureLabUatAccountsAsync(
+            labDb, labUsers, labConfig, labEnv);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠ Lab UAT account bootstrap skipped: {ex.Message}");
+    }
+
+    // Development/UAT: idempotent Laboratory clinical catalog bootstrap from Lab-type LabTestCatalog.
+    try
+    {
+        using var labCatScope = app.Services.CreateScope();
+        var labCatDb = labCatScope.ServiceProvider.GetRequiredService<AuthService.Context.AppDbContext>();
+        var labCatEnv = labCatScope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+        var labCatLogger = labCatScope.ServiceProvider.GetService<ILoggerFactory>()?
+            .CreateLogger("LaboratoryClinicalCatalogBootstrap");
+        var labCatReport = await AuthService.Services.LaboratoryClinicalCatalogBootstrap.EnsureFromLabTestCatalogAsync(
+            labCatDb,
+            AuthService.Services.DevTenantBootstrap.IndiaEyeTenantId,
+            labCatEnv,
+            labCatLogger);
+        Console.WriteLine(
+            $"✓ Laboratory clinical catalog bootstrap: imported={labCatReport.Imported} existing={labCatReport.AlreadyExisting} eligible={labCatReport.Eligible} excluded={labCatReport.Excluded} cbc={labCatReport.CbcFound}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠ Laboratory clinical catalog bootstrap skipped: {ex.Message}");
     }
 
     // Configure the HTTP request pipeline

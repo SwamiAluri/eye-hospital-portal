@@ -68,6 +68,10 @@ namespace AuthService.Context
         public DbSet<ActivationAuditLog> ActivationAuditLogs { get; set; }
         public DbSet<UserAttribute> UserAttributes { get; set; }
         public DbSet<Patient> Patients { get; set; }
+        // L-PORTAL-01 S1 — Portal identity persistence foundation
+        public DbSet<PortalInvitation> PortalInvitations { get; set; }
+        public DbSet<PortalPatientLink> PortalPatientLinks { get; set; }
+        public DbSet<PortalRemediationRequest> PortalRemediationRequests { get; set; }
         public DbSet<PatientFavorite> PatientFavorites { get; set; }
         public DbSet<PatientRecentView> PatientRecentViews { get; set; }
         public DbSet<UserChartLayout> UserChartLayouts { get; set; }
@@ -83,6 +87,8 @@ namespace AuthService.Context
         public DbSet<AppointmentReminder> AppointmentReminders { get; set; }
         public DbSet<AppointmentStatistics> AppointmentStatisticsRecords { get; set; }
         public DbSet<PatientDocumentUpload> PatientDocumentUploads { get; set; }
+        public DbSet<CanonicalDocument> CanonicalDocuments { get; set; }
+        public DbSet<CanonicalDocumentAssociation> CanonicalDocumentAssociations { get; set; }
         public DbSet<DocumentAccessAudit> DocumentAccessAudits { get; set; }
         public DbSet<AdminConfiguration> AdminConfigurations { get; set; }
         public DbSet<SystemSetting> SystemSettings { get; set; }
@@ -201,6 +207,12 @@ namespace AuthService.Context
         public DbSet<PatientConsent> PatientConsents { get; set; }
         public DbSet<PatientCommunication> PatientCommunications { get; set; }
         public DbSet<LabReport> LabReports { get; set; }
+        public DbSet<LabReportItem> LabReportItems { get; set; }
+        public DbSet<LaboratoryTestDefinition> LaboratoryTestDefinitions { get; set; }
+        public DbSet<LaboratoryTestSpecimenOption> LaboratoryTestSpecimenOptions { get; set; }
+        public DbSet<LaboratoryPanel> LaboratoryPanels { get; set; }
+        public DbSet<LaboratoryPanelItem> LaboratoryPanelItems { get; set; }
+        public DbSet<LaboratoryAnalyte> LaboratoryAnalytes { get; set; }
         public DbSet<PatientInsurance> PatientInsurances { get; set; }
         public DbSet<PatientNote> PatientNotes { get; set; }
         public DbSet<OpticalOrder> OpticalOrders { get; set; }
@@ -264,6 +276,7 @@ namespace AuthService.Context
 
         // Follow-up Center: Read-only projections of ip-management-service tables (no migration — tables exist via mig81/85)
         public DbSet<PatientJourneyReadOnly> PatientJourneys { get; set; }
+        public DbSet<VitalSignReadOnly> VitalSigns { get; set; }
         public DbSet<DischargeSummaryReadOnly> DischargeSummaries { get; set; }
         public DbSet<CcmsCoverageCaseReadOnly> CcmsCoverageCases { get; set; }
 
@@ -1252,6 +1265,50 @@ namespace AuthService.Context
                 entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
                 entity.Property(e => e.DeletedByUserId).HasColumnName("deleted_by_user_id");
                 entity.HasIndex(e => new { e.TenantId, e.PatientId });
+            });
+
+            builder.Entity<CanonicalDocument>(entity =>
+            {
+                entity.ToTable("canonical_documents");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+                entity.Property(e => e.PatientId).HasColumnName("patient_id");
+                entity.Property(e => e.StorageBackend).HasColumnName("storage_backend");
+                entity.Property(e => e.StorageContainer).HasColumnName("storage_container");
+                entity.Property(e => e.StorageObjectKey).HasColumnName("storage_object_key");
+                entity.Property(e => e.FileName).HasColumnName("file_name");
+                entity.Property(e => e.MimeType).HasColumnName("mime_type");
+                entity.Property(e => e.SizeBytes).HasColumnName("size_bytes");
+                entity.Property(e => e.ContentHash).HasColumnName("content_hash");
+                entity.Property(e => e.Classification).HasColumnName("classification");
+                entity.Property(e => e.Status).HasColumnName("status");
+                entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+                entity.Property(e => e.SupersededByDocumentId).HasColumnName("superseded_by_document_id");
+                entity.HasIndex(e => new { e.TenantId, e.PatientId });
+                entity.HasIndex(e => new { e.TenantId, e.PatientId, e.ContentHash });
+                entity.HasMany(e => e.Associations)
+                    .WithOne(a => a.Document)
+                    .HasForeignKey(a => a.DocumentId);
+            });
+
+            builder.Entity<CanonicalDocumentAssociation>(entity =>
+            {
+                entity.ToTable("canonical_document_associations");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.DocumentId).HasColumnName("document_id");
+                entity.Property(e => e.Domain).HasColumnName("domain");
+                entity.Property(e => e.EntityType).HasColumnName("entity_type");
+                entity.Property(e => e.EntityId).HasColumnName("entity_id");
+                entity.Property(e => e.Category).HasColumnName("category");
+                entity.Property(e => e.Role).HasColumnName("role");
+                entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.HasIndex(e => new { e.DocumentId, e.Domain, e.EntityType, e.EntityId }).IsUnique();
+                entity.HasIndex(e => new { e.Domain, e.EntityType, e.EntityId });
             });
 
             builder.Entity<DocumentAccessAudit>(entity =>
@@ -2604,6 +2661,64 @@ namespace AuthService.Context
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => new { e.TenantId, e.PatientId });
                 entity.HasIndex(e => e.Status);
+                entity.HasIndex(e => e.TestDefinitionId);
+                entity.HasIndex(e => e.PanelId);
+                entity.HasQueryFilter(e => e.DeletedAt == null);
+                entity.HasOne(e => e.TestDefinition).WithMany().HasForeignKey(e => e.TestDefinitionId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Panel).WithMany().HasForeignKey(e => e.PanelId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasMany(e => e.Items).WithOne(i => i.LabReport).HasForeignKey(i => i.LabReportId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<LabReportItem>(entity =>
+            {
+                entity.ToTable("lab_report_items");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.TenantId, e.LabReportId });
+                entity.HasOne(e => e.TestDefinition).WithMany().HasForeignKey(e => e.TestDefinitionId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            builder.Entity<LaboratoryTestDefinition>(entity =>
+            {
+                entity.ToTable("laboratory_test_definitions");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.TenantId, e.LocalCode });
+                entity.HasIndex(e => new { e.TenantId, e.Name });
+                entity.HasIndex(e => e.ServiceVariantId);
+                entity.HasQueryFilter(e => e.DeletedAt == null);
+                entity.HasMany(e => e.SpecimenOptions).WithOne(o => o.TestDefinition!).HasForeignKey(o => o.TestDefinitionId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasMany(e => e.Analytes).WithOne(a => a.TestDefinition!).HasForeignKey(a => a.TestDefinitionId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<LaboratoryTestSpecimenOption>(entity =>
+            {
+                entity.ToTable("laboratory_test_specimen_options");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.TestDefinitionId, e.SpecimenType }).IsUnique();
+            });
+
+            builder.Entity<LaboratoryPanel>(entity =>
+            {
+                entity.ToTable("laboratory_panels");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.TenantId, e.LocalCode });
+                entity.HasIndex(e => new { e.TenantId, e.Name });
+                entity.HasQueryFilter(e => e.DeletedAt == null);
+                entity.HasMany(e => e.Items).WithOne(i => i.Panel!).HasForeignKey(i => i.PanelId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<LaboratoryPanelItem>(entity =>
+            {
+                entity.ToTable("laboratory_panel_items");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.PanelId, e.TestDefinitionId }).IsUnique();
+                entity.HasOne(e => e.TestDefinition).WithMany().HasForeignKey(e => e.TestDefinitionId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            builder.Entity<LaboratoryAnalyte>(entity =>
+            {
+                entity.ToTable("laboratory_analytes");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.TenantId, e.TestDefinitionId });
                 entity.HasQueryFilter(e => e.DeletedAt == null);
             });
 
@@ -3092,6 +3207,31 @@ namespace AuthService.Context
                 entity.HasIndex(e => e.IsDischarged);
             });
 
+            builder.Entity<VitalSignReadOnly>(entity =>
+            {
+                entity.ToTable("vital_sign", t => t.ExcludeFromMigrations());
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+                entity.Property(e => e.JourneyId).HasColumnName("journey_id");
+                entity.Property(e => e.RecordedAt).HasColumnName("recorded_at");
+                entity.Property(e => e.Temperature).HasColumnName("temperature");
+                entity.Property(e => e.BloodPressureSystolic).HasColumnName("blood_pressure_systolic");
+                entity.Property(e => e.BloodPressureDiastolic).HasColumnName("blood_pressure_diastolic");
+                entity.Property(e => e.PulseRate).HasColumnName("pulse_rate");
+                entity.Property(e => e.RespiratoryRate).HasColumnName("respiratory_rate");
+                entity.Property(e => e.OxygenSaturation).HasColumnName("oxygen_saturation");
+                entity.Property(e => e.Weight).HasColumnName("weight");
+                entity.Property(e => e.Height).HasColumnName("height");
+                entity.Property(e => e.Notes).HasColumnName("notes");
+                entity.Property(e => e.Context).HasColumnName("context");
+                entity.Property(e => e.RecordedByUserId).HasColumnName("recorded_by_user_id");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+                entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+                entity.Property(e => e.Status).HasColumnName("status");
+            });
+
             builder.Entity<DischargeSummaryReadOnly>(entity =>
             {
                 entity.ToTable("discharge_summary");
@@ -3201,6 +3341,72 @@ namespace AuthService.Context
                 entity.Property(e => e.TabLabel).HasColumnName("tab_label").HasMaxLength(100);
                 entity.Property(e => e.AllowCustomFields).HasColumnName("allow_custom_fields").HasDefaultValue(false);
                 entity.Property(e => e.SortOrder).HasColumnName("sort_order").HasDefaultValue(0);
+            });
+
+            // L-PORTAL-01 S1 — Portal identity tables (PostgreSQL filtered unique indexes)
+            builder.Entity<PortalInvitation>(entity =>
+            {
+                entity.ToTable("portal_invitations");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.PatientId).HasColumnName("patient_id").IsRequired();
+                entity.Property(e => e.DeliveryChannel).HasColumnName("delivery_channel").HasMaxLength(50).IsRequired();
+                entity.Property(e => e.TokenHash).HasColumnName("token_hash").HasMaxLength(128).IsRequired();
+                entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").IsRequired();
+                entity.Property(e => e.UsedAt).HasColumnName("used_at");
+                entity.Property(e => e.SupersededAt).HasColumnName("superseded_at");
+                entity.Property(e => e.SupersededByInvitationId).HasColumnName("superseded_by_invitation_id");
+                entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id").IsRequired();
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+                entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(30).IsRequired();
+                entity.HasIndex(e => e.TenantId).HasDatabaseName("ix_portal_invitations_tenant");
+                entity.HasIndex(e => new { e.TenantId, e.PatientId }).HasDatabaseName("ix_portal_invitations_tenant_patient");
+                entity.HasIndex(e => e.TokenHash).HasDatabaseName("ix_portal_invitations_token_hash");
+            });
+
+            builder.Entity<PortalPatientLink>(entity =>
+            {
+                entity.ToTable("portal_patient_links");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.PrincipalUserId).HasColumnName("principal_user_id").IsRequired();
+                entity.Property(e => e.PatientId).HasColumnName("patient_id").IsRequired();
+                entity.Property(e => e.VerificationStatus).HasColumnName("verification_status").HasMaxLength(30).IsRequired();
+                entity.Property(e => e.VerificationMethodCode).HasColumnName("verification_method_code").HasMaxLength(100);
+                entity.Property(e => e.VerifiedAt).HasColumnName("verified_at");
+                entity.Property(e => e.VerifiedByUserId).HasColumnName("verified_by_user_id");
+                entity.Property(e => e.RevokedAt).HasColumnName("revoked_at");
+                entity.Property(e => e.RevokedReason).HasColumnName("revoked_reason").HasMaxLength(500);
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+                entity.HasIndex(e => e.TenantId).HasDatabaseName("ix_portal_patient_links_tenant");
+                entity.HasIndex(e => new { e.TenantId, e.PatientId })
+                    .IsUnique()
+                    .HasFilter("verification_status = 'verified' AND revoked_at IS NULL")
+                    .HasDatabaseName("ux_portal_patient_links_active_verified_patient");
+                entity.HasIndex(e => new { e.TenantId, e.PrincipalUserId })
+                    .IsUnique()
+                    .HasFilter("verification_status = 'verified' AND revoked_at IS NULL")
+                    .HasDatabaseName("ux_portal_patient_links_active_verified_principal");
+            });
+
+            builder.Entity<PortalRemediationRequest>(entity =>
+            {
+                entity.ToTable("portal_remediation_requests");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("tenant_id").IsRequired();
+                entity.Property(e => e.LinkId).HasColumnName("link_id").IsRequired();
+                entity.Property(e => e.RequestedByUserId).HasColumnName("requested_by_user_id").IsRequired();
+                entity.Property(e => e.ApprovedByUserId).HasColumnName("approved_by_user_id");
+                entity.Property(e => e.Operation).HasColumnName("operation").HasMaxLength(50).IsRequired();
+                entity.Property(e => e.Reason).HasColumnName("reason").HasMaxLength(1000).IsRequired();
+                entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(30).IsRequired();
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+                entity.Property(e => e.ResolvedAt).HasColumnName("resolved_at");
+                entity.HasIndex(e => e.TenantId).HasDatabaseName("ix_portal_remediation_requests_tenant");
+                entity.HasIndex(e => new { e.TenantId, e.LinkId }).HasDatabaseName("ix_portal_remediation_requests_tenant_link");
             });
         }
 

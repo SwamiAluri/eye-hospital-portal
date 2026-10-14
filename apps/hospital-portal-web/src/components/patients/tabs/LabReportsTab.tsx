@@ -2,18 +2,26 @@
 
 import React, { useState, useEffect } from 'react';
 import { FileText, Beaker, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Button } from '@/components/ui/button';
+import { useHasPermission } from '@/hooks/use-permissions';
+import { getApiErrorMessage } from '@/lib/auth-interceptors';
 import { labReportsApi, LabReport } from '@/lib/api/lab-reports.api';
+import { LabAttachReportDialog } from '@/components/patients/tabs/LabAttachReportDialog';
 
 interface LabReportsTabProps {
   patientId: string;
 }
 
 export function LabReportsTab({ patientId }: LabReportsTabProps) {
+  const canAttach = useHasPermission('patient.update');
   const [reports, setReports] = useState<LabReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [attachTarget, setAttachTarget] = useState<LabReport | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     loadReports();
@@ -30,7 +38,6 @@ export function LabReportsTab({ patientId }: LabReportsTabProps) {
       const rows = Array.isArray(response.data) ? response.data : [];
       setReports(rows);
     } catch (err: unknown) {
-      console.error('Error loading lab reports:', err);
       setError('Lab reports are temporarily unavailable.');
       setReports([]);
     } finally {
@@ -74,13 +81,12 @@ export function LabReportsTab({ patientId }: LabReportsTabProps) {
         </div>
       )}
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <div>
           <label className="text-xs font-medium text-gray-500 block mb-1">Status</label>
           <select
             value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
+            onChange={(e) => setStatusFilter(e.target.value)}
             className="text-sm border border-gray-300 rounded-md px-3 py-1.5"
           >
             <option value="">All Statuses</option>
@@ -95,29 +101,30 @@ export function LabReportsTab({ patientId }: LabReportsTabProps) {
           <label className="text-xs font-medium text-gray-500 block mb-1">Category</label>
           <select
             value={categoryFilter}
-            onChange={e => setCategoryFilter(e.target.value)}
+            onChange={(e) => setCategoryFilter(e.target.value)}
             className="text-sm border border-gray-300 rounded-md px-3 py-1.5"
           >
             <option value="">All Categories</option>
-            {categories.map(c => (
-              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c.charAt(0).toUpperCase() + c.slice(1)}
+              </option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* Reports List */}
       <div className="space-y-3">
-        {reports.map(report => (
+        {reports.map((report) => (
           <div key={report.id} className="border rounded-lg p-4 bg-white hover:shadow-sm transition-shadow">
-            <div className="flex items-start justify-between">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-indigo-50 rounded-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="p-2 bg-indigo-50 rounded-lg shrink-0">
                   <Beaker className="w-5 h-5 text-indigo-600" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h4 className="font-semibold text-gray-900">{report.testName}</h4>
-                  <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                  <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
                     {report.testCode && <span>Code: {report.testCode}</span>}
                     <span className="capitalize">{report.testCategory}</span>
                     {report.priority && report.priority !== 'routine' && (
@@ -126,18 +133,31 @@ export function LabReportsTab({ patientId }: LabReportsTabProps) {
                   </div>
                 </div>
               </div>
-              <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColors[report.status] || 'bg-gray-100 text-gray-800'}`}>
-                {report.status.replace(/_/g, ' ')}
-              </span>
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <span
+                  className={`px-2 py-1 text-xs font-medium rounded-full ${statusColors[report.status] || 'bg-gray-100 text-gray-800'}`}
+                >
+                  {report.status.replace(/_/g, ' ')}
+                </span>
+                {canAttach && !report.canonicalDocumentId ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setAttachTarget(report)}>
+                    Attach Report
+                  </Button>
+                ) : null}
+                {report.canonicalDocumentId ? (
+                  <span className="text-xs font-medium text-emerald-800">Report attached</span>
+                ) : null}
+              </div>
             </div>
 
-            {/* Results */}
             {report.status === 'completed' && report.resultValue && (
               <div className="mt-3 p-3 bg-gray-50 rounded-lg">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div>
                     <span className="text-gray-500">Result:</span>
-                    <p className={`font-semibold ${interpretationColors[report.interpretation || ''] || 'text-gray-900'}`}>
+                    <p
+                      className={`font-semibold ${interpretationColors[report.interpretation || ''] || 'text-gray-900'}`}
+                    >
                       {report.resultValue} {report.resultUnit}
                     </p>
                   </div>
@@ -150,8 +170,12 @@ export function LabReportsTab({ patientId }: LabReportsTabProps) {
                   {report.interpretation && (
                     <div>
                       <span className="text-gray-500">Interpretation:</span>
-                      <p className={`font-medium capitalize ${interpretationColors[report.interpretation] || ''}`}>
-                        {report.interpretation === 'critical' && <AlertCircle className="w-3 h-3 inline mr-1" />}
+                      <p
+                        className={`font-medium capitalize ${interpretationColors[report.interpretation] || ''}`}
+                      >
+                        {report.interpretation === 'critical' && (
+                          <AlertCircle className="w-3 h-3 inline mr-1" />
+                        )}
                         {report.interpretation}
                       </p>
                     </div>
@@ -166,11 +190,21 @@ export function LabReportsTab({ patientId }: LabReportsTabProps) {
               </div>
             )}
 
-            {/* Timeline */}
-            <div className="mt-3 flex items-center gap-4 text-xs text-gray-400">
-              {report.orderedAt && <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Ordered: {new Date(report.orderedAt).toLocaleDateString()}</span>}
-              {report.sampleCollectedAt && <span>Collected: {new Date(report.sampleCollectedAt).toLocaleDateString()}</span>}
-              {report.completedAt && <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Completed: {new Date(report.completedAt).toLocaleDateString()}</span>}
+            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-400">
+              {report.orderedAt && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> Ordered: {new Date(report.orderedAt).toLocaleDateString()}
+                </span>
+              )}
+              {report.sampleCollectedAt && (
+                <span>Collected: {new Date(report.sampleCollectedAt).toLocaleDateString()}</span>
+              )}
+              {report.completedAt && (
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Completed:{' '}
+                  {new Date(report.completedAt).toLocaleDateString()}
+                </span>
+              )}
               {report.orderedByName && <span>By: {report.orderedByName}</span>}
             </div>
 
@@ -185,6 +219,29 @@ export function LabReportsTab({ patientId }: LabReportsTabProps) {
           <p>No lab reports found for this patient.</p>
         </div>
       )}
+
+      <LabAttachReportDialog
+        open={Boolean(attachTarget)}
+        uploading={uploading}
+        testName={attachTarget?.testName ?? 'lab report'}
+        onOpenChange={(open) => {
+          if (!open) setAttachTarget(null);
+        }}
+        onAttach={async (file) => {
+          if (!attachTarget) return;
+          setUploading(true);
+          try {
+            await labReportsApi.attachReport(attachTarget.id, file);
+            toast.success('Report attached.');
+            await loadReports();
+          } catch (err) {
+            toast.error(getApiErrorMessage(err, 'Attach report failed.'));
+            throw err;
+          } finally {
+            setUploading(false);
+          }
+        }}
+      />
     </div>
   );
 }
